@@ -1,10 +1,61 @@
-import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/gestures.dart';
-import 'signup_page.dart';
-import 'loginpage.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:flutter/material.dart';
+import 'loading_screen.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
+Future<UserCredential?> signInWithGoogle() async {
+  try {
+    if (kDebugMode) {
+      debugPrint('Starting Google Sign-In');
+    }
 
-class HomePage extends StatelessWidget {
-  const HomePage({super.key});
+    // Initialize GoogleSignIn
+    final GoogleSignIn googleSignIn = GoogleSignIn(scopes: ['email']);
+
+    // Sign out muna para i-clear ang cached account
+    await googleSignIn.signOut();
+
+    // Trigger the Google sign-in process na may picker
+    final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+
+    if (googleUser == null) {
+      if (kDebugMode) {
+        debugPrint('User canceled the sign-in');
+      }
+      return null; // User canceled the login
+    }
+
+    if (kDebugMode) {
+      debugPrint('Signed in as: ${googleUser.email}');
+    }
+
+    // Get authentication details
+    final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+
+    if (kDebugMode) {
+      debugPrint('Access Token: ${googleAuth.accessToken}');
+      debugPrint('ID Token: ${googleAuth.idToken}');
+    }
+
+    // Create a credential for Firebase
+    final OAuthCredential credential = GoogleAuthProvider.credential(
+      accessToken: googleAuth.accessToken,
+      idToken: googleAuth.idToken,
+    );
+
+    // Sign in to Firebase
+    return await FirebaseAuth.instance.signInWithCredential(credential);
+  } catch (e) {
+    if (kDebugMode) {
+      debugPrint('Error during Google Sign-In: $e');
+    }
+    return null;
+  }
+}
+class LandingPage extends StatelessWidget {
+  const LandingPage({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -14,12 +65,26 @@ class HomePage extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Expanded(
-            child: Center(
-              child: Container(
-                width: 200,
-                height: 100,
-                color: Colors.grey[300],
-                child: const Center(child: Text('LOGO', style: TextStyle(fontSize: 40))),
+           child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Image.asset(
+                    'images/logoTR.png',
+                    width: 400,
+                    height: 200,
+                    fit: BoxFit.contain,
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Talk Ready',
+                    style: TextStyle(
+                      fontSize: 36,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF00568D),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -31,17 +96,34 @@ class HomePage extends StatelessWidget {
             ),
             child: Column(
               children: [
-                ElevatedButton(
-                  onPressed: () {},
+               ElevatedButton.icon(
+                    onPressed: () async {
+                      // First, attempt to sign in with Google
+                      UserCredential? user = await signInWithGoogle();
+
+                      // Then show loading screen if sign-in was successful
+                      if (user != null) {
+                        showLoadingScreen(context);
+
+                        // Check if context is still mounted before proceeding
+                        if (!context.mounted) return;
+
+                        // Hide loading screen and navigate
+                        hideLoadingScreen(context);
+                        Navigator.pushNamed(context, '/welcome');
+                      }
+                    },
+                  icon: const FaIcon(FontAwesomeIcons.google, color: Color(0xFF00568D)),
+                  label: const Text('Continue with Google', style: TextStyle(fontSize: 16)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.white,
                     foregroundColor: const Color(0xFF00568D),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(5),
                     ),
-                    padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 15),
+                    padding: const EdgeInsets.symmetric(vertical: 15),
+                    minimumSize: const Size(double.infinity, 0),
                   ),
-                  child: const Text('Continue with Google', style: TextStyle(fontSize: 16)),
                 ),
                 const SizedBox(height: 20),
                 const Row(
@@ -55,19 +137,21 @@ class HomePage extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 20),
-                ElevatedButton(
+                ElevatedButton.icon(
                   onPressed: () {
-                    Navigator.push(context, MaterialPageRoute(builder: (context) => const SignUpPage()));
+                    Navigator.pushNamed(context, '/signup');
                   },
+                  icon: const Icon(Icons.email, color: Color(0xFF00568D)),
+                  label: const Text('Continue with Email', style: TextStyle(fontSize: 16)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.white,
                     foregroundColor: const Color(0xFF00568D),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(5),
                     ),
-                    padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 15),
+                    padding: const EdgeInsets.symmetric(vertical: 15),
+                    minimumSize: const Size(double.infinity, 0),
                   ),
-                  child: const Text('Continue with Email', style: TextStyle(fontSize: 16)),
                 ),
                 const SizedBox(height: 10),
                 RichText(
@@ -82,7 +166,7 @@ class HomePage extends StatelessWidget {
                         style: const TextStyle(color: Colors.yellow, fontSize: 14, fontWeight: FontWeight.bold),
                         recognizer: TapGestureRecognizer()
                           ..onTap = () {
-                            Navigator.push(context, MaterialPageRoute(builder: (context) => const LoginPage()));
+                            Navigator.pushNamed(context, '/login');
                           },
                       ),
                     ],

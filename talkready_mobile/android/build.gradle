@@ -1,15 +1,33 @@
-allprojects {
+buildscript {
+    ext.kotlin_version = '2.1.0'
     repositories {
         google()
         mavenCentral()
     }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.7.2'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+        classpath 'com.google.gms:google-services:4.4.2'  // Use correct version
+    }
+}
+allprojects {
+    repositories {
+        google() // Add the google repository here
+        mavenCentral() // Add the mavenCentral repository here
+    }
+
+    configurations.all {
+        resolutionStrategy {
+            force "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
+            force "org.jetbrains.kotlin:kotlin-reflect:$kotlin_version"
+        }
+    }
 }
 
 rootProject.buildDir = "../build"
+
 subprojects {
     project.buildDir = "${rootProject.buildDir}/${project.name}"
-}
-subprojects {
     project.evaluationDependsOn(":app")
 }
 

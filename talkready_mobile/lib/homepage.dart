@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:math';
+import 'ai_bot.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -9,6 +10,23 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+   int _selectedIndex = 0; // Track the currently selected tab
+
+  // Callback for BottomNavigationBar item taps
+  void _onItemTapped(int index) {
+    if (index == 1) {
+      // Navigate to AI_Bot screen when "Conversation" is tapped
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const AIBotScreen()),
+      );
+    } else {
+      setState(() {
+        _selectedIndex = index; // Update the selected index for other tabs
+      });
+    }
+  }
+
   String? selectedSkill;
   final Map<String, double> skillPercentages = {
     'Fluency': 0.75,
@@ -167,18 +185,20 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
       ),
-      bottomNavigationBar: BottomNavigationBar(
+     bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
         selectedItemColor: const Color(0xFF00568D),
         unselectedItemColor: Colors.grey,
+        currentIndex: _selectedIndex, // Bind the selected index
+        onTap: _onItemTapped, // Handle tab taps
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-          BottomNavigationBarItem(icon: Icon(Icons.rocket_launch), label: 'Launch'),
-          BottomNavigationBarItem(icon: Icon(Icons.book), label: 'Book'),
-          BottomNavigationBarItem(icon: Icon(Icons.note), label: 'Note'),
-          BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Settings'),
-        ],
-      ),
+          BottomNavigationBarItem(icon: Icon(Icons.chat), label: 'Conversation'),
+          BottomNavigationBarItem(icon: Icon(Icons.book), label: 'Resources'),
+          BottomNavigationBarItem(icon: Icon(Icons.library_books), label: 'Journal'),
+          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),// Replaced settings with person (profile)
+  ],
+),
     );
   }
 }
