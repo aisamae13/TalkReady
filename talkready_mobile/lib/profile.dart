@@ -35,6 +35,7 @@ class _ProfilePageState extends State<ProfilePage> {
   String? _learningPreference;
   String? _desiredAccent;
   String? _profilePicBase64; // Store base64 string from Firestore
+  bool? _profilePicSkipped;
 
   int _selectedIndex = 4; // Default to Profile (index 4) since this is ProfilePage
 
@@ -77,6 +78,7 @@ class _ProfilePageState extends State<ProfilePage> {
               _learningPreference = onboardingData['learningPreference'];
               _desiredAccent = onboardingData['desiredAccent'];
               _profilePicBase64 = onboardingData['profilePicBase64'] as String?; // Fetch base64 string
+              _profilePicSkipped = onboardingData['profilePicSkipped'] as bool?;
               _isLoading = false;
             });
           } else {
@@ -235,8 +237,15 @@ class _ProfilePageState extends State<ProfilePage> {
           }
           final profilePicBase64 = base64Encode(base64Image);
 
-          await _firestore.collection('users').doc(user.uid).update({
+         await _firestore.collection('users').doc(user.uid).update({
             'onboarding.profilePicBase64': profilePicBase64, // Save the base64 string in Firestore
+            'onboarding.profilePicSkipped': false, // Indicate a profile picture was uploaded
+          });
+
+          setState(() {
+            _profilePicBase64 = profilePicBase64;
+            _profilePicSkipped = false;
+            _isLoading = false;
           });
 
           setState(() {
@@ -343,12 +352,17 @@ class _ProfilePageState extends State<ProfilePage> {
                                     ),
                                   ],
                                 ),
-                                child: CircleAvatar(
+                               child: CircleAvatar(
                                   radius: 70, // Kept at 70 for larger avatar size
                                   backgroundImage: _profilePicBase64 != null
                                       ? MemoryImage(base64Decode(_profilePicBase64!)) as ImageProvider
                                       : null, // Display base64-decoded image if available
-                                  backgroundColor: _profilePicBase64 == null ? Colors.grey[300] : null, // Grey placeholder if no image
+                                  backgroundColor: _profilePicBase64 == null && _profilePicSkipped == true
+                                      ? null // No background color if skipped (person icon will handle this)
+                                      : Colors.grey[300], // Grey placeholder if no image and not skipped
+                                  child: _profilePicBase64 == null && _profilePicSkipped == true
+                                      ? Icon(Icons.person, size: 70, color: Colors.grey[600]) // Person icon if skipped
+                                      : null, // No child if image exists or placeholder is used
                                 ),
                               ),
                             ),
@@ -504,7 +518,7 @@ class _ProfilePageState extends State<ProfilePage> {
         onTap: _onItemTapped, // Handle tab taps
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-          BottomNavigationBarItem(icon: Icon(Icons.chat), label: 'Conversation'),
+          BottomNavigationBarItem(icon: Icon(Icons.chat), label: 'Chatbot'),
           BottomNavigationBarItem(icon: Icon(Icons.book), label: 'Courses'),
           BottomNavigationBarItem(icon: Icon(Icons.library_books), label: 'Journal'),
           BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),

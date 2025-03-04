@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:talkready_mobile/welcome_page.dart';
 
 // Create a reusable LoadingScreen widget
 class LoadingScreen extends StatelessWidget {
@@ -35,7 +34,7 @@ void showLoadingScreen(BuildContext context) {
   showDialog(
     context: context,
     barrierDismissible: false,
-    builder: (BuildContext context) => const WelcomePage(),
+    builder: (BuildContext context) => const LoadingScreen(), // Show LoadingScreen, not WelcomePage
   );
 }
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:talkready_mobile/homepage.dart';
 import 'firebase_options.dart'; // Ensure this file is generated via Firebase CLI
 import 'landingpage.dart';
 import 'loginpage.dart';
@@ -45,6 +46,7 @@ class MyApp extends StatelessWidget {
         '/': (context) => const LandingPage(),
         '/login': (context) => LoginPage(),
         '/welcome': (context) => const WelcomePage(),
+        '/homepage': (context) => const HomePage(),
         '/signup': (context) => const SignUpPage(),
         '/forgot-password': (context) => const ForgotPasswordPage(),
       },

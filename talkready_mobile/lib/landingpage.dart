@@ -5,47 +5,36 @@ import 'package:flutter/material.dart';
 import 'loading_screen.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
+
 Future<UserCredential?> signInWithGoogle() async {
   try {
     if (kDebugMode) {
       debugPrint('Starting Google Sign-In');
     }
 
-    // Initialize GoogleSignIn
     final GoogleSignIn googleSignIn = GoogleSignIn(scopes: ['email']);
-
-    // Sign out muna para i-clear ang cached account
     await googleSignIn.signOut();
 
-    // Trigger the Google sign-in process na may picker
     final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
 
     if (googleUser == null) {
       if (kDebugMode) {
         debugPrint('User canceled the sign-in');
       }
-      return null; // User canceled the login
+      return null;
     }
 
     if (kDebugMode) {
       debugPrint('Signed in as: ${googleUser.email}');
     }
 
-    // Get authentication details
     final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
 
-    if (kDebugMode) {
-      debugPrint('Access Token: ${googleAuth.accessToken}');
-      debugPrint('ID Token: ${googleAuth.idToken}');
-    }
-
-    // Create a credential for Firebase
     final OAuthCredential credential = GoogleAuthProvider.credential(
       accessToken: googleAuth.accessToken,
       idToken: googleAuth.idToken,
     );
 
-    // Sign in to Firebase
     return await FirebaseAuth.instance.signInWithCredential(credential);
   } catch (e) {
     if (kDebugMode) {
@@ -54,6 +43,7 @@ Future<UserCredential?> signInWithGoogle() async {
     return null;
   }
 }
+
 class LandingPage extends StatelessWidget {
   const LandingPage({super.key});
 
@@ -65,7 +55,7 @@ class LandingPage extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Expanded(
-           child: Center(
+            child: Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -92,29 +82,92 @@ class LandingPage extends StatelessWidget {
             padding: const EdgeInsets.all(55),
             decoration: const BoxDecoration(
               color: Color(0xFF00568D),
-              borderRadius: BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20)),
+              borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(20), topRight: Radius.circular(20)),
             ),
             child: Column(
               children: [
-               ElevatedButton.icon(
-                    onPressed: () async {
-                      // First, attempt to sign in with Google
-                      UserCredential? user = await signInWithGoogle();
+                ElevatedButton.icon(
+                  onPressed: () async {
+                    if (kDebugMode) {
+                      debugPrint('Button pressed, showing loading screen');
+                    }
+                    // Show loading screen immediately when button is pressed
+                    showLoadingScreen(context);
 
-                      // Then show loading screen if sign-in was successful
-                      if (user != null) {
-                        showLoadingScreen(context);
+                    // Attempt to sign in with Google
+                    UserCredential? userCredential = await signInWithGoogle();
 
-                        // Check if context is still mounted before proceeding
+                    if (!context.mounted) {
+                      if (kDebugMode) {
+                        debugPrint('Context not mounted after sign-in');
+                      }
+                      hideLoadingScreen(context);
+                      return;
+                    }
+
+                    if (userCredential != null) {
+                      try {
+                        // Check if this is a new user
+                        bool isNewUser =
+                            userCredential.additionalUserInfo?.isNewUser ??
+                                true;
+
+                        if (kDebugMode) {
+                          debugPrint('Is new user: $isNewUser');
+                          debugPrint('User email: ${userCredential.user?.email}');
+                        }
+
+                        // Hide loading screen before navigation
+                        hideLoadingScreen(context);
+
+                        if (!context.mounted) {
+                          if (kDebugMode) {
+                            debugPrint('Context not mounted before navigation');
+                          }
+                          return;
+                        }
+
+                        // Navigate based on user status
+                        if (isNewUser) {
+                          if (kDebugMode) {
+                            debugPrint('Navigating to /welcome');
+                          }
+                          Navigator.pushNamed(context, '/welcome');
+                        } else {
+                          if (kDebugMode) {
+                            debugPrint('Navigating to /homepage');
+                          }
+                          Navigator.pushNamed(context, '/homepage');
+                        }
+                      } catch (e) {
                         if (!context.mounted) return;
 
-                        // Hide loading screen and navigate
                         hideLoadingScreen(context);
-                        Navigator.pushNamed(context, '/welcome');
+                        if (kDebugMode) {
+                          debugPrint('Error in try block: $e');
+                        }
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Error during sign-in: $e'),
+                            duration: const Duration(seconds: 3),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
                       }
-                    },
-                  icon: const FaIcon(FontAwesomeIcons.google, color: Color(0xFF00568D)),
-                  label: const Text('Continue with Google', style: TextStyle(fontSize: 16)),
+                    } else {
+                      if (context.mounted) {
+                        hideLoadingScreen(context);
+                      }
+                      if (kDebugMode) {
+                        debugPrint('Sign-in cancelled or failed');
+                      }
+                    }
+                  },
+                  icon: const FaIcon(FontAwesomeIcons.google,
+                      color: Color(0xFF00568D)),
+                  label: const Text('Continue with Google',
+                      style: TextStyle(fontSize: 16)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.white,
                     foregroundColor: const Color(0xFF00568D),
@@ -131,7 +184,8 @@ class LandingPage extends StatelessWidget {
                     Expanded(child: Divider(color: Colors.white, thickness: 1)),
                     Padding(
                       padding: EdgeInsets.symmetric(horizontal: 10),
-                      child: Text('OR', style: TextStyle(color: Colors.white, fontSize: 16)),
+                      child: Text('OR',
+                          style: TextStyle(color: Colors.white, fontSize: 16)),
                     ),
                     Expanded(child: Divider(color: Colors.white, thickness: 1)),
                   ],
@@ -142,7 +196,8 @@ class LandingPage extends StatelessWidget {
                     Navigator.pushNamed(context, '/signup');
                   },
                   icon: const Icon(Icons.email, color: Color(0xFF00568D)),
-                  label: const Text('Continue with Email', style: TextStyle(fontSize: 16)),
+                  label: const Text('Continue with Email',
+                      style: TextStyle(fontSize: 16)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.white,
                     foregroundColor: const Color(0xFF00568D),
@@ -163,7 +218,10 @@ class LandingPage extends StatelessWidget {
                       ),
                       TextSpan(
                         text: 'Log in',
-                        style: const TextStyle(color: Colors.yellow, fontSize: 14, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                            color: Colors.yellow,
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold),
                         recognizer: TapGestureRecognizer()
                           ..onTap = () {
                             Navigator.pushNamed(context, '/login');

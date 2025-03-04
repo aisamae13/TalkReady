@@ -1,14 +1,14 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:flutter/services.dart'; // For PlatformException
-import 'package:logger/logger.dart'; // If you’re using Logger
-import 'package:permission_handler/permission_handler.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image/image.dart' as img;
+import 'package:logger/logger.dart';
+import 'package:flutter/services.dart'; // For PlatformException
+import 'package:permission_handler/permission_handler.dart';
 import 'next_screen.dart';
 
 void main() {
@@ -211,58 +211,66 @@ class OnboardingScreenState extends State<OnboardingScreen> {
     } else if (currentQuestion.questionType == QuestionType.textInput) {
       return textResponses[_currentPage]?.isNotEmpty ?? false;
     } else if (currentQuestion.questionType == QuestionType.profilePic) {
-      return _profilePic != null; // Check if a profile picture is selected
+      // Allow skipping by returning true even if no profile picture is selected
+      return true; // User can skip this question without selecting a profile picture
     }
     return false; // Default case, though all questions are covered
   }
 
- Future<void> _saveOnboardingResponsesAndNavigate() async {
-  try {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      throw Exception('User not authenticated');
+  Future<void> _saveOnboardingResponsesAndNavigate() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        throw Exception('User not authenticated');
+      }
+
+      final Map<String, dynamic> responses = {
+        'englishLevel': selectedOptions[0] != null ? questions[0].options[selectedOptions[0]!].title : null,
+        'currentGoal': selectedOptions[1] != null ? questions[1].options[selectedOptions[1]!].title : null,
+        'learningPreference': selectedOptions[2] != null ? questions[2].options[selectedOptions[2]!].title : null,
+        'dailyPracticeGoal': selectedOptions[3] != null ? questions[3].options[selectedOptions[3]!].title : null,
+        'desiredAccent': selectedOptions[4] != null ? questions[4].options[selectedOptions[4]!].title : null,
+        'userName': textResponses[5] ?? '', // Adjusted index due to new question
+        'timestamp': FieldValue.serverTimestamp(),
+      };
+
+      if (_profilePic != null) {
+        _logger.i('Encoding profile picture to base64: ${_profilePic!.path}');
+        final imageBytes = await _profilePic!.readAsBytes();
+        final image = img.decodeImage(imageBytes)!;
+        final resizedImage = img.copyResize(image, width: 200);
+        final base64Image = img.encodePng(resizedImage);
+        if (base64Image.length > 1000000) { // 1 MB limit
+          _logger.e('Profile picture too large for Firestore (exceeds 1 MB)');
+          throw Exception('Profile picture is too large to store in Firestore');
+        }
+        responses['profilePicBase64'] = base64Encode(base64Image); // Store base64 string in Firestore
+        responses['profilePicSkipped'] = false;
+        _logger.i('Profile picture encoded successfully as base64');
+      } else {
+        _logger.w('No profile picture selected, skipping upload (user chose to skip)');
+        responses['profilePicBase64'] = null; // Explicitly set to null if skipped
+        responses['profilePicSkipped'] = true;
+      }
+
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .set({'onboarding': responses}, SetOptions(merge: true));
+
+      if (!mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => NextScreen(responses: responses)),
+      );
+    } catch (e) {
+      _logger.e('Error saving responses: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error saving responses: $e')),
+      );
     }
-
-    final Map<String, dynamic> responses = {
-      'englishLevel': selectedOptions[0] != null ? questions[0].options[selectedOptions[0]!].title : null,
-      'currentGoal': selectedOptions[1] != null ? questions[1].options[selectedOptions[1]!].title : null,
-      'learningPreference': selectedOptions[2] != null ? questions[2].options[selectedOptions[2]!].title : null,
-      'dailyPracticeGoal': selectedOptions[3] != null ? questions[3].options[selectedOptions[3]!].title : null,
-      'desiredAccent': selectedOptions[4] != null ? questions[4].options[selectedOptions[4]!].title : null,
-      'userName': textResponses[5] ?? '', // Adjusted index due to new question
-      'timestamp': FieldValue.serverTimestamp(),
-    };
-
-    if (_profilePic != null) {
-      _logger.i('Encoding profile picture to base64: ${_profilePic!.path}');
-      final imageBytes = await _profilePic!.readAsBytes();
-      final image = img.decodeImage(imageBytes)!;
-      final resizedImage = img.copyResize(image, width: 200); // Resize to reduce size (optional)
-      final base64Image = img.encodePng(resizedImage); // Encode as PNG (or JPEG for smaller size)
-      responses['profilePicBase64'] = base64Encode(base64Image); // Store base64 string in Firestore
-      _logger.i('Profile picture encoded successfully as base64');
-    } else {
-      _logger.w('No profile picture selected, skipping upload');
-    }
-
-    await FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .set({'onboarding': responses}, SetOptions(merge: true));
-
-    if (!mounted) return;
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => NextScreen(responses: responses)),
-    );
-  } catch (e) {
-    _logger.e('Error saving responses: $e');
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Error saving responses: $e')),
-    );
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -303,6 +311,7 @@ class OnboardingScreenState extends State<OnboardingScreen> {
                 return OnboardingPage(
                   question: question,
                   questionIndex: index,
+                  currentPage: _currentPage, // Pass the current page to OnboardingPage
                   selectedOptionIndex: selectedOptions[index],
                   textResponse: textResponses[index] ?? "",
                   profilePic: _profilePic, // Pass profile picture to OnboardingPage
@@ -368,6 +377,7 @@ class OnboardingScreenState extends State<OnboardingScreen> {
 class OnboardingPage extends StatelessWidget {
   final OnboardingQuestion question;
   final int questionIndex;
+  final int currentPage; // New parameter to access the current page
   final int? selectedOptionIndex;
   final String textResponse;
   final File? profilePic; // Store the selected profile picture
@@ -379,6 +389,7 @@ class OnboardingPage extends StatelessWidget {
     super.key,
     required this.question,
     required this.questionIndex,
+    required this.currentPage, // Added currentPage parameter
     required this.selectedOptionIndex,
     required this.textResponse,
     required this.profilePic,
@@ -490,19 +501,47 @@ class OnboardingPage extends StatelessWidget {
                     backgroundColor: profilePic == null ? Colors.grey[300] : null, // Grey placeholder if no image
                   ),
                   const SizedBox(height: 20),
-                  ElevatedButton(
-                    onPressed: onPickProfilePic,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: primaryColor,
-                      padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 8.0),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(5),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center, // Center the buttons horizontally
+                    children: [
+                      ElevatedButton(
+                        onPressed: onPickProfilePic,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: primaryColor,
+                          padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 8.0),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                        ),
+                        child: const Text(
+                          'Upload Profile Picture',
+                          style: TextStyle(fontSize: 16, color: Colors.white),
+                        ),
                       ),
-                    ),
-                    child: const Text(
-                      'Upload Profile Picture',
-                      style: TextStyle(fontSize: 16, color: Colors.white),
-                    ),
+                      const SizedBox(width: 10), // Add spacing between buttons
+                      TextButton(
+                        onPressed: () {
+                          // Skip the profile picture upload and proceed
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Profile picture skipped')),
+                          );
+                          // Optionally, you can directly proceed to the next question or finish
+                          final onboardingScreenState = context.findAncestorStateOfType<OnboardingScreenState>();
+                          if (onboardingScreenState != null && currentPage < questions.length - 1) {
+                            onboardingScreenState._pageController.nextPage(
+                              duration: const Duration(milliseconds: 300),
+                              curve: Curves.easeInOut,
+                            );
+                          } else if (onboardingScreenState != null && currentPage == questions.length - 1) {
+                            onboardingScreenState._saveOnboardingResponsesAndNavigate();
+                          }
+                        },
+                        child: const Text(
+                          'Skip',
+                          style: TextStyle(fontSize: 16, color: primaryColor),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
