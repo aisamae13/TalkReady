@@ -1,7 +1,14 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:flutter/services.dart'; // For PlatformException
+import 'package:logger/logger.dart'; // If you’re using Logger
+import 'package:permission_handler/permission_handler.dart';
+import 'package:image/image.dart' as img;
 import 'next_screen.dart';
 
 void main() {
@@ -31,7 +38,7 @@ class MyApp extends StatelessWidget {
   }
 }
 
-enum QuestionType { multipleChoice, textInput }
+enum QuestionType { multipleChoice, textInput, profilePic }
 
 class OnboardingOption {
   final String title;
@@ -87,7 +94,17 @@ List<OnboardingQuestion> questions = [
     ],
   ),
   OnboardingQuestion(
-    title: "Which accent do you want to achieve?",
+    title: "What is your daily practice goal?",
+    options: [
+      OnboardingOption(title: "5 min/day"),
+      OnboardingOption(title: "10 min/day"),
+      OnboardingOption(title: "15 min/day"),
+      OnboardingOption(title: "30 min/day"),
+      OnboardingOption(title: "60 min/day"),
+    ],
+  ),
+  OnboardingQuestion(
+    title: "What is your desired accent?",
     options: [
       OnboardingOption(title: "Neutral", description: "A clear, accent-free pronunciation."),
       OnboardingOption(title: "American 🇺🇸", description: "Standard American English accent."),
@@ -99,6 +116,10 @@ List<OnboardingQuestion> questions = [
     title: "What should I address you?",
     questionType: QuestionType.textInput,
     placeholder: "Enter your name",
+  ),
+  OnboardingQuestion(
+    title: "Upload your profile picture",
+    questionType: QuestionType.profilePic, // New question type for profile picture
   ),
 ];
 
@@ -115,6 +136,11 @@ class OnboardingScreenState extends State<OnboardingScreen> {
 
   List<int?> selectedOptions = List.filled(questions.length, null);
   Map<int, String> textResponses = {};
+  File? _profilePic; // Store the selected profile picture file
+
+  final ImagePicker _picker = ImagePicker(); // For image picking, now used
+
+  final Logger _logger = Logger(); // Initialize Logger
 
   @override
   void dispose() {
@@ -134,6 +160,49 @@ class OnboardingScreenState extends State<OnboardingScreen> {
     });
   }
 
+  Future<void> _pickProfilePic() async {
+    try {
+      _logger.i('Attempting to pick profile picture from gallery');
+      final pickedFile = await _picker.pickImage(source: ImageSource.gallery); // Use the _picker field
+      if (pickedFile != null) {
+        setState(() {
+          _profilePic = File(pickedFile.path);
+        });
+        _logger.i('Profile picture selected successfully: ${pickedFile.path}');
+      } else {
+        _logger.w('No image selected by user');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No image selected')),
+        );
+      }
+    } on PlatformException catch (e) {
+      _logger.e('Error picking profile picture: $e');
+      if (e.code == 'permission_denied' || e.code == 'permission_denied_never_ask') {
+        _logger.w('Storage permission denied, showing snackbar');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Storage permission is required to pick images. Please enable it in app settings.'),
+            action: SnackBarAction(
+              label: 'Settings',
+              onPressed: () {
+                openAppSettings(); // Open app settings for the user to grant permission manually
+              },
+            ),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error picking profile picture: $e')),
+        );
+      }
+    } catch (e) {
+      _logger.e('Unexpected error picking profile picture: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Unexpected error picking profile picture: $e')),
+      );
+    }
+  }
+
   // Check if the current question has a valid response
   bool _isCurrentQuestionAnswered() {
     final currentQuestion = questions[_currentPage];
@@ -141,43 +210,59 @@ class OnboardingScreenState extends State<OnboardingScreen> {
       return selectedOptions[_currentPage] != null;
     } else if (currentQuestion.questionType == QuestionType.textInput) {
       return textResponses[_currentPage]?.isNotEmpty ?? false;
+    } else if (currentQuestion.questionType == QuestionType.profilePic) {
+      return _profilePic != null; // Check if a profile picture is selected
     }
     return false; // Default case, though all questions are covered
   }
 
-  Future<void> _saveOnboardingResponsesAndNavigate() async {
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) {
-        throw Exception('User not authenticated');
-      }
-
-      final Map<String, dynamic> responses = {
-        'englishLevel': selectedOptions[0] != null ? questions[0].options[selectedOptions[0]!].title : null,
-        'currentGoal': selectedOptions[1] != null ? questions[1].options[selectedOptions[1]!].title : null,
-        'learningPreference': selectedOptions[2] != null ? questions[2].options[selectedOptions[2]!].title : null,
-        'desiredAccent': selectedOptions[3] != null ? questions[3].options[selectedOptions[3]!].title : null,
-        'userName': textResponses[4] ?? '',
-        'timestamp': FieldValue.serverTimestamp(),
-      };
-
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .set({'onboarding': responses}, SetOptions(merge: true));
-
-      if (!mounted) return;
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => NextScreen(responses: responses)),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error saving responses: $e')),
-      );
+ Future<void> _saveOnboardingResponsesAndNavigate() async {
+  try {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw Exception('User not authenticated');
     }
+
+    final Map<String, dynamic> responses = {
+      'englishLevel': selectedOptions[0] != null ? questions[0].options[selectedOptions[0]!].title : null,
+      'currentGoal': selectedOptions[1] != null ? questions[1].options[selectedOptions[1]!].title : null,
+      'learningPreference': selectedOptions[2] != null ? questions[2].options[selectedOptions[2]!].title : null,
+      'dailyPracticeGoal': selectedOptions[3] != null ? questions[3].options[selectedOptions[3]!].title : null,
+      'desiredAccent': selectedOptions[4] != null ? questions[4].options[selectedOptions[4]!].title : null,
+      'userName': textResponses[5] ?? '', // Adjusted index due to new question
+      'timestamp': FieldValue.serverTimestamp(),
+    };
+
+    if (_profilePic != null) {
+      _logger.i('Encoding profile picture to base64: ${_profilePic!.path}');
+      final imageBytes = await _profilePic!.readAsBytes();
+      final image = img.decodeImage(imageBytes)!;
+      final resizedImage = img.copyResize(image, width: 200); // Resize to reduce size (optional)
+      final base64Image = img.encodePng(resizedImage); // Encode as PNG (or JPEG for smaller size)
+      responses['profilePicBase64'] = base64Encode(base64Image); // Store base64 string in Firestore
+      _logger.i('Profile picture encoded successfully as base64');
+    } else {
+      _logger.w('No profile picture selected, skipping upload');
+    }
+
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .set({'onboarding': responses}, SetOptions(merge: true));
+
+    if (!mounted) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => NextScreen(responses: responses)),
+    );
+  } catch (e) {
+    _logger.e('Error saving responses: $e');
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Error saving responses: $e')),
+    );
   }
+}
 
   @override
   Widget build(BuildContext context) {
@@ -220,8 +305,10 @@ class OnboardingScreenState extends State<OnboardingScreen> {
                   questionIndex: index,
                   selectedOptionIndex: selectedOptions[index],
                   textResponse: textResponses[index] ?? "",
+                  profilePic: _profilePic, // Pass profile picture to OnboardingPage
                   onOptionSelected: (optionIndex) => _onOptionSelected(index, optionIndex),
                   onTextChanged: (value) => _onTextChanged(index, value),
+                  onPickProfilePic: _pickProfilePic, // Pass profile picture picking function
                 );
               },
             ),
@@ -283,8 +370,10 @@ class OnboardingPage extends StatelessWidget {
   final int questionIndex;
   final int? selectedOptionIndex;
   final String textResponse;
+  final File? profilePic; // Store the selected profile picture
   final Function(int) onOptionSelected;
   final ValueChanged<String> onTextChanged;
+  final VoidCallback onPickProfilePic; // Function to pick profile picture
 
   const OnboardingPage({
     super.key,
@@ -292,8 +381,10 @@ class OnboardingPage extends StatelessWidget {
     required this.questionIndex,
     required this.selectedOptionIndex,
     required this.textResponse,
+    required this.profilePic,
     required this.onOptionSelected,
     required this.onTextChanged,
+    required this.onPickProfilePic,
   });
 
   @override
@@ -384,6 +475,36 @@ class OnboardingPage extends StatelessWidget {
                     borderSide: const BorderSide(color: primaryColor, width: 2),
                   ),
                 ),
+              ),
+            )
+          else if (question.questionType == QuestionType.profilePic)
+            Padding(
+              padding: const EdgeInsets.only(top: 10.0),
+              child: Column(
+                children: [
+                  CircleAvatar(
+                    radius: 50,
+                    backgroundImage: profilePic != null
+                        ? FileImage(profilePic!) as ImageProvider
+                        : null, // Display the selected profile picture if available
+                    backgroundColor: profilePic == null ? Colors.grey[300] : null, // Grey placeholder if no image
+                  ),
+                  const SizedBox(height: 20),
+                  ElevatedButton(
+                    onPressed: onPickProfilePic,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryColor,
+                      padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 8.0),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(5),
+                      ),
+                    ),
+                    child: const Text(
+                      'Upload Profile Picture',
+                      style: TextStyle(fontSize: 16, color: Colors.white),
+                    ),
+                  ),
+                ],
               ),
             ),
         ],

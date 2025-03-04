@@ -1,6 +1,49 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:math';
 import 'ai_bot.dart';
+import 'profile.dart'; // Assume you have this from the previous response
+import 'package:logger/logger.dart'; // Add this package for logging
+
+// Placeholder pages for Courses and Journal
+class CoursesPage extends StatelessWidget {
+  const CoursesPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Courses'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        foregroundColor: const Color(0xFF00568D),
+      ),
+      body: const Center(
+        child: Text('Courses Page Content Here', style: TextStyle(color: Color(0xFF00568D))),
+      ),
+    );
+  }
+}
+
+class JournalPage extends StatelessWidget {
+  const JournalPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Journal'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        foregroundColor: const Color(0xFF00568D),
+      ),
+      body: const Center(
+        child: Text('Journal Page Content Here', style: TextStyle(color: Color(0xFF00568D))),
+      ),
+    );
+  }
+}
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -10,31 +53,60 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-   int _selectedIndex = 0; // Track the currently selected tab
-
-  // Callback for BottomNavigationBar item taps
-  void _onItemTapped(int index) {
-    if (index == 1) {
-      // Navigate to AI_Bot screen when "Conversation" is tapped
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => const AIBotScreen()),
-      );
-    } else {
-      setState(() {
-        _selectedIndex = index; // Update the selected index for other tabs
-      });
-    }
-  }
-
+  int _selectedIndex = 0; // Track the currently selected tab
   String? selectedSkill;
   final Map<String, double> skillPercentages = {
-    'Fluency': 0.75,
-    'Grammar': 0.82,
-    'Pronunciation': 0.65,
-    'Vocabulary': 0.90,
-    'Interaction': 0.70,
+    'Fluency': 0.0,
+    'Grammar': 0.0,
+    'Pronunciation': 0.0,
+    'Vocabulary': 0.0,
+    'Interaction': 0.0,
   };
+
+  // Initialize logger
+  final Logger logger = Logger();
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchProgress(); // Load progress when the page initializes
+  }
+
+  Future<void> _fetchProgress() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      logger.e('No user logged in');
+      return;
+    }
+
+    try {
+      DocumentSnapshot doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      Map<String, dynamic>? userData = doc.data() as Map<String, dynamic>?;
+      if (userData != null && userData.containsKey('progress')) {
+        Map<String, dynamic> progress = userData['progress'];
+        setState(() {
+          skillPercentages['Fluency'] = (progress['Fluency'] as num?)?.toDouble() ?? 0.0;
+          skillPercentages['Grammar'] = (progress['Grammar'] as num?)?.toDouble() ?? 0.0;
+          skillPercentages['Pronunciation'] = (progress['Pronunciation'] as num?)?.toDouble() ?? 0.0;
+          skillPercentages['Vocabulary'] = (progress['Vocabulary'] as num?)?.toDouble() ?? 0.0;
+          skillPercentages['Interaction'] = (progress['Interaction'] as num?)?.toDouble() ?? 0.0;
+        });
+        logger.i('Fetched progress for homepage: $skillPercentages');
+      } else {
+        logger.i('No progress data found, using defaults');
+      }
+    } catch (e) {
+      logger.e('Error fetching progress for homepage: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading progress: $e')),
+        );
+      }
+    }
+  }
 
   double get overallPercentage {
     return skillPercentages.values.reduce((a, b) => a + b) / skillPercentages.length;
@@ -44,6 +116,82 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       selectedSkill = skill;
     });
+  }
+
+  void _onItemTapped(int index) {
+    logger.d('Tapped navigation item. Index: $index, currentIndex: $_selectedIndex');
+    setState(() {
+      _selectedIndex = index; // Update the selected index for visual feedback
+    });
+
+    switch (index) {
+      case 1: // Conversation (AIBotScreen)
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const AIBotScreen()),
+        ).then((progress) async {
+          logger.d('Returned from AIBotScreen with progress: $progress');
+          if (progress != null && progress is Map<String, double>) {
+            setState(() {
+              skillPercentages['Fluency'] = progress['Fluency'] ?? skillPercentages['Fluency']!;
+              skillPercentages['Grammar'] = progress['Grammar'] ?? skillPercentages['Grammar']!;
+              skillPercentages['Pronunciation'] = progress['Pronunciation'] ?? skillPercentages['Pronunciation']!;
+              skillPercentages['Vocabulary'] = progress['Vocabulary'] ?? skillPercentages['Vocabulary']!;
+              skillPercentages['Interaction'] = progress['Interaction'] ?? skillPercentages['Interaction']!;
+            });
+            await _saveProgressToFirestore();
+            await _fetchProgress();
+            logger.i('Updated skillPercentages: $skillPercentages');
+          }
+        });
+        break;
+      case 2: // Courses
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const CoursesPage()),
+        );
+        break;
+      case 3: // Journal
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const JournalPage()),
+        );
+        break;
+      case 4: // Profile
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => ProfilePage()),
+        ).then((_) {
+          // Optionally handle any data returned from ProfilePage
+          logger.d('Returned from ProfilePage');
+        });
+        break;
+      // Home (index 0) stays on the current page, no navigation needed
+      default:
+        break;
+    }
+  }
+
+  Future<void> _saveProgressToFirestore() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      logger.e('No user logged in');
+      return;
+    }
+
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'progress': skillPercentages,
+      }, SetOptions(merge: true));
+      logger.i('Progress saved to Firestore from homepage: $skillPercentages');
+    } catch (e) {
+      logger.e('Error saving progress to Firestore from homepage: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error saving progress: $e')),
+        );
+      }
+    }
   }
 
   @override
@@ -65,9 +213,10 @@ class _HomePageState extends State<HomePage> {
               const Text(
                 'Speaking Level Test',
                 style: TextStyle(
-                    fontSize: 24,
-                    color: Color(0xFF00568D),
-                    fontWeight: FontWeight.bold),
+                  fontSize: 24,
+                  color: Color(0xFF00568D),
+                  fontWeight: FontWeight.bold,
+                ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 10),
@@ -78,66 +227,64 @@ class _HomePageState extends State<HomePage> {
               ),
               const SizedBox(height: 20),
               Stack(
-                      alignment: Alignment.center,
-                      children: [
-                     PentagonGraph(
-                      size: 200,
-                      progress: overallPercentage,
-                      selectedSkill: selectedSkill,  // Pass the selected skill
-                    ),
+                alignment: Alignment.center,
+                children: [
+                  PentagonGraph(
+                    size: 200,
+                    progress: overallPercentage,
+                    selectedSkill: selectedSkill, // Pass the selected skill
+                  ),
                   Text(
                     '${((selectedSkill != null ? skillPercentages[selectedSkill]! : overallPercentage) * 100).toStringAsFixed(0)}%',
                     style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.grey[700]),
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[700],
+                    ),
                   ),
                 ],
               ),
               const SizedBox(height: 20),
-            Wrap(
-                  alignment: WrapAlignment.center,
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: skillPercentages.keys.map((skill) {
-                    final Map<String, Color> skillColors = {
-                      "Grammar": const Color(0xFFD8F6F7), // Light Cyan
-                      "Fluency": const Color(0xFFDEE3FF), // Light Blue
-                      "Interaction": const Color(0xFFFFD6D6), // Light Pink
-                      "Pronunciation": const Color(0xFFFFF0C3), // Light Yellow
-                      "Vocabulary": const Color(0xFFE0FFD6), // Light Green
-                    };
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 10,
+                runSpacing: 10,
+                children: skillPercentages.keys.map((skill) {
+                  final Map<String, Color> skillColors = {
+                    "Grammar": const Color(0xFFD8F6F7), // Light Cyan
+                    "Fluency": const Color(0xFFDEE3FF), // Light Blue
+                    "Interaction": const Color(0xFFFFD6D6), // Light Pink
+                    "Pronunciation": const Color(0xFFFFF0C3), // Light Yellow
+                    "Vocabulary": const Color(0xFFE0FFD6), // Light Green
+                  };
 
-                    bool isSelected = selectedSkill == skill;
+                  bool isSelected = selectedSkill == skill;
 
-                    return InkWell(
-                      onTap: () {
-                        setState(() {
-                          selectedSkill = skill;
-                        });
-                      },
-                      borderRadius: BorderRadius.circular(20),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? skillColors[skill]?.withOpacity(0.5) // Darker shade if selected
-                              : skillColors[skill] ?? Colors.grey,
-                          borderRadius: BorderRadius.circular(20),
-
-                        ),
-                        child: Text(
-                          skill,
-                          style: const TextStyle(
-                            color: Colors.black,
-                            fontWeight: FontWeight.w500,
-                            fontSize: 16,
-                          ),
+                  return InkWell(
+                    onTap: () {
+                      _handleSkillSelected(skill);
+                    },
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? skillColors[skill]?.withOpacity(0.5) // Darker shade if selected
+                            : skillColors[skill] ?? Colors.grey,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        skill,
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontWeight: FontWeight.w500,
+                          fontSize: 16,
                         ),
                       ),
-                    );
-                  }).toList(),
-                ),
+                    ),
+                  );
+                }).toList(),
+              ),
               const SizedBox(height: 20),
               const Text(
                 'AI-Powered Vocabulary Booster',
@@ -158,14 +305,14 @@ class _HomePageState extends State<HomePage> {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 5),
-               Image.asset(
-              'images/ai_robot.gif',
-              width: 250,
-              height: 250,
-            ),
-            SizedBox(
+              Image.asset(
+                'images/ai_robot.gif',
                 width: 250,
-                height: 40, // Palitan mo ng gusto mong width
+                height: 250,
+              ),
+              SizedBox(
+                width: 250,
+                height: 40, // Adjust height as needed
                 child: ElevatedButton(
                   onPressed: () {
                     // Add action for the Start Practice button
@@ -185,7 +332,7 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
       ),
-     bottomNavigationBar: BottomNavigationBar(
+      bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
         selectedItemColor: const Color(0xFF00568D),
         unselectedItemColor: Colors.grey,
@@ -194,11 +341,11 @@ class _HomePageState extends State<HomePage> {
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
           BottomNavigationBarItem(icon: Icon(Icons.chat), label: 'Conversation'),
-          BottomNavigationBarItem(icon: Icon(Icons.book), label: 'Resources'),
+          BottomNavigationBarItem(icon: Icon(Icons.book), label: 'Courses'),
           BottomNavigationBarItem(icon: Icon(Icons.library_books), label: 'Journal'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),// Replaced settings with person (profile)
-  ],
-),
+          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
+        ],
+      ),
     );
   }
 }
@@ -251,8 +398,8 @@ class PentagonPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width/2, size.height/2);
-    final radius = size.width/2;
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2;
 
     // Draw base tiers
     final basePaint = Paint()
@@ -261,7 +408,7 @@ class PentagonPainter extends CustomPainter {
       ..strokeWidth = 1.5;
 
     for (int i = 5; i > 0; i--) {
-      _drawPentagon(canvas, center, radius * (i/5), basePaint);
+      _drawPentagon(canvas, center, radius * (i / 5), basePaint);
     }
 
     // Draw progress fill with selected color or default grey
@@ -290,9 +437,9 @@ class PentagonPainter extends CustomPainter {
 
     // Draw outline
     final outlinePaint = Paint()
-      ..color = skillColor ?? greyColor  // Use skill color for outline too
+      ..color = skillColor ?? greyColor // Use skill color for outline too
       ..style = PaintingStyle.stroke
-      ..strokeWidth = (2.5);
+      ..strokeWidth = 2.5;
     _drawPentagon(canvas, center, radius, outlinePaint);
   }
 

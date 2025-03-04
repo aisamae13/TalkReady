@@ -38,6 +38,23 @@ dependencies:
   cloud_firestore: ^5.2.1
   font_awesome_flutter: ^10.8.0
   country_flags: ^2.1.0
+  speech_to_text: ^7.0.0
+  flutter_tts: ^4.2.2  # For text-to-speech
+  http: ^1.1.2  # For API calls (optional, for evaluation)
+  path_provider: ^2.1.1
+  flutter_dotenv: ^5.2.1
+  flutter_sound: ^9.2.13
+  permission_handler: ^11.3.1
+  logger: ^2.0.2+1
+  provider: ^6.0.5
+  audioplayers: ^5.2.1
+  shared_preferences: ^2.2.2
+  image_picker: ^1.1.2
+  firebase_storage: ^12.4.3
+  image: ^4.5.3
+
+  # Optional: For advanced audio processing (if needed for Azure Speech API)
+  # Note: Azure Speech API may require a custom package or platform-specific integration
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
@@ -70,6 +87,7 @@ flutter:
      - images/ai_robot.gif
      - images/logoTR.png
      - images/get-plan.png
+     - .env
 
 
   # An image asset can refer to one or more resolution-specific "variants", see

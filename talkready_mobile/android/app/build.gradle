@@ -5,33 +5,56 @@ plugins {
     id "com.google.gms.google-services"
 }
 
+// Load local.properties
 def localProperties = new Properties()
 def localPropertiesFile = rootProject.file('local.properties')
 if (localPropertiesFile.exists()) {
     localPropertiesFile.withReader('UTF-8') { reader ->
         localProperties.load(reader)
     }
+} else {
+    throw new IllegalStateException("local.properties not found. Please create it in the android/ directory.")
+}
+
+def flutterRoot = localProperties.getProperty('flutter.sdk')
+if (flutterRoot == null) {
+    throw new IllegalStateException("Flutter SDK not found. Define location with flutter.sdk in the local.properties file.")
+}
+
+// Load keystore.properties
+def keystorePropertiesFile = rootProject.file("key.properties")
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+} else {
+    throw new IllegalStateException("key.properties not found at ${keystorePropertiesFile.path}")
 }
 
 android {
-    compileSdkVersion 34
+    compileSdkVersion 35
     ndkVersion "27.0.12077973"
-
-    // Add explicit namespace declaration
     namespace 'com.example.talkready_mobile'
+
+    signingConfigs {
+        release {
+            keyAlias keystoreProperties['keyAlias']
+            keyPassword keystoreProperties['keyPassword']
+            storeFile file(keystoreProperties['storeFile'])
+            storePassword keystoreProperties['storePassword']
+        }
+    }
 
     defaultConfig {
         applicationId "com.example.talkready_mobile"
-        minSdk 23
+        minSdk 24
         targetSdk 34
-
-        // Safely access versionCode and versionName from local.properties
-        versionCode localProperties.containsKey("flutter.versionCode") ? localProperties["flutter.versionCode"].toInteger() : 1
-        versionName localProperties.containsKey("flutter.versionName") ? localProperties["flutter.versionName"] : "1.0"
+        versionCode localProperties.getProperty('flutter.versionCode')?.toInteger() ?: 1
+        versionName localProperties.getProperty('flutter.versionName') ?: "1.0"
     }
 
     buildTypes {
         release {
+            signingConfig signingConfigs.release
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
@@ -53,25 +76,16 @@ flutter {
 }
 
 dependencies {
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
-    // Add explicit Flutter engine dependency
-    debugImplementation "io.flutter:flutter_embedding_debug:1.0.0-${localProperties['flutter.versionName']}"
-    profileImplementation "io.flutter:flutter_embedding_profile:1.0.0-${localProperties['flutter.versionName']}"
-    releaseImplementation "io.flutter:flutter_embedding_release:1.0.0-${localProperties['flutter.versionName']}"
-
-    // Firebase dependencies (BOM version)
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.1.0"
     implementation platform("com.google.firebase:firebase-bom:33.9.0")
     implementation "com.google.firebase:firebase-analytics"
-    implementation 'com.google.firebase:firebase-auth'
-    implementation 'com.google.firebase:firebase-firestore'
-
-    // AndroidX & Material Components
+    implementation "com.google.firebase:firebase-auth"
+    implementation "com.google.firebase:firebase-firestore"
     implementation "androidx.core:core-ktx:1.12.0"
     implementation "androidx.appcompat:appcompat:1.6.1"
     implementation "com.google.android.material:material:1.9.0"
 }
 
-// Ensure proper dependency resolution
 configurations.all {
     resolutionStrategy {
         force "androidx.core:core-ktx:1.12.0"
