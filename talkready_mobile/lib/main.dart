@@ -3,12 +3,13 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:talkready_mobile/homepage.dart';
 import 'firebase_options.dart'; // Ensure this file is generated via Firebase CLI
+import 'package:talkready_mobile/courses_page.dart';
+import 'package:talkready_mobile/journal_page.dart';
 import 'landingpage.dart';
 import 'loginpage.dart';
 import 'welcome_page.dart';
 import 'signup_page.dart';
 import 'forgotpass.dart';
-
 
 void main() async {
   // Ensure widgets are initialized for async operations
@@ -37,6 +38,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      debugShowCheckedModeBanner: false,
       title: 'TalkReady',
       theme: ThemeData(
         primarySwatch: Colors.blue,
@@ -49,6 +51,8 @@ class MyApp extends StatelessWidget {
         '/homepage': (context) => const HomePage(),
         '/signup': (context) => const SignUpPage(),
         '/forgot-password': (context) => const ForgotPasswordPage(),
+        '/courses': (context) => const CoursesPage(), // ✅ Add this line
+        '/journal': (context) => const ProgressTrackerPage(), // ✅ Add this line
       },
     );
   }
