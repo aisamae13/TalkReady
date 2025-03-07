@@ -53,7 +53,7 @@ class _AIBotScreenState extends State<AIBotScreen> {
   bool _hasStartedListening = false;
   bool _isTyping = false;
   bool _isInSimulation = false; // Track simulation mode
-  static const String _ttsServerUrl = 'https://0215-103-149-37-102.ngrok-free.app/tts';
+  static const String _ttsServerUrl = 'https://bbc1-103-149-37-102.ngrok-free.app/tts';
   bool _isRecorderInitialized = false;
   final TextEditingController _textController = TextEditingController();
   final Map<String, double> _sessionProgress = {
@@ -329,7 +329,7 @@ void _resetTimerAndContinue() {
       }
     } else {
       logger.w('Cannot start listening. Conditions not met.');
-      _showSnackBar('Please stop typing or wait before starting to listen.');
+      _showSnackBar('Time’s up! You can’t practice anymore.');
     }
   }
 
@@ -583,7 +583,7 @@ void _resetTimerAndContinue() {
         body: jsonEncode({
           'model': 'gpt-4o-mini',
           'messages': messages,
-          'max_tokens': 150,
+          'max_tokens': 200,
           'temperature': 0.7,
         }),
       );
@@ -648,13 +648,13 @@ String _processText(String text) {
       setState(() => _isProcessingTTS = true); // Start processing indicator
       logger.d('Generating AI response for: $userInput');
       String aiResponse = await _getOpenAIResponse(
-        'You are an advanced English-speaking assistant designed to help non-native speakers improve their spoken English skills. Based on user’s speaking level and $_accentLocale, You provide clear, friendly, and constructive feedback while encouraging natural and confident communication.',
+        'You are an advanced English-speaking assistant named TalkReady. You are designed to help non-native speakers improve their spoken English skills. Based on user’s speaking level and $_accentLocale, You provide clear, friendly, and constructive feedback while encouraging natural and confident communication.',
         isSimulation: false,
         userInput: userInput,
       );
       setState(() {
         _messages.add({'text': aiResponse, 'isUser': false});
-        _isProcessingTTS = false; // Stop processing indicator after response
+        _isProcessingTTS = false;
         _isTyping = false;
       });
       logger.i('AI message added: $aiResponse');
