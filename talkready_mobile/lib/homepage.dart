@@ -5,45 +5,10 @@ import 'dart:math';
 import 'ai_bot.dart';
 import 'profile.dart'; // Assume you have this from the previous response
 import 'package:logger/logger.dart'; // Add this package for logging
+import 'courses_page.dart';
+import 'journal_page.dart';
 
 // Placeholder pages for Courses and Journal
-class CoursesPage extends StatelessWidget {
-  const CoursesPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Courses'),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        foregroundColor: const Color(0xFF00568D),
-      ),
-      body: const Center(
-        child: Text('Courses Page Content Here', style: TextStyle(color: Color(0xFF00568D))),
-      ),
-    );
-  }
-}
-
-class JournalPage extends StatelessWidget {
-  const JournalPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Journal'),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        foregroundColor: const Color(0xFF00568D),
-      ),
-      body: const Center(
-        child: Text('Journal Page Content Here', style: TextStyle(color: Color(0xFF00568D))),
-      ),
-    );
-  }
-}
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -88,11 +53,16 @@ class _HomePageState extends State<HomePage> {
       if (userData != null && userData.containsKey('progress')) {
         Map<String, dynamic> progress = userData['progress'];
         setState(() {
-          skillPercentages['Fluency'] = (progress['Fluency'] as num?)?.toDouble() ?? 0.0;
-          skillPercentages['Grammar'] = (progress['Grammar'] as num?)?.toDouble() ?? 0.0;
-          skillPercentages['Pronunciation'] = (progress['Pronunciation'] as num?)?.toDouble() ?? 0.0;
-          skillPercentages['Vocabulary'] = (progress['Vocabulary'] as num?)?.toDouble() ?? 0.0;
-          skillPercentages['Interaction'] = (progress['Interaction'] as num?)?.toDouble() ?? 0.0;
+          skillPercentages['Fluency'] =
+              (progress['Fluency'] as num?)?.toDouble() ?? 0.0;
+          skillPercentages['Grammar'] =
+              (progress['Grammar'] as num?)?.toDouble() ?? 0.0;
+          skillPercentages['Pronunciation'] =
+              (progress['Pronunciation'] as num?)?.toDouble() ?? 0.0;
+          skillPercentages['Vocabulary'] =
+              (progress['Vocabulary'] as num?)?.toDouble() ?? 0.0;
+          skillPercentages['Interaction'] =
+              (progress['Interaction'] as num?)?.toDouble() ?? 0.0;
         });
         logger.i('Fetched progress for homepage: $skillPercentages');
       } else {
@@ -109,7 +79,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   double get overallPercentage {
-    return skillPercentages.values.reduce((a, b) => a + b) / skillPercentages.length;
+    return skillPercentages.values.reduce((a, b) => a + b) /
+        skillPercentages.length;
   }
 
   void _handleSkillSelected(String skill) {
@@ -119,7 +90,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _onItemTapped(int index) {
-    logger.d('Tapped navigation item. Index: $index, currentIndex: $_selectedIndex');
+    logger.d(
+        'Tapped navigation item. Index: $index, currentIndex: $_selectedIndex');
     setState(() {
       _selectedIndex = index; // Update the selected index for visual feedback
     });
@@ -133,11 +105,16 @@ class _HomePageState extends State<HomePage> {
           logger.d('Returned from AIBotScreen with progress: $progress');
           if (progress != null && progress is Map<String, double>) {
             setState(() {
-              skillPercentages['Fluency'] = progress['Fluency'] ?? skillPercentages['Fluency']!;
-              skillPercentages['Grammar'] = progress['Grammar'] ?? skillPercentages['Grammar']!;
-              skillPercentages['Pronunciation'] = progress['Pronunciation'] ?? skillPercentages['Pronunciation']!;
-              skillPercentages['Vocabulary'] = progress['Vocabulary'] ?? skillPercentages['Vocabulary']!;
-              skillPercentages['Interaction'] = progress['Interaction'] ?? skillPercentages['Interaction']!;
+              skillPercentages['Fluency'] =
+                  progress['Fluency'] ?? skillPercentages['Fluency']!;
+              skillPercentages['Grammar'] =
+                  progress['Grammar'] ?? skillPercentages['Grammar']!;
+              skillPercentages['Pronunciation'] = progress['Pronunciation'] ??
+                  skillPercentages['Pronunciation']!;
+              skillPercentages['Vocabulary'] =
+                  progress['Vocabulary'] ?? skillPercentages['Vocabulary']!;
+              skillPercentages['Interaction'] =
+                  progress['Interaction'] ?? skillPercentages['Interaction']!;
             });
             await _saveProgressToFirestore();
             await _fetchProgress();
@@ -154,7 +131,7 @@ class _HomePageState extends State<HomePage> {
       case 3: // Journal
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (context) => const JournalPage()),
+          MaterialPageRoute(builder: (context) => const ProgressTrackerPage()),
         );
         break;
       case 4: // Profile
@@ -266,10 +243,12 @@ class _HomePageState extends State<HomePage> {
                     },
                     borderRadius: BorderRadius.circular(20),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 10),
                       decoration: BoxDecoration(
                         color: isSelected
-                            ? skillColors[skill]?.withOpacity(0.5) // Darker shade if selected
+                            ? skillColors[skill]
+                                ?.withOpacity(0.5) // Darker shade if selected
                             : skillColors[skill] ?? Colors.grey,
                         borderRadius: BorderRadius.circular(20),
                       ),
@@ -323,9 +302,11 @@ class _HomePageState extends State<HomePage> {
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(5),
                     ),
-                    padding: const EdgeInsets.symmetric(vertical: 5), // Adjust height
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 5), // Adjust height
                   ),
-                  child: const Text('Start Practice', style: TextStyle(fontSize: 16)),
+                  child: const Text('Start Practice',
+                      style: TextStyle(fontSize: 16)),
                 ),
               ),
             ],
@@ -342,7 +323,8 @@ class _HomePageState extends State<HomePage> {
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
           BottomNavigationBarItem(icon: Icon(Icons.chat), label: 'Chatbot'),
           BottomNavigationBarItem(icon: Icon(Icons.book), label: 'Courses'),
-          BottomNavigationBarItem(icon: Icon(Icons.library_books), label: 'Journal'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.library_books), label: 'Journal'),
           BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
         ],
       ),
@@ -412,8 +394,7 @@ class PentagonPainter extends CustomPainter {
     }
 
     // Draw progress fill with selected color or default grey
-    final progressPaint = Paint()
-      ..style = PaintingStyle.fill;
+    final progressPaint = Paint()..style = PaintingStyle.fill;
 
     if (skillColor != null) {
       progressPaint.shader = LinearGradient(
