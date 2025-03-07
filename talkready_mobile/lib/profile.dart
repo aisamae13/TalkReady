@@ -8,6 +8,8 @@ import 'package:cloud_firestore/cloud_firestore.dart'; // For Firestore database
 import 'package:image/image.dart' as img; // For base64 decoding
 import 'package:image_picker/image_picker.dart'; // For compatibility (not used here, but kept for consistency)
 import 'package:logger/logger.dart'; // For logging
+import 'courses_page.dart';
+import 'journal_page.dart';
 import 'homepage.dart'; // Assume this exists
 import 'ai_bot.dart'; // Assume this exists
 
@@ -21,8 +23,10 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final ImagePicker _picker = ImagePicker(); // For image picking (optional, kept for consistency)
-  late StreamSubscription<DocumentSnapshot<Map<String, dynamic>>> _userStreamSubscription; // Use Subscription for explicit control
+  final ImagePicker _picker =
+      ImagePicker(); // For image picking (optional, kept for consistency)
+  late StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>
+      _userStreamSubscription; // Use Subscription for explicit control
   bool _isLoading = true; // Loading state for Firebase data
 
   final Logger _logger = Logger(); // Initialize Logger
@@ -37,7 +41,8 @@ class _ProfilePageState extends State<ProfilePage> {
   String? _profilePicBase64; // Store base64 string from Firestore
   bool? _profilePicSkipped;
 
-  int _selectedIndex = 4; // Default to Profile (index 4) since this is ProfilePage
+  int _selectedIndex =
+      4; // Default to Profile (index 4) since this is ProfilePage
 
   @override
   void initState() {
@@ -65,11 +70,15 @@ class _ProfilePageState extends State<ProfilePage> {
           .snapshots() // Fetch the users document directly
           .listen(
         (snapshot) {
-          _logger.i('Received Firestore snapshot: ${snapshot.data}'); // Info log
+          _logger
+              .i('Received Firestore snapshot: ${snapshot.data}'); // Info log
           if (snapshot.exists) {
             final data = snapshot.data() ?? {}; // Handle null data
-            final onboardingData = data['onboarding'] as Map<String, dynamic>? ?? {}; // Extract onboarding data
-            _logger.d('Parsed Firestore onboarding data: $onboardingData'); // Debug log for detailed data inspection
+            final onboardingData =
+                data['onboarding'] as Map<String, dynamic>? ??
+                    {}; // Extract onboarding data
+            _logger.d(
+                'Parsed Firestore onboarding data: $onboardingData'); // Debug log for detailed data inspection
             setState(() {
               _name = onboardingData['userName'];
               _englishLevel = onboardingData['englishLevel'];
@@ -77,12 +86,14 @@ class _ProfilePageState extends State<ProfilePage> {
               _currentGoal = onboardingData['currentGoal'];
               _learningPreference = onboardingData['learningPreference'];
               _desiredAccent = onboardingData['desiredAccent'];
-              _profilePicBase64 = onboardingData['profilePicBase64'] as String?; // Fetch base64 string
+              _profilePicBase64 = onboardingData['profilePicBase64']
+                  as String?; // Fetch base64 string
               _profilePicSkipped = onboardingData['profilePicSkipped'] as bool?;
               _isLoading = false;
             });
           } else {
-            _logger.w('No Firestore document exists for UID: ${user.uid}'); // Warning log
+            _logger.w(
+                'No Firestore document exists for UID: ${user.uid}'); // Warning log
             setState(() {
               _isLoading = false;
             });
@@ -113,7 +124,8 @@ class _ProfilePageState extends State<ProfilePage> {
     showDialog(
       context: context,
       builder: (context) {
-        TextEditingController nameController = TextEditingController(text: _name ?? '');
+        TextEditingController nameController =
+            TextEditingController(text: _name ?? '');
         return AlertDialog(
           title: const Text('Edit Name'),
           content: TextField(
@@ -133,7 +145,8 @@ class _ProfilePageState extends State<ProfilePage> {
                   setState(() {
                     _name = nameController.text;
                   });
-                  _saveNameToFirestore(nameController.text); // Save updated name to Firestore
+                  _saveNameToFirestore(
+                      nameController.text); // Save updated name to Firestore
                 }
                 Navigator.pop(context);
               },
@@ -150,11 +163,9 @@ class _ProfilePageState extends State<ProfilePage> {
       final user = _auth.currentUser;
       if (user != null) {
         _logger.i('Saving name to Firestore for UID: ${user.uid}'); // Info log
-        await _firestore
-            .collection('users')
-            .doc(user.uid)
-            .update({
-          'onboarding.userName': newName, // Update the userName within the onboarding map
+        await _firestore.collection('users').doc(user.uid).update({
+          'onboarding.userName':
+              newName, // Update the userName within the onboarding map
         });
       }
     } catch (e) {
@@ -165,8 +176,12 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
-  void _showDropdownDialog(String title, List<String> items, String? currentValue,
-      void Function(String?) onChanged, String firestoreField) {
+  void _showDropdownDialog(
+      String title,
+      List<String> items,
+      String? currentValue,
+      void Function(String?) onChanged,
+      String firestoreField) {
     showDialog(
       context: context,
       builder: (context) {
@@ -182,7 +197,8 @@ class _ProfilePageState extends State<ProfilePage> {
                   title: Text(items[index]), // Handle null values
                   onTap: () {
                     onChanged(items[index]);
-                    _saveProfileOptionToFirestore(firestoreField, items[index]); // Save updated value to Firestore
+                    _saveProfileOptionToFirestore(firestoreField,
+                        items[index]); // Save updated value to Firestore
                     Navigator.pop(context);
                   },
                   selected: currentValue == items[index],
@@ -200,12 +216,11 @@ class _ProfilePageState extends State<ProfilePage> {
     try {
       final user = _auth.currentUser;
       if (user != null) {
-        _logger.i('Saving $field to Firestore for UID: ${user.uid}'); // Info log
-        await _firestore
-            .collection('users')
-            .doc(user.uid)
-            .update({
-          'onboarding.$field': value, // Update the field within the onboarding map
+        _logger
+            .i('Saving $field to Firestore for UID: ${user.uid}'); // Info log
+        await _firestore.collection('users').doc(user.uid).update({
+          'onboarding.$field':
+              value, // Update the field within the onboarding map
         });
       }
     } catch (e) {
@@ -218,7 +233,9 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Future<void> _pickAndUploadProfilePic() async {
     try {
-      final pickedFile = await _picker.pickImage(source: ImageSource.gallery); // Pick image from gallery (or use camera: ImageSource.camera)
+      final pickedFile = await _picker.pickImage(
+          source: ImageSource
+              .gallery); // Pick image from gallery (or use camera: ImageSource.camera)
       if (pickedFile != null) {
         setState(() {
           _isLoading = true;
@@ -229,17 +246,23 @@ class _ProfilePageState extends State<ProfilePage> {
           final file = File(pickedFile.path);
           final imageBytes = await file.readAsBytes();
           final image = img.decodeImage(imageBytes)!;
-          final resizedImage = img.copyResize(image, width: 200); // Resize to reduce size (optional)
-          final base64Image = img.encodePng(resizedImage); // Encode as PNG (or JPEG for smaller size)
-          if (base64Image.length > 1000000) { // 1 MB limit
+          final resizedImage = img.copyResize(image,
+              width: 200); // Resize to reduce size (optional)
+          final base64Image = img.encodePng(
+              resizedImage); // Encode as PNG (or JPEG for smaller size)
+          if (base64Image.length > 1000000) {
+            // 1 MB limit
             _logger.e('Profile picture too large for Firestore (exceeds 1 MB)');
-            throw Exception('Profile picture is too large to store in Firestore');
+            throw Exception(
+                'Profile picture is too large to store in Firestore');
           }
           final profilePicBase64 = base64Encode(base64Image);
 
-         await _firestore.collection('users').doc(user.uid).update({
-            'onboarding.profilePicBase64': profilePicBase64, // Save the base64 string in Firestore
-            'onboarding.profilePicSkipped': false, // Indicate a profile picture was uploaded
+          await _firestore.collection('users').doc(user.uid).update({
+            'onboarding.profilePicBase64':
+                profilePicBase64, // Save the base64 string in Firestore
+            'onboarding.profilePicSkipped':
+                false, // Indicate a profile picture was uploaded
           });
 
           setState(() {
@@ -275,20 +298,36 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   void _onItemTapped(int index) {
+    if (_selectedIndex == index) return; // Prevent duplicate navigation
+
     setState(() {
-      _selectedIndex = index; // Update the selected index
+      _selectedIndex = index;
     });
-    if (index == 0) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => HomePage()),
-      );
-    } else if (index == 1) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => AIBotScreen()),
-      );
+
+    Widget nextPage;
+    switch (index) {
+      case 0:
+        nextPage = const HomePage();
+        break;
+      case 1:
+        nextPage = const AIBotScreen();
+        break;
+      case 2:
+        nextPage = const CoursesPage();
+        break;
+      case 3:
+        nextPage = const ProgressTrackerPage();
+        break;
+      case 4:
+        return; // Already on Profile, do nothing
+      default:
+        return;
     }
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (context) => nextPage),
+    );
   }
 
   @override
@@ -296,41 +335,46 @@ class _ProfilePageState extends State<ProfilePage> {
     return Scaffold(
       backgroundColor: Colors.white,
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF00568D)))
+          ? const Center(
+              child: CircularProgressIndicator(color: Color(0xFF00568D)))
           : Column(
               children: [
                 // Combine AppBar and Profile Header into a single Container for seamless blue background
                 Container(
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [Color(0xFF2973B2), Color(0xFF618DB2)], // Gradient colors
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                      ),
-                      borderRadius: BorderRadius.only(
-                        bottomLeft: Radius.circular(30),
-                        bottomRight: Radius.circular(30),
-                      ),
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Color(0xFF2973B2),
+                        Color(0xFF618DB2)
+                      ], // Gradient colors
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
                     ),
-                    child: SafeArea(
-                      child: Column(
-                        children: [
-                          // AppBar-like section with settings icon
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              Padding(
-                                padding: const EdgeInsets.all(16.0),
-                                child: IconButton(
-                                  icon: const Icon(Icons.settings, color: Colors.white, size: 35),
-                                  onPressed: () {
-                                    // Add settings action here
-                                  },
+                    borderRadius: BorderRadius.only(
+                      bottomLeft: Radius.circular(30),
+                      bottomRight: Radius.circular(30),
+                    ),
+                  ),
+                  child: SafeArea(
+                    child: Column(
+                      children: [
+                        // AppBar-like section with settings icon
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: IconButton(
+                                icon: const Icon(Icons.settings,
+                                    color: Colors.white, size: 35),
+                                onPressed: () {
+                                  // Add settings action here
+                                },
                               ),
                             ),
                           ],
                         ),
-                      // Profile Picture and Name Section
+                        // Profile Picture and Name Section
                         Stack(
                           alignment: Alignment.center,
                           children: [
@@ -338,30 +382,43 @@ class _ProfilePageState extends State<ProfilePage> {
                               padding: const EdgeInsets.only(bottom: 10.0),
                               child: Container(
                                 decoration: BoxDecoration(
-                                  shape: BoxShape.circle, // Ensure the container is circular
+                                  shape: BoxShape
+                                      .circle, // Ensure the container is circular
                                   border: Border.all(
-                                     color: Color(0xFF9CA8C7),
+                                    color: Color(0xFF9CA8C7),
                                     width: 4.0,
                                   ),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.black.withOpacity(0.3), // Shadow color with opacity
-                                      spreadRadius: 2, // How far the shadow spreads
+                                      color: Colors.black.withOpacity(
+                                          0.3), // Shadow color with opacity
+                                      spreadRadius:
+                                          2, // How far the shadow spreads
                                       blurRadius: 5, // How blurry the shadow is
-                                      offset: const Offset(0, 3), // Shadow position (horizontal, vertical)
+                                      offset: const Offset(0,
+                                          3), // Shadow position (horizontal, vertical)
                                     ),
                                   ],
                                 ),
-                               child: CircleAvatar(
-                                  radius: 70, // Kept at 70 for larger avatar size
+                                child: CircleAvatar(
+                                  radius:
+                                      70, // Kept at 70 for larger avatar size
                                   backgroundImage: _profilePicBase64 != null
-                                      ? MemoryImage(base64Decode(_profilePicBase64!)) as ImageProvider
+                                      ? MemoryImage(
+                                              base64Decode(_profilePicBase64!))
+                                          as ImageProvider
                                       : null, // Display base64-decoded image if available
-                                  backgroundColor: _profilePicBase64 == null && _profilePicSkipped == true
+                                  backgroundColor: _profilePicBase64 == null &&
+                                          _profilePicSkipped == true
                                       ? null // No background color if skipped (person icon will handle this)
-                                      : Colors.grey[300], // Grey placeholder if no image and not skipped
-                                  child: _profilePicBase64 == null && _profilePicSkipped == true
-                                      ? Icon(Icons.person, size: 70, color: Colors.grey[600]) // Person icon if skipped
+                                      : Colors.grey[
+                                          300], // Grey placeholder if no image and not skipped
+                                  child: _profilePicBase64 == null &&
+                                          _profilePicSkipped == true
+                                      ? Icon(Icons.person,
+                                          size: 70,
+                                          color: Colors.grey[
+                                              600]) // Person icon if skipped
                                       : null, // No child if image exists or placeholder is used
                                 ),
                               ),
@@ -403,13 +460,16 @@ class _ProfilePageState extends State<ProfilePage> {
                                   color: Colors.white,
                                 ),
                               ),
-                         IconButton(
-                                icon: const Icon(Icons.edit, color: Colors.white, size: 20),
-                                onPressed: _name != null ? _showEditNameDialog : null,
-                              ),
+                            IconButton(
+                              icon: const Icon(Icons.edit,
+                                  color: Colors.white, size: 20),
+                              onPressed:
+                                  _name != null ? _showEditNameDialog : null,
+                            ),
                           ],
                         ),
-                        if (_email != null) // Conditionally show email if available
+                        if (_email !=
+                            null) // Conditionally show email if available
                           Text(
                             _email!,
                             style: const TextStyle(
@@ -417,7 +477,8 @@ class _ProfilePageState extends State<ProfilePage> {
                               color: Colors.white70,
                             ),
                           ),
-                        const SizedBox(height: 20), // Space before the profile options
+                        const SizedBox(
+                            height: 20), // Space before the profile options
                       ],
                     ),
                   ),
@@ -425,7 +486,8 @@ class _ProfilePageState extends State<ProfilePage> {
                 // Profile Options
                 Expanded(
                   child: ListView(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 20),
                     children: [
                       _buildProfileOption(
                         title: 'Active Level',
@@ -496,7 +558,8 @@ class _ProfilePageState extends State<ProfilePage> {
                       _buildProfileOption(
                         title: 'Desired Accent',
                         value: _desiredAccent,
-                        onChanged: null, // Pass null for Desired Accent to make it non-clickable
+                        onChanged:
+                            null, // Pass null for Desired Accent to make it non-clickable
                         items: const [
                           'Neutral',
                           'American 🇺🇸',
@@ -520,99 +583,102 @@ class _ProfilePageState extends State<ProfilePage> {
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
           BottomNavigationBarItem(icon: Icon(Icons.chat), label: 'Chatbot'),
           BottomNavigationBarItem(icon: Icon(Icons.book), label: 'Courses'),
-          BottomNavigationBarItem(icon: Icon(Icons.library_books), label: 'Journal'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.library_books), label: 'Journal'),
           BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
         ],
       ),
     );
   }
 
- Widget _buildProfileOption({
-  required String title,
-  required String? value,
-  required void Function(String?)? onChanged,
-  required List<String> items,
-  required String firestoreField,
-}) {
-  return Padding(
-    padding: const EdgeInsets.only(bottom: 10),
-    child: Container(
-      padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(
-        color: Colors.lightBlue[100]?.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          // Title section with emoji
-          Flexible(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '${_getEmojiForTitle(title)} ',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    color: Color(0xFF00568D),
-                  ),
-                ),
-                Flexible(
-                  child: Text(
-                    title,
+  Widget _buildProfileOption({
+    required String title,
+    required String? value,
+    required void Function(String?)? onChanged,
+    required List<String> items,
+    required String firestoreField,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Container(
+        padding: const EdgeInsets.all(15),
+        decoration: BoxDecoration(
+          color: Colors.lightBlue[100]?.withOpacity(0.2),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            // Title section with emoji
+            Flexible(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '${_getEmojiForTitle(title)} ',
                     style: const TextStyle(
                       fontSize: 16,
                       color: Color(0xFF00568D),
                     ),
-                    overflow: TextOverflow.visible,
                   ),
-                ),
-              ],
-            ),
-          ),
-
-          // Value section with arrow
-          Flexible(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                if (value != null)
                   Flexible(
                     child: Text(
-                      value,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[600],
+                      title,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        color: Color(0xFF00568D),
                       ),
-                      textAlign: TextAlign.right,
-                      overflow: TextOverflow.ellipsis,
+                      overflow: TextOverflow.visible,
                     ),
                   ),
-                if (title != 'Desired Accent') const SizedBox(width: 8),
-
-                // Clickable Arrow
-               if (title != 'Desired Accent')
-                  InkWell(
-                    onTap: onChanged != null && value != null
-                        ? () {
-                            _showDropdownDialog(title, items, value, onChanged, firestoreField);
-                          }
-                        : null,
-                    child: IconTheme(
-                       data: IconThemeData(size: 22), // Increase size slightly for bold effect
-                        child: const Icon(Icons.arrow_forward_ios, color: Color(0xFF2973B2)),
-                    ),
-                  ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
-      ),
-    ),
-  );
-}
 
+            // Value section with arrow
+            Flexible(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  if (value != null)
+                    Flexible(
+                      child: Text(
+                        value,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[600],
+                        ),
+                        textAlign: TextAlign.right,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  if (title != 'Desired Accent') const SizedBox(width: 8),
+
+                  // Clickable Arrow
+                  if (title != 'Desired Accent')
+                    InkWell(
+                      onTap: onChanged != null && value != null
+                          ? () {
+                              _showDropdownDialog(title, items, value,
+                                  onChanged, firestoreField);
+                            }
+                          : null,
+                      child: IconTheme(
+                        data: IconThemeData(
+                            size: 22), // Increase size slightly for bold effect
+                        child: const Icon(Icons.arrow_forward_ios,
+                            color: Color(0xFF2973B2)),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   String _getEmojiForTitle(String title) {
     switch (title) {
