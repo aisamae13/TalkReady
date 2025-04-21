@@ -51,8 +51,8 @@ class MyApp extends StatelessWidget {
         '/homepage': (context) => const HomePage(),
         '/signup': (context) => const SignUpPage(),
         '/forgot-password': (context) => const ForgotPasswordPage(),
-        '/courses': (context) => const CoursesPage(), // ✅ Add this line
-        '/journal': (context) => const ProgressTrackerPage(), // ✅ Add this line
+        '/courses': (context) => const CoursesPage(),
+        '/journal': (context) => const ProgressTrackerPage(),
       },
     );
   }

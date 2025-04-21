@@ -1,17 +1,17 @@
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
-
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart'; // For user authentication
-import 'package:cloud_firestore/cloud_firestore.dart'; // For Firestore database
-import 'package:image/image.dart' as img; // For base64 decoding
-import 'package:image_picker/image_picker.dart'; // For compatibility (not used here, but kept for consistency)
-import 'package:logger/logger.dart'; // For logging
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:image/image.dart' as img;
+import 'package:image_picker/image_picker.dart';
+import 'package:logger/logger.dart';
 import 'courses_page.dart';
 import 'journal_page.dart';
-import 'homepage.dart'; // Assume this exists
-import 'ai_bot.dart'; // Assume this exists
+import 'homepage.dart';
+import 'ai_bot.dart';
+import 'settings/settings.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -24,38 +24,38 @@ class _ProfilePageState extends State<ProfilePage> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final ImagePicker _picker =
-      ImagePicker(); // For image picking (optional, kept for consistency)
+      ImagePicker();
   late StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>
-      _userStreamSubscription; // Use Subscription for explicit control
-  bool _isLoading = true; // Loading state for Firebase data
+      _userStreamSubscription;
+  bool _isLoading = true;
 
-  final Logger _logger = Logger(); // Initialize Logger
+  final Logger _logger = Logger();
 
-  String? _name; // Will be fetched dynamically (userName from onboarding)
-  String? _email; // Will be fetched from FirebaseAuth if available
+  String? _name;
+  String? _email;
   String? _englishLevel;
   String? _dailyPracticeGoal;
   String? _currentGoal;
   String? _learningPreference;
   String? _desiredAccent;
-  String? _profilePicBase64; // Store base64 string from Firestore
+  String? _profilePicBase64;
   bool? _profilePicSkipped;
 
   int _selectedIndex =
-      4; // Default to Profile (index 4) since this is ProfilePage
+      4;
 
   @override
   void initState() {
     super.initState();
-    _setupUserStream(); // Set up real-time listener for user data
-    _fetchEmail(); // Fetch email from FirebaseAuth
+    _setupUserStream();
+    _fetchEmail();
   }
 
   void _fetchEmail() {
     final user = _auth.currentUser;
     if (user != null) {
       setState(() {
-        _email = user.email; // Fetch email from Firebase Authentication
+        _email = user.email;
       });
     }
   }
@@ -63,22 +63,22 @@ class _ProfilePageState extends State<ProfilePage> {
   void _setupUserStream() {
     final user = _auth.currentUser;
     if (user != null) {
-      _logger.i('Setting up stream for user UID: ${user.uid}'); // Info log
+      _logger.i('Setting up stream for user UID: ${user.uid}');
       _userStreamSubscription = _firestore
           .collection('users')
           .doc(user.uid)
-          .snapshots() // Fetch the users document directly
+          .snapshots()
           .listen(
         (snapshot) {
           _logger
-              .i('Received Firestore snapshot: ${snapshot.data}'); // Info log
+              .i('Received Firestore snapshot: ${snapshot.data}');
           if (snapshot.exists) {
-            final data = snapshot.data() ?? {}; // Handle null data
+            final data = snapshot.data() ?? {};
             final onboardingData =
                 data['onboarding'] as Map<String, dynamic>? ??
-                    {}; // Extract onboarding data
+                    {};
             _logger.d(
-                'Parsed Firestore onboarding data: $onboardingData'); // Debug log for detailed data inspection
+                'Parsed Firestore onboarding data: $onboardingData');
             setState(() {
               _name = onboardingData['userName'];
               _englishLevel = onboardingData['englishLevel'];
@@ -93,14 +93,14 @@ class _ProfilePageState extends State<ProfilePage> {
             });
           } else {
             _logger.w(
-                'No Firestore document exists for UID: ${user.uid}'); // Warning log
+                'No Firestore document exists for UID: ${user.uid}');
             setState(() {
               _isLoading = false;
             });
           }
         },
         onError: (error) {
-          _logger.e('Error in Firestore stream: $error'); // Error log
+          _logger.e('Error in Firestore stream: $error');
           setState(() {
             _isLoading = false;
           });
@@ -162,14 +162,14 @@ class _ProfilePageState extends State<ProfilePage> {
     try {
       final user = _auth.currentUser;
       if (user != null) {
-        _logger.i('Saving name to Firestore for UID: ${user.uid}'); // Info log
+        _logger.i('Saving name to Firestore for UID: ${user.uid}');
         await _firestore.collection('users').doc(user.uid).update({
           'onboarding.userName':
-              newName, // Update the userName within the onboarding map
+              newName,
         });
       }
     } catch (e) {
-      _logger.e('Error saving name: $e'); // Error log
+      _logger.e('Error saving name: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error saving name: $e')),
       );
@@ -194,11 +194,11 @@ class _ProfilePageState extends State<ProfilePage> {
               itemCount: items.length,
               itemBuilder: (context, index) {
                 return ListTile(
-                  title: Text(items[index]), // Handle null values
+                  title: Text(items[index]),
                   onTap: () {
                     onChanged(items[index]);
                     _saveProfileOptionToFirestore(firestoreField,
-                        items[index]); // Save updated value to Firestore
+                        items[index]);
                     Navigator.pop(context);
                   },
                   selected: currentValue == items[index],
@@ -217,14 +217,14 @@ class _ProfilePageState extends State<ProfilePage> {
       final user = _auth.currentUser;
       if (user != null) {
         _logger
-            .i('Saving $field to Firestore for UID: ${user.uid}'); // Info log
+            .i('Saving $field to Firestore for UID: ${user.uid}');
         await _firestore.collection('users').doc(user.uid).update({
           'onboarding.$field':
-              value, // Update the field within the onboarding map
+              value,
         });
       }
     } catch (e) {
-      _logger.e('Error saving $field: $e'); // Error log
+      _logger.e('Error saving $field: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error saving $field: $e')),
       );
@@ -235,7 +235,7 @@ class _ProfilePageState extends State<ProfilePage> {
     try {
       final pickedFile = await _picker.pickImage(
           source: ImageSource
-              .gallery); // Pick image from gallery (or use camera: ImageSource.camera)
+              .gallery);
       if (pickedFile != null) {
         setState(() {
           _isLoading = true;
@@ -247,7 +247,7 @@ class _ProfilePageState extends State<ProfilePage> {
           final imageBytes = await file.readAsBytes();
           final image = img.decodeImage(imageBytes)!;
           final resizedImage = img.copyResize(image,
-              width: 200); // Resize to reduce size (optional)
+              width: 200);
           final base64Image = img.encodePng(
               resizedImage); // Encode as PNG (or JPEG for smaller size)
           if (base64Image.length > 1000000) {
@@ -355,10 +355,9 @@ class _ProfilePageState extends State<ProfilePage> {
                       bottomRight: Radius.circular(30),
                     ),
                   ),
-                  child: SafeArea(
+                 child: SafeArea(
                     child: Column(
                       children: [
-                        // AppBar-like section with settings icon
                         Row(
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
@@ -368,7 +367,12 @@ class _ProfilePageState extends State<ProfilePage> {
                                 icon: const Icon(Icons.settings,
                                     color: Colors.white, size: 35),
                                 onPressed: () {
-                                  // Add settings action here
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                        builder: (context) =>
+                                           SettingsPage()),
+                                  );
                                 },
                               ),
                             ),

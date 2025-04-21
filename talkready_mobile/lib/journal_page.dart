@@ -101,7 +101,7 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage> {
             // Skill Progress Bars
             ...skillProgress.keys
                 .map((skill) => _buildProgressBar(skill, skillProgress[skill]!))
-                .toList(),
+                ,
             const SizedBox(height: 30),
 
             // Feedback Sections

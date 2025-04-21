@@ -57,18 +57,14 @@ class _AIBotScreenState extends State<AIBotScreen> {
   bool _hasStartedListening = false;
   bool _isTyping = false;
   bool _isInSimulation = false; // Track simulation mode
-<<<<<<< HEAD
-  static const String _ttsServerUrl = 'https://bbc1-103-149-37-102.ngrok-free.app/tts';
-=======
-  static const String _ttsServerUrl =
-      'https://0215-103-149-37-102.ngrok-free.app/tts';
->>>>>>> da22a3d1b8d7a54de5762df76b0921fca40e14a8
+  static const String _ttsServerUrl = 'https://5ec8-175-176-32-235.ngrok-free.app/tts';
   bool _isRecorderInitialized = false;
+
   final TextEditingController _textController = TextEditingController();
   final Map<String, double> _sessionProgress = {
     'Fluency': 0.0,
     'Grammar': 0.0,
-    'Pronunciation': 0.0, // Placeholder until Azure API is available
+    'Pronunciation': 0.0,
     'Vocabulary': 0.0,
     'Interaction': 0.0,
   };
@@ -260,9 +256,10 @@ class _AIBotScreenState extends State<AIBotScreen> {
         }
       } else {
         logger.e('No onboarding data found for user');
-        if (mounted)
+        if (mounted) {
           _showSnackBar(
               'No onboarding data found. Please complete onboarding.');
+        }
       }
     } catch (e) {
       logger.e('Error fetching preferences: $e');

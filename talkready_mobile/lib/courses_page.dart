@@ -9,7 +9,7 @@ class CoursesPage extends StatefulWidget {
 
 class _CoursesPageState extends State<CoursesPage> {
   // List of expanded sections
-  List<bool> _isExpandedList = List.generate(8, (index) => false);
+  final List<bool> _isExpandedList = List.generate(8, (index) => false);
 
   // Course Outline Data
   final List<Map<String, dynamic>> courseOutline = [
