@@ -57,7 +57,7 @@ class _AIBotScreenState extends State<AIBotScreen> {
   bool _hasStartedListening = false;
   bool _isTyping = false;
   bool _isInSimulation = false; // Track simulation mode
-  static const String _ttsServerUrl = 'https://5ec8-175-176-32-235.ngrok-free.app/tts';
+  static const String _ttsServerUrl = ' https://c360-175-176-32-217.ngrok-free.app/tts';
   bool _isRecorderInitialized = false;
 
   final TextEditingController _textController = TextEditingController();

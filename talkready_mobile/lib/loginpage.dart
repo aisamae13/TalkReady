@@ -49,7 +49,7 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> _navigateAfterLogin(User user) async {
     bool hasOnboardingData = await _hasCompletedOnboarding(user.uid);
-    if (!mounted) return; // Guard against unmounted context
+    if (!mounted) return;
     if (hasOnboardingData) {
       Navigator.pushReplacement(
         context,
@@ -77,14 +77,14 @@ class _LoginPageState extends State<LoginPage> {
 
       final UserCredential userCredential = await _auth.signInWithCredential(credential);
       if (userCredential.user != null) {
-        if (!mounted) return; // Guard before showing SnackBar
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Google Sign-In successful!')),
         );
         await _navigateAfterLogin(userCredential.user!);
       }
     } catch (e) {
-      if (!mounted) return; // Guard before showing SnackBar
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: $e')),
       );
@@ -111,7 +111,7 @@ class _LoginPageState extends State<LoginPage> {
         password: _passwordController.text,
       );
 
-      if (!mounted) return; // Guard before popping and navigating
+      if (!mounted) return;
       Navigator.pop(context);
 
       if (userCredential.user != null) {
@@ -145,12 +145,11 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  @override
+@override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text(''),
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
@@ -159,19 +158,60 @@ class _LoginPageState extends State<LoginPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const SizedBox(height: 50),
-            Image.asset('images/logoTR.png', height: 100, width: 100),
-            const SizedBox(height: 50),
+            const SizedBox(height: 5),
+            SizedBox(
+              height: 250,
+              child: Stack(
+                alignment: Alignment.topCenter,
+                children: [
+                  Positioned(
+                    top: -15,
+                    child: Image.asset(
+                      'images/TR Logo.png',
+                      height: 180,
+                      width: 180,
+                      errorBuilder: (context, error, stackTrace) => const Icon(
+                        Icons.error,
+                        size: 120,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 85,
+                    child: Image.asset(
+                      'images/TR Text.png',
+                      height: 180,
+                      width: 260,
+                      errorBuilder: (context, error, stackTrace) => const Text(
+                        'TalkReady',
+                        style: TextStyle(
+                          fontSize: 32,
+                          color: Color(0xFF00568D),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 0),
             const Text(
               'Hello, welcome back!',
               style: TextStyle(fontSize: 24, color: Color(0xFF00568D)),
+              textAlign: TextAlign.center,
             ),
             const SizedBox(height: 20),
             TextField(
               controller: _emailController,
               decoration: const InputDecoration(
                 labelText: 'E-mail address',
+                labelStyle: TextStyle(color: Color(0xFF00568D)),
                 border: OutlineInputBorder(),
+                focusedBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Color(0xFF00568D)),
+                ),
               ),
             ),
             const SizedBox(height: 10),
@@ -180,11 +220,15 @@ class _LoginPageState extends State<LoginPage> {
               obscureText: !_isPasswordVisible,
               decoration: InputDecoration(
                 labelText: 'Password',
+                labelStyle: const TextStyle(color: Color(0xFF00568D)),
                 border: const OutlineInputBorder(),
+                focusedBorder: const OutlineInputBorder(
+                  borderSide: BorderSide(color: Color(0xFF00568D)),
+                ),
                 suffixIcon: IconButton(
                   icon: Icon(
                     _isPasswordVisible ? Icons.visibility : Icons.visibility_off,
-                    color: Colors.grey,
+                    color: const Color(0xFF00568D),
                   ),
                   onPressed: () {
                     setState(() {
@@ -248,10 +292,13 @@ class _LoginPageState extends State<LoginPage> {
               child: const Text('Log in', style: TextStyle(fontSize: 16)),
             ),
             const SizedBox(height: 10),
-            const Text(
-              'By continuing, you agree to our Privacy Policy and Terms of Service',
-              style: TextStyle(fontSize: 12, color: Color(0xFF00568D)),
-              textAlign: TextAlign.center,
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 20.0),
+              child: Text(
+                'By continuing, you agree to our Privacy Policy and Terms of Service',
+                style: TextStyle(fontSize: 12, color: Color(0xFF00568D)),
+                textAlign: TextAlign.center,
+              ),
             ),
           ],
         ),

@@ -189,46 +189,102 @@ class _LandingPageState extends State<LandingPage> {
                 children: [
                   ElevatedButton.icon(
                     onPressed: () async {
-                      if (kDebugMode) {
-                        debugPrint('Button pressed, showing loading screen');
-                      }
-                      showLoadingScreen(context);
-                      UserCredential? userCredential = await signInWithGoogle();
-
-                      if (!context.mounted) {
-                        hideLoadingScreen(context);
-                        return;
-                      }
-
-                      if (userCredential != null) {
-                        try {
-                          bool isNewUser =
-                              userCredential.additionalUserInfo?.isNewUser ??
-                                  true;
-
-                          hideLoadingScreen(context);
-
-                          if (!context.mounted) return;
-
-                          Navigator.pushNamed(
-                            context,
-                            isNewUser ? '/welcome' : '/homepage',
-                          );
-                        } catch (e) {
-                          if (!context.mounted) return;
-                          hideLoadingScreen(context);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Error during sign-in: $e'),
-                              duration: const Duration(seconds: 3),
-                              backgroundColor: Colors.red,
-                            ),
-                          );
+                        if (kDebugMode) {
+                          debugPrint('Button pressed, showing loading screen');
                         }
-                      } else {
-                        if (context.mounted) hideLoadingScreen(context);
-                      }
-                    },
+                        showLoadingScreen(context);
+                        UserCredential? userCredential = await signInWithGoogle();
+
+                        if (!context.mounted) {
+                          hideLoadingScreen(context);
+                          return;
+                        }
+
+                        if (userCredential != null) {
+                          try {
+                            bool isNewUser =
+                                userCredential.additionalUserInfo?.isNewUser ?? true;
+
+                            hideLoadingScreen(context);
+
+                            if (!context.mounted) return;
+
+                            if (isNewUser) {
+                              Navigator.pushNamed(context, '/welcome');
+                            } else {
+                              // Show account already exists dialog
+                              showDialog(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (context) => AlertDialog(
+                          backgroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(15.0),
+                          ),
+                          title: const Text(
+                            'Account Already Registered',
+                            style: TextStyle(
+                              color: Color(0xFF00568D),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 20,
+                            ),
+                          ),
+                          content: Text(
+                            'Your Google account has already been used to login.',
+                            style: TextStyle(
+                              color: Color(0xFF00568D).withOpacity(0.8),
+                              fontSize: 16,
+                            ),
+                          ),
+                          actionsAlignment: MainAxisAlignment.center,
+                          actions: [
+                        Padding(
+                          padding: const EdgeInsets.only(top: 20.0),
+                          child: TextButton(
+                            onPressed: () {
+                              Navigator.pop(context);
+                            },
+                            style: TextButton.styleFrom(
+                              backgroundColor: const Color(0xFF00568D),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(5),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 30,
+                                vertical: 8,
+                              ),
+                            ),
+                            child: const Text(
+                              'OK',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                          contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 10),
+                          titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+                        ),
+                      );
+                            }
+                          } catch (e) {
+                            if (!context.mounted) return;
+                            hideLoadingScreen(context);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Error during sign-in: $e'),
+                                duration: const Duration(seconds: 3),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        } else {
+                          if (context.mounted) hideLoadingScreen(context);
+                        }
+                      },
                     icon: const FaIcon(
                       FontAwesomeIcons.google,
                       color: Color(0xFF00568D),
