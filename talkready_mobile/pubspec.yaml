@@ -55,6 +55,8 @@ dependencies:
   carousel_slider: ^5.0.0
   package_info_plus: ^8.0.2
   url_launcher: ^6.3.0
+  lottie: ^3.3.1
+  shimmer: ^3.0.0
 
   # Optional: For advanced audio processing (if needed for Azure Speech API)
   # Note: Azure Speech API may require a custom package or platform-specific integration
@@ -98,6 +100,10 @@ flutter:
      - images/carousel-img-2.gif
      - images/carousel-img-3.png
      - .env
+     - images/AI.gif
+     - images/callcenter.jpg
+     - images/callcenter2.jpg
+     - images/AI_Human_Hand.jpg
 
 
   # An image asset can refer to one or more resolution-specific "variants", see
