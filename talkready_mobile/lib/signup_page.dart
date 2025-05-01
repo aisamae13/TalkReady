@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'landingpage.dart'; // Replace with your actual LandingPage import
 
 class SignUpPage extends StatefulWidget {
   const SignUpPage({super.key});
@@ -18,69 +17,57 @@ class _SignUpPageState extends State<SignUpPage> {
   final GoogleSignIn _googleSignIn = GoogleSignIn(scopes: ['email']);
 
   // Google Sign-In Function with signOut
-Future<void> _signInWithGoogle() async {
-  try {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Signing in with Google...')),
-    );
-
-    // Ensure previous session is signed out
-    await _googleSignIn.signOut();
-
-    final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-    if (googleUser == null) {
-      return; // User canceled sign-in
-    }
-
-    final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
-    final OAuthCredential credential = GoogleAuthProvider.credential(
-      accessToken: googleAuth.accessToken,
-      idToken: googleAuth.idToken,
-    );
-
-    // Try signing in
+  Future<void> _signInWithGoogle() async {
     try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Signing in with Google...')),
+      );
+
+      // Ensure previous session is signed out
+      await _googleSignIn.signOut();
+
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) {
+        return; // User canceled sign-in
+      }
+
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final OAuthCredential credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      // Try signing in
       await _auth.signInWithCredential(credential);
 
       if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const LandingPage()),
+        Navigator.pushReplacementNamed(context, '/landing');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Google Sign-In Failed: $e')),
         );
       }
-    } on FirebaseAuthException catch (e) {
-      if (e.code == 'account-exists-with-different-credential' ||
-          e.code == 'email-already-in-use') {
-        // If account already exists, show a snackbar
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Your Google account has already been logged in before. Please click Login instead.',
-                textAlign: TextAlign.center,
-              ),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      } else {
-        // Other Firebase errors
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Google Sign-In Failed: ${e.message}')),
-          );
-        }
-      }
-    }
-  } catch (e) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Google Sign-In Failed: $e')),
-      );
     }
   }
-}
 
+  // Sign-Out Function
+  Future<void> _signOut() async {
+    try {
+      await _googleSignIn.signOut(); // Sign out from Google
+      await _auth.signOut(); // Sign out from Firebase
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, '/landing');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Sign-out failed: $e')),
+        );
+      }
+    }
+  }
 
   // Email/Password Sign-Up Function with Immediate Navigation to LandingPage
   Future<void> _signUpWithEmail() async {
@@ -122,10 +109,7 @@ Future<void> _signInWithGoogle() async {
 
       // Automatically navigate to LandingPage after successful sign-up
       if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const LandingPage()),
-        );
+        Navigator.pushReplacementNamed(context, '/landing');
       }
     } on FirebaseAuthException catch (e) {
       String message;
@@ -220,7 +204,7 @@ Future<void> _signInWithGoogle() async {
                       padding: EdgeInsets.symmetric(horizontal: 10),
                       child: Text('OR',
                           style:
-                              TextStyle(color: Color(0xFF00568D), fontSize: 16)),
+                          TextStyle(color: Color(0xFF00568D), fontSize: 16)),
                     ),
                     Expanded(
                         child: Divider(color: Color(0xFF00568D), thickness: 1)),

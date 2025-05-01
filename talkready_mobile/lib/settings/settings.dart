@@ -35,27 +35,152 @@ class SettingsPage extends StatelessWidget {
     }
   }
 
-  // Delete account function
-  Future<void> _deleteAccount(BuildContext context) async {
+ 
+  
+  // Delete account function 5/1/2025
+   Future<void> _deleteAccount(BuildContext context) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
-        _logger.i('Attempting to delete account for UID: ${user.uid}');
-        // Delete Firestore data
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .delete();
-        _logger.i('Firestore data deleted for UID: ${user.uid}');
-        // Delete Firebase Auth account
-        await user.delete();
-        _logger.i('User account deleted successfully');
-        if (context.mounted) {
-          Navigator.pushNamedAndRemoveUntil(
-            context,
-            '/landing',
-            (route) => false,
+        // First confirmation dialog
+        final initialConfirmation = await showDialog<bool>(
+          context: context,
+          builder: (context) => _buildCustomDialog(
+            context: context,
+            title: 'Delete Account',
+            content:
+                'Are you sure you want to permanently delete your account? This action cannot be undone.',
+            cancelText: 'Cancel',
+            confirmText: 'Continue',
+            onConfirm: () => Navigator.pop(context, true),
+          ),
+        );
+  
+        if (initialConfirmation == true) {
+          // Second confirmation dialog with text input
+          final finalConfirmation = await showDialog<bool>(
+            context: context,
+            builder: (context) {
+              String inputText = '';
+              return StatefulBuilder(
+                builder: (context, setState) {
+                  return Dialog(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    elevation: 5,
+                    backgroundColor: Colors.white,
+                    child: Padding(
+                      padding: const EdgeInsets.all(20.0),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Final Confirmation',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF00568D),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          const Text(
+                            'To confirm account deletion, please type "confirm" below. This action cannot be undone.',
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: Colors.grey
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          TextField(
+                            onChanged: (value) {
+                              setState(() {
+                                inputText = value;
+                              });
+                            },
+                            decoration: const InputDecoration(
+                              border: OutlineInputBorder(),
+                              labelText: 'Type "confirm"',
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              ElevatedButton(
+                                onPressed: () => Navigator.pop(context, false),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.grey[300],
+                                  foregroundColor: Colors.grey[800],
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 20, vertical: 10),
+                                ),
+                                child: const Text(
+                                  'Cancel',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              ElevatedButton(
+                                onPressed: inputText.toLowerCase() == 'confirm'
+                                    ? () => Navigator.pop(context, true)
+                                    : null,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: inputText.toLowerCase() == 'confirm'
+                                      ? const Color(0xFF00568D)
+                                      : Colors.grey,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 20, vertical: 10),
+                                ),
+                                child: const Text(
+                                  'Delete',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
           );
+  
+          if (finalConfirmation == true) {
+            _logger.i('Attempting to delete account for UID: ${user.uid}');
+            // Delete Firestore data
+            await FirebaseFirestore.instance
+                .collection('users')
+                .doc(user.uid)
+                .delete();
+            _logger.i('Firestore data deleted for UID: ${user.uid}');
+            // Delete Firebase Auth account
+            await user.delete();
+            _logger.i('User account deleted successfully');
+            if (context.mounted) {
+              Navigator.pushNamedAndRemoveUntil(
+                context,
+                '/landing',
+                (route) => false,
+              );
+            }
+          }
         }
       }
     } catch (e) {
