@@ -337,20 +337,29 @@ void _onItemTapped(int index) {
                 width: 250,
                 height: 40, // Adjust height as needed
                 child: ElevatedButton(
-                  onPressed: () {
-                    // Add action for the Start Practice button
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF00568D),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(5),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                        vertical: 5), // Adjust height
-                  ),
-                  child: const Text('Start Practice',
-                      style: TextStyle(fontSize: 16)),
+                onPressed: () {
+          Navigator.push(
+          context,
+          MaterialPageRoute(
+          builder: (context) => AIBotScreen(
+          onBackPressed: () {
+            Navigator.pop(context); // Return to the previous screen
+               },
+              ),
+          ),
+            );
+            },  
+          style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF00568D),
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(5),
+          ),
+          padding: const EdgeInsets.symmetric(
+          vertical: 5), // Adjust height
+          ),
+          child: const Text('Start Practice', 
+          style: TextStyle(fontSize: 16)),
                 ),
               ),
             ],
@@ -365,7 +374,8 @@ void _onItemTapped(int index) {
         onTap: _onItemTapped, // Handle tab taps
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-          BottomNavigationBarItem(icon: Icon(Icons.chat), label: 'Chatbot'),
+          
+
           BottomNavigationBarItem(icon: Icon(Icons.book), label: 'Courses'),
           BottomNavigationBarItem(
               icon: Icon(Icons.library_books), label: 'Journal'),
