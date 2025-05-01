@@ -57,7 +57,7 @@ class _AIBotScreenState extends State<AIBotScreen> {
   int _remainingSeconds = 0;
   bool _hasStartedListening = false;
   bool _isTyping = false;
-  bool _hasTriggeredTutorial = false;
+  final bool _hasTriggeredTutorial = false;
   bool _hasSeenTutorial = false;
   static const String _ttsServerUrl = 'https://c360-175-176-32-217.ngrok-free.app/tts';
   bool _isRecorderInitialized = false;
@@ -140,82 +140,73 @@ void initState() {
   });
 }
 
- Future<void> _triggerTutorial(BuildContext showcaseContext) async {
-    if (!mounted) {
-      logger.i('Tutorial not triggered: widget not mounted');
-      return;
-    }
+Future<void> _triggerTutorial(BuildContext showcaseContext) async {
+  if (!mounted) {
+    logger.i('Tutorial not triggered: widget not mounted');
+    return;
+  }
 
-    bool shouldShow = await TutorialService.shouldShowTutorial(Future.value(_hasSeenTutorial));
-    if (!shouldShow) {
-      logger.i('Tutorial skipped: user has already seen it');
-      return;
-    }
+  bool shouldShow = await TutorialService.shouldShowTutorial(Future.value(_hasSeenTutorial));
+  if (!shouldShow) {
+    logger.i('Tutorial skipped: user has already seen it');
+    return;
+  }
 
-    logger.i('Showing welcome dialog for tutorial');
-    bool? startTour = await TutorialService.showTutorialWithSkipOption(
-      context: context,
-      showcaseKeys: [_timerKey, _chatAreaKey, _micKey, _keyboardKey, _modeKey],
-      skipText: 'Skip Tutorial',
-      onComplete: () {
-        setState(() {
-          _hasSeenTutorial = true;
-        });
-        _saveTutorialStatus();
-      },
-      title: 'Welcome to TalkReady Bot!',
-      content: 'Get ready to explore the app with a quick tour! Would you like to start?',
-      confirmText: 'Start Tour',
-      showDontAskAgain: false,
-    );
-
-    if (!mounted || !showcaseContext.mounted) {
-      logger.w('Cannot proceed with tutorial: widget or context not mounted');
-      _showSnackBar('Cannot start tutorial at this time.');
-      return;
-    }
-
-    if (startTour == false) { // confirmText ("Start Tour") returns false
-      logger.i('User chose to start tutorial walkthrough');
-      try {
-        if (mounted && showcaseContext.mounted) {
-          TutorialService.startShowCase(showcaseContext, [
-            _timerKey,
-            _chatAreaKey,
-            _micKey,
-            _keyboardKey,
-            _modeKey,
-          ]);
-          logger.i('Showcase started successfully');
-        } else {
-          logger.w('Cannot start showcase: widget not mounted or context unavailable');
-          _showSnackBar('Cannot start tutorial at this time.');
-        }
-      } catch (e) {
-        logger.e('Error starting tutorial: $e');
-        _showSnackBar('Failed to start tutorial: $e');
-      }
-    } else {
-      logger.i('User skipped tutorial');
+  logger.i('Showing welcome dialog for tutorial');
+  bool? startTour = await TutorialService.showTutorialWithSkipOption(
+    context: context,
+    showcaseKeys: [_timerKey, _chatAreaKey, _micKey, _keyboardKey, _modeKey],
+    skipText: 'Skip Tutorial',
+    onComplete: () {
       setState(() {
         _hasSeenTutorial = true;
       });
-      await _saveTutorialStatus();
-    }
+      _saveTutorialStatus();
+    },
+    title: 'Welcome to TalkReady Bot!',
+    content: 'Get ready to explore the app with a quick tour! Would you like to start?',
+    confirmText: 'Start Tour',
+    showDontAskAgain: false,
+  );
+
+  if (!mounted || !showcaseContext.mounted) {
+    logger.w('Cannot proceed with tutorial: widget or context not mounted');
+    _showSnackBar('Cannot start tutorial at this time.');
+    return;
   }
 
-  void _restartTutorial(BuildContext showcaseContext) {
-    logger.i('Manual tutorial trigger via help icon, resetting and starting walkthrough');
-    if (mounted) {
-      setState(() {
-        _hasSeenTutorial = false;
-      });
-      _triggerTutorial(showcaseContext);
-    } else {
-      logger.w('Cannot restart tutorial: widget is not mounted');
-      _showSnackBar('Cannot restart tutorial at this time.');
+  if (startTour == false) { // User chose to start tutorial walkthrough
+    logger.i('User chose to start tutorial walkthrough');
+    try {
+      // Increase delay to ensure dialog dismissal animation completes
+      await Future.delayed(const Duration(milliseconds: 600)); // Upped to 600ms
+      logger.i('Dialog should be dismissed, starting showcase now');
+
+      if (mounted && showcaseContext.mounted) {
+        TutorialService.startShowCase(showcaseContext, [
+          _timerKey,
+          _chatAreaKey,
+          _micKey,
+          _keyboardKey,
+          _modeKey,
+        ]);
+        logger.i('Showcase started successfully');
+      } else {
+        logger.w('Cannot start showcase: widget not mounted or context unavailable');
+        _showSnackBar('Cannot start tutorial at this time.');
+      }
+    } catch (e) {
+      logger.e('Error starting tutorial: $e');
+      _showSnackBar('Failed to start tutorial: $e');
     }
+  } else {
+    logger.i('User skipped tutorial');
+    setState(() {
+      _hasSeenTutorial = true;
+    });
+    await _saveTutorialStatus();
   }
+}
 
  String _generateRandomGreeting() {
   logger.i('Generating greeting with _accentLocale: $_accentLocale, userName: $_userName');
@@ -1020,10 +1011,10 @@ void initState() {
         await _audioPlayer.play(BytesSource(response.bodyBytes));
       } else {
         logger.w('TTS server failed, falling back to FlutterTts');
-        _showSnackBar(
-            'F5-TTS server error (status ${response.statusCode}), using default TTS.');
-        await _flutterTtsFallback(text);
-      }
+      //   _showSnackBar(
+      //       'F5-TTS server error (status ${response.statusCode}), using default TTS.');
+      //   await _flutterTtsFallback(text);
+       }
     } catch (e) {
       logger.e('Error with F5-TTS request: $e, falling back to FlutterTts');
       _showSnackBar('F5-TTS error: $e, using default TTS.');
@@ -1157,63 +1148,58 @@ void initState() {
   @override
   Widget build(BuildContext context) {
     return ShowCaseWidget(
-      onFinish: () {
-        logger.i('ShowCaseWidget onFinish triggered');
-        TutorialService.handleTutorialCompletion();
-        if (mounted) {
-          setState(() {
-            _hasSeenTutorial = true;
-          });
-          _saveTutorialStatus();
-        }
-      },
-      builder: (BuildContext showcaseContext) {
-        if (!_hasSeenTutorial && !_hasTriggeredTutorial) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              logger.i('Automatic tutorial trigger for first-time user');
-              _triggerTutorial(showcaseContext);
-            }
-          });
-        }
+    onFinish: () {
+      logger.i('ShowCaseWidget onFinish triggered');
+      TutorialService.handleTutorialCompletion();
+      if (mounted) {
+        setState(() {
+          _hasSeenTutorial = true;
+        });
+        _saveTutorialStatus();
+      }
+    },
+    builder: (BuildContext showcaseContext) {
+      if (!_hasSeenTutorial && !_hasTriggeredTutorial) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            logger.i('Automatic tutorial trigger for first-time user');
+            _triggerTutorial(showcaseContext);
+          }
+        });
+      }
 
-        return WillPopScope(
-          onWillPop: () async {
-            // Call the callback to update the tab index in HomePage
-            widget.onBackPressed?.call();
-            // Save progress before popping
-            _saveProgress(showSnackBar: false);
-            return true; // Allow the pop to proceed
-          },
-          child: Scaffold(
-            appBar: AppBar(
-              title: const Text(
-                'TR Bot',
-                style: TextStyle(
-                  color: Color.fromARGB(255, 41, 115, 178),
-                  fontWeight: FontWeight.bold,
-                  fontSize: 20,
-                ),
+      return WillPopScope(
+        onWillPop: () async {
+          // Call the callback to update the tab index in HomePage
+          widget.onBackPressed?.call();
+          // Save progress before popping
+          _saveProgress(showSnackBar: false);
+          return true; // Allow the pop to proceed
+        },
+        child: Scaffold(
+          appBar: AppBar(
+            title: const Text(
+              'TalkReady Bot',
+              style: TextStyle(
+                color: Color.fromARGB(255, 41, 115, 178),
+                fontWeight: FontWeight.bold,
+                fontSize: 20,
               ),
-              backgroundColor: Colors.white,
-              actions: [
-                IconButton(
-                  icon: const Icon(Icons.help, color: Colors.blue),
-                  tooltip: 'View Tutorial',
-                  onPressed: () => _restartTutorial(showcaseContext),
-                ),
-                if (_isProcessingTTS)
-                  const Padding(
-                    padding: EdgeInsets.all(8.0),
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.0,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
-                      ),
+            ),
+            backgroundColor: Colors.white,
+            actions: [
+              if (_isProcessingTTS)
+                const Padding(
+                  padding: EdgeInsets.all(8.0),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.0,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
                     ),
                   ),
+                ),
                 TutorialService.buildShowcase(
                   context: showcaseContext,
                   key: _timerKey,
