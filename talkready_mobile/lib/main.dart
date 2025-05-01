@@ -1,17 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:talkready_mobile/ProgramsPage.dart';
 import 'package:talkready_mobile/homepage.dart';
 import 'firebase_options.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:talkready_mobile/courses_page.dart';
+import 'package:talkready_mobile/ProgramsPage.dart';
 import 'package:talkready_mobile/journal_page.dart';
 import 'landingpage.dart';
-import 'splash_screen.dart'; // Siguraduhing na-import ito
 import 'loginpage.dart';
 import 'welcome_page.dart';
 import 'signup_page.dart';
 import 'forgotpass.dart';
+
 
 void main() async {
   // Ensure widgets are initialized for async operations
@@ -50,9 +52,8 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         primarySwatch: Colors.blue,
       ),
-      initialRoute: '/splash', // Itakda ang SplashScreen bilang initial route
+      initialRoute: '/',
       routes: {
-        '/splash': (context) => const SplashScreen(), // Idagdag ang SplashScreen route
         '/': (context) => const LandingPage(),
         '/login': (context) => LoginPage(),
         '/welcome': (context) => const WelcomePage(),
@@ -61,6 +62,8 @@ class MyApp extends StatelessWidget {
         '/forgot-password': (context) => const ForgotPasswordPage(),
         '/courses': (context) => const CoursesPage(),
         '/journal': (context) => const ProgressTrackerPage(),
+        '/programs': (context) => ProgramsPage()
+
       },
     );
   }
