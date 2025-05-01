@@ -176,42 +176,149 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
-  void _showDropdownDialog(
-      String title,
-      List<String> items,
-      String? currentValue,
-      void Function(String?) onChanged,
-      String firestoreField) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text(title),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: items.length,
-              itemBuilder: (context, index) {
-                return ListTile(
-                  title: Text(items[index]),
-                  onTap: () {
-                    onChanged(items[index]);
-                    _saveProfileOptionToFirestore(firestoreField,
-                        items[index]);
+void _showDropdownDialog(
+    String title,
+    List<String> items,
+    String? currentValue,
+    void Function(String?) onChanged,
+    String firestoreField) {
+  showDialog(
+    context: context,
+    builder: (context) {
+      return Dialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        elevation: 8,
+        backgroundColor: Colors.transparent,
+        child: Container(
+          width: MediaQuery.of(context).size.width * 0.9, // Increase dialog width to 90% of screen
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                Colors.blue.shade50,
+                Colors.white,
+              ],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF00568D),
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.maxFinite,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(context).size.height * 0.4, // Limit height to 40% of screen
+                  ),
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: items.length,
+                    itemBuilder: (context, index) {
+                      bool isSelected = currentValue == items[index];
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: GestureDetector(
+                          onTap: () {
+                            onChanged(items[index]);
+                            _saveProfileOptionToFirestore(firestoreField, items[index]);
+                            Navigator.pop(context);
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? const Color(0xFF2973B2).withOpacity(0.1)
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: isSelected
+                                    ? const Color(0xFF2973B2)
+                                    : Colors.grey.shade300,
+                                width: 1,
+                              ),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Flexible( // Use Flexible to allow wrapping
+                                  child: Text(
+                                    items[index],
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      color: isSelected
+                                          ? const Color(0xFF2973B2)
+                                          : Colors.black87,
+                                      fontWeight: isSelected
+                                          ? FontWeight.w600
+                                          : FontWeight.normal,
+                                    ),
+                                    softWrap: true, // Allow text to wrap
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                if (isSelected)
+                                  const Icon(
+                                    Icons.check_circle,
+                                    color: Color(0xFF2973B2),
+                                    size: 20,
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Align(
+                alignment: Alignment.center,
+                child: TextButton(
+                  onPressed: () {
                     Navigator.pop(context);
                   },
-                  selected: currentValue == items[index],
-                  selectedTileColor: Colors.lightBlue[100]?.withOpacity(0.2),
-                );
-              },
-            ),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Color(0xFF00568D),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
-        );
-      },
-    );
-  }
-
+        ),
+      );
+    },
+  );
+}
   Future<void> _saveProfileOptionToFirestore(String field, String value) async {
     try {
       final user = _auth.currentUser;
@@ -595,94 +702,88 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  Widget _buildProfileOption({
-    required String title,
-    required String? value,
-    required void Function(String?)? onChanged,
-    required List<String> items,
-    required String firestoreField,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Container(
-        padding: const EdgeInsets.all(15),
-        decoration: BoxDecoration(
-          color: Colors.lightBlue[100]?.withOpacity(0.2),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            // Title section with emoji
-            Flexible(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    '${_getEmojiForTitle(title)} ',
+ Widget _buildProfileOption({
+  required String title,
+  required String? value,
+  required void Function(String?)? onChanged,
+  required List<String> items,
+  required String firestoreField,
+}) {
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: Container(
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: Colors.lightBlue[100]?.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          // Title section with emoji
+          Expanded(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '${_getEmojiForTitle(title)} ',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    color: Color(0xFF00568D),
+                  ),
+                ),
+                Expanded(
+                  child: Text(
+                    title,
                     style: const TextStyle(
                       fontSize: 16,
                       color: Color(0xFF00568D),
                     ),
+                    overflow: TextOverflow.ellipsis, // Prevent overflow
                   ),
-                  Flexible(
+                ),
+              ],
+            ),
+          ),
+          // Value section with arrow
+          Expanded(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (value != null)
+                  Expanded(
                     child: Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        color: Color(0xFF00568D),
+                      value,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[600],
                       ),
-                      overflow: TextOverflow.visible,
+                      textAlign: TextAlign.right,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                ],
-              ),
-            ),
-
-            // Value section with arrow
-            Flexible(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  if (value != null)
-                    Flexible(
-                      child: Text(
-                        value,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[600],
-                        ),
-                        textAlign: TextAlign.right,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                if (title != 'Desired Accent') const SizedBox(width: 8),
+                if (title != 'Desired Accent')
+                  InkWell(
+                    onTap: onChanged != null && value != null
+                        ? () {
+                            _showDropdownDialog(title, items, value, onChanged, firestoreField);
+                          }
+                        : null,
+                    child: IconTheme(
+                      data: IconThemeData(size: 22),
+                      child: const Icon(Icons.arrow_forward_ios, color: Color(0xFF2973B2)),
                     ),
-                  if (title != 'Desired Accent') const SizedBox(width: 8),
-
-                  // Clickable Arrow
-                  if (title != 'Desired Accent')
-                    InkWell(
-                      onTap: onChanged != null && value != null
-                          ? () {
-                              _showDropdownDialog(title, items, value,
-                                  onChanged, firestoreField);
-                            }
-                          : null,
-                      child: IconTheme(
-                        data: IconThemeData(
-                            size: 22), // Increase size slightly for bold effect
-                        child: const Icon(Icons.arrow_forward_ios,
-                            color: Color(0xFF2973B2)),
-                      ),
-                    ),
-                ],
-              ),
+                  ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   String _getEmojiForTitle(String title) {
     switch (title) {

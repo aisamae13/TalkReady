@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:talkready_mobile/homepage.dart';
-import 'firebase_options.dart'; // Ensure this file is generated via Firebase CLI
+import 'firebase_options.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:talkready_mobile/courses_page.dart';
 import 'package:talkready_mobile/journal_page.dart';
 import 'landingpage.dart';
@@ -18,6 +19,11 @@ void main() async {
   // Initialize Firebase
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+  // Initialize Firebase App Check with the debug provider
+  await FirebaseAppCheck.instance.activate(
+    androidProvider: AndroidProvider.debug,
   );
 
   // Load the .env file silently (no UI error if missing)

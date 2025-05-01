@@ -284,7 +284,18 @@ class OnboardingScreenState extends State<OnboardingScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
-      body: Column(
+       body: Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Color(0xFF00568D).withOpacity(0.1), // Subtle light blue derived from primaryColor
+            Colors.grey[50]!, // Off-white background for a clean look
+          ],
+        ),
+      ),
+      child: Column(
         children: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 18.0),
@@ -311,13 +322,13 @@ class OnboardingScreenState extends State<OnboardingScreen> {
                 return OnboardingPage(
                   question: question,
                   questionIndex: index,
-                  currentPage: _currentPage, // Pass the current page to OnboardingPage
+                  currentPage: _currentPage,
                   selectedOptionIndex: selectedOptions[index],
                   textResponse: textResponses[index] ?? "",
-                  profilePic: _profilePic, // Pass profile picture to OnboardingPage
+                  profilePic: _profilePic,
                   onOptionSelected: (optionIndex) => _onOptionSelected(index, optionIndex),
                   onTextChanged: (value) => _onTextChanged(index, value),
-                  onPickProfilePic: _pickProfilePic, // Pass profile picture picking function
+                  onPickProfilePic: _pickProfilePic,
                 );
               },
             ),
@@ -370,6 +381,7 @@ class OnboardingScreenState extends State<OnboardingScreen> {
           ),
         ],
       ),
+    )
     );
   }
 }

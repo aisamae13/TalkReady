@@ -89,65 +89,94 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  void _onItemTapped(int index) {
-    logger.d(
-        'Tapped navigation item. Index: $index, currentIndex: $_selectedIndex');
-    setState(() {
-      _selectedIndex = index; // Update the selected index for visual feedback
-    });
+void _onItemTapped(int index) {
+  logger.d('Tapped navigation item. Index: $index, currentIndex: $_selectedIndex');
+  if (index == _selectedIndex) return; // Avoid redundant navigation
 
-    switch (index) {
-      case 1: // Conversation (AIBotScreen)
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const AIBotScreen()),
-        ).then((progress) async {
-          logger.d('Returned from AIBotScreen with progress: $progress');
-          if (progress != null && progress is Map<String, double>) {
-            setState(() {
-              skillPercentages['Fluency'] =
-                  progress['Fluency'] ?? skillPercentages['Fluency']!;
-              skillPercentages['Grammar'] =
-                  progress['Grammar'] ?? skillPercentages['Grammar']!;
-              skillPercentages['Pronunciation'] = progress['Pronunciation'] ??
-                  skillPercentages['Pronunciation']!;
-              skillPercentages['Vocabulary'] =
-                  progress['Vocabulary'] ?? skillPercentages['Vocabulary']!;
-              skillPercentages['Interaction'] =
-                  progress['Interaction'] ?? skillPercentages['Interaction']!;
-            });
-            await _saveProgressToFirestore();
-            await _fetchProgress();
-            logger.i('Updated skillPercentages: $skillPercentages');
+  setState(() {
+    _selectedIndex = index; // Update the selected index for visual feedback
+  });
+
+  switch (index) {
+    case 1: // Conversation (AIBotScreen)
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => AIBotScreen(
+            onBackPressed: () {
+              setState(() {
+                _selectedIndex = 0; // Switch back to Home tab
+              });
+            },
+          ),
+        ),
+      ).then((progress) async {
+        logger.d('Returned from AIBotScreen with progress: $progress');
+        if (progress != null && progress is Map<String, double> && mounted) { // Add mounted check
+          setState(() {
+            skillPercentages['Fluency'] =
+                progress['Fluency'] ?? skillPercentages['Fluency']!;
+            skillPercentages['Grammar'] =
+                progress['Grammar'] ?? skillPercentages['Grammar']!;
+            skillPercentages['Pronunciation'] = progress['Pronunciation'] ??
+                skillPercentages['Pronunciation']!;
+            skillPercentages['Vocabulary'] =
+                progress['Vocabulary'] ?? skillPercentages['Vocabulary']!;
+            skillPercentages['Interaction'] =
+                progress['Interaction'] ?? skillPercentages['Interaction']!;
+          });
+          await _saveProgressToFirestore();
+          // Use the returned progress directly instead of refetching
+          logger.i('Updated skillPercentages: $skillPercentages');
+          if (mounted) { // Add another mounted check for SnackBar
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Progress updated successfully')),
+            );
           }
-        });
-        break;
-      case 2: // Courses
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const CoursesPage()),
-        );
-        break;
-      case 3: // Journal
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const ProgressTrackerPage()),
-        );
-        break;
-      case 4: // Profile
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => ProfilePage()),
-        ).then((_) {
-          // Optionally handle any data returned from ProfilePage
-          logger.d('Returned from ProfilePage');
-        });
-        break;
-      // Home (index 0) stays on the current page, no navigation needed
-      default:
-        break;
-    }
+        }
+      });
+      break;
+    case 2: // Courses
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const CoursesPage()),
+      ).then((_) {
+        if (mounted) {
+          setState(() {
+            _selectedIndex = 0; // Switch back to Home tab
+          });
+        }
+      });
+      break;
+    case 3: // Journal
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const ProgressTrackerPage()),
+      ).then((_) {
+        if (mounted) {
+          setState(() {
+            _selectedIndex = 0; // Switch back to Home tab
+          });
+        }
+      });
+      break;
+    case 4: // Profile
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => ProfilePage()),
+      ).then((_) {
+        logger.d('Returned from ProfilePage');
+        if (mounted) {
+          setState(() {
+            _selectedIndex = 0; // Switch back to Home tab after returning
+          });
+        }
+      });
+      break;
+    default:
+      break;
   }
+}
 
   Future<void> _saveProgressToFirestore() async {
     final user = FirebaseAuth.instance.currentUser;
