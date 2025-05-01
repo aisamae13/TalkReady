@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:talkready_mobile/ProgramsPage.dart';
 import 'dart:math';
 import 'ai_bot.dart';
 import 'profile.dart'; // Assume you have this from the previous response
@@ -139,7 +140,7 @@ void _onItemTapped(int index) {
     case 2: // Courses
       Navigator.push(
         context,
-        MaterialPageRoute(builder: (context) => const CoursesPage()),
+        MaterialPageRoute(builder: (context) => CoursesPage()),
       ).then((_) {
         if (mounted) {
           setState(() {
@@ -148,10 +149,11 @@ void _onItemTapped(int index) {
         }
       });
       break;
+
     case 3: // Journal
       Navigator.push(
         context,
-        MaterialPageRoute(builder: (context) => const ProgressTrackerPage()),
+        MaterialPageRoute(builder: (context) => ProgressTrackerPage()),
       ).then((_) {
         if (mounted) {
           setState(() {
@@ -160,7 +162,20 @@ void _onItemTapped(int index) {
         }
       });
       break;
-    case 4: // Profile
+
+      case 4: // Programs
+  Navigator.push(
+    context,
+    MaterialPageRoute(builder: (context) => ProgramsPage()),
+  ).then((_) {
+    if (mounted) {
+      setState(() {
+        _selectedIndex = 0; // Switch back to Home tab
+      });
+    }
+  });
+  break;
+    case 5: // Profile
       Navigator.push(
         context,
         MaterialPageRoute(builder: (context) => ProfilePage()),
@@ -354,6 +369,7 @@ void _onItemTapped(int index) {
           BottomNavigationBarItem(icon: Icon(Icons.book), label: 'Courses'),
           BottomNavigationBarItem(
               icon: Icon(Icons.library_books), label: 'Journal'),
+          BottomNavigationBarItem(icon: Icon(Icons.apps), label: 'Programs'),
           BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
         ],
       ),
