@@ -99,45 +99,10 @@ void _onItemTapped(int index) {
   });
 
   switch (index) {
-    case 1: // Conversation (AIBotScreen)
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => AIBotScreen(
-            onBackPressed: () {
-              setState(() {
-                _selectedIndex = 0; // Switch back to Home tab
-              });
-            },
-          ),
-        ),
-      ).then((progress) async {
-        logger.d('Returned from AIBotScreen with progress: $progress');
-        if (progress != null && progress is Map<String, double> && mounted) { // Add mounted check
-          setState(() {
-            skillPercentages['Fluency'] =
-                progress['Fluency'] ?? skillPercentages['Fluency']!;
-            skillPercentages['Grammar'] =
-                progress['Grammar'] ?? skillPercentages['Grammar']!;
-            skillPercentages['Pronunciation'] = progress['Pronunciation'] ??
-                skillPercentages['Pronunciation']!;
-            skillPercentages['Vocabulary'] =
-                progress['Vocabulary'] ?? skillPercentages['Vocabulary']!;
-            skillPercentages['Interaction'] =
-                progress['Interaction'] ?? skillPercentages['Interaction']!;
-          });
-          await _saveProgressToFirestore();
-          // Use the returned progress directly instead of refetching
-          logger.i('Updated skillPercentages: $skillPercentages');
-          if (mounted) { // Add another mounted check for SnackBar
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Progress updated successfully')),
-            );
-          }
-        }
-      });
+    case 0: // Home
+      // Already on Home, no navigation needed
       break;
-    case 2: // Courses
+    case 1: // Courses
       Navigator.push(
         context,
         MaterialPageRoute(builder: (context) => CoursesPage()),
@@ -149,8 +114,7 @@ void _onItemTapped(int index) {
         }
       });
       break;
-
-    case 3: // Journal
+    case 2: // Journal
       Navigator.push(
         context,
         MaterialPageRoute(builder: (context) => ProgressTrackerPage()),
@@ -162,20 +126,19 @@ void _onItemTapped(int index) {
         }
       });
       break;
-
-      case 4: // Programs
-  Navigator.push(
-    context,
-    MaterialPageRoute(builder: (context) => ProgramsPage()),
-  ).then((_) {
-    if (mounted) {
-      setState(() {
-        _selectedIndex = 0; // Switch back to Home tab
+    case 3: // Programs
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => ProgramsPage()),
+      ).then((_) {
+        if (mounted) {
+          setState(() {
+            _selectedIndex = 0; // Switch back to Home tab
+          });
+        }
       });
-    }
-  });
-  break;
-    case 5: // Profile
+      break;
+    case 4: // Profile
       Navigator.push(
         context,
         MaterialPageRoute(builder: (context) => ProfilePage()),
@@ -189,31 +152,11 @@ void _onItemTapped(int index) {
       });
       break;
     default:
+      logger.w('Unhandled navigation index: $index');
       break;
   }
 }
 
-  Future<void> _saveProgressToFirestore() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      logger.e('No user logged in');
-      return;
-    }
-
-    try {
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-        'progress': skillPercentages,
-      }, SetOptions(merge: true));
-      logger.i('Progress saved to Firestore from homepage: $skillPercentages');
-    } catch (e) {
-      logger.e('Error saving progress to Firestore from homepage: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error saving progress: $e')),
-        );
-      }
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -348,7 +291,7 @@ void _onItemTapped(int index) {
               ),
           ),
             );
-            },  
+            },
           style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFF00568D),
           foregroundColor: Colors.white,
@@ -358,7 +301,7 @@ void _onItemTapped(int index) {
           padding: const EdgeInsets.symmetric(
           vertical: 5), // Adjust height
           ),
-          child: const Text('Start Practice', 
+          child: const Text('Start Practice',
           style: TextStyle(fontSize: 16)),
                 ),
               ),
@@ -366,26 +309,24 @@ void _onItemTapped(int index) {
           ),
         ),
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: const Color(0xFF00568D),
-        unselectedItemColor: Colors.grey,
-        currentIndex: _selectedIndex, // Bind the selected index
-        onTap: _onItemTapped, // Handle tab taps
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-          
-
-          BottomNavigationBarItem(icon: Icon(Icons.book), label: 'Courses'),
-          BottomNavigationBarItem(
-              icon: Icon(Icons.library_books), label: 'Journal'),
-          BottomNavigationBarItem(icon: Icon(Icons.apps), label: 'Programs'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
-        ],
-      ),
-    );
-  }
-}
+      bottomNavigationBar:
+                BottomNavigationBar(
+              type: BottomNavigationBarType.fixed,
+              selectedItemColor: const Color(0xFF00568D),
+              unselectedItemColor: Colors.grey,
+              currentIndex: _selectedIndex,
+              onTap: _onItemTapped,
+              items: const [
+                BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+                BottomNavigationBarItem(icon: Icon(Icons.book), label: 'Courses'),
+                BottomNavigationBarItem(icon: Icon(Icons.library_books), label: 'Journal'),
+                BottomNavigationBarItem(icon: Icon(Icons.apps), label: 'Programs'),
+                BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
+              ],
+            ),
+                );
+              }
+            }
 
 class PentagonGraph extends StatelessWidget {
   final double size;

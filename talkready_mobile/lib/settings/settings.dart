@@ -1,7 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:logger/logger.dart';
 import 'package:talkready_mobile/settings/about_us.dart';
 import 'package:talkready_mobile/settings/comm_guide.dart';
@@ -41,198 +40,7 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 }
-
   // Re-authenticate user
-Future<bool> _reauthenticateUser(BuildContext context) async {
-  final scaffoldMessenger = ScaffoldMessenger.of(context);
-
-  String password = '';
-  bool? result;
-  if (mounted) {
-    result = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (dialogContext, setState) {
-            return Dialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(15),
-              ),
-              elevation: 5,
-              backgroundColor: Colors.white,
-              child: Padding(
-                padding: const EdgeInsets.all(20.0),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Re-authenticate',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF00568D),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    const Text(
-                      'Please enter your password to proceed with account deletion.',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.grey,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    TextField(
-                      autofocus: true,
-                      obscureText: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Password',
-                        border: OutlineInputBorder(),
-                        focusedBorder: OutlineInputBorder(
-                          borderSide: BorderSide(color: Color(0xFF00568D), width: 2.0),
-                        ),
-                      ),
-                      onChanged: (value) {
-                        setState(() {
-                          password = value;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 20),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        ElevatedButton(
-                          onPressed: () => Navigator.pop(dialogContext, false),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.grey[300],
-                            foregroundColor: Colors.grey[800],
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                          ),
-                          child: const Text(
-                            'Cancel',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        ElevatedButton(
-                          onPressed: password.isNotEmpty ? () => Navigator.pop(dialogContext, true) : null,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF00568D),
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                          ),
-                          child: const Text(
-                            'Confirm',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  if (result != true) return false;
-
-  try {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      _logger.w('No user found for re-authentication');
-      scaffoldMessenger.showSnackBar(
-        const SnackBar(content: Text('No user found for re-authentication')),
-      );
-      return false;
-    }
-
-    // I-check ang provider ng user
-    bool isGoogleUser = false;
-    for (var provider in user.providerData) {
-      if (provider.providerId == 'google.com') {
-        isGoogleUser = true;
-        break;
-      }
-    }
-
-    if (isGoogleUser) {
-      // Re-authenticate gamit ang Google Sign-In
-      _logger.i('Re-authenticating user with Google Sign-In');
-      final GoogleSignIn googleSignIn = GoogleSignIn();
-      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
-
-      if (googleUser == null) {
-        // User cancelled the Google Sign-In
-        _logger.w('Google Sign-In cancelled by user');
-        scaffoldMessenger.showSnackBar(
-          const SnackBar(content: Text('Google Sign-In cancelled')),
-        );
-        return false;
-      }
-
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
-      final credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
-
-      await user.reauthenticateWithCredential(credential);
-      _logger.i('User re-authenticated successfully with Google');
-      return true;
-    } else {
-      // Re-authenticate gamit ang email/password
-      if (user.email == null) {
-        scaffoldMessenger.showSnackBar(
-          const SnackBar(content: Text('User email not found')),
-        );
-        return false;
-      }
-
-      final credential = EmailAuthProvider.credential(
-        email: user.email!,
-        password: password,
-      );
-      await user.reauthenticateWithCredential(credential);
-      _logger.i('User re-authenticated successfully with email/password');
-      return true;
-    }
-  } catch (e) {
-    _logger.e('Error re-authenticating: $e');
-    String errorMessage = 'Error re-authenticating: $e';
-
-    if (e.toString().contains('invalid-credential')) {
-      errorMessage = 'The credentials provided are incorrect. Please try again.';
-    } else if (e.toString().contains('user-mismatch')) {
-      errorMessage = 'User mismatch error. Please sign in again.';
-    } else if (e.toString().contains('user-not-found')) {
-      errorMessage = 'User not found. Please sign in again.';
-    }
-
-    scaffoldMessenger.showSnackBar(
-      SnackBar(content: Text(errorMessage)),
-    );
-    return false;
-  }
-}
 
    Future<void> _deleteAccount(BuildContext context) async {
     try {
@@ -251,7 +59,7 @@ Future<bool> _reauthenticateUser(BuildContext context) async {
             onConfirm: () => Navigator.pop(context, true),
           ),
         );
-  
+
         if (initialConfirmation == true) {
           // Second confirmation dialog with text input
           final finalConfirmation = await showDialog<bool>(
@@ -357,7 +165,7 @@ Future<bool> _reauthenticateUser(BuildContext context) async {
               );
             },
           );
-  
+
           if (finalConfirmation == true) {
             _logger.i('Attempting to delete account for UID: ${user.uid}');
             // Delete Firestore data

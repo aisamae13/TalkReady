@@ -1013,7 +1013,7 @@ Future<void> _triggerTutorial(BuildContext showcaseContext) async {
         logger.w('TTS server failed, falling back to FlutterTts');
       //   _showSnackBar(
       //       'F5-TTS server error (status ${response.statusCode}), using default TTS.');
-      //   await _flutterTtsFallback(text);
+       await _flutterTtsFallback(text);
        }
     } catch (e) {
       logger.e('Error with F5-TTS request: $e, falling back to FlutterTts');

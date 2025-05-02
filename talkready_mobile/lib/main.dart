@@ -6,12 +6,13 @@ import 'package:talkready_mobile/homepage.dart';
 import 'firebase_options.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:talkready_mobile/courses_page.dart';
-import 'package:talkready_mobile/ProgramsPage.dart';
 import 'package:talkready_mobile/journal_page.dart';
 import 'landingpage.dart';
 import 'loginpage.dart';
 import 'welcome_page.dart';
 import 'signup_page.dart';
+import 'splash_screen.dart';
+
 import 'forgotpass.dart';
 
 
@@ -52,9 +53,10 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         primarySwatch: Colors.blue,
       ),
-      initialRoute: '/',
+      initialRoute: '/splash',
       routes: {
-        '/': (context) => const LandingPage(),
+         '/splash': (context) => const SplashScreen(),
+         '/': (context) => const LandingPage(),
         '/login': (context) => LoginPage(),
         '/welcome': (context) => const WelcomePage(),
         '/homepage': (context) => const HomePage(),

@@ -692,11 +692,10 @@ void _showDropdownDialog(
         onTap: _onItemTapped, // Handle tab taps
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-          BottomNavigationBarItem(icon: Icon(Icons.chat), label: 'Chatbot'),
-          BottomNavigationBarItem(icon: Icon(Icons.book), label: 'Courses'),
-          BottomNavigationBarItem(
-              icon: Icon(Icons.library_books), label: 'Journal'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
+                BottomNavigationBarItem(icon: Icon(Icons.book), label: 'Courses'),
+                BottomNavigationBarItem(icon: Icon(Icons.library_books), label: 'Journal'),
+                BottomNavigationBarItem(icon: Icon(Icons.apps), label: 'Programs'),
+                BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
         ],
       ),
     );
