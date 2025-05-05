@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'landingpage.dart'; // Replace with your actual LandingPage import
+import 'landingpage.dart';
 
 class SignUpPage extends StatefulWidget {
   const SignUpPage({super.key});
@@ -18,71 +18,68 @@ class _SignUpPageState extends State<SignUpPage> {
   final GoogleSignIn _googleSignIn = GoogleSignIn(scopes: ['email']);
 
   // Google Sign-In Function with signOut
-Future<void> _signInWithGoogle() async {
-  try {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Signing in with Google...')),
-    );
-
-    // Ensure previous session is signed out
-    await _googleSignIn.signOut();
-
-    final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-    if (googleUser == null) {
-      return; // User canceled sign-in
-    }
-
-    final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
-    final OAuthCredential credential = GoogleAuthProvider.credential(
-      accessToken: googleAuth.accessToken,
-      idToken: googleAuth.idToken,
-    );
-
-    // Try signing in
+  Future<void> _signInWithGoogle() async {
     try {
-      await _auth.signInWithCredential(credential);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Signing in with Google...')),
+      );
 
+      // Ensure previous session is signed out
+      await _googleSignIn.signOut();
+
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) {
+        return; // User canceled sign-in
+      }
+
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final OAuthCredential credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      // Try signing in
+      try {
+        await _auth.signInWithCredential(credential);
+
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const LandingPage()),
+          );
+        }
+      } on FirebaseAuthException catch (e) {
+        if (e.code == 'account-exists-with-different-credential' ||
+            e.code == 'email-already-in-use') {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Your Google account has already been logged in before. Please click Login instead.',
+                  textAlign: TextAlign.center,
+                ),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Google Sign-In Failed: ${e.message}')),
+            );
+          }
+        }
+      }
+    } catch (e) {
       if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const LandingPage()),
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Google Sign-In Failed: $e')),
         );
       }
-    } on FirebaseAuthException catch (e) {
-      if (e.code == 'account-exists-with-different-credential' ||
-          e.code == 'email-already-in-use') {
-        // If account already exists, show a snackbar
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Your Google account has already been logged in before. Please click Login instead.',
-                textAlign: TextAlign.center,
-              ),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      } else {
-        // Other Firebase errors
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Google Sign-In Failed: ${e.message}')),
-          );
-        }
-      }
-    }
-  } catch (e) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Google Sign-In Failed: $e')),
-      );
     }
   }
-}
 
-
-  // Email/Password Sign-Up Function with Immediate Navigation to LandingPage
+  // Email/Password Sign-Up Function with Email Verification
   Future<void> _signUpWithEmail() async {
     try {
       // Validate inputs
@@ -110,23 +107,31 @@ Future<void> _signInWithGoogle() async {
       );
 
       // Create user with email and password
-      await _auth.createUserWithEmailAndPassword(
+      UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
+
+      // Send email verification
+      await userCredential.user?.sendEmailVerification();
 
       // Close loading dialog
       if (mounted) {
         Navigator.pop(context);
       }
 
-      // Automatically navigate to LandingPage after successful sign-up
+      // Show verification message
       if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const LandingPage()),
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Verification email sent. Please check your inbox.'),
+            duration: Duration(seconds: 5),
+          ),
         );
       }
+
+      // Check email verification status
+      await _checkEmailVerification(userCredential.user);
     } on FirebaseAuthException catch (e) {
       String message;
       if (e.code == 'weak-password') {
@@ -151,6 +156,46 @@ Future<void> _signInWithGoogle() async {
           SnackBar(content: Text('An error occurred: $e')),
         );
       }
+    }
+  }
+
+  // Check email verification status
+  Future<void> _checkEmailVerification(User? user) async {
+    if (user == null) return;
+
+    // Periodically check verification status
+    bool isVerified = false;
+    int attempts = 0;
+    const maxAttempts = 30; // 30 seconds timeout
+
+    while (!isVerified && attempts < maxAttempts && mounted) {
+      await user?.reload();
+      user = _auth.currentUser;
+      isVerified = user?.emailVerified ?? false;
+
+      if (isVerified) {
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const LandingPage()),
+          );
+        }
+        return;
+      }
+
+      await Future.delayed(const Duration(seconds: 1));
+      attempts++;
+    }
+
+    if (!isVerified && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Please verify your email before continuing. Check your spam folder.',
+          ),
+          duration: Duration(seconds: 5),
+        ),
+      );
     }
   }
 

@@ -16,6 +16,7 @@ import 'dart:math';
 import 'package:showcaseview/showcaseview.dart';
 import 'package:intl/intl.dart';
 import 'scenarios/grammar_correction.dart';
+import 'scenarios/listening_compre.dart';
 import 'scenarios/vocabulary_building.dart';
 import 'tutorial_service.dart';
 
@@ -62,7 +63,7 @@ class _AIBotScreenState extends State<AIBotScreen> {
   static const String _ttsServerUrl = 'https://c360-175-176-32-217.ngrok-free.app/tts';
   bool _isRecorderInitialized = false;
   final TextEditingController _textController = TextEditingController();
-  final Map<String, double> _sessionProgress = {
+ final Map<String, double> _sessionProgress = {
     'Fluency': 0.0,
     'Grammar': 0.0,
     'Pronunciation': 0.0,
@@ -90,160 +91,165 @@ class _AIBotScreenState extends State<AIBotScreen> {
         timeGoalSeconds: timeGoalSeconds,
       ),
     },
-    {'title': 'Vocabulary Building Practice', 'icon': Icons.book, 'route':  (BuildContext context, String accentLocale, String userName, int timeGoalSeconds) => VocabularyBuildingPracticeScreen(
+    {
+      'title': 'Vocabulary Building Practice',
+      'icon': Icons.book,
+      'route': (BuildContext context, String accentLocale, String userName, int timeGoalSeconds) => VocabularyBuildingPracticeScreen(
         accentLocale: accentLocale,
         userName: userName,
         timeGoalSeconds: timeGoalSeconds,
-      ),},
-
-    {'title': 'Listening Comprehension Drill', 'icon': Icons.headset, 'route': null},
+      ),
+    },
+    {'title': 'Listening Comprehension Drill', 'icon': Icons.headset, 'route':  (BuildContext context, String accentLocale, String userName, int timeGoalSeconds) => ListeningComprehensionDrillScreen(
+        accentLocale: accentLocale,
+        userName: userName,
+        timeGoalSeconds: timeGoalSeconds,
+      ),
+      },
   ];
 
   @override
-void initState() {
-  super.initState();
-  _recorder = FlutterSoundRecorder();
-  _player = FlutterSoundPlayer();
-  _fetchOnboardingData().then((_) {
-    _initializeTts();
-    _remainingSeconds = _timeGoalSeconds;
-    _initRecorder();
-    _initPlayer();
-    _requestPermissions();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        // Check if there’s already a bot message (likely a greeting)
-        bool hasBotMessage = _messages.any((msg) => !msg['isUser']);
-        if (!hasBotMessage) {
-          String randomGreeting = _generateRandomGreeting();
-          logger.i(
-              'Adding greeting to _messages: {"text": "$randomGreeting", "isUser": false, "timestamp": "${DateTime.now().toIso8601String()}"}');
-          setState(() {
-            _messages.add({
-              'text': randomGreeting,
-              'isUser': false,
-              'timestamp': DateTime.now().toIso8601String(),
+  void initState() {
+    super.initState();
+    _recorder = FlutterSoundRecorder();
+    _player = FlutterSoundPlayer();
+    _fetchOnboardingData().then((_) {
+      _initializeTts();
+      _remainingSeconds = _timeGoalSeconds;
+      _initRecorder();
+      _initPlayer();
+      _requestPermissions();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          bool hasBotMessage = _messages.any((msg) => !msg['isUser']);
+          if (!hasBotMessage) {
+            String randomGreeting = _generateRandomGreeting();
+            logger.i(
+                'Adding greeting to _messages: {"text": "$randomGreeting", "isUser": false, "timestamp": "${DateTime.now().toIso8601String()}"}');
+            setState(() {
+              _messages.add({
+                'text': randomGreeting,
+                'isUser': false,
+                'timestamp': DateTime.now().toIso8601String(),
+              });
+              _pruneMessages();
             });
-            _pruneMessages();
-          });
-          _speakText(randomGreeting, isUser: false);
-          _scrollToBottom();
-        } else {
-          logger.i('Greeting already exists in messages, skipping new greeting');
-          // Optionally, speak the last bot message if desired
-          String lastBotMessage = _messages.lastWhere((msg) => !msg['isUser'])['text'];
-          _speakText(lastBotMessage, isUser: false);
-          _scrollToBottom();
+            _speakText(randomGreeting, isUser: false);
+            _scrollToBottom();
+          } else {
+            logger.i('Greeting already exists in messages, skipping new greeting');
+            String lastBotMessage = _messages.lastWhere((msg) => !msg['isUser'])['text'];
+            _speakText(lastBotMessage, isUser: false);
+            _scrollToBottom();
+          }
         }
-      }
+      });
     });
-  });
-}
-
-Future<void> _triggerTutorial(BuildContext showcaseContext) async {
-  if (!mounted) {
-    logger.i('Tutorial not triggered: widget not mounted');
-    return;
   }
 
-  bool shouldShow = await TutorialService.shouldShowTutorial(Future.value(_hasSeenTutorial));
-  if (!shouldShow) {
-    logger.i('Tutorial skipped: user has already seen it');
-    return;
-  }
+  Future<void> _triggerTutorial(BuildContext showcaseContext) async {
+    if (!mounted) {
+      logger.i('Tutorial not triggered: widget not mounted');
+      return;
+    }
 
-  logger.i('Showing welcome dialog for tutorial');
-  bool? startTour = await TutorialService.showTutorialWithSkipOption(
-    context: context,
-    showcaseKeys: [_timerKey, _chatAreaKey, _micKey, _keyboardKey, _modeKey],
-    skipText: 'Skip Tutorial',
-    onComplete: () {
+    bool shouldShow = await TutorialService.shouldShowTutorial(Future.value(_hasSeenTutorial));
+    if (!shouldShow) {
+      logger.i('Tutorial skipped: user has already seen it');
+      return;
+    }
+
+    logger.i('Showing welcome dialog for tutorial');
+    bool? startTour = await TutorialService.showTutorialWithSkipOption(
+      context: context,
+      showcaseKeys: [_timerKey, _chatAreaKey, _micKey, _keyboardKey, _modeKey],
+      skipText: 'Skip Tutorial',
+      onComplete: () {
+        setState(() {
+          _hasSeenTutorial = true;
+        });
+        _saveTutorialStatus();
+      },
+      title: 'Welcome to TalkReady Bot!',
+      content: 'Get ready to explore the app with a quick tour! Would you like to start?',
+      confirmText: 'Start Tour',
+      showDontAskAgain: false,
+    );
+
+    if (!mounted || !showcaseContext.mounted) {
+      logger.w('Cannot proceed with tutorial: widget or context not mounted');
+      _showSnackBar('Cannot start tutorial at this time.');
+      return;
+    }
+
+    if (startTour == false) {
+      logger.i('User chose to start tutorial walkthrough');
+      try {
+        await Future.delayed(const Duration(milliseconds: 600));
+        logger.i('Dialog should be dismissed, starting showcase now');
+
+        if (mounted && showcaseContext.mounted) {
+          TutorialService.startShowCase(showcaseContext, [
+            _timerKey,
+            _chatAreaKey,
+            _micKey,
+            _keyboardKey,
+            _modeKey,
+          ]);
+          logger.i('Showcase started successfully');
+        } else {
+          logger.w('Cannot start showcase: widget not mounted or context unavailable');
+          _showSnackBar('Cannot start tutorial at this time.');
+        }
+      } catch (e) {
+        logger.e('Error starting tutorial: $e');
+        _showSnackBar('Failed to start tutorial: $e');
+      }
+    } else {
+      logger.i('User skipped tutorial');
       setState(() {
         _hasSeenTutorial = true;
       });
-      _saveTutorialStatus();
-    },
-    title: 'Welcome to TalkReady Bot!',
-    content: 'Get ready to explore the app with a quick tour! Would you like to start?',
-    confirmText: 'Start Tour',
-    showDontAskAgain: false,
-  );
-
-  if (!mounted || !showcaseContext.mounted) {
-    logger.w('Cannot proceed with tutorial: widget or context not mounted');
-    _showSnackBar('Cannot start tutorial at this time.');
-    return;
-  }
-
-  if (startTour == false) { // User chose to start tutorial walkthrough
-    logger.i('User chose to start tutorial walkthrough');
-    try {
-      // Increase delay to ensure dialog dismissal animation completes
-      await Future.delayed(const Duration(milliseconds: 600)); // Upped to 600ms
-      logger.i('Dialog should be dismissed, starting showcase now');
-
-      if (mounted && showcaseContext.mounted) {
-        TutorialService.startShowCase(showcaseContext, [
-          _timerKey,
-          _chatAreaKey,
-          _micKey,
-          _keyboardKey,
-          _modeKey,
-        ]);
-        logger.i('Showcase started successfully');
-      } else {
-        logger.w('Cannot start showcase: widget not mounted or context unavailable');
-        _showSnackBar('Cannot start tutorial at this time.');
-      }
-    } catch (e) {
-      logger.e('Error starting tutorial: $e');
-      _showSnackBar('Failed to start tutorial: $e');
+      await _saveTutorialStatus();
     }
-  } else {
-    logger.i('User skipped tutorial');
-    setState(() {
-      _hasSeenTutorial = true;
-    });
-    await _saveTutorialStatus();
   }
-}
 
- String _generateRandomGreeting() {
-  logger.i('Generating greeting with _accentLocale: $_accentLocale, userName: $_userName');
-  final now = DateTime.now();
-  String timePrefix = now.hour < 12
-      ? "Good morning"
-      : now.hour < 17
-          ? "Good afternoon"
-          : "Good evening";
+  String _generateRandomGreeting() {
+    logger.i('Generating greeting with _accentLocale: $_accentLocale, userName: $_userName');
+    final now = DateTime.now();
+    String timePrefix = now.hour < 12
+        ? "Good morning"
+        : now.hour < 17
+            ? "Good afternoon"
+            : "Good evening";
 
-  if (_userName == null || _userName!.isEmpty) {
-    logger.e('userName is null or empty, cannot generate personalized greeting');
-    throw Exception('User name is missing. Please complete onboarding or contact support.');
+    if (_userName == null || _userName!.isEmpty) {
+      logger.e('userName is null or empty, cannot generate personalized greeting');
+      throw Exception('User name is missing. Please complete onboarding or contact support.');
+    }
+    final List<String> baseGreetings = [
+      if (_accentLocale == 'en_US') ...[
+        "$timePrefix, $_userName! How’s your day been? Spill something fun!",
+        "$timePrefix, $_userName! What’s new with you today?",
+        "$timePrefix, $_userName! Got any exciting plans?",
+      ],
+      if (_accentLocale == 'en_GB') ...[
+        "$timePrefix, $_userName! How’s your day going? Tell me a smashing story!",
+        "$timePrefix, $_userName! What’s on your mind today?",
+        "$timePrefix, $_userName! Fancy sharing a brilliant tale?",
+      ],
+      if (_accentLocale == 'en_AU') ...[
+        "$timePrefix, $_userName! How’s your day? Got any ripper tales?",
+        "$timePrefix, $_userName! What’s cooking, mate?",
+        "$timePrefix, $_userName! Got any yarns to spin?",
+      ],
+    ];
+    String greeting = baseGreetings.isNotEmpty
+        ? baseGreetings[_random.nextInt(baseGreetings.length)]
+        : "$timePrefix, $_userName! Ready to practice your English?";
+    logger.i('Generated greeting: "$greeting"');
+    return greeting;
   }
-  final List<String> baseGreetings = [
-    if (_accentLocale == 'en_US') ...[
-      "$timePrefix, $_userName! How’s your day been? Spill something fun!",
-      "$timePrefix, $_userName! What’s new with you today?",
-      "$timePrefix, $_userName! Got any exciting plans?",
-    ],
-    if (_accentLocale == 'en_GB') ...[
-      "$timePrefix, $_userName! How’s your day going? Tell me a smashing story!",
-      "$timePrefix, $_userName! What’s on your mind today?",
-      "$timePrefix, $_userName! Fancy sharing a brilliant tale?",
-    ],
-    if (_accentLocale == 'en_AU') ...[
-      "$timePrefix, $_userName! How’s your day? Got any ripper tales?",
-      "$timePrefix, $_userName! What’s cooking, mate?",
-      "$timePrefix, $_userName! Got any yarns to spin?",
-    ],
-  ];
-  String greeting = baseGreetings.isNotEmpty
-      ? baseGreetings[_random.nextInt(baseGreetings.length)]
-      : "$timePrefix, $_userName! Ready to practice your English?";
-  logger.i('Generated greeting: "$greeting"');
-  return greeting;
-}
 
   Future<void> _initPlayer() async {
     try {
@@ -269,39 +275,29 @@ Future<void> _triggerTutorial(BuildContext showcaseContext) async {
   }
 
   Future<void> _initRecorder() async {
-  try {
-    await _recorder.openRecorder();
-    final tempDir = await getTemporaryDirectory();
-    _audioFilePath = '${tempDir.path}/audio.wav';
-    _isRecorderInitialized = true;
-    logger.i('Recorder initialized successfully');
-  } catch (e) {
-    logger.e('Error initializing recorder: $e');
-    _isRecorderInitialized = false;
-    _showSnackBar('Error initializing recorder: $e');
-  }
-}
-
- Future<void> _requestPermissions() async {
-  Map<Permission, PermissionStatus> statuses = await [
-    Permission.microphone,
-  ].request();
-
-  if (statuses[Permission.microphone]!.isDenied || statuses[Permission.microphone]!.isPermanentlyDenied) {
-    logger.w('Microphone permission denied');
-    _showSnackBar('Microphone permission is required for voice input');
-    if (statuses[Permission.microphone]!.isPermanentlyDenied && mounted) {
-      _showPermissionDialog('Microphone', 'voice recording');
+    try {
+      await _recorder.openRecorder();
+      final tempDir = await getTemporaryDirectory();
+      _audioFilePath = '${tempDir.path}/audio.wav';
+      _isRecorderInitialized = true;
+      logger.i('Recorder initialized successfully');
+    } catch (e) {
+      logger.e('Error initializing recorder: $e');
+      _isRecorderInitialized = false;
+      _showSnackBar('Error initializing recorder: $e');
     }
   }
 
+  Future<void> _requestPermissions() async {
+    Map<Permission, PermissionStatus> statuses = await [
+      Permission.microphone,
+    ].request();
 
-    if (statuses[Permission.storage]!.isDenied || statuses[Permission.storage]!.isPermanentlyDenied) {
-      logger.w('Storage permission denied');
-      _isRecorderInitialized = false;
-      _showSnackBar('Storage permission is required for saving audio');
-      if (statuses[Permission.storage]!.isPermanentlyDenied && mounted) {
-        _showPermissionDialog('Storage', 'audio file saving');
+    if (statuses[Permission.microphone]!.isDenied || statuses[Permission.microphone]!.isPermanentlyDenied) {
+      logger.w('Microphone permission denied');
+      _showSnackBar('Microphone permission is required for voice input');
+      if (statuses[Permission.microphone]!.isPermanentlyDenied && mounted) {
+        _showPermissionDialog('Microphone', 'voice recording');
       }
     }
   }
@@ -331,120 +327,119 @@ Future<void> _triggerTutorial(BuildContext showcaseContext) async {
     );
   }
 
- Future<void> _fetchOnboardingData() async {
-  final user = FirebaseAuth.instance.currentUser;
-  if (user == null) return;
+  Future<void> _fetchOnboardingData() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
 
-  try {
-    DocumentSnapshot doc = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .get();
-    Map<String, dynamic>? userData = doc.data() as Map<String, dynamic>?;
-    if (userData != null && userData.containsKey('onboarding')) {
-      Map<String, dynamic> onboarding = userData['onboarding'];
-      logger.i('Raw onboarding data: $onboarding');
-      String rawAccent = onboarding['desiredAccent']?.toString() ?? 'Unknown';
-      String cleanedAccent = rawAccent
-          .replaceAll(RegExp(r'[^a-zA-Z ]'), '')
-          .trim()
-          .toLowerCase();
-      logger.i('Raw desiredAccent: "$rawAccent", Cleaned: "$cleanedAccent"');
+    try {
+      DocumentSnapshot doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      Map<String, dynamic>? userData = doc.data() as Map<String, dynamic>?;
+      if (userData != null && userData.containsKey('onboarding')) {
+        Map<String, dynamic> onboarding = userData['onboarding'];
+        logger.i('Raw onboarding data: $onboarding');
+        String rawAccent = onboarding['desiredAccent']?.toString() ?? 'Unknown';
+        String cleanedAccent = rawAccent
+            .replaceAll(RegExp(r'[^a-zA-Z ]'), '')
+            .trim()
+            .toLowerCase();
+        logger.i('Raw desiredAccent: "$rawAccent", Cleaned: "$cleanedAccent"');
 
-      String? dailyGoal = onboarding['dailyPracticeGoal']?.toString();
-      if (dailyGoal != null) {
-        String minutesStr = dailyGoal.replaceAll(RegExp(r'[^0-9]'), '');
-        int minutes = int.tryParse(minutesStr) ?? 5;
-        _timeGoalSeconds = minutes * 60;
-        logger.i(
-            'Set timeGoalSeconds to: $_timeGoalSeconds seconds ($minutes minutes)');
-      } else {
-        logger.i(
-            'No dailyPracticeGoal found, using default timeGoalSeconds: $_timeGoalSeconds');
-      }
-
-      if (mounted) {
-        setState(() {
-          switch (cleanedAccent) {
-            case 'australian':
-              _accentLocale = 'en_AU';
-              break;
-            case 'american':
-              _accentLocale = 'en_US';
-              break;
-            case 'british':
-              _accentLocale = 'en_GB';
-              break;
-            case 'neutral':
-              _accentLocale = 'en_US';
-              break;
-            default:
-              _accentLocale = 'en_US';
-              logger.w('Unknown accent: "$cleanedAccent", defaulting to en_US');
-          }
-          _userName = onboarding['userName']?.toString();
-          if (_userName == null || _userName!.isEmpty) {
-            _userName = user.displayName?.toString() ?? 'User';
-            logger.w(
-                'userName not found in onboarding, using fallback: $_userName');
-          }
-          _userProfilePictureBase64 = onboarding['profilePicBase64']?.toString();
-          if (_userProfilePictureBase64 == null || _userProfilePictureBase64!.isEmpty) {
-            logger.w('No profilePicBase64 found in onboarding data');
-            _userProfileImage = null;
-          } else {
-            try {
-              if (_userProfilePictureBase64!.startsWith('data:image')) {
-                logger.i('Stripping Base64 prefix from profilePicBase64');
-                _userProfilePictureBase64 = _userProfilePictureBase64!.split(',').last;
-              }
-              final bytes = base64Decode(_userProfilePictureBase64!);
-              logger.i('Profile picture Base64 decoded, byte length: ${bytes.length}');
-              _userProfileImage = MemoryImage(bytes);
-            } catch (e) {
-              logger.e('Error decoding profilePicBase64: $e');
-              _userProfileImage = null;
-            }
-          }
-          logger.i('Set userName to: $_userName');
-          logger.i('Set accent locale to: $_accentLocale');
-
-          _sessionProgress.forEach((key, value) {
-            _sessionProgress[key] =
-                (userData['sessionProgress']?[key] as double?) ?? 0.0;
-          });
-          _responseCount = (userData['responseCount'] as int?) ?? 0;
-          _remainingSeconds =
-              (userData['remainingSeconds'] as int?) ?? _timeGoalSeconds;
-          _hasSeenTutorial = (userData['hasSeenTutorial'] as bool?) ?? false;
+        String? dailyGoal = onboarding['dailyPracticeGoal']?.toString();
+        if (dailyGoal != null) {
+          String minutesStr = dailyGoal.replaceAll(RegExp(r'[^0-9]'), '');
+          int minutes = int.tryParse(minutesStr) ?? 5;
+          _timeGoalSeconds = minutes * 60;
           logger.i(
-              'Loaded progress: sessionProgress=$_sessionProgress, responseCount=$_responseCount, remainingSeconds=$_remainingSeconds, hasSeenTutorial=$_hasSeenTutorial');
+              'Set timeGoalSeconds to: $_timeGoalSeconds seconds ($minutes minutes)');
+        } else {
+          logger.i(
+              'No dailyPracticeGoal found, using default timeGoalSeconds: $_timeGoalSeconds');
+        }
 
-          _messages.clear();
-          (userData['messages'] as List<dynamic>?)?.forEach((msg) {
-            var message = Map<String, dynamic>.from(msg);
-            // Ensure older messages without timestamps are given a default
-            if (!message.containsKey('timestamp')) {
-              message['timestamp'] = DateTime.now().toIso8601String();
+        if (mounted) {
+          setState(() {
+            switch (cleanedAccent) {
+              case 'australian':
+                _accentLocale = 'en_AU';
+                break;
+              case 'american':
+                _accentLocale = 'en_US';
+                break;
+              case 'british':
+                _accentLocale = 'en_GB';
+                break;
+              case 'neutral':
+                _accentLocale = 'en_US';
+                break;
+              default:
+                _accentLocale = 'en_US';
+                logger.w('Unknown accent: "$cleanedAccent", defaulting to en_US');
             }
-            _messages.add(message);
+            _userName = onboarding['userName']?.toString();
+            if (_userName == null || _userName!.isEmpty) {
+              _userName = user.displayName?.toString() ?? 'User';
+              logger.w(
+                  'userName not found in onboarding, using fallback: $_userName');
+            }
+            _userProfilePictureBase64 = onboarding['profilePicBase64']?.toString();
+            if (_userProfilePictureBase64 == null || _userProfilePictureBase64!.isEmpty) {
+              logger.w('No profilePicBase64 found in onboarding data');
+              _userProfileImage = null;
+            } else {
+              try {
+                if (_userProfilePictureBase64!.startsWith('data:image')) {
+                  logger.i('Stripping Base64 prefix from profilePicBase64');
+                  _userProfilePictureBase64 = _userProfilePictureBase64!.split(',').last;
+                }
+                final bytes = base64Decode(_userProfilePictureBase64!);
+                logger.i('Profile picture Base64 decoded, byte length: ${bytes.length}');
+                _userProfileImage = MemoryImage(bytes);
+              } catch (e) {
+                logger.e('Error decoding profilePicBase64: $e');
+                _userProfileImage = null;
+              }
+            }
+            logger.i('Set userName to: $_userName');
+            logger.i('Set accent locale to: $_accentLocale');
+
+            _sessionProgress.forEach((key, value) {
+              _sessionProgress[key] =
+                  (userData['sessionProgress']?[key] as double?) ?? 0.0;
+            });
+            _responseCount = (userData['responseCount'] as int?) ?? 0;
+            _remainingSeconds =
+                (userData['remainingSeconds'] as int?) ?? _timeGoalSeconds;
+            _hasSeenTutorial = (userData['hasSeenTutorial'] as bool?) ?? false;
+            logger.i(
+                'Loaded progress: sessionProgress=$_sessionProgress, responseCount=$_responseCount, remainingSeconds=$_remainingSeconds, hasSeenTutorial=$_hasSeenTutorial');
+
+            _messages.clear();
+            (userData['messages'] as List<dynamic>?)?.forEach((msg) {
+              var message = Map<String, dynamic>.from(msg);
+              if (!message.containsKey('timestamp')) {
+                message['timestamp'] = DateTime.now().toIso8601String();
+              }
+              _messages.add(message);
+            });
+            logger.i('Loaded messages: $_messages');
+            _initializeTts();
           });
-          logger.i('Loaded messages: $_messages');
-          _initializeTts();
-        });
+        }
+      } else {
+        logger.e('No onboarding data found for user');
+        if (mounted) {
+          _showSnackBar(
+              'No onboarding data found. Please complete onboarding.');
+        }
       }
-    } else {
-      logger.e('No onboarding data found for user');
-      if (mounted) {
-        _showSnackBar(
-            'No onboarding data found. Please complete onboarding.');
-      }
+    } catch (e) {
+      logger.e('Error fetching preferences: $e');
+      if (mounted) _showSnackBar('Error fetching preferences: $e');
     }
-  } catch (e) {
-    logger.e('Error fetching preferences: $e');
-    if (mounted) _showSnackBar('Error fetching preferences: $e');
   }
-}
 
   void _startTimer() {
     _timer?.cancel();
@@ -511,41 +506,41 @@ Future<void> _triggerTutorial(BuildContext showcaseContext) async {
   }
 
   Future<void> _startListening() async {
-  if (!_isRecorderInitialized) {
-    _showSnackBar('Cannot record audio. Recorder initialization failed.');
-    return;
-  }
-
-  if (!_isListening && !_isTyping && _remainingSeconds > 0) {
-    if (!_hasStartedListening) {
-      _startTimer();
-      _hasStartedListening = true;
+    if (!_isRecorderInitialized) {
+      _showSnackBar('Cannot record audio. Recorder initialization failed.');
+      return;
     }
 
-    logger.d(
-        'Starting to listen. IsListening: $_isListening, IsTyping: $_isTyping, RemainingSeconds: $_remainingSeconds');
-
-    try {
-      if (_recorder.isRecording) {
-        await _recorder.stopRecorder();
+    if (!_isListening && !_isTyping && _remainingSeconds > 0) {
+      if (!_hasStartedListening) {
+        _startTimer();
+        _hasStartedListening = true;
       }
-      await _recorder.startRecorder(
-        toFile: _audioFilePath!,
-        codec: Codec.pcm16WAV,
-      );
-      setState(() => _isListening = true);
-      logger.d('Recording started for AssemblyAI');
-      _showSnackBar('Recording started. Speak now!');
-    } catch (e) {
-      logger.e('Error starting recording: $e');
-      _showSnackBar('Error starting recording: $e');
-      setState(() => _isListening = false);
+
+      logger.d(
+          'Starting to listen. IsListening: $_isListening, IsTyping: $_isTyping, RemainingSeconds: $_remainingSeconds');
+
+      try {
+        if (_recorder.isRecording) {
+          await _recorder.stopRecorder();
+        }
+        await _recorder.startRecorder(
+          toFile: _audioFilePath!,
+          codec: Codec.pcm16WAV,
+        );
+        setState(() => _isListening = true);
+        logger.d('Recording started for AssemblyAI');
+        _showSnackBar('Recording started. Speak now!');
+      } catch (e) {
+        logger.e('Error starting recording: $e');
+        _showSnackBar('Error starting recording: $e');
+        setState(() => _isListening = false);
+      }
+    } else {
+      logger.w('Cannot start listening. Conditions not met.');
+      _showSnackBar('Time’s up! You can’t practice anymore.');
     }
-  } else {
-    logger.w('Cannot start listening. Conditions not met.');
-    _showSnackBar('Time’s up! You can’t practice anymore.');
   }
-}
 
   Future<void> _stopListening() async {
     if (_isListening) {
@@ -596,91 +591,88 @@ Future<void> _triggerTutorial(BuildContext showcaseContext) async {
   }
 
   void _submitTypedText() {
-  if (_textController.text.isNotEmpty && _remainingSeconds > 0) {
-    String processedText = _processText(_textController.text);
-    setState(() {
-      _messages.add({
-        'text': processedText,
-        'isUser': true,
-        'timestamp': DateTime.now().toIso8601String(),
-      });
-      _pruneMessages();
-    });
-    _scrollToBottom();
-    _speakText(processedText, isUser: true);
-    _generateAIResponse(processedText);
-    _evaluateUserInput(processedText);
-    _textController.clear();
-    setState(() => _isTyping = false);
-  }
-}
-
- Future<void> _processAudioRecording() async {
-  if (_audioFilePath != null) {
-    try {
-      final file = File(_audioFilePath!);
-      if (!await file.exists() || await file.length() == 0) {
-        _showSnackBar('Audio file is missing or empty.');
-        logger.w(
-            'Audio file check failed: exists=${await file.exists()}, length=${await file.length()}');
-        return;
-      }
-
-      _showSnackBar('Playing your voice...');
-      logger.i('Playing recorded audio...');
-
-      // Create a Completer to wait for playback completion
-      Completer<void> playbackCompleter = Completer<void>();
-
-      await _player.startPlayer(
-        fromURI: _audioFilePath!,
-        codec: Codec.pcm16WAV,
-        whenFinished: () {
-          logger.i('Audio playback finished.');
-          playbackCompleter.complete(); // Resolve the completer when playback finishes
-        },
-      ).catchError((error) {
-        logger.e('Error playing audio: $error');
-        _showSnackBar('Error playing your voice: $error');
-        playbackCompleter.completeError(error); // Resolve with error if playback fails
-        return null;
-      });
-
-      // Wait for the playback to finish
-      await playbackCompleter.future;
-
-      _showSnackBar('Uploading audio...');
-      String audioUrl = await _uploadToCloudinary(_audioFilePath!);
-
-      _showSnackBar('Transcribing audio...');
-      String? transcript = await _transcribeWithAssemblyAI(audioUrl);
-      if (transcript != null && transcript.isNotEmpty) {
-        String processedText = _processText(transcript);
-        setState(() {
-          _messages.add({
-            'text': processedText,
-            'isUser': true,
-            'timestamp': DateTime.now().toIso8601String(),
-          });
-          _lastRecognizedText = processedText;
-          _pruneMessages();
+    if (_textController.text.isNotEmpty && _remainingSeconds > 0) {
+      String processedText = _processText(_textController.text);
+      setState(() {
+        _messages.add({
+          'text': processedText,
+          'isUser': true,
+          'timestamp': DateTime.now().toIso8601String(),
         });
-        _scrollToBottom();
-        logger.i('Transcribed text: $processedText');
-
-        // Now that playback is complete, generate and speak the AI response
-        await _generateAIResponse(processedText);
-        _evaluateUserInput(processedText);
-      } else {
-        _showSnackBar('Transcription returned empty. Did you speak clearly?');
-        logger.w('AssemblyAI returned empty transcript');
-      }
-    } catch (e) {
-      logger.e('Error processing audio: $e');
-      _showSnackBar('Error processing audio: $e');
+        _pruneMessages();
+      });
+      _scrollToBottom();
+      _speakText(processedText, isUser: true);
+      _generateAIResponse(processedText);
+      _evaluateUserInput(processedText);
+      _textController.clear();
+      setState(() => _isTyping = false);
     }
   }
-}
+
+  Future<void> _processAudioRecording() async {
+    if (_audioFilePath != null) {
+      try {
+        final file = File(_audioFilePath!);
+        if (!await file.exists() || await file.length() == 0) {
+          _showSnackBar('Audio file is missing or empty.');
+          logger.w(
+              'Audio file check failed: exists=${await file.exists()}, length=${await file.length()}');
+          return;
+        }
+
+        _showSnackBar('Playing your voice...');
+        logger.i('Playing recorded audio...');
+
+        Completer<void> playbackCompleter = Completer<void>();
+
+        await _player.startPlayer(
+          fromURI: _audioFilePath!,
+          codec: Codec.pcm16WAV,
+          whenFinished: () {
+            logger.i('Audio playback finished.');
+            playbackCompleter.complete();
+          },
+        ).catchError((error) {
+          logger.e('Error playing audio: $error');
+          _showSnackBar('Error playing your voice: $error');
+          playbackCompleter.completeError(error);
+          return null;
+        });
+
+        await playbackCompleter.future;
+
+        _showSnackBar('Uploading audio...');
+        String audioUrl = await _uploadToCloudinary(_audioFilePath!);
+
+        _showSnackBar('Transcribing audio...');
+        String? transcript = await _transcribeWithAssemblyAI(audioUrl);
+        if (transcript != null && transcript.isNotEmpty) {
+          String processedText = _processText(transcript);
+          setState(() {
+            _messages.add({
+              'text': processedText,
+              'isUser': true,
+              'timestamp': DateTime.now().toIso8601String(),
+            });
+            _lastRecognizedText = processedText;
+            _pruneMessages();
+          });
+          _scrollToBottom();
+          logger.i('Transcribed text: $processedText');
+
+          await _generateAIResponse(processedText);
+          _evaluateUserInput(processedText);
+        } else {
+          _showSnackBar('Transcription returned empty. Did you speak clearly?');
+          logger.w('AssemblyAI returned empty transcript');
+        }
+      } catch (e) {
+        logger.e('Error processing audio: $e');
+        _showSnackBar('Error processing audio: $e');
+      }
+    }
+  }
 
   Future<String> _uploadToCloudinary(String filePath) async {
     final cloudName = dotenv.env['CLOUDINARY_CLOUD_NAME'] ?? '';
@@ -882,31 +874,31 @@ Future<void> _triggerTutorial(BuildContext showcaseContext) async {
         .trim();
   }
 
- Future<void> _generateAIResponse(String userInput) async {
-  if (mounted) {
-    setState(() => _isProcessingTTS = true);
-    logger.d('Generating AI response for: $userInput');
-    String aiResponse = await _getOpenAIResponse(
-      'You are an advanced English-speaking assistant named TalkReady. You are designed to help non-native speakers improve their spoken English skills. Based on user’s speaking level and $_accentLocale, You provide clear, friendly, and constructive feedback while encouraging natural and confident communication.',
-      userInput: userInput,
-    );
+  Future<void> _generateAIResponse(String userInput) async {
     if (mounted) {
-      setState(() {
-        _messages.add({
-          'text': aiResponse,
-          'isUser': false,
-          'timestamp': DateTime.now().toIso8601String(),
+      setState(() => _isProcessingTTS = true);
+      logger.d('Generating AI response for: $userInput');
+      String aiResponse = await _getOpenAIResponse(
+        'You are an advanced English-speaking assistant named TalkReady. You are designed to help non-native speakers improve their spoken English skills. Based on user’s speaking level and $_accentLocale, You provide clear, friendly, and constructive feedback while encouraging natural and confident communication.',
+        userInput: userInput,
+      );
+      if (mounted) {
+        setState(() {
+          _messages.add({
+            'text': aiResponse,
+            'isUser': false,
+            'timestamp': DateTime.now().toIso8601String(),
+          });
+          _isProcessingTTS = false;
+          _isTyping = false;
         });
-        _isProcessingTTS = false;
-        _isTyping = false;
-      });
-      _scrollToBottom();
-      logger.i('AI message added: $aiResponse');
-      _speakText(aiResponse, isUser: false);
-      _evaluateUserInput(userInput);
+        _scrollToBottom();
+        logger.i('AI message added: $aiResponse');
+        _speakText(aiResponse, isUser: false);
+        _evaluateUserInput(userInput);
+      }
     }
   }
-}
 
   Future<void> _evaluateUserInput(String userInput) async {
     _responseCount++;
@@ -1010,14 +1002,11 @@ Future<void> _triggerTutorial(BuildContext showcaseContext) async {
         logger.i('Playing audio for locale: $_accentLocale');
         await _audioPlayer.play(BytesSource(response.bodyBytes));
       } else {
-        logger.w('TTS server failed, falling back to FlutterTts');
-      //   _showSnackBar(
-      //       'F5-TTS server error (status ${response.statusCode}), using default TTS.');
-       await _flutterTtsFallback(text);
-       }
+        logger.w('TTS server failed with status ${response.statusCode}, falling back to FlutterTts');
+        await _flutterTtsFallback(text);
+      }
     } catch (e) {
-      logger.e('Error with F5-TTS request: $e, falling back to FlutterTts');
-      _showSnackBar('F5-TTS error: $e, using default TTS.');
+      logger.e('F5-TTS error: $e, falling back to FlutterTts');
       await _flutterTtsFallback(text);
     } finally {
       if (mounted) {
@@ -1043,34 +1032,33 @@ Future<void> _triggerTutorial(BuildContext showcaseContext) async {
       logger.d('Flutter TTS fallback played with locale: $_accentLocale');
     } catch (e) {
       logger.e('Error with Flutter TTS fallback: $e');
-      _showSnackBar('TTS fallback failed: $e');
     }
   }
 
   void _saveProgress({bool showSnackBar = true}) {
-  final user = FirebaseAuth.instance.currentUser;
-  if (user != null) {
-    FirebaseFirestore.instance.collection('users').doc(user.uid).update({
-      'sessionProgress': _sessionProgress,
-      'lastPracticeTime': FieldValue.serverTimestamp(),
-      'totalPracticeTime': FieldValue.increment(_timeGoalSeconds - _remainingSeconds),
-      'responseCount': _responseCount,
-      'remainingSeconds': _remainingSeconds,
-      'messages': _messages,
-      'lastRecognizedText': _lastRecognizedText,
-    }).then((value) {
-      logger.i('Progress, messages, and lastRecognizedText saved to Firestore');
-      if (showSnackBar && mounted) {
-        _showSnackBar('Progress and chat history saved successfully.');
-      }
-    }).catchError((error) {
-      logger.e('Error saving progress to Firestore: $error');
-      if (showSnackBar && mounted) {
-        _showSnackBar('Error saving progress. Please try again.');
-      }
-    });
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      FirebaseFirestore.instance.collection('users').doc(user.uid).update({
+        'sessionProgress': _sessionProgress,
+        'lastPracticeTime': FieldValue.serverTimestamp(),
+        'totalPracticeTime': FieldValue.increment(_timeGoalSeconds - _remainingSeconds),
+        'responseCount': _responseCount,
+        'remainingSeconds': _remainingSeconds,
+        'messages': _messages,
+        'lastRecognizedText': _lastRecognizedText,
+      }).then((value) {
+        logger.i('Progress, messages, and lastRecognizedText saved to Firestore');
+        if (showSnackBar && mounted) {
+          _showSnackBar('Progress and chat history saved successfully.');
+        }
+      }).catchError((error) {
+        logger.e('Error saving progress to Firestore: $error');
+        if (showSnackBar && mounted) {
+          _showSnackBar('Error saving progress. Please try again.');
+        }
+      });
+    }
   }
-}
 
   void _pruneMessages() {
     if (_messages.length > 20) {
@@ -1116,6 +1104,7 @@ Future<void> _triggerTutorial(BuildContext showcaseContext) async {
       );
     }
   }
+
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
@@ -1127,11 +1116,25 @@ Future<void> _triggerTutorial(BuildContext showcaseContext) async {
       }
     });
   }
+void _stopAudio() async {
+  try {
+    await _audioPlayer.stop();
+    await _audioPlayer.release();
+    await _flutterTts.stop();
+    setState(() => _isProcessingTTS = false);
+    logger.i('Audio stopped successfully');
+  } catch (e) {
+    logger.e('Error stopping audio: $e');
+    _showSnackBar('Failed to stop audio: $e');
+  }
+}
+
   @override
   void dispose() {
     _timer?.cancel();
     _flutterTts.stop();
     _recorder.closeRecorder();
+    _stopAudio();
     _player.closePlayer();
     _textController.dispose();
     _audioPlayer.dispose();
@@ -1145,9 +1148,9 @@ Future<void> _triggerTutorial(BuildContext showcaseContext) async {
     return '${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return ShowCaseWidget(
+@override
+Widget build(BuildContext context) {
+  return ShowCaseWidget(
     onFinish: () {
       logger.i('ShowCaseWidget onFinish triggered');
       TutorialService.handleTutorialCompletion();
@@ -1168,13 +1171,12 @@ Future<void> _triggerTutorial(BuildContext showcaseContext) async {
         });
       }
 
-      return WillPopScope(
+       return WillPopScope(
         onWillPop: () async {
-          // Call the callback to update the tab index in HomePage
+          _stopAudio();
           widget.onBackPressed?.call();
-          // Save progress before popping
           _saveProgress(showSnackBar: false);
-          return true; // Allow the pop to proceed
+          return true;
         },
         child: Scaffold(
           appBar: AppBar(
@@ -1200,130 +1202,131 @@ Future<void> _triggerTutorial(BuildContext showcaseContext) async {
                     ),
                   ),
                 ),
-                TutorialService.buildShowcase(
-                  context: showcaseContext,
-                  key: _timerKey,
-                  title: 'Practice Timer',
-                  description: 'This shows your remaining practice time for today. Keep an eye on it!',
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 16),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.blue.shade100,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.timer, size: 18, color: Colors.blue),
-                          const SizedBox(width: 4),
-                          Text(
-                            _formatTime(_remainingSeconds),
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue,
-                            ),
-                          ),
-                        ],
-                      ),
+              TutorialService.buildShowcase(
+                context: showcaseContext,
+                key: _timerKey,
+                title: 'Practice Timer',
+                description: 'This shows your remaining practice time for today. Keep an eye on it!',
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 16),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade100,
+                      borderRadius: BorderRadius.circular(20),
                     ),
-                  ),
-                ),
-              ],
-            ),
-            body: Column(
-              children: [
-                Expanded(
-                  child: TutorialService.buildShowcase(
-                    context: showcaseContext,
-                    key: _chatAreaKey,
-                    title: 'Chat Area',
-                    description: 'Here, you’ll see your conversation with the TalkReady Bot. Your messages appear on the right, and the bot’s on the left.',
-                    child: Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: ListView.builder(
-                        controller: _scrollController,
-                        itemCount: _messages.length,
-                        itemBuilder: (context, index) {
-                          final message = _messages[index];
-                          return ChatMessage(
-                            message: message['text'],
-                            isUser: message['isUser'],
-                            userProfileImage: _userProfileImage,
-                            timestamp: message['timestamp'],
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                ),
-                if (_isListening)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8.0),
-                    child: Text(
-                      _lastRecognizedText.isEmpty
-                          ? 'Listening...'
-                          : 'Listening: $_lastRecognizedText',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        color: Colors.blue,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                  ),
-                if (_isTyping)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                     child: Row(
                       children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _textController,
-                            decoration: InputDecoration(
-                              hintText: 'Type your message...',
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                            onSubmitted: (_) => _submitTypedText(),
+                        const Icon(Icons.timer, size: 18, color: Colors.blue),
+                        const SizedBox(width: 4),
+                        Text(
+                          _formatTime(_remainingSeconds),
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue,
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        IconButton(
-                          icon: const Icon(Icons.send, color: Colors.blue),
-                          onPressed: _submitTypedText,
                         ),
                       ],
                     ),
                   ),
+                ),
+              ),
+            ],
+          ),
+          body: Column(
+            children: [
+              Expanded(
+                child: TutorialService.buildShowcase(
+                  context: showcaseContext,
+                  key: _chatAreaKey,
+                  title: 'Chat Area',
+                  description: 'Here, you’ll see your conversation with the TalkReady Bot. Your messages appear on the right, and the bot’s on the left.',
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: ListView.builder(
+                      controller: _scrollController,
+                      itemCount: _messages.length,
+                      itemBuilder: (context, index) {
+                        final message = _messages[index];
+                        return ChatMessage(
+                          message: message['text'],
+                          isUser: message['isUser'],
+                          userProfileImage: _userProfileImage,
+                          timestamp: message['timestamp'],
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
+              if (_isListening)
                 Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 20),
-                  child: IconRow(
-                    onMicTap: () => _isListening ? _stopListening() : _startListening(),
-                    onKeyboardTap: _toggleTyping,
-                    onModeSelected: (String title) {
-                      final selectedScenario = _scenarioOptions.firstWhere(
-                          (scenario) => scenario['title'] == title);
-                      final route = selectedScenario['route'];
-                      if (route != null && mounted) {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => route(
-                              context,
-                              _accentLocale ?? 'en_US',
-                              _userName ?? 'User',
-                              _timeGoalSeconds,
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: Text(
+                    _lastRecognizedText.isEmpty
+                        ? 'Listening...'
+                        : 'Listening: $_lastRecognizedText',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      color: Colors.blue,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ),
+              if (_isTyping)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _textController,
+                          decoration: InputDecoration(
+                            hintText: 'Type your message...',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
                             ),
                           ),
-                        );
-                      }
-                    },
+                          onSubmitted: (_) => _submitTypedText(),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: const Icon(Icons.send, color: Colors.blue),
+                        onPressed: _submitTypedText,
+                      ),
+                    ],
+                  ),
+                ),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 20),
+                child: IconRow(
+                  onMicTap: () => _isListening ? _stopListening() : _startListening(),
+                  onKeyboardTap: _toggleTyping,
+                  onModeSelected: (String title) {
+                    _stopAudio();
+                    final selectedScenario = _scenarioOptions.firstWhere(
+                        (scenario) => scenario['title'] == title);
+                    final route = selectedScenario['route'];
+                    if (route != null && mounted) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => route(
+                            context,
+                            _accentLocale ?? 'en_US',
+                            _userName ?? 'User',
+                            _timeGoalSeconds,
+                          ),
+                        ),
+                      );
+                    }
+                  },
                     isListening: _isListening,
                     isTyping: _isTyping,
                     scenarioOptions: _scenarioOptions,
@@ -1340,6 +1343,7 @@ Future<void> _triggerTutorial(BuildContext showcaseContext) async {
     );
   }
 }
+
 class ChatMessage extends StatefulWidget {
   final String message;
   final bool isUser;
@@ -1446,6 +1450,7 @@ class _ChatMessageState extends State<ChatMessage> {
     );
   }
 }
+
 class IconRow extends StatelessWidget {
   final VoidCallback onMicTap;
   final VoidCallback onKeyboardTap;
@@ -1504,27 +1509,86 @@ class IconRow extends StatelessWidget {
           description: 'Tap here to choose different practice scenarios, like grammar or vocabulary exercises.',
           child: PopupMenuButton<String>(
             onSelected: onModeSelected,
+            offset: const Offset(0, 50),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: Colors.blue.shade100, width: 1),
+            ),
+            color: Colors.white,
+            elevation: 10,
+            padding: const EdgeInsets.all(8),
             itemBuilder: (BuildContext context) {
               return scenarioOptions.map((scenario) {
                 return PopupMenuItem<String>(
                   value: scenario['title'],
-                  child: Row(
-                    children: [
-                      Icon(
-                        scenario['icon'],
-                        color: Colors.blue.shade500,
-                        size: 20.0,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    margin: const EdgeInsets.symmetric(vertical: 4),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.blue.shade50,
+                          Colors.white,
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
-                      const SizedBox(width: 8.0),
-                      Text(
-                        scenario['title'],
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.blue.shade900,
-                          fontWeight: FontWeight.w500,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.blue.shade100.withOpacity(0.2),
+                          blurRadius: 6,
+                          offset: const Offset(0, 3),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: LinearGradient(
+                              colors: [Colors.blue.shade400, Colors.blue.shade600],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                          ),
+                          child: Icon(
+                            scenario['icon'],
+                            color: Colors.white,
+                            size: 28,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                scenario['title'],
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.blue.shade900,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Practice ${scenario['title'].split(' ').first.toLowerCase()} skills',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.blue.shade600,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 );
               }).toList();

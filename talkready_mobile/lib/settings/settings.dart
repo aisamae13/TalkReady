@@ -16,7 +16,7 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   final Logger _logger = Logger();
-  bool _isLoading = false; // Para sa loading indicator
+  final bool _isLoading = false; // Para sa loading indicator
 
   // Sign out function
   Future<void> _signOut(BuildContext context) async {

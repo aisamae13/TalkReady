@@ -64,6 +64,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '687695411049',
     projectId: 'talkready-a8496',
     storageBucket: 'talkready-a8496.firebasestorage.app',
+    androidClientId: '687695411049-1pmbkvckh08206bloi0uf2tt9hql0227.apps.googleusercontent.com',
     iosClientId: '687695411049-qdmdb0nce6d2tbv6l021m0nt25s1p8ld.apps.googleusercontent.com',
     iosBundleId: 'com.example.talkreadyMobile',
   );
@@ -74,6 +75,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '687695411049',
     projectId: 'talkready-a8496',
     storageBucket: 'talkready-a8496.firebasestorage.app',
+    androidClientId: '687695411049-1pmbkvckh08206bloi0uf2tt9hql0227.apps.googleusercontent.com',
     iosClientId: '687695411049-qdmdb0nce6d2tbv6l021m0nt25s1p8ld.apps.googleusercontent.com',
     iosBundleId: 'com.example.talkreadyMobile',
   );
@@ -87,4 +89,5 @@ class DefaultFirebaseOptions {
     storageBucket: 'talkready-a8496.firebasestorage.app',
     measurementId: 'G-VRC5WSJZ10',
   );
+
 }

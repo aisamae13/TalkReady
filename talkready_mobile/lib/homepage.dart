@@ -38,46 +38,53 @@ class _HomePageState extends State<HomePage> {
     _fetchProgress(); // Load progress when the page initializes
   }
 
-  Future<void> _fetchProgress() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      logger.e('No user logged in');
-      return;
+Future<void> _fetchProgress() async {
+  final user = FirebaseAuth.instance.currentUser;
+  if (user == null) {
+    logger.e('No user logged in');
+    return;
+  }
+
+  try {
+    // Validate user.uid
+    if (user.uid.isEmpty) {
+      logger.e('Invalid user UID: empty');
+      throw ArgumentError('User UID cannot be empty');
     }
 
-    try {
-      DocumentSnapshot doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-      Map<String, dynamic>? userData = doc.data() as Map<String, dynamic>?;
-      if (userData != null && userData.containsKey('progress')) {
-        Map<String, dynamic> progress = userData['progress'];
-        setState(() {
-          skillPercentages['Fluency'] =
-              (progress['Fluency'] as num?)?.toDouble() ?? 0.0;
-          skillPercentages['Grammar'] =
-              (progress['Grammar'] as num?)?.toDouble() ?? 0.0;
-          skillPercentages['Pronunciation'] =
-              (progress['Pronunciation'] as num?)?.toDouble() ?? 0.0;
-          skillPercentages['Vocabulary'] =
-              (progress['Vocabulary'] as num?)?.toDouble() ?? 0.0;
-          skillPercentages['Interaction'] =
-              (progress['Interaction'] as num?)?.toDouble() ?? 0.0;
-        });
-        logger.i('Fetched progress for homepage: $skillPercentages');
-      } else {
-        logger.i('No progress data found, using defaults');
-      }
-    } catch (e) {
-      logger.e('Error fetching progress for homepage: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading progress: $e')),
-        );
-      }
+    logger.i('Fetching progress for user: ${user.uid}');
+    DocumentSnapshot doc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .get();
+    Map<String, dynamic>? userData = doc.data() as Map<String, dynamic>?;
+    if (userData != null && userData.containsKey('progress')) {
+      Map<String, dynamic> progress = userData['progress'];
+      setState(() {
+        skillPercentages['Fluency'] =
+            (progress['Fluency'] as num?)?.toDouble() ?? 0.0;
+        skillPercentages['Grammar'] =
+            (progress['Grammar'] as num?)?.toDouble() ?? 0.0;
+        skillPercentages['Pronunciation'] =
+            (progress['Pronunciation'] as num?)?.toDouble() ?? 0.0;
+        skillPercentages['Vocabulary'] =
+            (progress['Vocabulary'] as num?)?.toDouble() ?? 0.0;
+        skillPercentages['Interaction'] =
+            (progress['Interaction'] as num?)?.toDouble() ?? 0.0;
+      });
+      logger.i('Fetched progress: $skillPercentages');
+    } else {
+      logger.i('No progress data found for user: ${user.uid}, using defaults');
+    }
+  } catch (e, stackTrace) {
+    logger.e('Error fetching progress: $e, stackTrace: $stackTrace');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error loading progress: $e')),
+      );
     }
   }
+}
 
   double get overallPercentage {
     return skillPercentages.values.reduce((a, b) => a + b) /

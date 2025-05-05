@@ -1,17 +1,7 @@
-<!DOCTYPE html><html><head>
-  <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
-
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
-
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
-  -->
+<!DOCTYPE html>
+<html>
+<head>
+  <!-- Base href for Flutter Web, replaced by --base-href during build -->
   <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
@@ -30,25 +20,36 @@
 
   <title>talkready_mobile</title>
   <link rel="manifest" href="manifest.json">
-  
-  
-  <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport">
-  
-  
-  
-  
+
+  <!-- Firebase JavaScript SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js"></script>
+  <script>
+    // Initialize Firebase with your project's configuration
+    const firebaseConfig = {
+  apiKey: "AIzaSyCUGIr7eAdvBIht7v9PuW-Q6Z_Xv-tDRqQ",
+  authDomain: "talkready-a8496.firebaseapp.com",
+  projectId: "talkready-a8496",
+  storageBucket: "talkready-a8496.firebasestorage.app",
+  messagingSenderId: "687695411049",
+  appId: "1:687695411049:web:e799a732895f8963b7aff8",
+  measurementId: "G-VRC5WSJZ10"
+};
+    firebase.initializeApp(firebaseConfig);
+  </script>
+
+  <!-- Splash screen styling -->
   <style id="splash-screen-style">
     html {
-      height: 100%
+      height: 100%;
     }
-
     body {
       margin: 0;
       min-height: 100%;
       background-color: #FFFDF6;
-          background-size: 100% 100%;
+      background-size: 100% 100%;
     }
-
     .center {
       margin: 0;
       position: absolute;
@@ -57,24 +58,23 @@
       -ms-transform: translate(-50%, -50%);
       transform: translate(-50%, -50%);
     }
-
     .contain {
-      display:block;
-      width:100%; height:100%;
+      display: block;
+      width: 100%;
+      height: 100%;
       object-fit: contain;
     }
-
     .stretch {
-      display:block;
-      width:100%; height:100%;
+      display: block;
+      width: 100%;
+      height: 100%;
     }
-
     .cover {
-      display:block;
-      width:100%; height:100%;
+      display: block;
+      width: 100%;
+      height: 100%;
       object-fit: cover;
     }
-
     .bottom {
       position: absolute;
       bottom: 0;
@@ -82,19 +82,19 @@
       -ms-transform: translate(-50%, 0);
       transform: translate(-50%, 0);
     }
-
     .bottomLeft {
       position: absolute;
       bottom: 0;
       left: 0;
     }
-
     .bottomRight {
       position: absolute;
       bottom: 0;
       right: 0;
     }
   </style>
+
+  <!-- Splash screen cleanup script -->
   <script id="splash-screen-script">
     function removeSplashFromWeb() {
       document.getElementById("splash")?.remove();
@@ -104,15 +104,14 @@
   </script>
 </head>
 <body>
+  <!-- Splash screen images -->
   <picture id="splash">
-      <source srcset="splash/img/light-1x.png 1x, splash/img/light-2x.png 2x, splash/img/light-3x.png 3x, splash/img/light-4x.png 4x" media="(prefers-color-scheme: light)">
-      <source srcset="splash/img/dark-1x.png 1x, splash/img/dark-2x.png 2x, splash/img/dark-3x.png 3x, splash/img/dark-4x.png 4x" media="(prefers-color-scheme: dark)">
-      <img class="center" aria-hidden="true" src="splash/img/light-1x.png" alt="">
+    <source srcset="splash/img/light-1x.png 1x, splash/img/light-2x.png 2x, splash/img/light-3x.png 3x, splash/img/light-4x.png 4x" media="(prefers-color-scheme: light)">
+    <source srcset="splash/img/dark-1x.png 1x, splash/img/dark-2x.png 2x, splash/img/dark-3x.png 3x, splash/img/dark-4x.png 4x" media="(prefers-color-scheme: dark)">
+    <img class="center" aria-hidden="true" src="splash/img/light-1x.png" alt="">
   </picture>
-  
-  
-  
-  <script src="flutter_bootstrap.js" async=""></script>
 
-
-</body></html>
+  <!-- Load Flutter Web runtime -->
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

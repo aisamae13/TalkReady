@@ -12,18 +12,14 @@ import 'loginpage.dart';
 import 'welcome_page.dart';
 import 'signup_page.dart';
 import 'splash_screen.dart';
-
 import 'forgotpass.dart';
 
 
 void main() async {
-  // Ensure widgets are initialized for async operations
-  WidgetsFlutterBinding.ensureInitialized();
-
-  // Initialize Firebase
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+WidgetsFlutterBinding.ensureInitialized();
+await Firebase.initializeApp(
+options: DefaultFirebaseOptions.currentPlatform,
+);
 
   // Initialize Firebase App Check with the debug provider
   await FirebaseAppCheck.instance.activate(
