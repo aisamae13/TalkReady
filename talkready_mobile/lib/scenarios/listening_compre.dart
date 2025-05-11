@@ -442,7 +442,7 @@ Ensure the sentence, options, and explanation are clear and appropriate for the 
                       ),
                     ),
                   );
-                }).toList(),
+                }),
                 if (_selectedAnswer != null) ...[
                   SlideTransition(
                     position: _slideAnimation,

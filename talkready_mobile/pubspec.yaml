@@ -59,7 +59,10 @@ dependencies:
   shimmer: ^3.0.0
   showcaseview: ^4.0.1
   cached_network_image: ^3.3.1
-
+  webview_flutter: ^4.0.0
+  animated_text_kit: ^4.2.2
+  youtube_player_flutter: ^9.1.1
+  flutter_inappwebview: ^6.1.1+1
 
   # Optional: For advanced audio processing (if needed for Azure Speech API)
   # Note: Azure Speech API may require a custom package or platform-specific integration
@@ -106,6 +109,7 @@ flutter:
      - images/callcenter2.jpg
      - images/AI_Human_Hand.jpg
      - images/talkready_bot.png
+     - images/robot_hi.gif
 
 
   # An image asset can refer to one or more resolution-specific "variants", see

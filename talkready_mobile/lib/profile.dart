@@ -420,7 +420,7 @@ void _showDropdownDialog(
         nextPage = const AIBotScreen();
         break;
       case 2:
-        nextPage = const CoursesPage();
+        nextPage = CoursesPage();
         break;
       case 3:
         nextPage = const ProgressTrackerPage();
