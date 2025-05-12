@@ -41,6 +41,7 @@ class buildLesson1_3 extends StatefulWidget {
 class _Lesson1_3State extends State<buildLesson1_3> {
   final Logger _logger = Logger();
   final List<TextEditingController> _controllers = List.generate(10, (_) => TextEditingController());
+  bool _isSubmitted = false;
 
   final List<Map<String, dynamic>> slides = [
     {
@@ -86,71 +87,77 @@ class _Lesson1_3State extends State<buildLesson1_3> {
       'question': 'I ___ (help) the customer with their order.',
       'type': 'verb',
       'correctAnswer': 'help',
-      'explanation': 'Help: Base verb for plural subject (I) in affirmative sentence.',
+      'explanation': 'Base verb for plural subject (I) in affirmative sentence.',
     },
     {
       'question': 'The agent ___ (answer) the phone calls promptly.',
       'type': 'verb',
       'correctAnswer': 'answers',
-      'explanation': 'Answers: Base verb + -s for singular subject (The agent).',
+      'explanation': 'Base verb + -s for singular subject (The agent).',
     },
     {
       'question': 'You ___ (resolve) customer issues efficiently.',
       'type': 'verb',
       'correctAnswer': 'resolve',
-      'explanation': 'Resolve: Base verb for plural subject (You) in affirmative sentence.',
+      'explanation': 'Base verb for plural subject (You) in affirmative sentence.',
     },
     {
       'question': 'She ___ (assist) customers every day.',
       'type': 'verb',
       'correctAnswer': 'assists',
-      'explanation': 'Assists: Base verb + -s for singular subject (She).',
+      'explanation': 'Base verb + -s for singular subject (She).',
     },
     {
       'question': 'They ___ (provide) excellent customer service.',
       'type': 'verb',
       'correctAnswer': 'provide',
-      'explanation': 'Provide: Base verb for plural subject (They) in affirmative sentence.',
+      'explanation': 'Base verb for plural subject (They) in affirmative sentence.',
     },
     {
       'question': 'The customer ___ (explain) the issue.',
       'type': 'verb',
       'correctAnswer': 'explains',
-      'explanation': 'Explains: Base verb + -s for singular subject (The customer).',
+      'explanation': 'Base verb + -s for singular subject (The customer).',
     },
     {
       'question': 'We ___ (check) the details of the order.',
       'type': 'verb',
       'correctAnswer': 'check',
-      'explanation': 'Check: Base verb for plural subject (We) in affirmative sentence.',
+      'explanation': 'Base verb for plural subject (We) in affirmative sentence.',
     },
     {
       'question': 'He ___ (not, answer) the customer’s question.',
       'type': 'verb',
       'correctAnswer': 'does not answer',
-      'explanation': 'Does not answer: Negative form for singular subject (He).',
+      'explanation': 'Negative form for singular subject (He).',
     },
     {
       'question': 'I ___ (not, work) on weekends.',
       'type': 'verb',
       'correctAnswer': 'do not work',
-      'explanation': 'Do not work: Negative form for plural subject (I).',
+      'explanation': 'Negative form for plural subject (I).',
     },
     {
       'question': 'Does she ___ (assist) you with your problem?',
       'type': 'verb',
       'correctAnswer': 'assist',
-      'explanation': 'Assist: Base verb in interrogative form for singular subject (She).',
+      'explanation': 'Base verb in interrogative form for singular subject (She).',
     },
   ];
 
-  bool get _allAnswersCorrect {
-    // Check if all answers are correct (no null or false in isCorrectStates)
-    return widget.isCorrectStates.every((state) => state == true);
+  @override
+  void initState() {
+    super.initState();
+    for (int i = 0; i < _controllers.length; i++) {
+      if (i < widget.selectedAnswers.length && widget.selectedAnswers[i].isNotEmpty) {
+        _controllers[i].text = widget.selectedAnswers[i].first;
+      }
+    }
   }
 
   @override
   void dispose() {
+    _logger.i('Disposing ${_controllers.length} TextEditingControllers');
     for (var controller in _controllers) {
       controller.dispose();
     }
@@ -178,7 +185,7 @@ class _Lesson1_3State extends State<buildLesson1_3> {
             children: [
               Expanded(
                 child: Text(
-                  question,
+                  'Question ${questionIndex + 1}: $question',
                   style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
                 ),
               ),
@@ -200,23 +207,31 @@ class _Lesson1_3State extends State<buildLesson1_3> {
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
               ),
-              hintText: 'Enter the correct verb form',
-              errorText: errorMessage,
+              hintText: 'Enter the correct verb',
             ),
             onChanged: (value) {
               _logger.d('TextField input for question $questionIndex: $value');
-              onSelectionChanged([value.trim()]);
-              bool isCorrectAnswer = value.trim().toLowerCase() == correctAnswer.toLowerCase();
-              onAnswerChanged(isCorrectAnswer);
-              _logger.d('Answer changed for question $questionIndex in Lesson 1.3: isCorrect=$isCorrectAnswer');
+              final newSelections = [value.trim()];
+              setState(() {
+                widget.selectedAnswers[questionIndex] = List<String>.from(newSelections);
+                // Clear previous feedback when editing
+                widget.isCorrectStates[questionIndex] = null;
+                widget.errorMessages[questionIndex] = null;
+              });
+              onSelectionChanged(newSelections);
+              // Avoid immediate validation until resubmission
+              _logger.d('Answer updated for question $questionIndex in Lesson 1.3: $newSelections');
             },
           ),
-          if (isCorrect != null && !isCorrect)
+          if (_isSubmitted && isCorrect != null)
             Padding(
               padding: const EdgeInsets.only(top: 4.0),
               child: Text(
-                explanation,
-                style: const TextStyle(color: Colors.red, fontSize: 14),
+                isCorrect ? 'Correct!' : 'Incorrect: $errorMessage',
+                style: TextStyle(
+                  color: isCorrect ? Colors.green : Colors.red,
+                  fontSize: 14,
+                ),
               ),
             ),
         ],
@@ -344,24 +359,42 @@ class _Lesson1_3State extends State<buildLesson1_3> {
           ),
           const SizedBox(height: 16),
           ...questions.asMap().entries.map((entry) {
+            final index = entry.key;
+            if (index >= widget.selectedAnswers.length ||
+                index >= widget.isCorrectStates.length ||
+                index >= widget.errorMessages.length ||
+                index >= _controllers.length) {
+              _logger.e('Index $index out of bounds in Lesson 1.3. '
+                  'selectedAnswers=${widget.selectedAnswers.length}, '
+                  'isCorrectStates=${widget.isCorrectStates.length}, '
+                  'errorMessages=${widget.errorMessages.length}, '
+                  '_controllers=${_controllers.length}');
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8.0),
+                child: Text(
+                  'Error: Unable to load question due to data mismatch',
+                  style: TextStyle(color: Colors.red),
+                ),
+              );
+            }
             return buildFillInTheBlankQuestion(
               question: entry.value['question'],
               correctAnswer: entry.value['correctAnswer'],
               explanation: entry.value['explanation'],
-              questionIndex: entry.key,
-              selectedAnswers: widget.selectedAnswers[entry.key],
-              isCorrect: widget.isCorrectStates[entry.key],
-              errorMessage: widget.errorMessages[entry.key],
-              controller: _controllers[entry.key],
+              questionIndex: index,
+              selectedAnswers: widget.selectedAnswers[index],
+              isCorrect: widget.isCorrectStates[index],
+              errorMessage: widget.errorMessages[index],
+              controller: _controllers[index],
               onSelectionChanged: (List<String> newSelections) {
                 setState(() {
-                  _logger.d('Updating selectedAnswers[${entry.key}]: $newSelections');
-                  widget.selectedAnswers[entry.key] = List<String>.from(newSelections);
+                  _logger.d('Updating selectedAnswers[$index]: $newSelections');
+                  widget.selectedAnswers[index] = List<String>.from(newSelections);
                 });
               },
               onAnswerChanged: (isCorrect) {
-                widget.onAnswerChanged(entry.key, isCorrect);
-                _logger.d('Answer changed for question ${entry.key} in Lesson 1.3: isCorrect=$isCorrect');
+                widget.onAnswerChanged(index, isCorrect);
+                _logger.d('Answer changed for question $index in Lesson 1.3: isCorrect=$isCorrect');
               },
             );
           }),
@@ -369,31 +402,42 @@ class _Lesson1_3State extends State<buildLesson1_3> {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: _allAnswersCorrect
-                  ? () {
-                      _logger.i('Submit Answers button pressed for Lesson 1.3 - All answers correct');
-                      widget.onSubmitAnswers(questions);
-                    }
-                  : () {
-                      _logger.w('Submit Answers attempted but not all answers are correct');
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Please correct all answers before submitting.'),
-                          backgroundColor: Colors.red,
-                          duration: Duration(seconds: 3),
-                        ),
-                      );
-                    },
+              onPressed: () {
+                setState(() {
+                  _isSubmitted = true;
+                });
+                _logger.i('Submit Answers button pressed for Lesson 1.3');
+                widget.onSubmitAnswers(questions);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(_isSubmitted ? 'Answers submitted! Check your results.' : 'Please answer all questions.'),
+                    backgroundColor: _isSubmitted ? Colors.green : Colors.red,
+                    duration: const Duration(seconds: 3),
+                  ),
+                );
+              },
               style: ElevatedButton.styleFrom(
-                backgroundColor: _allAnswersCorrect ? Colors.orange : Colors.grey,
+                backgroundColor: Colors.orange,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              child: const Text('Submit Answers'),
+              child: Text(_isSubmitted ? 'Resubmit Answers' : 'Submit Answers'),
             ),
           ),
+          if (_isSubmitted)
+            Padding(
+              padding: const EdgeInsets.only(top: 16.0),
+              child: Text(
+                'Results: ${widget.isCorrectStates.where((state) => state == true).length}/${questions.length} correct',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+            ),
         ],
       ],
     );

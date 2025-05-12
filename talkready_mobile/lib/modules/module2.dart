@@ -27,51 +27,28 @@ class _Module2PageState extends State<Module2Page> {
   String? _youtubeError;
   final Logger _logger = Logger();
   final FirebaseService _firebaseService = FirebaseService();
+  Map<String, bool> _lessonCompletion = {
+    'lesson1': false,
+    'lesson2': false,
+    'lesson3': false,
+  };
 
   final Map<int, String> _videoIds = {
-    1: 'B875gLnHSpw', // Lesson 2.1: Greetings and Introductions
-    2: 'rpHEd8OEzLw', // Lesson 2.2: Asking for Information
-    3: 'qm2h74xpuUA', // Lesson 2.3: Numbers and Dates
+    1: 'B875gLnHSpw',
+    2: 'rpHEd8OEzLw',
+    3: 'qm2h74xpuUA',
   };
 
   @override
   void initState() {
     super.initState();
-    _checkModule1Completion();
-    _loadLessonProgress();
+    _loadLessonProgress().then((_) {
+      setState(() {
+        showActivity = _lessonCompletion['lesson$currentLesson'] ?? false;
+      });
+    });
     _initializeStateLists();
     _initializeYoutubeController();
-  }
-
-  Future<void> _checkModule1Completion() async {
-    try {
-      final progress = await _firebaseService.getModuleProgress('module1');
-      bool isModule1Completed = progress['isCompleted'] ?? false;
-      if (!isModule1Completed) {
-        _logger.w('Module 1 not completed, redirecting user');
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (context) => AlertDialog(
-              title: const Text('Module Locked'),
-              content: const Text('Please complete Module 1: Basic English Grammar to unlock this module.'),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(context); // Close dialog
-                    Navigator.pop(context); // Return to previous screen
-                  },
-                  child: const Text('OK'),
-                ),
-              ],
-            ),
-          );
-        });
-      }
-    } catch (e) {
-      _logger.e('Error checking Module 1 completion: $e');
-    }
   }
 
   Future<void> _loadLessonProgress() async {
@@ -79,6 +56,11 @@ class _Module2PageState extends State<Module2Page> {
       final progress = await _firebaseService.getModuleProgress('module2');
       final lessons = progress['lessons'] as Map<String, dynamic>? ?? {};
       setState(() {
+        _lessonCompletion = {
+          'lesson1': lessons['lesson1'] ?? false,
+          'lesson2': lessons['lesson2'] ?? false,
+          'lesson3': lessons['lesson3'] ?? false,
+        };
         if (!(lessons['lesson1'] ?? false)) {
           currentLesson = 1;
         } else if (!(lessons['lesson2'] ?? false)) {
@@ -86,9 +68,9 @@ class _Module2PageState extends State<Module2Page> {
         } else if (!(lessons['lesson3'] ?? false)) {
           currentLesson = 3;
         } else {
-          currentLesson = 3; // All completed, stay on last lesson
+          currentLesson = 3;
         }
-        _logger.i('Loaded lesson progress: currentLesson=$currentLesson');
+        _logger.i('Loaded lesson progress: currentLesson=$currentLesson, lessonCompletion=$_lessonCompletion');
       });
     } catch (e) {
       _logger.e('Error loading lesson progress: $e');
@@ -97,15 +79,20 @@ class _Module2PageState extends State<Module2Page> {
 
   Future<void> _saveLessonProgress(int lesson) async {
     try {
-      await _firebaseService.updateLessonProgress('module2', 'lesson$lesson', true);
-      _logger.i('Saved lesson $lesson as completed');
+      final lessonId = 'lesson$lesson';
+      await _firebaseService.updateLessonProgress('module2', lessonId, true);
+      setState(() {
+        _lessonCompletion[lessonId] = true;
+      });
+      _logger.i('Saved lesson $lesson as completed for Module 2');
     } catch (e) {
       _logger.e('Error saving lesson progress: $e');
     }
   }
 
   void _initializeStateLists() {
-    int questionCount = currentLesson == 3 ? 10 : 8;
+    int questionCount = currentLesson == 3 ? 10 : 8; // 8 for Lessons 2.1 and 2.2, 10 for Lesson 2.3
+    _logger.i('Initializing state lists for Lesson $currentLesson: questionCount=$questionCount');
     _answerCorrectness = List<bool>.filled(questionCount, false);
     _selectedAnswers = List<List<String>>.generate(questionCount, (_) => <String>[]);
     _isCorrectStates = List<bool?>.filled(questionCount, null);
@@ -172,6 +159,7 @@ class _Module2PageState extends State<Module2Page> {
   }
 
   void _validateAllAnswers(List<Map<String, dynamic>> questions) {
+    _logger.i('Validating answers for ${questions.length} questions in Lesson $currentLesson');
     final List<List<String>> selectedAnswersCopy = _selectedAnswers
         .map((list) => list.map((e) => e.toString()).toList())
         .toList();
@@ -179,13 +167,14 @@ class _Module2PageState extends State<Module2Page> {
       for (int i = 0; i < questions.length; i++) {
         List<String> correctAnswers;
         final rawCorrectAnswer = questions[i]['correctAnswer'];
+        final explanation = questions[i]['explanation'] ?? 'No explanation provided';
         if (rawCorrectAnswer is String) {
           correctAnswers = rawCorrectAnswer.toLowerCase().split(', ').map((e) => e.trim()).toList();
         } else if (rawCorrectAnswer is List<dynamic>) {
           correctAnswers = rawCorrectAnswer.map((e) => e.toString().toLowerCase().trim()).toList();
         } else {
           correctAnswers = [];
-          _errorMessages[i] = 'Invalid correct answer format';
+          _errorMessages[i] = 'Invalid correct answer format: $explanation';
           _isCorrectStates[i] = false;
           _answerCorrectness[i] = false;
           _logger.e('Invalid correct answer format for question $i in Lesson $currentLesson');
@@ -197,9 +186,9 @@ class _Module2PageState extends State<Module2Page> {
             selectedAnswers.every((selected) => correctAnswers.contains(selected));
 
         _isCorrectStates[i] = isCorrect;
-        _errorMessages[i] = isCorrect ? null : 'Correct answer: ${correctAnswers.join(', ')}';
+        _errorMessages[i] = isCorrect ? null : explanation;
         _answerCorrectness[i] = isCorrect;
-        _logger.d('Validated question $i in Lesson $currentLesson: isCorrect=$isCorrect');
+        _logger.d('Validated question $i in Lesson $currentLesson: isCorrect=$isCorrect, selected=$selectedAnswers, correct=$correctAnswers');
       }
 
       if (_answerCorrectness.every((isCorrect) => isCorrect)) {
@@ -220,6 +209,7 @@ class _Module2PageState extends State<Module2Page> {
   @override
   Widget build(BuildContext context) {
     bool allAnswersCorrect = _answerCorrectness.every((isCorrect) => isCorrect);
+    bool isModuleCompleted = _lessonCompletion.values.every((completed) => completed);
 
     return Scaffold(
       appBar: AppBar(
@@ -298,26 +288,32 @@ class _Module2PageState extends State<Module2Page> {
                     const SizedBox(height: 16),
                     if (!allAnswersCorrect)
                       const Text(
-                        'Please correct all answers to complete the module.',
+                        'Please correct all answers to complete this lesson.',
                         style: TextStyle(color: Colors.red),
                       ),
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
                         onPressed: allAnswersCorrect
-                            ? () {
-                                _logger.i('Module completed, exiting Module 2');
-                                Navigator.pop(context);
+                            ? () async {
+                                _logger.i('Lesson 2.3 completed, checking module completion');
+                                await _saveLessonProgress(currentLesson);
+                                setState(() {
+                                  if (_lessonCompletion.values.every((completed) => completed)) {
+                                    _logger.i('All lessons completed for Module 2');
+                                    Navigator.pop(context); // Return to CoursesPage
+                                  }
+                                });
                               }
                             : null,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF00568D),
+                          backgroundColor: isModuleCompleted ? Colors.green : const Color(0xFF00568D),
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
-                        child: const Text('Complete Module'),
+                        child: Text(isModuleCompleted ? 'Completed Module 2' : 'Complete Lesson 2.3'),
                       ),
                     ),
                   ],
@@ -331,6 +327,18 @@ class _Module2PageState extends State<Module2Page> {
   }
 
   Widget _buildLessonContent() {
+    int questionCount = currentLesson == 3 ? 10 : 8; // 8 for Lessons 2.1 and 2.2, 10 for Lesson 2.3
+    if (_selectedAnswers.length != questionCount ||
+        _isCorrectStates.length != questionCount ||
+        _errorMessages.length != questionCount ||
+        _answerCorrectness.length != questionCount) {
+      _logger.w('List length mismatch for Lesson $currentLesson. Expected $questionCount, got '
+          'selectedAnswers=${_selectedAnswers.length}, '
+          'isCorrectStates=${_isCorrectStates.length}, '
+          'errorMessages=${_errorMessages.length}, '
+          'answerCorrectness=${_answerCorrectness.length}');
+      _initializeStateLists();
+    }
     switch (currentLesson) {
       case 1:
         return buildLesson2_1(

@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:logger/logger.dart';
+import 'modules_config.dart';
 
 class FirebaseService {
   final Logger _logger = Logger();
@@ -15,14 +16,16 @@ class FirebaseService {
       final snapshot = await userDoc.get();
       if (!snapshot.exists) {
         await userDoc.set({'createdAt': FieldValue.serverTimestamp()});
-        await userDoc.collection('progress').doc('module1').set({
-          'isCompleted': false,
-          'lessons': {
-            'lesson1': false,
-            'lesson2': false,
-            'lesson3': false,
-          },
-        });
+        final modulesSnapshot = await _firestore.collection('courses').get();
+        for (var doc in modulesSnapshot.docs) {
+          final moduleId = doc.id;
+          final data = doc.data();
+          final lessons = {for (var lesson in data['lessons']) lesson: false};
+          await userDoc.collection('progress').doc(moduleId).set({
+            'isCompleted': false,
+            'lessons': lessons,
+          });
+        }
         _logger.i('Initialized progress for user $userId');
       }
     } catch (e) {
@@ -45,7 +48,19 @@ class FirebaseService {
           .collection('progress')
           .doc(moduleId)
           .get();
-      return doc.data() ?? {};
+      final data = doc.data() ?? {};
+      if (!data.containsKey('lessons')) {
+        final config = courseConfig[moduleId] ?? {'lessons': ['lesson1']};
+        data['lessons'] = {for (var lesson in config['lessons']) lesson: false};
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .collection('progress')
+            .doc(moduleId)
+            .set(data, SetOptions(merge: true));
+      }
+      _logger.d('Module $moduleId progress: $data');
+      return data;
     } catch (e) {
       _logger.e('Error fetching module progress for $moduleId: $e');
       rethrow;
@@ -60,17 +75,22 @@ class FirebaseService {
           .doc(userId)
           .collection('progress')
           .doc(moduleId);
+      final doc = await moduleRef.get();
+      final data = doc.data() ?? {};
+      final lessons = data['lessons'] as Map<String, dynamic>? ?? {};
+      final config = courseConfig[moduleId] ?? {'lessons': [lessonId]};
+      for (var lesson in config['lessons']) {
+        lessons.putIfAbsent(lesson, () => false);
+      }
+      lessons[lessonId] = completed;
       await moduleRef.set({
-        'lessons': {lessonId: completed},
+        'lessons': lessons,
         'lastUpdated': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
-      // Check if all lessons are completed
-      final doc = await moduleRef.get();
-      final lessons = doc.data()?['lessons'] as Map<String, dynamic>? ?? {};
       final allCompleted = lessons.values.every((v) => v == true);
       await moduleRef.update({'isCompleted': allCompleted});
-      _logger.i('Updated lesson $lessonId in module $moduleId: completed=$completed, moduleCompleted=$allCompleted');
+      _logger.i('Updated lesson $lessonId in module $moduleId: completed=$completed, moduleCompleted=$allCompleted, lessons=$lessons');
     } catch (e) {
       _logger.e('Error updating lesson progress for $moduleId/$lessonId: $e');
       rethrow;

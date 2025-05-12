@@ -27,7 +27,7 @@ class CoursesPage extends StatefulWidget {
   _CoursesPageState createState() => _CoursesPageState();
 }
 
-class _CoursesPageState extends State<CoursesPage> {
+class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
   final Logger logger = Logger();
   final FirebaseService firebaseService = FirebaseService();
   List<Map<String, dynamic>> beginnerModules = [
@@ -209,7 +209,21 @@ class _CoursesPageState extends State<CoursesPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _checkModuleStatus();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkModuleStatus();
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   Future<void> _checkModuleStatus() async {
@@ -224,19 +238,18 @@ class _CoursesPageState extends State<CoursesPage> {
     }
 
     try {
-      // Load progress for all modules
       final allModules = [
         ...beginnerModules.asMap().entries.map((e) => {'index': e.key, 'id': 'module${e.key + 1}', 'list': beginnerModules}),
         ...intermediateModules.asMap().entries.map((e) => {'index': e.key, 'id': 'module${e.key + 6}', 'list': intermediateModules}),
         ...advancedModules.asMap().entries.map((e) => {'index': e.key, 'id': 'module${e.key + 11}', 'list': advancedModules}),
       ];
 
-      bool previousModuleCompleted = true; // Module 1 is always unlocked
+      bool previousModuleCompleted = true;
       for (var module in allModules) {
         final progress = await firebaseService.getModuleProgress(module['id'] as String);
-        // Convert lessons to Map<String, dynamic> to handle Firestore's dynamic map
         final lessons = (progress['lessons'] as Map<dynamic, dynamic>?)?.cast<String, dynamic>() ?? {};
         final isCompleted = progress['isCompleted'] as bool? ?? false;
+        logger.i('Module ${module['id']}: isCompleted=$isCompleted, lessons=$lessons');
 
         if (mounted) {
           setState(() {
@@ -245,6 +258,7 @@ class _CoursesPageState extends State<CoursesPage> {
             moduleData['isCompleted'] = isCompleted;
             for (int i = 0; i < moduleData['lessons'].length; i++) {
               moduleData['lessons'][i]['completed'] = lessons['lesson${i + 1}'] as bool? ?? false;
+              logger.d('Lesson ${i + 1} completed: ${moduleData['lessons'][i]['completed']}');
             }
           });
         }
@@ -267,7 +281,7 @@ class _CoursesPageState extends State<CoursesPage> {
     int totalLessons = 0;
     int completedLessons = 0;
 
-    for (var module in beginnerModules) {
+    for (var module in [...beginnerModules, ...intermediateModules, ...advancedModules]) {
       final lessons = module['lessons'] as List<Map<String, dynamic>>;
       totalLessons += lessons.length;
       completedLessons += lessons.where((lesson) => lesson['completed'] as bool).length;
@@ -377,6 +391,10 @@ class _CoursesPageState extends State<CoursesPage> {
       children: modules.asMap().entries.map((entry) {
         final module = entry.value;
         final bool isCompleted = module['isCompleted'] as bool;
+        final bool isLocked = module['isLocked'] as bool;
+        final lessons = module['lessons'] as List<Map<String, dynamic>>;
+        final bool isInProgress = !isLocked && !isCompleted && lessons.any((lesson) => lesson['completed'] as bool);
+
         return Padding(
           padding: const EdgeInsets.only(bottom: 16.0),
           child: Card(
@@ -423,7 +441,7 @@ class _CoursesPageState extends State<CoursesPage> {
                             ),
                           ),
                         ),
-                        if (module['isLocked'] as bool)
+                        if (isLocked)
                           const Icon(
                             Icons.lock,
                             color: Colors.grey,
@@ -438,8 +456,8 @@ class _CoursesPageState extends State<CoursesPage> {
                       ],
                     ),
                     const SizedBox(height: 12),
-                    if (!(module['isLocked'] as bool)) ...[
-                      ...(module['lessons'] as List<Map<String, dynamic>>).asMap().entries.map<Widget>((entry) {
+                    if (!isLocked) ...[
+                      ...lessons.asMap().entries.map<Widget>((entry) {
                         final lesson = entry.value;
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 8.0),
@@ -485,9 +503,9 @@ class _CoursesPageState extends State<CoursesPage> {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed: module['isLocked'] as bool
+                        onPressed: isLocked
                             ? null
-                            : () {
+                            : () async {
                                 logger.i('Navigating to ${module['module']}');
                                 Widget destination;
                                 if (module['module'].contains('Module 1')) {
@@ -504,32 +522,40 @@ class _CoursesPageState extends State<CoursesPage> {
                                     ),
                                   );
                                 }
-                                Navigator.push(
+                                await Navigator.push(
                                   context,
                                   MaterialPageRoute(builder: (context) => destination),
                                 );
+                                _checkModuleStatus(); // Refresh status after returning
                               },
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: module['isLocked'] as bool
-                              ? Colors.grey
+                          backgroundColor: isLocked
+                              ? Colors.grey[400]
                               : isCompleted
                                   ? Colors.green
-                                  : const Color(0xFF00568D),
+                                  : isInProgress
+                                      ? Colors.orange
+                                      : const Color(0xFF00568D),
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
                           padding: const EdgeInsets.symmetric(vertical: 12),
-                          elevation: 5,
+                          elevation: isLocked ? 0 : 5,
                           shadowColor: Colors.black.withOpacity(0.3),
                         ),
-                        child: Text(
-                          module['isLocked'] as bool
-                              ? 'Locked'
-                              : isCompleted
-                                  ? 'Completed ${module['module'].split(':')[0]}'
-                                  : 'Go to ${module['module'].split(':')[0]}',
-                          style: const TextStyle(fontSize: 16),
+                        child: Tooltip(
+                          message: isLocked ? 'Complete the previous module to unlock' : '',
+                          child: Text(
+                            isLocked
+                                ? 'Locked'
+                                : isCompleted
+                                    ? 'Completed ${module['module'].split(':')[0]}'
+                                    : isInProgress
+                                        ? 'In Progress'
+                                        : 'Go to ${module['module'].split(':')[0]}',
+                            style: const TextStyle(fontSize: 16),
+                          ),
                         ),
                       ),
                     ),

@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:logger/logger.dart';
+
+final Logger _logger = Logger();
 
 Widget buildSlide({
   required String title,
@@ -120,7 +123,7 @@ class _InteractiveQuestionWidgetState extends State<_InteractiveQuestionWidget> 
   @override
   Widget build(BuildContext context) {
     List<String> options;
-    bool isSingleSelection = widget.type == 'sentence_type';
+    bool isSingleSelection = widget.type == 'word_selection';
 
     // Calculate the maximum number of selections allowed
     final int maxSelections = isSingleSelection
@@ -143,7 +146,7 @@ class _InteractiveQuestionWidgetState extends State<_InteractiveQuestionWidget> 
           .where((word) => word.isNotEmpty)
           .toList();
 
-      // Group multi-word answers (e.g., "XYZ Corp")
+      // Group multi-word answers (e.g., "Good morning")
       final correctAnswerParts = widget.correctAnswer.split(', ').map((e) => e.toLowerCase()).toList();
       final displayOptions = <String>[];
       int i = 0;
@@ -212,7 +215,6 @@ class _InteractiveQuestionWidgetState extends State<_InteractiveQuestionWidget> 
                         } else if (newSelections.length < maxSelections) {
                           newSelections.add(normalizedOption);
                         } else {
-                          // Optionally show a message to the user
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text('You can only select up to $maxSelections answers.'),
@@ -221,8 +223,12 @@ class _InteractiveQuestionWidgetState extends State<_InteractiveQuestionWidget> 
                           );
                         }
                       }
-                      print('newSelections: $newSelections, type: ${newSelections.runtimeType}');
+                      _logger.d('Question ${widget.questionIndex}: newSelections=$newSelections');
                       widget.onSelectionChanged(newSelections);
+                      bool isCorrect = newSelections.length == widget.correctAnswer.split(', ').length &&
+                          newSelections.every((selection) =>
+                              widget.correctAnswer.toLowerCase().split(', ').contains(selection));
+                      widget.onAnswerChanged(isCorrect);
                     });
                   },
                   style: TextButton.styleFrom(
