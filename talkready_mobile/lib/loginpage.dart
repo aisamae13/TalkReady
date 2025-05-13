@@ -77,7 +77,7 @@ class _LoginPageState extends State<LoginPage> {
       if (userCredential.user != null) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Google Sign-In successful!')),
+          const SnackBar(content: Text('Login successful!')),
         );
         await _navigateAfterLogin(userCredential.user!);
       }

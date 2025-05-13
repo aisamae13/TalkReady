@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'landingpage.dart';
 
 class SignUpPage extends StatefulWidget {
@@ -18,75 +17,30 @@ class _SignUpPageState extends State<SignUpPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  final _smsCodeController = TextEditingController(); // Add controller for SMS code
   final PageController _pageController = PageController(initialPage: 0);
   bool _showPassword = false;
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final GoogleSignIn _googleSignIn = GoogleSignIn(scopes: ['email']);
 
-  String? _verificationId; // For phone verification
+  String? _verificationId;
   String? _phoneNumber;
 
-  // Google Sign-In Function with signOut
- 
-    Future<void> _signInWithGoogle() async {
-      try {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Signing in with Google...')),
-        );
-  
-        // Sign out previous session (optional, but can help avoid issues)
-        await _googleSignIn.signOut();
-  
-        final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-        if (googleUser == null) {
-          return; // User canceled sign-in
-        }
-  
-        final GoogleSignInAuthentication googleAuth =
-            await googleUser.authentication;
-        final OAuthCredential credential = GoogleAuthProvider.credential(
-          accessToken: googleAuth.accessToken,
-          idToken: googleAuth.idToken,
-        );
-  
-        // Sign in with Google credential
-        await _auth.signInWithCredential(credential);
-  
-        // Immediately navigate to LandingPage
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const LandingPage()),
-          );
-        }
-      } on FirebaseAuthException catch (e) {
-        String message;
-        if (e.code == 'account-exists-with-different-credential' ||
-            e.code == 'email-already-in-use') {
-          message =
-              'This Google account is already associated with another sign-in method. Please use the correct method.';
-        } else {
-          message = 'Google Sign-In Failed: ${e.message}';
-        }
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(message)),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Google Sign-In Failed: $e')),
-          );
-        }
-      }
-    }
-  
+  final _inputDecorationTheme = InputDecorationTheme(
+    border: const OutlineInputBorder(),
+    focusedBorder: OutlineInputBorder(
+      borderSide: BorderSide(color: Color(0xFF00568D), width: 2.0),
+    ),
+    labelStyle: TextStyle(color: Colors.grey[600]),
+    focusedErrorBorder: OutlineInputBorder(
+      borderSide: BorderSide(color: Colors.red, width: 2.0),
+    ),
+    errorBorder: OutlineInputBorder(
+      borderSide: BorderSide(color: Colors.red, width: 1.0),
+    ),
+  );
 
-  // Email/Password Sign-Up Function with Email Verification
   Future<void> _signUpWithEmail() async {
     try {
-      // Validate inputs
       if (_emailController.text.isEmpty ||
           _passwordController.text.isEmpty ||
           _confirmPasswordController.text.isEmpty) {
@@ -103,28 +57,23 @@ class _SignUpPageState extends State<SignUpPage> {
         return;
       }
 
-      // Show loading indicator
       showDialog(
         context: context,
         barrierDismissible: false,
         builder: (context) => const Center(child: CircularProgressIndicator()),
       );
 
-      // Sign up with email and password
       await _auth.createUserWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
 
-      // Send email verification
       await _auth.currentUser?.sendEmailVerification();
 
-      // Close loading dialog
       if (mounted) {
         Navigator.pop(context);
       }
 
-      // Show verification message
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -134,7 +83,6 @@ class _SignUpPageState extends State<SignUpPage> {
         );
       }
 
-      // Check email verification status
       await _checkEmailVerification(_auth.currentUser);
     } on FirebaseAuthException catch (e) {
       String message;
@@ -148,14 +96,14 @@ class _SignUpPageState extends State<SignUpPage> {
         message = 'Sign-up failed: $e';
       }
       if (mounted) {
-        Navigator.pop(context); // Close loading dialog if open
+        Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(message)),
         );
       }
     } catch (e) {
       if (mounted) {
-        Navigator.pop(context); // Close loading dialog if open
+        Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('An error occurred: $e')),
         );
@@ -163,14 +111,12 @@ class _SignUpPageState extends State<SignUpPage> {
     }
   }
 
-  // Check email verification status
   Future<void> _checkEmailVerification(User? user) async {
     if (user == null) return;
 
-    // Periodically check verification status
     bool isVerified = false;
     int attempts = 0;
-    const maxAttempts = 30; // 30 seconds timeout
+    const maxAttempts = 30;
 
     while (!isVerified && attempts < maxAttempts && mounted) {
       await user?.reload();
@@ -204,13 +150,33 @@ class _SignUpPageState extends State<SignUpPage> {
   }
 
   Future<void> _selectDate(BuildContext context) async {
+    final now = DateTime.now();
     final DateTime? pickedDate = await showDatePicker(
       context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime(1900),
-      lastDate: DateTime.now(),
+      initialDate: DateTime(now.year - 16, now.month, now.day),
+      firstDate: DateTime(1901, 1, 1),
+      lastDate: now.subtract(const Duration(days: 1)),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: Color(0xFF00568D),
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: Colors.black,
+            ),
+            textButtonTheme: TextButtonThemeData(
+              style: TextButton.styleFrom(
+                foregroundColor: Color(0xFF00568D),
+              ),
+            ),
+            dialogBackgroundColor: Colors.white,
+          ),
+          child: child!,
+        );
+      },
     );
-    if (pickedDate != null && pickedDate != DateTime.now()) {
+    if (pickedDate != null) {
       setState(() {
         _birthdayController.text = pickedDate.toLocal().toString().split(' ')[0];
       });
@@ -226,31 +192,46 @@ class _SignUpPageState extends State<SignUpPage> {
     _lastNameController.dispose();
     _phoneController.dispose();
     _birthdayController.dispose();
+    _smsCodeController.dispose(); // Dispose the new controller
     _pageController.dispose();
     super.dispose();
   }
 
-  // Function to send verification code to phone number
   Future<void> _verifyPhoneNumber() async {
+    if (!RegExp(r'^\d{10}$').hasMatch(_phoneController.text)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a valid 10-digit phone number')),
+      );
+      return;
+    }
     _phoneNumber = '+63${_phoneController.text}';
     try {
       await _auth.verifyPhoneNumber(
         phoneNumber: _phoneNumber,
         verificationCompleted: (PhoneAuthCredential credential) async {
-          // Auto-resolution (Android only)
           await _auth.signInWithCredential(credential);
-          _navigateToAccountInfo(); // Proceed to account info page
+          _navigateToAccountInfo();
         },
         verificationFailed: (FirebaseAuthException e) {
+          String message;
+          if (e.code == 'invalid-phone-number') {
+            message = 'The phone number is invalid. Please check and try again.';
+          } else if (e.code == 'too-many-requests') {
+            message = 'Too many requests. Please try again later.';
+          } else if (e.code == 'quota-exceeded') {
+            message = 'SMS quota exceeded. Please try again later.';
+          } else {
+            message = 'Phone verification failed: ${e.message}';
+          }
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Phone verification failed: ${e.message}')),
+            SnackBar(content: Text(message)),
           );
         },
         codeSent: (String verificationId, int? resendToken) {
           setState(() {
             _verificationId = verificationId;
           });
-          _navigateToVerification(); // Navigate to code input screen
+          _navigateToVerification();
         },
         codeAutoRetrievalTimeout: (String verificationId) {
           setState(() {
@@ -265,13 +246,12 @@ class _SignUpPageState extends State<SignUpPage> {
     }
   }
 
-  // Function to confirm verification code
   Future<void> _confirmVerificationCode(String smsCode) async {
     try {
       PhoneAuthCredential credential = PhoneAuthProvider.credential(
           verificationId: _verificationId!, smsCode: smsCode);
       await _auth.signInWithCredential(credential);
-      _navigateToAccountInfo(); // Proceed to account info page
+      _navigateToAccountInfo();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Invalid verification code.')),
@@ -295,274 +275,273 @@ class _SignUpPageState extends State<SignUpPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        title: const Text('Sign Up'),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
+    return Theme(
+      data: Theme.of(context).copyWith(
+        inputDecorationTheme: _inputDecorationTheme,
       ),
-      body: SafeArea(
-        child: PageView(
-          controller: _pageController,
-          physics: const NeverScrollableScrollPhysics(),
-          children: [
-            // Slide 1: Personal Information
-            Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text(
-                    'Step 1: Personal Information',
-                    style: TextStyle(fontSize: 24, color: Color(0xFF00568D)),
-                  ),
-                  const SizedBox(height: 20),
-                  TextField(
-                    controller: _firstNameController,
-                    decoration: const InputDecoration(
-                      labelText: 'First Name',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _lastNameController,
-                    decoration: const InputDecoration(
-                      labelText: 'Last Name',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _phoneController,
-                    decoration: const InputDecoration(
-                      labelText: 'Phone Number',
-                      border: OutlineInputBorder(),
-                    ),
-                    keyboardType: TextInputType.phone,
-                  ),
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    controller: _birthdayController,
-                    decoration: InputDecoration(
-                      labelText: 'Birthday',
-                      border: const OutlineInputBorder(),
-                      suffixIcon: IconButton(
-                        icon: const Icon(Icons.calendar_today),
-                        onPressed: () => _selectDate(context),
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        appBar: AppBar(
+          title: const Text('Sign Up'),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+        ),
+        body: SafeArea(
+          child: PageView(
+            controller: _pageController,
+            physics: const NeverScrollableScrollPhysics(),
+            children: [
+              // Slide 1: Personal Information
+              SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.all(20.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'Step 1: Personal Information',
+                        style: TextStyle(fontSize: 24, color: Color(0xFF00568D)),
                       ),
-                    ),
-                    readOnly: true,
-                    onTap: () => _selectDate(context),
+                      const SizedBox(height: 20),
+                      TextField(
+                        controller: _firstNameController,
+                        decoration: const InputDecoration(
+                          labelText: 'First Name',
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _lastNameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Last Name',
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _phoneController,
+                        decoration: const InputDecoration(
+                          labelText: 'Phone Number',
+                          prefixText: '+63 ',
+                        ),
+                        keyboardType: TextInputType.phone,
+                      ),
+                      const SizedBox(height: 10),
+                      TextFormField(
+                        controller: _birthdayController,
+                        decoration: InputDecoration(
+                          labelText: 'Birthday',
+                          suffixIcon: IconButton(
+                            icon: const Icon(Icons.calendar_today),
+                            onPressed: () => _selectDate(context),
+                          ),
+                        ),
+                        readOnly: true,
+                        onTap: () => _selectDate(context),
+                      ),
+                      const SizedBox(height: 20),
+                      ElevatedButton(
+                        onPressed: () {
+                          if (_firstNameController.text.isEmpty ||
+                              _lastNameController.text.isEmpty ||
+                              _phoneController.text.isEmpty ||
+                              _birthdayController.text.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text('Please fill in all fields')),
+                            );
+                            return;
+                          }
+                          _verifyPhoneNumber();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF00568D),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 15),
+                        ),
+                        child: const Text('Next', style: TextStyle(fontSize: 16)),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 20),
-                  ElevatedButton(
-                    onPressed: () {
-                      _verifyPhoneNumber();
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF00568D),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 15),
-                    ),
-                    child: const Text('Next', style: TextStyle(fontSize: 16)),
-                  ),
-                ],
+                ),
               ),
-            ),
-            // Slide 2: Phone Verification
-            Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text(
-                    'Step 2: Verify Phone Number',
-                    style: TextStyle(fontSize: 24, color: Color(0xFF00568D)),
-                  ),
-                  const SizedBox(height: 20),
-                  TextFormField(
-                    decoration: const InputDecoration(
-                      labelText: 'Verification Code',
-                      border: OutlineInputBorder(),
-                    ),
-                    keyboardType: TextInputType.number,
-                    onFieldSubmitted: (code) => _confirmVerificationCode(code),
-                  ),
-                  const SizedBox(height: 20),
-                  ElevatedButton(
-                    onPressed: () {
-                      // You might want to add validation for the code here
-                      showDialog(
-                        context: context,
-                        builder: (BuildContext context) {
-                          String smsCode = '';
-                          return AlertDialog(
-                            title: const Text('Enter SMS Code'),
-                            content: TextField(
-                              keyboardType: TextInputType.number,
-                              onChanged: (value) {
-                                smsCode = value;
-                              },
-                            ),
-                            actions: <Widget>[
-                              TextButton(
-                                child: const Text('Cancel'),
-                                onPressed: () {
-                                  Navigator.of(context).pop();
-                                },
-                              ),
-                              TextButton(
-                                child: const Text('Verify'),
-                                onPressed: () {
-                                  _confirmVerificationCode(smsCode);
-                                  Navigator.of(context).pop();
-                                },
-                              ),
-                            ],
+              // Slide 2: Phone Verification
+              SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.all(20.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'Step 2: Verify Phone Number',
+                        style: TextStyle(fontSize: 24, color: Color(0xFF00568D)),
+                      ),
+                      const SizedBox(height: 20),
+                      TextFormField(
+                        controller: _smsCodeController, // Use the controller
+                        decoration: const InputDecoration(
+                          labelText: 'Verification Code',
+                        ),
+                        keyboardType: TextInputType.number,
+                        onFieldSubmitted: (code) {
+                          if (code.isNotEmpty) {
+                            _confirmVerificationCode(code);
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Please enter a code')),
+                            );
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 20),
+                      ElevatedButton(
+                        onPressed: () {
+                          final smsCode = _smsCodeController.text.trim();
+                          if (smsCode.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Please enter a code')),
+                            );
+                            return;
+                          }
+                          _confirmVerificationCode(smsCode);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF00568D),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 15),
+                        ),
+                        child: const Text('Verify Code',
+                            style: TextStyle(fontSize: 16)),
+                      ),
+                      const SizedBox(height: 10),
+                      ElevatedButton(
+                        onPressed: () {
+                          _pageController.previousPage(
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeInOut,
                           );
                         },
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF00568D),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 15),
-                    ),
-                    child: const Text('Verify Code',
-                        style: TextStyle(fontSize: 16)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.grey,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 15),
+                        ),
+                        child: const Text('Back', style: TextStyle(fontSize: 16)),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 10),
-                  ElevatedButton(
-                    onPressed: () {
-                      _pageController.previousPage(
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeInOut,
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.grey,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 15),
-                    ),
-                    child: const Text('Back', style: TextStyle(fontSize: 16)),
-                  ),
-                ],
+                ),
               ),
-            ),
-            // Slide 3: Account Information
-            Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text(
-                    'Step 3: Account Information',
-                    style: TextStyle(fontSize: 24, color: Color(0xFF00568D)),
-                  ),
-                  const SizedBox(height: 20),
-                  TextField(
-                    controller: _emailController,
-                    decoration: const InputDecoration(
-                      labelText: 'Email',
-                      border: OutlineInputBorder(),
-                    ),
-                    keyboardType: TextInputType.emailAddress,
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _passwordController,
-                    obscureText: !_showPassword,
-                    decoration: InputDecoration(
-                      labelText: 'Password',
-                      border: const OutlineInputBorder(),
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          _showPassword
-                              ? Icons.visibility
-                              : Icons.visibility_off,
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            _showPassword = !_showPassword;
-                          });
-                        },
+              // Slide 3: Account Information
+              SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.all(20.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'Step 3: Account Information',
+                        style: TextStyle(fontSize: 24, color: Color(0xFF00568D)),
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _confirmPasswordController,
-                    obscureText: !_showPassword,
-                    decoration: InputDecoration(
-                      labelText: 'Confirm Password',
-                      border: const OutlineInputBorder(),
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          _showPassword
-                              ? Icons.visibility
-                              : Icons.visibility_off,
+                      const SizedBox(height: 20),
+                      TextField(
+                        controller: _emailController,
+                        decoration: const InputDecoration(
+                          labelText: 'Email',
                         ),
-                        onPressed: () {
-                          setState(() {
-                            _showPassword = !_showPassword;
-                          });
-                        },
+                        keyboardType: TextInputType.emailAddress,
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  ElevatedButton(
-                    onPressed: () {
-                      if (isValidEmail(_emailController.text.trim())) {
-                        _signUpWithEmail();
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Please enter a valid email'),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _passwordController,
+                        obscureText: !_showPassword,
+                        decoration: InputDecoration(
+                          labelText: 'Password',
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              _showPassword
+                                  ? Icons.visibility
+                                  : Icons.visibility_off,
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                _showPassword = !_showPassword;
+                              });
+                            },
                           ),
-                        );
-                      }
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF00568D),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 15),
-                    ),
-                    child: const Text('Create Account',
-                        style: TextStyle(fontSize: 16)),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _confirmPasswordController,
+                        obscureText: !_showPassword,
+                        decoration: InputDecoration(
+                          labelText: 'Confirm Password',
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              _showPassword
+                                  ? Icons.visibility
+                                  : Icons.visibility_off,
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                _showPassword = !_showPassword;
+                              });
+                            },
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      ElevatedButton(
+                        onPressed: () {
+                          if (isValidEmail(_emailController.text.trim())) {
+                            _signUpWithEmail();
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Please enter a valid email'),
+                              ),
+                            );
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Color(0xFF00568D),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 15),
+                        ),
+                        child: const Text('Create Account',
+                            style: TextStyle(fontSize: 16)),
+                      ),
+                      const SizedBox(height: 10),
+                      ElevatedButton(
+                        onPressed: () {
+                          _pageController.previousPage(
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeInOut,
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.grey,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 15),
+                        ),
+                        child: const Text('Back', style: TextStyle(fontSize: 16)),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 10),
-                  ElevatedButton(
-                    onPressed: () {
-                      _pageController.previousPage(
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeInOut,
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.grey,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 15),
-                    ),
-                    child: const Text('Back', style: TextStyle(fontSize: 16)),
-                  ),
-                ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  // Helper function to validate email
   bool isValidEmail(String email) {
     return RegExp(r'^[\w-]+(\.[\w-]+)*@([\w-]+\.)+[a-zA-Z]{2,7}$')
         .hasMatch(email);
