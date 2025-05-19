@@ -27,7 +27,7 @@ class _SettingsPageState extends State<SettingsPage> {
     if (Navigator.canPop(context)) {
       Navigator.pushNamedAndRemoveUntil(
         context,
-        '/',
+        '/login',
         (route) => false,
       );
     } else {
@@ -180,7 +180,7 @@ class _SettingsPageState extends State<SettingsPage> {
             if (context.mounted) {
               Navigator.pushNamedAndRemoveUntil(
                 context,
-                '/',
+                '/login',
                 (route) => false,
               );
             }

@@ -380,7 +380,7 @@ final CarouselSliderController _carouselController = CarouselSliderController();
                             style: TextStyle(color: Colors.white, fontSize: 14),
                           ),
                           TextSpan(
-                            text: 'Log in',
+                            text: 'Sign In',
                             style: const TextStyle(
                               color: Colors.yellow,
                               fontSize: 14,

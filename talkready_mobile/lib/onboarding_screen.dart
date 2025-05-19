@@ -66,16 +66,6 @@ class OnboardingQuestion {
 
 List<OnboardingQuestion> questions = [
   OnboardingQuestion(
-    title: "What is your level of English?",
-    options: [
-      OnboardingOption(title: "Beginner A1", description: "I have little to no knowledge of English."),
-      OnboardingOption(title: "Lower Intermediate A2", description: "I can communicate in simple tasks."),
-      OnboardingOption(title: "Intermediate B1", description: "I can handle everyday conversation."),
-      OnboardingOption(title: "Upper Intermediate B2", description: "I am comfortable with more complex language."),
-      OnboardingOption(title: "Advanced C", description: "I have a near-native understanding of English."),
-    ],
-  ),
-  OnboardingQuestion(
     title: "What is your current goal?",
     options: [
       OnboardingOption(title: "Get ready for a job interview", description: "Prepare for job interviews in English."),
@@ -111,11 +101,6 @@ List<OnboardingQuestion> questions = [
       OnboardingOption(title: "British 🇬🇧", description: "Received Pronunciation (RP) or British English."),
       OnboardingOption(title: "Australian 🇦🇺", description: "General Australian English accent."),
     ],
-  ),
-  OnboardingQuestion(
-    title: "What should I address you?",
-    questionType: QuestionType.textInput,
-    placeholder: "Enter your name",
   ),
   OnboardingQuestion(
     title: "Upload your profile picture",
@@ -225,12 +210,10 @@ class OnboardingScreenState extends State<OnboardingScreen> {
       }
 
       final Map<String, dynamic> responses = {
-        'englishLevel': selectedOptions[0] != null ? questions[0].options[selectedOptions[0]!].title : null,
-        'currentGoal': selectedOptions[1] != null ? questions[1].options[selectedOptions[1]!].title : null,
-        'learningPreference': selectedOptions[2] != null ? questions[2].options[selectedOptions[2]!].title : null,
-        'dailyPracticeGoal': selectedOptions[3] != null ? questions[3].options[selectedOptions[3]!].title : null,
-        'desiredAccent': selectedOptions[4] != null ? questions[4].options[selectedOptions[4]!].title : null,
-        'userName': textResponses[5] ?? '', // Adjusted index due to new question
+        'currentGoal': selectedOptions[0] != null ? questions[0].options[selectedOptions[0]!].title : null,
+        'learningPreference': selectedOptions[1] != null ? questions[1].options[selectedOptions[1]!].title : null,
+        'dailyPracticeGoal': selectedOptions[2] != null ? questions[2].options[selectedOptions[2]!].title : null,
+        'desiredAccent': selectedOptions[3] != null ? questions[3].options[selectedOptions[3]!].title : null,
         'timestamp': FieldValue.serverTimestamp(),
       };
 

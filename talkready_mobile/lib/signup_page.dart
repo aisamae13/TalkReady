@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:async';
 import 'landingpage.dart';
+import 'package:google_sign_in/google_sign_in.dart'; // Import Google Sign-In
 
 class SignUpPage extends StatefulWidget {
   const SignUpPage({Key? key}) : super(key: key);
@@ -17,13 +19,18 @@ class _SignUpPageState extends State<SignUpPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
-  final _smsCodeController = TextEditingController(); // Add controller for SMS code
+  final _smsCodeController = TextEditingController();
   final PageController _pageController = PageController(initialPage: 0);
   bool _showPassword = false;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
   String? _verificationId;
   String? _phoneNumber;
+
+  bool _isVerifyingPhone = false;
+  bool _isResendAvailable = false;
+  int _resendCooldown = 30;
+  Timer? _resendTimer;
 
   final _inputDecorationTheme = InputDecorationTheme(
     border: const OutlineInputBorder(),
@@ -192,8 +199,9 @@ class _SignUpPageState extends State<SignUpPage> {
     _lastNameController.dispose();
     _phoneController.dispose();
     _birthdayController.dispose();
-    _smsCodeController.dispose(); // Dispose the new controller
+    _smsCodeController.dispose();
     _pageController.dispose();
+    _resendTimer?.cancel();
     super.dispose();
   }
 
@@ -204,6 +212,11 @@ class _SignUpPageState extends State<SignUpPage> {
       );
       return;
     }
+    setState(() {
+      _isVerifyingPhone = true;
+      _isResendAvailable = false;
+      _resendCooldown = 30;
+    });
     _phoneNumber = '+63${_phoneController.text}';
     try {
       await _auth.verifyPhoneNumber(
@@ -223,6 +236,9 @@ class _SignUpPageState extends State<SignUpPage> {
           } else {
             message = 'Phone verification failed: ${e.message}';
           }
+          setState(() {
+            _isVerifyingPhone = false;
+          });
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(message)),
           );
@@ -230,16 +246,23 @@ class _SignUpPageState extends State<SignUpPage> {
         codeSent: (String verificationId, int? resendToken) {
           setState(() {
             _verificationId = verificationId;
+            _isVerifyingPhone = false;
+            _startResendCooldown();
           });
           _navigateToVerification();
         },
         codeAutoRetrievalTimeout: (String verificationId) {
           setState(() {
             _verificationId = verificationId;
+            _isVerifyingPhone = false;
+            _isResendAvailable = true;
           });
         },
       );
     } catch (e) {
+      setState(() {
+        _isVerifyingPhone = false;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error verifying phone number: $e')),
       );
@@ -271,6 +294,54 @@ class _SignUpPageState extends State<SignUpPage> {
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
     );
+  }
+
+  void _startResendCooldown() {
+    setState(() {
+      _isResendAvailable = false;
+      _resendCooldown = 30;
+    });
+    _resendTimer?.cancel();
+    _resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_resendCooldown > 0) {
+        setState(() {
+          _resendCooldown--;
+        });
+      } else {
+        setState(() {
+          _isResendAvailable = true;
+        });
+        timer.cancel();
+      }
+    });
+  }
+
+  Future<void> _signInWithGoogle() async {
+    try {
+      final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
+      if (googleUser == null) {
+        // User cancelled the sign-in
+        return;
+      }
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+      await _auth.signInWithCredential(credential);
+
+      // Immediately navigate to LandingPage
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const LandingPage()),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Google sign-in failed: $e')),
+      );
+    }
   }
 
   @override
@@ -377,59 +448,82 @@ class _SignUpPageState extends State<SignUpPage> {
                         style: TextStyle(fontSize: 24, color: Color(0xFF00568D)),
                       ),
                       const SizedBox(height: 20),
-                      TextFormField(
-                        controller: _smsCodeController, // Use the controller
-                        decoration: const InputDecoration(
-                          labelText: 'Verification Code',
+                      if (_isVerifyingPhone)
+                        const Center(child: CircularProgressIndicator()),
+                      if (!_isVerifyingPhone) ...[
+                        TextFormField(
+                          controller: _smsCodeController, // Use the controller
+                          decoration: const InputDecoration(
+                            labelText: 'Verification Code',
+                          ),
+                          keyboardType: TextInputType.number,
+                          onFieldSubmitted: (code) {
+                            if (code.isNotEmpty) {
+                              _confirmVerificationCode(code);
+                            } else {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Please enter a code')),
+                              );
+                            }
+                          },
                         ),
-                        keyboardType: TextInputType.number,
-                        onFieldSubmitted: (code) {
-                          if (code.isNotEmpty) {
-                            _confirmVerificationCode(code);
-                          } else {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Please enter a code')),
+                        const SizedBox(height: 20),
+                        ElevatedButton(
+                          onPressed: () {
+                            final smsCode = _smsCodeController.text.trim();
+                            if (smsCode.isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Please enter a code')),
+                              );
+                              return;
+                            }
+                            _confirmVerificationCode(smsCode);
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF00568D),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 15),
+                          ),
+                          child: const Text('Verify Code',
+                              style: TextStyle(fontSize: 16)),
+                        ),
+                        const SizedBox(height: 10),
+                        ElevatedButton(
+                          onPressed: _isResendAvailable
+                              ? () {
+                                  _verifyPhoneNumber();
+                                }
+                              : null,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _isResendAvailable
+                                ? const Color(0xFF00568D)
+                                : Colors.grey,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 15),
+                          ),
+                          child: Text(_isResendAvailable
+                              ? 'Resend Code'
+                              : 'Resend in $_resendCooldown s'),
+                        ),
+                        const SizedBox(height: 10),
+                        ElevatedButton(
+                          onPressed: () {
+                            _pageController.previousPage(
+                              duration: const Duration(milliseconds: 300),
+                              curve: Curves.easeInOut,
                             );
-                          }
-                        },
-                      ),
-                      const SizedBox(height: 20),
-                      ElevatedButton(
-                        onPressed: () {
-                          final smsCode = _smsCodeController.text.trim();
-                          if (smsCode.isEmpty) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Please enter a code')),
-                            );
-                            return;
-                          }
-                          _confirmVerificationCode(smsCode);
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF00568D),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 20, vertical: 15),
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.grey,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 15),
+                          ),
+                          child: const Text('Back', style: TextStyle(fontSize: 16)),
                         ),
-                        child: const Text('Verify Code',
-                            style: TextStyle(fontSize: 16)),
-                      ),
-                      const SizedBox(height: 10),
-                      ElevatedButton(
-                        onPressed: () {
-                          _pageController.previousPage(
-                            duration: const Duration(milliseconds: 300),
-                            curve: Curves.easeInOut,
-                          );
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.grey,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 20, vertical: 15),
-                        ),
-                        child: const Text('Back', style: TextStyle(fontSize: 16)),
-                      ),
+                      ],
                     ],
                   ),
                 ),
@@ -530,6 +624,22 @@ class _SignUpPageState extends State<SignUpPage> {
                               horizontal: 20, vertical: 15),
                         ),
                         child: const Text('Back', style: TextStyle(fontSize: 16)),
+                      ),
+                      const SizedBox(height: 10),
+                      ElevatedButton.icon(
+                        icon: Image.asset(
+                          'assets/google_logo.png', // Use your Google logo asset or use an Icon
+                          height: 24,
+                          width: 24,
+                        ),
+                        label: const Text('Sign in with Google'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+                          side: const BorderSide(color: Colors.grey),
+                        ),
+                        onPressed: _signInWithGoogle,
                       ),
                     ],
                   ),
