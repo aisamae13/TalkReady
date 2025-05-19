@@ -33,7 +33,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
   String? _name;
   String? _email;
-  String? _englishLevel;
+  // Removed: String? _englishLevel;
   String? _dailyPracticeGoal;
   String? _currentGoal;
   String? _learningPreference;
@@ -81,7 +81,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 'Parsed Firestore onboarding data: $onboardingData');
             setState(() {
               _name = onboardingData['userName'];
-              _englishLevel = onboardingData['englishLevel'];
+              // Removed: _englishLevel = onboardingData['englishLevel'];
               _dailyPracticeGoal = onboardingData['dailyPracticeGoal'];
               _currentGoal = onboardingData['currentGoal'];
               _learningPreference = onboardingData['learningPreference'];
@@ -600,23 +600,7 @@ void _showDropdownDialog(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 20, vertical: 20),
                     children: [
-                      _buildProfileOption(
-                        title: 'Active Level',
-                        value: _englishLevel,
-                        onChanged: (value) {
-                          setState(() {
-                            _englishLevel = value;
-                          });
-                        },
-                        items: const [
-                          'Beginner A1',
-                          'Lower Intermediate A2',
-                          'Intermediate B1',
-                          'Upper Intermediate B2',
-                          'Advanced C'
-                        ], // Matches onboarding options
-                        firestoreField: 'englishLevel',
-                      ),
+                      // Removed Active Level option
                       _buildProfileOption(
                         title: 'Daily Practice Goal',
                         value: _dailyPracticeGoal,
@@ -786,8 +770,6 @@ void _showDropdownDialog(
 
   String _getEmojiForTitle(String title) {
     switch (title) {
-      case 'Active Level':
-        return '🚀'; // Rocket for progress/level
       case 'Daily Practice Goal':
         return '⏱️'; // Timer for practice time
       case 'Current Goal':
