@@ -7,6 +7,7 @@ import 'profile.dart';
 import 'package:logger/logger.dart';
 import 'courses_page.dart';
 import 'journal/journal_page.dart';
+import 'progress_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -94,60 +95,71 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  void _onItemTapped(int index) {
-    logger.d('Tapped navigation item. Index: $index, currentIndex: $_selectedIndex');
-    if (index == _selectedIndex) return; // Avoid redundant navigation
+void _onItemTapped(int index) {
+  logger.d('Tapped navigation item. Index: $index, currentIndex: $_selectedIndex');
+  if (index == _selectedIndex) return; // Avoid redundant navigation
 
-    setState(() {
-      _selectedIndex = index; // Update the selected index for visual feedback
-    });
+  setState(() {
+    _selectedIndex = index; // Update the selected index for visual feedback
+  });
 
-    switch (index) {
-      case 0: // Home
-        // Already on Home, no navigation needed
-        break;
-      case 1: // Courses
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const CoursesPage()),
-        ).then((_) {
-          if (mounted) {
-            setState(() {
-              _selectedIndex = 0; // Switch back to Home tab
-            });
-          }
-        });
-        break;
-      case 2: // Journal
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) =>  JournalPage()),
-        ).then((_) {
-          if (mounted) {
-            setState(() {
-              _selectedIndex = 0; // Switch back to Home tab
-            });
-          }
-        });
-        break;
-      case 3: // Profile
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const ProfilePage()),
-        ).then((_) {
-          logger.d('Returned from ProfilePage');
-          if (mounted) {
-            setState(() {
-              _selectedIndex = 0; // Switch back to Home tab after returning
-            });
-          }
-        });
-        break;
-      default:
-        logger.w('Unhandled navigation index: $index');
-        break;
-    }
+  switch (index) {
+    case 0: // Home
+      break;
+    case 1: // Courses
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const CoursesPage()),
+      ).then((_) {
+        if (mounted) {
+          setState(() {
+            _selectedIndex = 0;
+          });
+        }
+      });
+      break;
+    case 2: // Journal
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => JournalPage()),
+      ).then((_) {
+        if (mounted) {
+          setState(() {
+            _selectedIndex = 0;
+          });
+        }
+      });
+      break;
+    case 3: // Programs
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => ProgressTrackerPage()), // Replace with your ProgramsPage widget
+      ).then((_) {
+        if (mounted) {
+          setState(() {
+            _selectedIndex = 0;
+          });
+        }
+      });
+      break;
+    case 4: // Profile
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const ProfilePage()),
+      ).then((_) {
+        logger.d('Returned from ProfilePage');
+        if (mounted) {
+          setState(() {
+            _selectedIndex = 0;
+          });
+        }
+      });
+      break;
+    default:
+      logger.w('Unhandled navigation index: $index');
+      break;
   }
+}
 
   @override
   Widget build(BuildContext context) {
@@ -317,7 +329,7 @@ class _HomePageState extends State<HomePage> {
             BottomNavigationBarItem(icon: Icon(Icons.book), label: 'Courses'),
             BottomNavigationBarItem(
                 icon: Icon(Icons.library_books), label: 'Journal'),
-            BottomNavigationBarItem(icon: Icon(Icons.apps), label: 'Programs'),
+            BottomNavigationBarItem(icon: Icon(Icons.trending_up), label: 'Progress'),
             BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
           ],
         ),

@@ -10,7 +10,7 @@ import 'package:logger/logger.dart';
 import 'courses_page.dart';
 import 'journal/journal_page.dart';
 import 'homepage.dart';
-import 'ai_bot.dart';
+import 'progress_page.dart';
 import 'settings/settings.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -417,13 +417,13 @@ void _showDropdownDialog(
         nextPage = const HomePage();
         break;
       case 1:
-        nextPage = const AIBotScreen();
+        nextPage = const CoursesPage();
         break;
       case 2:
-        nextPage = CoursesPage();
+        nextPage = JournalPage();
         break;
       case 3:
-        nextPage = JournalPage();
+        nextPage = ProgressTrackerPage();
         break;
       case 4:
         return; // Already on Profile, do nothing
@@ -678,7 +678,7 @@ void _showDropdownDialog(
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
                 BottomNavigationBarItem(icon: Icon(Icons.book), label: 'Courses'),
                 BottomNavigationBarItem(icon: Icon(Icons.library_books), label: 'Journal'),
-                BottomNavigationBarItem(icon: Icon(Icons.apps), label: 'Programs'),
+                BottomNavigationBarItem(icon: Icon(Icons.trending_up), label: 'Progress'),
                 BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
         ],
       ),

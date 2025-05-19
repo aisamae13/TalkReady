@@ -183,15 +183,8 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    mainAxisAlignment: MainAxisAlignment.end, // Align "Skip" to the right
                     children: [
-                      IconButton(
-                        icon: const Icon(Icons.arrow_back, color: Color(0xFF00568D)),
-                        onPressed: () {
-                          logger.i('Back button pressed on MoodSelectionPage');
-                          Navigator.pop(context);
-                        },
-                      ),
                       Flexible(
                         child: SizedBox(
                           width: 80,

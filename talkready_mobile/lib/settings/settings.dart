@@ -27,7 +27,7 @@ class _SettingsPageState extends State<SettingsPage> {
     if (Navigator.canPop(context)) {
       Navigator.pushNamedAndRemoveUntil(
         context,
-        '/login',
+        '/',
         (route) => false,
       );
     } else {
