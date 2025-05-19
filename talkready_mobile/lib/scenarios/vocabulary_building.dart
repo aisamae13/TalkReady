@@ -4,17 +4,20 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:logger/logger.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class VocabularyBuildingPracticeScreen extends StatefulWidget {
   final String accentLocale;
   final String userName;
   final int timeGoalSeconds;
+  final String userId;
 
   const VocabularyBuildingPracticeScreen({
     super.key,
     required this.accentLocale,
     required this.userName,
     required this.timeGoalSeconds,
+    required this.userId,
   });
 
   @override
@@ -120,8 +123,9 @@ class _VocabularyBuildingPracticeScreenState extends State<VocabularyBuildingPra
       setState(() {
         _isLoading = false;
       });
+      logger.e('Error loading new word: $e');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error loading new word: $e')),
+        const SnackBar(content: Text('Failed to load new word. Please check your internet or app settings.')),
       );
       setState(() {
         _currentWord = 'resilient';
@@ -132,59 +136,73 @@ class _VocabularyBuildingPracticeScreenState extends State<VocabularyBuildingPra
   }
 
   Future<Map<String, String>> _fetchWordFromOpenAI(String difficulty) async {
+    if (dotenv.env.isEmpty) {
+      logger.e('DotEnv not initialized or empty');
+      throw Exception('Environment variables not loaded. Please check app configuration.');
+    }
+
     final apiKey = dotenv.env['OPENAI_API_KEY'] ?? '';
     if (apiKey.isEmpty) {
+      logger.e('OpenAI API key missing in .env file');
       throw Exception('OpenAI API key missing.');
     }
 
-    final response = await http.post(
-      Uri.parse('https://api.openai.com/v1/chat/completions'),
-      headers: {
-        'Authorization': 'Bearer $apiKey',
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'model': 'gpt-4o-mini',
-        'messages': [
-          {
-            'role': 'system',
-            'content': 'You are a vocabulary building assistant for English learners. Provide a vocabulary word and its difficulty level. The difficulty level must be one of: Beginner, Intermediate, Advanced. Adjust the complexity of the word based on the difficulty level. Format the response as:\nWord: [vocabulary word]\nDifficulty: [Beginner/Intermediate/Advanced]\nDo not use markdown symbols like asterisks (**), bold, or italics in the response. Ensure the text is clean, precise, and straightforward.',
-          },
-          {'role': 'user', 'content': 'Generate a vocabulary word for difficulty level: $difficulty'},
-        ],
-        'max_tokens': 100,
-        'temperature': 0.5,
-      }),
-    );
+    try {
+      final response = await http.post(
+        Uri.parse('https://api.openai.com/v1/chat/completions'),
+        headers: {
+          'Authorization': 'Bearer $apiKey',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'model': 'gpt-4o-mini',
+          'messages': [
+            {
+              'role': 'system',
+              'content': 'You are a vocabulary building assistant for English learners. Provide a vocabulary word and its difficulty level. The difficulty level must be one of: Beginner, Intermediate, Advanced. Adjust the complexity of the word based on the difficulty level. Format the response as:\nWord: [vocabulary word]\nDifficulty: [Beginner/Intermediate/Advanced]\nDo not use markdown symbols like asterisks (**), bold, or italics in the response. Ensure the text is clean, precise, and straightforward.',
+            },
+            {'role': 'user', 'content': 'Generate a vocabulary word for difficulty level: $difficulty'},
+          ],
+          'max_tokens': 100,
+          'temperature': 0.5,
+        }),
+      );
 
-    if (response.statusCode == 200) {
-      final responseBody = utf8.decode(response.bodyBytes, allowMalformed: true);
-      final data = jsonDecode(responseBody);
-      String rawResponse = data['choices'][0]['message']['content'].trim();
-      rawResponse = _cleanText(rawResponse);
+      if (response.statusCode == 200) {
+        final responseBody = utf8.decode(response.bodyBytes, allowMalformed: true);
+        final data = jsonDecode(responseBody);
+        String rawResponse = data['choices'][0]['message']['content'].trim();
+        rawResponse = _cleanText(rawResponse);
 
-      final lines = rawResponse.split('\n');
-      if (lines.length < 2) {
-        throw Exception('Invalid response format from OpenAI: Expected 2 lines but got ${lines.length}');
+        final lines = rawResponse.split('\n');
+        if (lines.length < 2) {
+          logger.e('Invalid response format from OpenAI: Expected 2 lines but got ${lines.length}');
+          throw Exception('Invalid response format from OpenAI');
+        }
+
+        final word = lines[0].replaceFirst('Word: ', '').trim().isNotEmpty
+            ? lines[0].replaceFirst('Word: ', '').trim()
+            : 'resilient';
+
+        String rawDifficulty = lines[1].replaceFirst('Difficulty: ', '').trim();
+        rawDifficulty = rawDifficulty.replaceAll(RegExp(r'^[-\s]+'), '').trim();
+        final allowedDifficulties = ['Beginner', 'Intermediate', 'Advanced'];
+        final difficultyLevel = allowedDifficulties.contains(rawDifficulty)
+            ? rawDifficulty
+            : 'Beginner';
+
+        logger.i('Fetched word: $word, difficulty: $difficultyLevel');
+        return {
+          'word': word,
+          'difficulty': difficultyLevel,
+        };
+      } else {
+        logger.e('Failed to fetch word: ${response.statusCode} - ${response.body}');
+        throw Exception('Failed to fetch word: ${response.statusCode}');
       }
-
-      final word = lines[0].replaceFirst('Word: ', '').trim().isNotEmpty
-          ? lines[0].replaceFirst('Word: ', '').trim()
-          : 'resilient';
-
-      String rawDifficulty = lines[1].replaceFirst('Difficulty: ', '').trim();
-      rawDifficulty = rawDifficulty.replaceAll(RegExp(r'^[-\s]+'), '').trim();
-      final allowedDifficulties = ['Beginner', 'Intermediate', 'Advanced'];
-      final difficultyLevel = allowedDifficulties.contains(rawDifficulty)
-          ? rawDifficulty
-          : 'Beginner';
-
-      return {
-        'word': word,
-        'difficulty': difficultyLevel,
-      };
-    } else {
-      throw Exception('Failed to fetch word: ${response.statusCode}');
+    } catch (e) {
+      logger.e('Error fetching word from OpenAI: $e');
+      rethrow;
     }
   }
 
@@ -217,99 +235,159 @@ class _VocabularyBuildingPracticeScreenState extends State<VocabularyBuildingPra
         _animationController.forward(from: 0);
       });
       logger.i('After attempt: totalAttempts=$_totalAttempts, correctAttempts=$_correctAttempts, score=$_score');
+      await _saveVocabularyProgress();
       _scrollToBottom();
     } catch (e) {
       setState(() {
         _isLoading = false;
       });
+      logger.e('Error checking vocabulary usage: $e');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
+        const SnackBar(content: Text('Failed to check sentence. Please try again.')),
       );
       _scrollToBottom();
     }
   }
 
   Future<Map<String, String>> _getVocabularyFeedback(String userSentence, String targetWord) async {
+    if (dotenv.env.isEmpty) {
+      logger.e('DotEnv not initialized or empty');
+      throw Exception('Environment variables not loaded. Please check app configuration.');
+    }
+
     final apiKey = dotenv.env['OPENAI_API_KEY'] ?? '';
     if (apiKey.isEmpty) {
+      logger.e('OpenAI API key missing in .env file');
       throw Exception('OpenAI API key missing.');
     }
 
-    final response = await http.post(
-      Uri.parse('https://api.openai.com/v1/chat/completions'),
-      headers: {
-        'Authorization': 'Bearer $apiKey',
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'model': 'gpt-4o-mini',
-        'messages': [
-          {
-            'role': 'system',
-            'content': 'You are a vocabulary building assistant. Evaluate the usage of the word "$targetWord" in the user\'s sentence: "$userSentence". Provide feedback in the following format:\nCorrect usage: [Yes/No]\nExplanation: [Explain why the usage is correct or incorrect, including grammar, context, and meaning. Keep this section concise and avoid newlines within this section.]\nSuggestions: [Provide suggestions to improve the sentence if incorrect, or enhance it if correct. Keep this section concise and avoid newlines within this section.]\nRevised Sentence: [Provide a revised version of the sentence if applicable. Keep this section concise and avoid newlines within this section.]\nEnsure each section starts with the exact label (e.g., "Correct usage:") and is on a new line. Do not use markdown symbols like asterisks (**), bold, or italics in the response. Ensure the text is clean, precise, and straightforward, with no extra newlines within each section.',
-          },
-          {'role': 'user', 'content': 'Evaluate the usage of "$targetWord" in this sentence: "$userSentence"'},
-        ],
-        'max_tokens': 500,
-        'temperature': 0.5,
-      }),
-    );
+    try {
+      final response = await http.post(
+        Uri.parse('https://api.openai.com/v1/chat/completions'),
+        headers: {
+          'Authorization': 'Bearer $apiKey',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'model': 'gpt-4o-mini',
+          'messages': [
+            {
+              'role': 'system',
+              'content': 'You are a vocabulary building assistant. Evaluate the usage of the word "$targetWord" in the user\'s sentence: "$userSentence". Provide feedback in the following format:\nCorrect usage: [Yes/No]\nExplanation: [Explain why the usage is correct or incorrect, including grammar, context, and meaning. Keep this section concise and avoid newlines within this section.]\nSuggestions: [Provide suggestions to improve the sentence if incorrect, or enhance it if correct. Keep this section concise and avoid newlines within this section.]\nRevised Sentence: [Provide a revised version of the sentence if applicable. Keep this section concise and avoid newlines within this section.]\nEnsure each section starts with the exact label (e.g., "Correct usage:") and is on a new line. Do not use markdown symbols like asterisks (**), bold, or italics in the response. Ensure the text is clean, precise, and straightforward, with no extra newlines within each section.',
+            },
+            {'role': 'user', 'content': 'Evaluate the usage of "$targetWord" in this sentence: "$userSentence"'},
+          ],
+          'max_tokens': 500,
+          'temperature': 0.5,
+        }),
+      );
 
-    if (response.statusCode == 200) {
-      final responseBody = utf8.decode(response.bodyBytes, allowMalformed: true);
-      final data = jsonDecode(responseBody);
-      String rawFeedback = data['choices'][0]['message']['content'].trim();
-      rawFeedback = _cleanText(rawFeedback);
+      if (response.statusCode == 200) {
+        final responseBody = utf8.decode(response.bodyBytes, allowMalformed: true);
+        final data = jsonDecode(responseBody);
+        String rawFeedback = data['choices'][0]['message']['content'].trim();
+        rawFeedback = _cleanText(rawFeedback);
 
-      logger.i('Raw OpenAI feedback:\n$rawFeedback');
+        logger.i('Raw OpenAI feedback:\n$rawFeedback');
 
-      final lines = rawFeedback.split('\n');
-      if (lines.length < 4) {
-        throw Exception('Invalid feedback format from OpenAI: Expected at least 4 lines but got ${lines.length}');
-      }
+        final lines = rawFeedback.split('\n');
+        if (lines.length < 4) {
+          logger.e('Invalid feedback format from OpenAI: Expected at least 4 lines but got ${lines.length}');
+          throw Exception('Invalid feedback format from OpenAI');
+        }
 
-      Map<String, String> feedback = {};
-      String currentKey = '';
-      StringBuffer currentValue = StringBuffer();
+        Map<String, String> feedback = {};
+        String currentKey = '';
+        StringBuffer currentValue = StringBuffer();
 
-      for (String line in lines) {
-        if (line.startsWith('Correct usage:') || line.startsWith('Explanation:') ||
-            line.startsWith('Suggestions:') || line.startsWith('Revised Sentence:')) {
-          if (currentKey.isNotEmpty) {
-            feedback[currentKey] = currentValue.toString().trim();
-          }
-          if (line.startsWith('Correct usage:')) {
-            currentKey = 'correctUsage';
-            currentValue = StringBuffer(line.replaceFirst('Correct usage: ', ''));
-          } else if (line.startsWith('Explanation:')) {
-            currentKey = 'explanation';
-            currentValue = StringBuffer(line.replaceFirst('Explanation: ', ''));
-          } else if (line.startsWith('Suggestions:')) {
-            currentKey = 'suggestions';
-            currentValue = StringBuffer(line.replaceFirst('Suggestions: ', ''));
-          } else if (line.startsWith('Revised Sentence:')) {
-            currentKey = 'revisedSentence';
-            currentValue = StringBuffer(line.replaceFirst('Revised Sentence: ', ''));
-          }
-        } else {
-          if (currentValue.isNotEmpty) {
-            currentValue.write(' $line');
+        for (String line in lines) {
+          if (line.startsWith('Correct usage:') ||
+              line.startsWith('Explanation:') ||
+              line.startsWith('Suggestions:') ||
+              line.startsWith('Revised Sentence:')) {
+            if (currentKey.isNotEmpty) {
+              feedback[currentKey] = currentValue.toString().trim();
+            }
+            if (line.startsWith('Correct usage:')) {
+              currentKey = 'correctUsage';
+              currentValue = StringBuffer(line.replaceFirst('Correct usage: ', ''));
+            } else if (line.startsWith('Explanation:')) {
+              currentKey = 'explanation';
+              currentValue = StringBuffer(line.replaceFirst('Explanation: ', ''));
+            } else if (line.startsWith('Suggestions:')) {
+              currentKey = 'suggestions';
+              currentValue = StringBuffer(line.replaceFirst('Suggestions: ', ''));
+            } else if (line.startsWith('Revised Sentence:')) {
+              currentKey = 'revisedSentence';
+              currentValue = StringBuffer(line.replaceFirst('Revised Sentence: ', ''));
+            }
+          } else {
+            if (currentValue.isNotEmpty) {
+              currentValue.write(' $line');
+            }
           }
         }
-      }
-      if (currentKey.isNotEmpty) {
-        feedback[currentKey] = currentValue.toString().trim();
-      }
+        if (currentKey.isNotEmpty) {
+          feedback[currentKey] = currentValue.toString().trim();
+        }
 
-      if (!feedback.containsKey('correctUsage') || !feedback.containsKey('explanation') ||
-          !feedback.containsKey('suggestions') || !feedback.containsKey('revisedSentence')) {
-        throw Exception('Incomplete feedback: Missing one or more required fields');
-      }
+        if (!feedback.containsKey('correctUsage') ||
+            !feedback.containsKey('explanation') ||
+            !feedback.containsKey('suggestions') ||
+            !feedback.containsKey('revisedSentence')) {
+          logger.e('Incomplete feedback: Missing one or more required fields');
+          throw Exception('Incomplete feedback from OpenAI');
+        }
 
-      logger.i('Parsed feedback: $feedback');
-      return feedback;
-    } else {
-      throw Exception('Failed to get feedback: ${response.statusCode}');
+        logger.i('Parsed feedback: $feedback');
+        return feedback;
+      } else {
+        logger.e('Failed to get feedback: ${response.statusCode} - ${response.body}');
+        throw Exception('Failed to get feedback: ${response.statusCode}');
+      }
+    } catch (e) {
+      logger.e('Error getting vocabulary feedback: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> _saveVocabularyProgress() async {
+    try {
+      final vocabRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.userId)
+          .collection('vocabulary');
+
+      // Save individual attempt
+      await vocabRef.add({
+        'word': _currentWord,
+        'difficulty': _difficultyLevel,
+        'correct': _correctUsage?.contains('Yes') == true,
+        'userSentence': _userSentence,
+        'revisedSentence': _revisedSentence,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      // Update summary
+      final summaryRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.userId)
+          .collection('vocabulary')
+          .doc('summary');
+      await summaryRef.set({
+        'totalAttempts': FieldValue.increment(1),
+        'correctAttempts': _correctUsage?.contains('Yes') == true
+            ? FieldValue.increment(1)
+            : FieldValue.increment(0),
+        'lastUpdated': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      logger.i('Saved vocabulary progress for word: $_currentWord');
+    } catch (e) {
+      logger.e('Error saving vocabulary progress: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to save progress. Please try again.')),
+      );
     }
   }
 
@@ -317,7 +395,7 @@ class _VocabularyBuildingPracticeScreenState extends State<VocabularyBuildingPra
     return text
         .replaceAll('â€™', "'")
         .replaceAll('â€', '"')
-        .replaceAll('Ã©', 'e')
+        .replaceAll('Ã©', 'é')
         .replaceAll('âˆ™', "'")
         .trim();
   }
@@ -330,11 +408,8 @@ class _VocabularyBuildingPracticeScreenState extends State<VocabularyBuildingPra
       _suggestions = null;
       _revisedSentence = null;
       _controller.clear();
-      _totalAttempts = 0; // Reset attempts
-      _correctAttempts = 0; // Reset correct attempts
-      _score = 0.0; // Reset score
     });
-    logger.i('Reset attempts and score: totalAttempts=$_totalAttempts, correctAttempts=$_correctAttempts, score=$_score');
+    logger.i('Moving to next word: totalAttempts=$_totalAttempts, correctAttempts=$_correctAttempts, score=$_score');
     _loadNewWord();
   }
 
@@ -609,7 +684,7 @@ class _VocabularyBuildingPracticeScreenState extends State<VocabularyBuildingPra
                             ),
                             const SizedBox(width: 8),
                             Text(
-                              'Acuracy Score: ',
+                              'Accuracy Score: ',
                               style: TextStyle(
                                 fontSize: 20,
                                 fontWeight: FontWeight.bold,

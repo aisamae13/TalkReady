@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:talkready_mobile/ProgramsPage.dart';
 import 'dart:math';
 import 'ai_bot.dart';
 import 'profile.dart';
 import 'package:logger/logger.dart';
 import 'courses_page.dart';
-import 'journal_page.dart';
+import 'journal/journal_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -122,7 +121,7 @@ class _HomePageState extends State<HomePage> {
       case 2: // Journal
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (context) => const ProgressTrackerPage()),
+          MaterialPageRoute(builder: (context) =>  JournalPage()),
         ).then((_) {
           if (mounted) {
             setState(() {
@@ -131,19 +130,7 @@ class _HomePageState extends State<HomePage> {
           }
         });
         break;
-      case 3: // Programs
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => ProgramsPage()),
-        ).then((_) {
-          if (mounted) {
-            setState(() {
-              _selectedIndex = 0; // Switch back to Home tab
-            });
-          }
-        });
-        break;
-      case 4: // Profile
+      case 3: // Profile
         Navigator.push(
           context,
           MaterialPageRoute(builder: (context) => const ProfilePage()),

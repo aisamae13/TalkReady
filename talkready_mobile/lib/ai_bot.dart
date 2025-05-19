@@ -97,7 +97,7 @@ class _AIBotScreenState extends State<AIBotScreen> {
       'route': (BuildContext context, String accentLocale, String userName, int timeGoalSeconds) => VocabularyBuildingPracticeScreen(
         accentLocale: accentLocale,
         userName: userName,
-        timeGoalSeconds: timeGoalSeconds,
+        timeGoalSeconds: timeGoalSeconds, userId: '',
       ),
     },
     {'title': 'Listening Comprehension Drill', 'icon': Icons.headset, 'route':  (BuildContext context, String accentLocale, String userName, int timeGoalSeconds) => ListeningComprehensionDrillScreen(

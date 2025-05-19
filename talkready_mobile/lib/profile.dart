@@ -8,7 +8,7 @@ import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:logger/logger.dart';
 import 'courses_page.dart';
-import 'journal_page.dart';
+import 'journal/journal_page.dart';
 import 'homepage.dart';
 import 'ai_bot.dart';
 import 'settings/settings.dart';
@@ -423,7 +423,7 @@ void _showDropdownDialog(
         nextPage = CoursesPage();
         break;
       case 3:
-        nextPage = const ProgressTrackerPage();
+        nextPage = JournalPage();
         break;
       case 4:
         return; // Already on Profile, do nothing

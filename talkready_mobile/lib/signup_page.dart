@@ -3,7 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'landingpage.dart';
 
 class SignUpPage extends StatefulWidget {
-  const SignUpPage({Key? key}) : super(key: key);
+  const SignUpPage({super.key});
 
   @override
   State<SignUpPage> createState() => _SignUpPageState();
@@ -169,8 +169,7 @@ class _SignUpPageState extends State<SignUpPage> {
               style: TextButton.styleFrom(
                 foregroundColor: Color(0xFF00568D),
               ),
-            ),
-            dialogBackgroundColor: Colors.white,
+            ), dialogTheme: DialogThemeData(backgroundColor: Colors.white),
           ),
           child: child!,
         );
