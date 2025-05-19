@@ -7,7 +7,6 @@ import 'forgotpass.dart';
 import 'loading_screen.dart';
 import 'homepage.dart';
 import 'welcome_page.dart';
-import 'landingpage.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -579,36 +578,6 @@ class _LoginPageState extends State<LoginPage> {
               child: const Text('Log in', style: TextStyle(fontSize: 16)),
             ),
             const SizedBox(height: 10),
-            // --- Add sign-up prompt here ---
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8.0),
-              child: Center(
-                child: RichText(
-                  text: TextSpan(
-                    style: const TextStyle(fontSize: 14, color: Color(0xFF00568D)),
-                    children: [
-                      const TextSpan(text: "Don't you have an account yet? "),
-                      TextSpan(
-                        text: 'Sign up',
-                        style: const TextStyle(
-                          color: Color(0xFF00568D),
-                          fontWeight: FontWeight.bold,
-                          // decoration: TextDecoration.underline, // <-- Removed underline
-                        ),
-                        recognizer: TapGestureRecognizer()
-                          ..onTap = () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (context) => const LandingPage()),
-                            );
-                          },
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            // --- End sign-up prompt ---
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20.0),
               child: RichText(

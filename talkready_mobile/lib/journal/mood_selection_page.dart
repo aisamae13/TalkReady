@@ -121,33 +121,33 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
   }
 
   Future<String> _fetchUserName() async {
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) {
-        logger.w('No authenticated user found');
-        return 'Bestie';
-      }
+  try {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      logger.w('No authenticated user found');
+      return 'User';
+    }
 
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
+    final doc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .get();
 
-      final onboardingData = doc.data()?['onboarding'] as Map<String, dynamic>?;
-      final userName = onboardingData?['userName'] as String?;
+    final onboardingData = doc.data()?['onboarding'] as Map<String, dynamic>?;
+    final firstName = onboardingData?['firstName'] as String?;
 
-      if (userName == null || userName.isEmpty) {
-        logger.w('User name not found in Firestore');
-        return 'Bestie';
-      }
-
-      logger.i('Fetched user name: $userName');
-      return userName;
-    } catch (e) {
-      logger.e('Error fetching user name: $e');
+    if (firstName == null || firstName.isEmpty) {
+      logger.w('First name not found in Firestore');
       return 'Bestie';
     }
+
+    logger.i('Fetched first name: $firstName');
+    return firstName;
+  } catch (e) {
+    logger.e('Error fetching first name: $e');
+    return 'Bestie';
   }
+}
 
   void _navigateToJournalWriting(String? mood, String? tag) {
     logger.i('Navigating to JournalWritingPage with mood: $mood, tag: $tag');

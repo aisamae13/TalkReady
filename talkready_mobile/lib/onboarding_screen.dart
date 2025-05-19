@@ -7,9 +7,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image/image.dart' as img;
 import 'package:logger/logger.dart';
-import 'package:flutter/services.dart'; // For PlatformException
+import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'next_screen.dart';
+import 'package:talkready_mobile/next_screen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -31,7 +31,7 @@ class MyApp extends StatelessWidget {
           if (snapshot.connectionState == ConnectionState.done) {
             return const OnboardingScreen();
           }
-          return const Center(child: CircularProgressIndicator());
+          return const Center(child: CircularProgressIndicator(color: Color(0xFF00568D)));
         },
       ),
     );
@@ -104,7 +104,7 @@ List<OnboardingQuestion> questions = [
   ),
   OnboardingQuestion(
     title: "Upload your profile picture",
-    questionType: QuestionType.profilePic, // New question type for profile picture
+    questionType: QuestionType.profilePic,
   ),
 ];
 
@@ -121,11 +121,10 @@ class OnboardingScreenState extends State<OnboardingScreen> {
 
   List<int?> selectedOptions = List.filled(questions.length, null);
   Map<int, String> textResponses = {};
-  File? _profilePic; // Store the selected profile picture file
+  File? _profilePic;
 
-  final ImagePicker _picker = ImagePicker(); // For image picking, now used
-
-  final Logger _logger = Logger(); // Initialize Logger
+  final ImagePicker _picker = ImagePicker();
+  final Logger _logger = Logger();
 
   @override
   void dispose() {
@@ -148,7 +147,7 @@ class OnboardingScreenState extends State<OnboardingScreen> {
   Future<void> _pickProfilePic() async {
     try {
       _logger.i('Attempting to pick profile picture from gallery');
-      final pickedFile = await _picker.pickImage(source: ImageSource.gallery); // Use the _picker field
+      final pickedFile = await _picker.pickImage(source: ImageSource.gallery);
       if (pickedFile != null) {
         setState(() {
           _profilePic = File(pickedFile.path);
@@ -170,7 +169,7 @@ class OnboardingScreenState extends State<OnboardingScreen> {
             action: SnackBarAction(
               label: 'Settings',
               onPressed: () {
-                openAppSettings(); // Open app settings for the user to grant permission manually
+                openAppSettings();
               },
             ),
           ),
@@ -188,7 +187,6 @@ class OnboardingScreenState extends State<OnboardingScreen> {
     }
   }
 
-  // Check if the current question has a valid response
   bool _isCurrentQuestionAnswered() {
     final currentQuestion = questions[_currentPage];
     if (currentQuestion.questionType == QuestionType.multipleChoice) {
@@ -196,64 +194,63 @@ class OnboardingScreenState extends State<OnboardingScreen> {
     } else if (currentQuestion.questionType == QuestionType.textInput) {
       return textResponses[_currentPage]?.isNotEmpty ?? false;
     } else if (currentQuestion.questionType == QuestionType.profilePic) {
-      // Allow skipping by returning true even if no profile picture is selected
-      return true; // User can skip this question without selecting a profile picture
+      return true;
     }
-    return false; // Default case, though all questions are covered
+    return false;
   }
 
   Future<void> _saveOnboardingResponsesAndNavigate() async {
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) {
-        throw Exception('User not authenticated');
-      }
-
-      final Map<String, dynamic> responses = {
-        'currentGoal': selectedOptions[0] != null ? questions[0].options[selectedOptions[0]!].title : null,
-        'learningPreference': selectedOptions[1] != null ? questions[1].options[selectedOptions[1]!].title : null,
-        'dailyPracticeGoal': selectedOptions[2] != null ? questions[2].options[selectedOptions[2]!].title : null,
-        'desiredAccent': selectedOptions[3] != null ? questions[3].options[selectedOptions[3]!].title : null,
-        'timestamp': FieldValue.serverTimestamp(),
-      };
-
-      if (_profilePic != null) {
-        _logger.i('Encoding profile picture to base64: ${_profilePic!.path}');
-        final imageBytes = await _profilePic!.readAsBytes();
-        final image = img.decodeImage(imageBytes)!;
-        final resizedImage = img.copyResize(image, width: 200);
-        final base64Image = img.encodePng(resizedImage);
-        if (base64Image.length > 1000000) { // 1 MB limit
-          _logger.e('Profile picture too large for Firestore (exceeds 1 MB)');
-          throw Exception('Profile picture is too large to store in Firestore');
-        }
-        responses['profilePicBase64'] = base64Encode(base64Image); // Store base64 string in Firestore
-        responses['profilePicSkipped'] = false;
-        _logger.i('Profile picture encoded successfully as base64');
-      } else {
-        _logger.w('No profile picture selected, skipping upload (user chose to skip)');
-        responses['profilePicBase64'] = null; // Explicitly set to null if skipped
-        responses['profilePicSkipped'] = true;
-      }
-
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .set({'onboarding': responses}, SetOptions(merge: true));
-
-      if (!mounted) return;
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => NextScreen(responses: responses)),
-      );
-    } catch (e) {
-      _logger.e('Error saving responses: $e');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error saving responses: $e')),
-      );
+  try {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw Exception('User not authenticated');
     }
+
+    final Map<String, dynamic> responses = {
+      'currentGoal': selectedOptions[0] != null ? questions[0].options[selectedOptions[0]!].title : null,
+      'learningPreference': selectedOptions[1] != null ? questions[1].options[selectedOptions[1]!].title : null,
+      'dailyPracticeGoal': selectedOptions[2] != null ? questions[2].options[selectedOptions[2]!].title : null,
+      'desiredAccent': selectedOptions[3] != null ? questions[3].options[selectedOptions[3]!].title : null,
+      'timestamp': FieldValue.serverTimestamp(),
+    };
+
+    if (_profilePic != null) {
+      _logger.i('Encoding profile picture to base64: ${_profilePic!.path}');
+      final imageBytes = await _profilePic!.readAsBytes();
+      final image = img.decodeImage(imageBytes)!;
+      final resizedImage = img.copyResize(image, width: 200);
+      final base64Image = img.encodePng(resizedImage);
+      if (base64Image.length > 1000000) {
+        _logger.e('Profile picture too large for Firestore (exceeds 1 MB)');
+        throw Exception('Profile picture is too large to store in Firestore');
+      }
+      responses['profilePicBase64'] = base64Encode(base64Image);
+      responses['profilePicSkipped'] = false;
+      _logger.i('Profile picture encoded successfully as base64');
+    } else {
+      _logger.w('No profile picture selected, skipping upload');
+      responses['profilePicBase64'] = null;
+      responses['profilePicSkipped'] = true;
+    }
+
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .set({'onboarding': responses}, SetOptions(merge: true));
+
+    if (!mounted) return;
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (context) => NextScreen(responses: responses)),
+    );
+  } catch (e) {
+    _logger.e('Error saving responses: $e');
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Error saving responses: $e')),
+    );
   }
+}
 
   @override
   Widget build(BuildContext context) {
@@ -267,104 +264,104 @@ class OnboardingScreenState extends State<OnboardingScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
-       body: Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Color(0xFF00568D).withOpacity(0.1), // Subtle light blue derived from primaryColor
-            Colors.grey[50]!, // Off-white background for a clean look
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFF00568D).withOpacity(0.1),
+              Colors.grey[50]!,
+            ],
+          ),
+        ),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 18.0),
+              child: LinearProgressIndicator(
+                value: (_currentPage + 1) / questions.length,
+                backgroundColor: Colors.grey[300],
+                color: primaryColor,
+                minHeight: 4,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Expanded(
+              child: PageView.builder(
+                physics: const NeverScrollableScrollPhysics(),
+                controller: _pageController,
+                itemCount: questions.length,
+                onPageChanged: (index) {
+                  setState(() {
+                    _currentPage = index;
+                  });
+                },
+                itemBuilder: (context, index) {
+                  final question = questions[index];
+                  return OnboardingPage(
+                    question: question,
+                    questionIndex: index,
+                    currentPage: _currentPage,
+                    selectedOptionIndex: selectedOptions[index],
+                    textResponse: textResponses[index] ?? "",
+                    profilePic: _profilePic,
+                    onOptionSelected: (optionIndex) => _onOptionSelected(index, optionIndex),
+                    onTextChanged: (value) => _onTextChanged(index, value),
+                    onPickProfilePic: _pickProfilePic,
+                  );
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(20.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  if (_currentPage > 0)
+                    TextButton(
+                      onPressed: () {
+                        _pageController.previousPage(
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeInOut,
+                        );
+                      },
+                      child: const Text(
+                        'Previous',
+                        style: TextStyle(fontSize: 16, color: primaryColor),
+                      ),
+                    ),
+                  ElevatedButton(
+                    onPressed: _isCurrentQuestionAnswered()
+                        ? () async {
+                            if (_currentPage < questions.length - 1) {
+                              _pageController.nextPage(
+                                duration: const Duration(milliseconds: 300),
+                                curve: Curves.easeInOut,
+                              );
+                            } else {
+                              await _saveOnboardingResponsesAndNavigate();
+                            }
+                          }
+                        : null,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryColor,
+                      padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 8.0),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10.0),
+                      ),
+                    ),
+                    child: Text(
+                      _currentPage == questions.length - 1 ? 'Finish' : 'Continue',
+                      style: const TextStyle(fontSize: 16, color: Colors.white),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 18.0),
-            child: LinearProgressIndicator(
-              value: (_currentPage + 1) / questions.length,
-              backgroundColor: Colors.grey[300],
-              color: primaryColor,
-              minHeight: 4,
-            ),
-          ),
-          const SizedBox(height: 20),
-          Expanded(
-            child: PageView.builder(
-              physics: const NeverScrollableScrollPhysics(),
-              controller: _pageController,
-              itemCount: questions.length,
-              onPageChanged: (index) {
-                setState(() {
-                  _currentPage = index;
-                });
-              },
-              itemBuilder: (context, index) {
-                final question = questions[index];
-                return OnboardingPage(
-                  question: question,
-                  questionIndex: index,
-                  currentPage: _currentPage,
-                  selectedOptionIndex: selectedOptions[index],
-                  textResponse: textResponses[index] ?? "",
-                  profilePic: _profilePic,
-                  onOptionSelected: (optionIndex) => _onOptionSelected(index, optionIndex),
-                  onTextChanged: (value) => _onTextChanged(index, value),
-                  onPickProfilePic: _pickProfilePic,
-                );
-              },
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(20.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                if (_currentPage > 0)
-                  TextButton(
-                    onPressed: () {
-                      _pageController.previousPage(
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeInOut,
-                      );
-                    },
-                    child: const Text(
-                      'Previous',
-                      style: TextStyle(fontSize: 16, color: primaryColor),
-                    ),
-                  ),
-                ElevatedButton(
-                  onPressed: _isCurrentQuestionAnswered()
-                      ? () async {
-                          if (_currentPage < questions.length - 1) {
-                            _pageController.nextPage(
-                              duration: const Duration(milliseconds: 300),
-                              curve: Curves.easeInOut,
-                            );
-                          } else {
-                            await _saveOnboardingResponsesAndNavigate();
-                          }
-                        }
-                      : null, // Disable button if question isn’t answered
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: primaryColor,
-                    padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 8.0),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(5),
-                    ),
-                  ),
-                  child: Text(
-                    _currentPage == questions.length - 1 ? 'Finish' : 'Continue',
-                    style: const TextStyle(fontSize: 16, color: Colors.white),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    )
     );
   }
 }
@@ -372,19 +369,19 @@ class OnboardingScreenState extends State<OnboardingScreen> {
 class OnboardingPage extends StatelessWidget {
   final OnboardingQuestion question;
   final int questionIndex;
-  final int currentPage; // New parameter to access the current page
+  final int currentPage;
   final int? selectedOptionIndex;
   final String textResponse;
-  final File? profilePic; // Store the selected profile picture
+  final File? profilePic;
   final Function(int) onOptionSelected;
   final ValueChanged<String> onTextChanged;
-  final VoidCallback onPickProfilePic; // Function to pick profile picture
+  final VoidCallback onPickProfilePic;
 
   const OnboardingPage({
     super.key,
     required this.question,
     required this.questionIndex,
-    required this.currentPage, // Added currentPage parameter
+    required this.currentPage,
     required this.selectedOptionIndex,
     required this.textResponse,
     required this.profilePic,
@@ -490,14 +487,12 @@ class OnboardingPage extends StatelessWidget {
                 children: [
                   CircleAvatar(
                     radius: 50,
-                    backgroundImage: profilePic != null
-                        ? FileImage(profilePic!) as ImageProvider
-                        : null, // Display the selected profile picture if available
-                    backgroundColor: profilePic == null ? Colors.grey[300] : null, // Grey placeholder if no image
+                    backgroundImage: profilePic != null ? FileImage(profilePic!) as ImageProvider : null,
+                    backgroundColor: profilePic == null ? Colors.grey[300] : null,
                   ),
                   const SizedBox(height: 20),
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.center, // Center the buttons horizontally
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       ElevatedButton(
                         onPressed: onPickProfilePic,
@@ -513,14 +508,12 @@ class OnboardingPage extends StatelessWidget {
                           style: TextStyle(fontSize: 16, color: Colors.white),
                         ),
                       ),
-                      const SizedBox(width: 10), // Add spacing between buttons
+                      const SizedBox(width: 10),
                       TextButton(
                         onPressed: () {
-                          // Skip the profile picture upload and proceed
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(content: Text('Profile picture skipped')),
                           );
-                          // Optionally, you can directly proceed to the next question or finish
                           final onboardingScreenState = context.findAncestorStateOfType<OnboardingScreenState>();
                           if (onboardingScreenState != null && currentPage < questions.length - 1) {
                             onboardingScreenState._pageController.nextPage(

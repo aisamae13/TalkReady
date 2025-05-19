@@ -1,8 +1,9 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:talkready_mobile/welcome_page.dart';
 import 'dart:async';
-import 'landingpage.dart';
-import 'package:google_sign_in/google_sign_in.dart'; // Import Google Sign-In
+
 
 class SignUpPage extends StatefulWidget {
   const SignUpPage({super.key});
@@ -67,13 +68,24 @@ class _SignUpPageState extends State<SignUpPage> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const Center(child: CircularProgressIndicator()),
+        builder: (context) => const Center(child: CircularProgressIndicator(color: Color(0xFF00568D))),
       );
 
-      await _auth.createUserWithEmailAndPassword(
+      // Create user with email and password
+      UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
+
+      // Save user data to Firestore
+      await FirebaseFirestore.instance.collection('users').doc(userCredential.user!.uid).set({
+        'onboarding': {
+          'firstName': _firstNameController.text.trim(),
+          'lastName': _lastNameController.text.trim(),
+          'phone': _phoneNumber,
+          'birthday': _birthdayController.text,
+        },
+      }, SetOptions(merge: true));
 
       await _auth.currentUser?.sendEmailVerification();
 
@@ -134,7 +146,7 @@ class _SignUpPageState extends State<SignUpPage> {
         if (mounted) {
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(builder: (context) => const LandingPage()),
+            MaterialPageRoute(builder: (context) => const WelcomePage()),
           );
         }
         return;
@@ -147,9 +159,7 @@ class _SignUpPageState extends State<SignUpPage> {
     if (!isVerified && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'Please verify your email before continuing. Check your spam folder.',
-          ),
+          content: Text('Please verify your email before continuing. Check your spam folder.'),
           duration: Duration(seconds: 5),
         ),
       );
@@ -176,7 +186,8 @@ class _SignUpPageState extends State<SignUpPage> {
               style: TextButton.styleFrom(
                 foregroundColor: Color(0xFF00568D),
               ),
-            ), dialogTheme: DialogThemeData(backgroundColor: Colors.white),
+            ),
+            dialogTheme: DialogThemeData(backgroundColor: Colors.white),
           ),
           child: child!,
         );
@@ -315,34 +326,6 @@ class _SignUpPageState extends State<SignUpPage> {
     });
   }
 
-  Future<void> _signInWithGoogle() async {
-    try {
-      final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
-      if (googleUser == null) {
-        // User cancelled the sign-in
-        return;
-      }
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
-      final credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
-      await _auth.signInWithCredential(credential);
-
-      // Immediately navigate to LandingPage
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const LandingPage()),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Google sign-in failed: $e')),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Theme(
@@ -416,8 +399,7 @@ class _SignUpPageState extends State<SignUpPage> {
                               _phoneController.text.isEmpty ||
                               _birthdayController.text.isEmpty) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                  content: Text('Please fill in all fields')),
+                              const SnackBar(content: Text('Please fill in all fields')),
                             );
                             return;
                           }
@@ -426,8 +408,7 @@ class _SignUpPageState extends State<SignUpPage> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF00568D),
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 20, vertical: 15),
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
                         ),
                         child: const Text('Next', style: TextStyle(fontSize: 16)),
                       ),
@@ -451,7 +432,7 @@ class _SignUpPageState extends State<SignUpPage> {
                         const Center(child: CircularProgressIndicator()),
                       if (!_isVerifyingPhone) ...[
                         TextFormField(
-                          controller: _smsCodeController, // Use the controller
+                          controller: _smsCodeController,
                           decoration: const InputDecoration(
                             labelText: 'Verification Code',
                           ),
@@ -481,11 +462,9 @@ class _SignUpPageState extends State<SignUpPage> {
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF00568D),
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 20, vertical: 15),
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
                           ),
-                          child: const Text('Verify Code',
-                              style: TextStyle(fontSize: 16)),
+                          child: const Text('Verify Code', style: TextStyle(fontSize: 16)),
                         ),
                         const SizedBox(height: 10),
                         ElevatedButton(
@@ -495,16 +474,11 @@ class _SignUpPageState extends State<SignUpPage> {
                                 }
                               : null,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: _isResendAvailable
-                                ? const Color(0xFF00568D)
-                                : Colors.grey,
+                            backgroundColor: _isResendAvailable ? const Color(0xFF00568D) : Colors.grey,
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 20, vertical: 15),
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
                           ),
-                          child: Text(_isResendAvailable
-                              ? 'Resend Code'
-                              : 'Resend in $_resendCooldown s'),
+                          child: Text(_isResendAvailable ? 'Resend Code' : 'Resend in $_resendCooldown s'),
                         ),
                         const SizedBox(height: 10),
                         ElevatedButton(
@@ -517,8 +491,7 @@ class _SignUpPageState extends State<SignUpPage> {
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.grey,
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 20, vertical: 15),
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
                           ),
                           child: const Text('Back', style: TextStyle(fontSize: 16)),
                         ),
@@ -553,11 +526,7 @@ class _SignUpPageState extends State<SignUpPage> {
                         decoration: InputDecoration(
                           labelText: 'Password',
                           suffixIcon: IconButton(
-                            icon: Icon(
-                              _showPassword
-                                  ? Icons.visibility
-                                  : Icons.visibility_off,
-                            ),
+                            icon: Icon(_showPassword ? Icons.visibility : Icons.visibility_off),
                             onPressed: () {
                               setState(() {
                                 _showPassword = !_showPassword;
@@ -573,11 +542,7 @@ class _SignUpPageState extends State<SignUpPage> {
                         decoration: InputDecoration(
                           labelText: 'Confirm Password',
                           suffixIcon: IconButton(
-                            icon: Icon(
-                              _showPassword
-                                  ? Icons.visibility
-                                  : Icons.visibility_off,
-                            ),
+                            icon: Icon(_showPassword ? Icons.visibility : Icons.visibility_off),
                             onPressed: () {
                               setState(() {
                                 _showPassword = !_showPassword;
@@ -593,20 +558,16 @@ class _SignUpPageState extends State<SignUpPage> {
                             _signUpWithEmail();
                           } else {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Please enter a valid email'),
-                              ),
+                              const SnackBar(content: Text('Please enter a valid email')),
                             );
                           }
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Color(0xFF00568D),
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 20, vertical: 15),
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
                         ),
-                        child: const Text('Create Account',
-                            style: TextStyle(fontSize: 16)),
+                        child: const Text('Create Account', style: TextStyle(fontSize: 16)),
                       ),
                       const SizedBox(height: 10),
                       ElevatedButton(
@@ -619,26 +580,9 @@ class _SignUpPageState extends State<SignUpPage> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.grey,
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 20, vertical: 15),
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
                         ),
                         child: const Text('Back', style: TextStyle(fontSize: 16)),
-                      ),
-                      const SizedBox(height: 10),
-                      ElevatedButton.icon(
-                        icon: Image.asset(
-                          'assets/google_logo.png', // Use your Google logo asset or use an Icon
-                          height: 24,
-                          width: 24,
-                        ),
-                        label: const Text('Sign in with Google'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: Colors.black,
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-                          side: const BorderSide(color: Colors.grey),
-                        ),
-                        onPressed: _signInWithGoogle,
                       ),
                     ],
                   ),
@@ -652,7 +596,6 @@ class _SignUpPageState extends State<SignUpPage> {
   }
 
   bool isValidEmail(String email) {
-    return RegExp(r'^[\w-]+(\.[\w-]+)*@([\w-]+\.)+[a-zA-Z]{2,7}$')
-        .hasMatch(email);
+    return RegExp(r'^[\w-]+(\.[\w-]+)*@([\w-]+\.)+[a-zA-Z]{2,7}$').hasMatch(email);
   }
 }
