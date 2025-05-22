@@ -253,12 +253,19 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
 
         if (mounted) {
           setState(() {
-            final moduleData = (module['list'] as List<Map<String, dynamic>>)[module['index'] as int];
-            moduleData['isLocked'] = !previousModuleCompleted;
-            moduleData['isCompleted'] = isCompleted;
-            for (int i = 0; i < moduleData['lessons'].length; i++) {
-              moduleData['lessons'][i]['completed'] = lessons['lesson${i + 1}'] as bool? ?? false;
-              logger.d('Lesson ${i + 1} completed: ${moduleData['lessons'][i]['completed']}');
+            final moduleList = module['list'] as List<Map<String, dynamic>>?;
+            final moduleIndex = module['index'] as int?;
+
+            if (moduleList != null && moduleIndex != null) {
+              final moduleData = moduleList[moduleIndex];
+              moduleData['isLocked'] = !previousModuleCompleted;
+              moduleData['isCompleted'] = isCompleted;
+              for (int i = 0; i < moduleData['lessons'].length; i++) {
+                moduleData['lessons'][i]['completed'] = lessons['lesson${i + 1}'] as bool? ?? false;
+                logger.d('Lesson ${i + 1} completed: ${moduleData['lessons'][i]['completed']}');
+              }
+            } else {
+              logger.e('Module list or index is null for module ${module['id']}');
             }
           });
         }
@@ -267,12 +274,11 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
       }
 
       logger.i('Module status updated');
+      setState(() {});
     } catch (e) {
       logger.e('Error checking module status: $e');
       if (mounted) {
-        setState(() {
-          // Optionally display an error message
-        });
+        setState(() {});
       }
     }
   }
@@ -288,6 +294,278 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
     }
 
     return totalLessons > 0 ? completedLessons / totalLessons : 0.0;
+  }
+
+  String _formatLessonTitle(String lessonId) {
+    // Insert \n after colons or at logical breaks for wrapping
+    return lessonId.replaceAll(': ', ':\n').replaceAll(' - ', '\n');
+  }
+
+  Future<void> _showActivityLog(String moduleId, String lessonId, Color moduleColor) async {
+    try {
+      logger.i('Fetching activity logs for moduleId: $moduleId, lessonId: $lessonId');
+      final activitySnapshots = await firebaseService.getActivityLogs(moduleId, lessonId);
+      logger.i('Found ${activitySnapshots.docs.length} activity logs for $lessonId');
+
+      showDialog(
+        context: context,
+        builder: (context) => Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          elevation: 8,
+          backgroundColor: Colors.transparent,
+          child: Container(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.6,
+              maxWidth: 400,
+            ),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Colors.white,
+                  moduleColor.withOpacity(0.1),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.2),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  decoration: BoxDecoration(
+                    color: moduleColor.withOpacity(0.9),
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.history,
+                        color: Colors.white,
+                        size: 24,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Activity Log for\n${_formatLessonTitle(lessonId)}',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                          softWrap: true,
+                          maxLines: null,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Flexible(
+                  child: activitySnapshots.docs.isEmpty
+                      ? Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.5),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Center(
+                            child: Text(
+                              'No activity logs found for this lesson.',
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.white,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ),
+                        )
+                      : SingleChildScrollView(
+                          child: Column(
+                            children: activitySnapshots.docs.map((doc) {
+                              final data = doc.data() as Map<String, dynamic>? ?? {};
+                              final score = data['score'] as int? ?? 0;
+                              final totalScore = data['totalScore'] as int? ?? 8;
+                              final attemptNumber = data['attemptNumber'] as int? ?? 0;
+                              final timeSpent = data['timeSpent'] as int? ?? 0;
+                              final timestamp = data['attemptTimestamp']?.toDate() ?? DateTime.now();
+                              return Container(
+                                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(8),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.grey.withOpacity(0.1),
+                                      blurRadius: 4,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  children: [
+                                    CircleAvatar(
+                                      radius: 20,
+                                      backgroundColor: moduleColor.withOpacity(0.1),
+                                      child: Text(
+                                        '#$attemptNumber',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                          color: moduleColor,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Score: $score/$totalScore',
+                                            style: TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w600,
+                                              color: moduleColor,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            'Time: ${timeSpent}s | ${timestamp.day}/${timestamp.month}/${timestamp.year}',
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              color: Colors.grey[600],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                ),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: const BoxDecoration(
+                    borderRadius: BorderRadius.vertical(bottom: Radius.circular(16)),
+                  ),
+                  child: Center(
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: moduleColor,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        elevation: 2,
+                      ),
+                      child: const Text(
+                        'Close',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      logger.e('Error fetching activity logs for $moduleId/$lessonId: $e');
+      showDialog(
+        context: context,
+        builder: (context) => Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          elevation: 8,
+          backgroundColor: Colors.transparent,
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Colors.white,
+                  moduleColor.withOpacity(0.1),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.2),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Error',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: moduleColor,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Failed to load activity logs. Please try again later.',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.black54,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: moduleColor,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    elevation: 2,
+                  ),
+                  child: const Text(
+                    'OK',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
   }
 
   @override
@@ -394,6 +672,7 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
         final bool isLocked = module['isLocked'] as bool;
         final lessons = module['lessons'] as List<Map<String, dynamic>>;
         final bool isInProgress = !isLocked && !isCompleted && lessons.any((lesson) => lesson['completed'] as bool);
+        final moduleId = 'module${entry.key + (level == 'Beginner' ? 1 : level == 'Intermediate' ? 6 : 11)}';
 
         return Padding(
           padding: const EdgeInsets.only(bottom: 16.0),
@@ -483,10 +762,19 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
                                   color: Colors.green,
                                   size: 16,
                                 ),
+                              const SizedBox(width: 8),
+                              IconButton(
+                                icon: const Icon(Icons.history, size: 16),
+                                color: const Color(0xFF00568D),
+                                onPressed: () async {
+                                  await _showActivityLog(moduleId, lesson['title'], module['color'] as Color);
+                                },
+                                tooltip: 'View Activity Log',
+                              ),
                             ],
                           ),
                         );
-                      }).toList(),
+                      }),
                     ] else ...[
                       const Padding(
                         padding: EdgeInsets.only(top: 8.0),
@@ -526,7 +814,7 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
                                   context,
                                   MaterialPageRoute(builder: (context) => destination),
                                 );
-                                _checkModuleStatus(); // Refresh status after returning
+                                await _checkModuleStatus();
                               },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: isLocked

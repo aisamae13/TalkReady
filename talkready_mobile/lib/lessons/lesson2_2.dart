@@ -18,7 +18,7 @@ Widget buildLesson2_2({
   required Function(int) onSlideChanged,
   required Function(List<Map<String, dynamic>>) onSubmitAnswers,
 }) {
-  final Logger _logger = Logger();
+  final Logger logger = Logger();
 
   final List<Map<String, dynamic>> slides = [
     {
@@ -136,7 +136,7 @@ Widget buildLesson2_2({
           enableInfiniteScroll: false,
           onPageChanged: (index, reason) {
             onSlideChanged(index);
-            _logger.d('Slide changed to $index in Lesson 2.2');
+            logger.d('Slide changed to $index in Lesson 2.2');
           },
         ),
       ),
@@ -176,17 +176,17 @@ Widget buildLesson2_2({
           child: Builder(
             builder: (context) {
               try {
-                _logger.i('Rendering YouTube player for Lesson 2.2, videoId=${youtubeController.initialVideoId}');
+                logger.i('Rendering YouTube player for Lesson 2.2, videoId=${youtubeController.initialVideoId}');
                 return YoutubePlayer(
                   controller: youtubeController,
                   showVideoProgressIndicator: true,
                   progressIndicatorColor: const Color(0xFF00568D),
                   onReady: () {
-                    _logger.i('YouTube player is ready for Lesson 2.2');
+                    logger.i('YouTube player is ready for Lesson 2.2');
                   },
                 );
               } catch (e) {
-                _logger.e('Error rendering YouTube player in Lesson 2.2: $e');
+                logger.e('Error rendering YouTube player in Lesson 2.2: $e');
                 return const Text('Error loading video');
               }
             },
@@ -238,11 +238,11 @@ Widget buildLesson2_2({
             errorMessage: errorMessages[entry.key],
             onSelectionChanged: (List<String> newSelections) {
               selectedAnswers[entry.key] = List<String>.from(newSelections);
-              _logger.d('Updating selectedAnswers[${entry.key}]: $newSelections');
+              logger.d('Updating selectedAnswers[${entry.key}]: $newSelections');
             },
             onAnswerChanged: (isCorrect) {
               onAnswerChanged(entry.key, isCorrect);
-              _logger.d('Answer changed for question ${entry.key} in Lesson 2.2: isCorrect=$isCorrect');
+              logger.d('Answer changed for question ${entry.key} in Lesson 2.2: isCorrect=$isCorrect');
             },
           );
         }),
@@ -251,7 +251,7 @@ Widget buildLesson2_2({
           width: double.infinity,
           child: ElevatedButton(
             onPressed: () {
-              _logger.i('Submit Answers button pressed for Lesson 2.2');
+              logger.i('Submit Answers button pressed for Lesson 2.2');
               onSubmitAnswers(questions);
             },
             style: ElevatedButton.styleFrom(

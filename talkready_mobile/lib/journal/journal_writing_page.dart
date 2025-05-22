@@ -42,7 +42,7 @@ class JournalWritingPage extends StatefulWidget {
   final JournalEntry? initialEntry;
 
   const JournalWritingPage({
-    Key? key,
+    super.key,
     required this.mood,
     required this.tag,
     required this.entries,
@@ -51,7 +51,7 @@ class JournalWritingPage extends StatefulWidget {
     required this.deleteEntry,
     required this.toggleFavorite,
     this.initialEntry,
-  }) : super(key: key);
+  });
 
   @override
   State<JournalWritingPage> createState() => _JournalWritingPageState();

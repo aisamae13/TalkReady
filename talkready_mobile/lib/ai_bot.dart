@@ -15,9 +15,6 @@ import 'package:logger/logger.dart';
 import 'dart:math';
 import 'package:showcaseview/showcaseview.dart';
 import 'package:intl/intl.dart';
-import 'scenarios/grammar_correction.dart';
-import 'scenarios/listening_compre.dart';
-import 'scenarios/vocabulary_building.dart';
 import 'tutorial_service.dart';
 
 class AIBotScreen extends StatefulWidget {
@@ -53,9 +50,6 @@ class _AIBotScreenState extends State<AIBotScreen> {
   ImageProvider? _userProfileImage;
   final List<Map<String, dynamic>> _messages = [];
   String? _accentLocale;
-  int _timeGoalSeconds = 300;
-  Timer? _timer;
-  int _remainingSeconds = 0;
   bool _hasStartedListening = false;
   bool _isTyping = false;
   final bool _hasTriggeredTutorial = false;
@@ -63,7 +57,7 @@ class _AIBotScreenState extends State<AIBotScreen> {
   static const String _ttsServerUrl = 'https://c360-175-176-32-217.ngrok-free.app/tts';
   bool _isRecorderInitialized = false;
   final TextEditingController _textController = TextEditingController();
- final Map<String, double> _sessionProgress = {
+  final Map<String, double> _sessionProgress = {
     'Fluency': 0.0,
     'Grammar': 0.0,
     'Pronunciation': 0.0,
@@ -73,40 +67,10 @@ class _AIBotScreenState extends State<AIBotScreen> {
   int _responseCount = 0;
   final Random _random = Random();
   String? _userName;
-  final GlobalKey _timerKey = GlobalKey();
   final GlobalKey _chatAreaKey = GlobalKey();
   final GlobalKey _micKey = GlobalKey();
   final GlobalKey _keyboardKey = GlobalKey();
-  final GlobalKey _modeKey = GlobalKey();
   final ScrollController _scrollController = ScrollController();
-  final List<Map<String, dynamic>> _scenarioOptions = [
-    {'title': 'Pronunciation Practice', 'icon': Icons.mic, 'route': null},
-    {'title': 'Fluency Enhancement', 'icon': Icons.chat_bubble, 'route': null},
-    {
-      'title': 'Grammar Correction Exercise',
-      'icon': Icons.edit,
-      'route': (BuildContext context, String accentLocale, String userName, int timeGoalSeconds) => GrammarCorrectionScreen(
-        accentLocale: accentLocale,
-        userName: userName,
-        timeGoalSeconds: timeGoalSeconds,
-      ),
-    },
-    {
-      'title': 'Vocabulary Building Practice',
-      'icon': Icons.book,
-      'route': (BuildContext context, String accentLocale, String userName, int timeGoalSeconds) => VocabularyBuildingPracticeScreen(
-        accentLocale: accentLocale,
-        userName: userName,
-        timeGoalSeconds: timeGoalSeconds, userId: '',
-      ),
-    },
-    {'title': 'Listening Comprehension Drill', 'icon': Icons.headset, 'route':  (BuildContext context, String accentLocale, String userName, int timeGoalSeconds) => ListeningComprehensionDrillScreen(
-        accentLocale: accentLocale,
-        userName: userName,
-        timeGoalSeconds: timeGoalSeconds,
-      ),
-      },
-  ];
 
   @override
   void initState() {
@@ -115,7 +79,6 @@ class _AIBotScreenState extends State<AIBotScreen> {
     _player = FlutterSoundPlayer();
     _fetchOnboardingData().then((_) {
       _initializeTts();
-      _remainingSeconds = _timeGoalSeconds;
       _initRecorder();
       _initPlayer();
       _requestPermissions();
@@ -162,7 +125,7 @@ class _AIBotScreenState extends State<AIBotScreen> {
     logger.i('Showing welcome dialog for tutorial');
     bool? startTour = await TutorialService.showTutorialWithSkipOption(
       context: context,
-      showcaseKeys: [_timerKey, _chatAreaKey, _micKey, _keyboardKey, _modeKey],
+      showcaseKeys: [_chatAreaKey, _micKey, _keyboardKey],
       skipText: 'Skip Tutorial',
       onComplete: () {
         setState(() {
@@ -190,11 +153,9 @@ class _AIBotScreenState extends State<AIBotScreen> {
 
         if (mounted && showcaseContext.mounted) {
           TutorialService.startShowCase(showcaseContext, [
-            _timerKey,
             _chatAreaKey,
             _micKey,
             _keyboardKey,
-            _modeKey,
           ]);
           logger.i('Showcase started successfully');
         } else {
@@ -347,18 +308,6 @@ class _AIBotScreenState extends State<AIBotScreen> {
             .toLowerCase();
         logger.i('Raw desiredAccent: "$rawAccent", Cleaned: "$cleanedAccent"');
 
-        String? dailyGoal = onboarding['dailyPracticeGoal']?.toString();
-        if (dailyGoal != null) {
-          String minutesStr = dailyGoal.replaceAll(RegExp(r'[^0-9]'), '');
-          int minutes = int.tryParse(minutesStr) ?? 5;
-          _timeGoalSeconds = minutes * 60;
-          logger.i(
-              'Set timeGoalSeconds to: $_timeGoalSeconds seconds ($minutes minutes)');
-        } else {
-          logger.i(
-              'No dailyPracticeGoal found, using default timeGoalSeconds: $_timeGoalSeconds');
-        }
-
         if (mounted) {
           setState(() {
             switch (cleanedAccent) {
@@ -410,11 +359,9 @@ class _AIBotScreenState extends State<AIBotScreen> {
                   (userData['sessionProgress']?[key] as double?) ?? 0.0;
             });
             _responseCount = (userData['responseCount'] as int?) ?? 0;
-            _remainingSeconds =
-                (userData['remainingSeconds'] as int?) ?? _timeGoalSeconds;
             _hasSeenTutorial = (userData['hasSeenTutorial'] as bool?) ?? false;
             logger.i(
-                'Loaded progress: sessionProgress=$_sessionProgress, responseCount=$_responseCount, remainingSeconds=$_remainingSeconds, hasSeenTutorial=$_hasSeenTutorial');
+                'Loaded progress: sessionProgress=$_sessionProgress, responseCount=$_responseCount, hasSeenTutorial=$_hasSeenTutorial');
 
             _messages.clear();
             (userData['messages'] as List<dynamic>?)?.forEach((msg) {
@@ -441,84 +388,19 @@ class _AIBotScreenState extends State<AIBotScreen> {
     }
   }
 
-  void _startTimer() {
-    _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-      if (_remainingSeconds > 0) {
-        setState(() => _remainingSeconds--);
-      } else {
-        timer.cancel();
-        _stopListening();
-        if (mounted) {
-          _showSnackBar('Time’s up for today’s practice!');
-          _saveProgress();
-          _showContinuePracticeDialog();
-        }
-      }
-    });
-    logger.i('Timer started with $_remainingSeconds seconds remaining');
-  }
-
-  void _showContinuePracticeDialog() {
-    if (!mounted) return;
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Practice Time Goal Reached'),
-        content: const Text(
-            'You’ve reached today’s practice goal. Would you like to continue practicing?'),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _showSnackBar('Practice session ended for today.');
-              _saveProgress();
-            },
-            child: const Text('No, Stop'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _resetTimerAndContinue();
-            },
-            child: const Text('Yes, Continue'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _resetTimerAndContinue() {
-    if (mounted) {
-      setState(() {
-        _remainingSeconds = _timeGoalSeconds;
-        _hasStartedListening = false;
-      });
-      _startTimer();
-      _showSnackBar(
-          'You can continue practicing for another ${_formatTime(_timeGoalSeconds)}!');
-    }
-  }
-
   Future<void> _startListening() async {
     if (!_isRecorderInitialized) {
       _showSnackBar('Cannot record audio. Recorder initialization failed.');
       return;
     }
 
-    if (!_isListening && !_isTyping && _remainingSeconds > 0) {
+    if (!_isListening && !_isTyping) {
       if (!_hasStartedListening) {
-        _startTimer();
         _hasStartedListening = true;
       }
 
       logger.d(
-          'Starting to listen. IsListening: $_isListening, IsTyping: $_isTyping, RemainingSeconds: $_remainingSeconds');
+          'Starting to listen. IsListening: $_isListening, IsTyping: $_isTyping');
 
       try {
         if (_recorder.isRecording) {
@@ -538,7 +420,7 @@ class _AIBotScreenState extends State<AIBotScreen> {
       }
     } else {
       logger.w('Cannot start listening. Conditions not met.');
-      _showSnackBar('Time’s up! You can’t practice anymore.');
+      _showSnackBar('Cannot start recording while typing.');
     }
   }
 
@@ -579,9 +461,8 @@ class _AIBotScreenState extends State<AIBotScreen> {
           logger.d('Cleared text input');
         }
         if (!_hasStartedListening && _isTyping) {
-          _startTimer();
           _hasStartedListening = true;
-          logger.i('Started timer for typing session');
+          logger.i('Started typing session');
         }
       });
     } else {
@@ -591,7 +472,7 @@ class _AIBotScreenState extends State<AIBotScreen> {
   }
 
   void _submitTypedText() {
-    if (_textController.text.isNotEmpty && _remainingSeconds > 0) {
+    if (_textController.text.isNotEmpty) {
       String processedText = _processText(_textController.text);
       setState(() {
         _messages.add({
@@ -1035,15 +916,13 @@ class _AIBotScreenState extends State<AIBotScreen> {
     }
   }
 
-  void _saveProgress({bool showSnackBar = true}) {
+  Future<void> _saveProgress({bool showSnackBar = true}) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
-      FirebaseFirestore.instance.collection('users').doc(user.uid).update({
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
         'sessionProgress': _sessionProgress,
         'lastPracticeTime': FieldValue.serverTimestamp(),
-        'totalPracticeTime': FieldValue.increment(_timeGoalSeconds - _remainingSeconds),
         'responseCount': _responseCount,
-        'remainingSeconds': _remainingSeconds,
         'messages': _messages,
         'lastRecognizedText': _lastRecognizedText,
       }).then((value) {
@@ -1116,22 +995,22 @@ class _AIBotScreenState extends State<AIBotScreen> {
       }
     });
   }
-void _stopAudio() async {
-  try {
-    await _audioPlayer.stop();
-    await _audioPlayer.release();
-    await _flutterTts.stop();
-    setState(() => _isProcessingTTS = false);
-    logger.i('Audio stopped successfully');
-  } catch (e) {
-    logger.e('Error stopping audio: $e');
-    _showSnackBar('Failed to stop audio: $e');
+
+  void _stopAudio() async {
+    try {
+      await _audioPlayer.stop();
+      await _audioPlayer.release();
+      await _flutterTts.stop();
+      setState(() => _isProcessingTTS = false);
+      logger.i('Audio stopped successfully');
+    } catch (e) {
+      logger.e('Error stopping audio: $e');
+      _showSnackBar('Failed to stop audio: $e');
+    }
   }
-}
 
   @override
   void dispose() {
-    _timer?.cancel();
     _flutterTts.stop();
     _recorder.closeRecorder();
     _stopAudio();
@@ -1142,197 +1021,140 @@ void _stopAudio() async {
     super.dispose();
   }
 
-  String _formatTime(int seconds) {
-    int minutes = seconds ~/ 60;
-    int secs = seconds % 60;
-    return '${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
-  }
+  @override
+  Widget build(BuildContext context) {
+    return ShowCaseWidget(
+      onFinish: () {
+        logger.i('ShowCaseWidget onFinish triggered');
+        TutorialService.handleTutorialCompletion();
+        if (mounted) {
+          setState(() {
+            _hasSeenTutorial = true;
+          });
+          _saveTutorialStatus();
+        }
+      },
+      builder: (BuildContext showcaseContext) {
+        if (!_hasSeenTutorial && !_hasTriggeredTutorial) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              logger.i('Automatic tutorial trigger for first-time user');
+              _triggerTutorial(showcaseContext);
+            }
+          });
+        }
 
-@override
-Widget build(BuildContext context) {
-  return ShowCaseWidget(
-    onFinish: () {
-      logger.i('ShowCaseWidget onFinish triggered');
-      TutorialService.handleTutorialCompletion();
-      if (mounted) {
-        setState(() {
-          _hasSeenTutorial = true;
-        });
-        _saveTutorialStatus();
-      }
-    },
-    builder: (BuildContext showcaseContext) {
-      if (!_hasSeenTutorial && !_hasTriggeredTutorial) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            logger.i('Automatic tutorial trigger for first-time user');
-            _triggerTutorial(showcaseContext);
-          }
-        });
-      }
-
-       return WillPopScope(
-        onWillPop: () async {
-          _stopAudio();
-          widget.onBackPressed?.call();
-          _saveProgress(showSnackBar: false);
-          return true;
-        },
-        child: Scaffold(
-          appBar: AppBar(
-            title: const Text(
-              'TalkReady Bot',
-              style: TextStyle(
-                color: Color.fromARGB(255, 41, 115, 178),
-                fontWeight: FontWeight.bold,
-                fontSize: 20,
+        return WillPopScope(
+          onWillPop: () async {
+            _stopAudio();
+            widget.onBackPressed?.call();
+            _saveProgress(showSnackBar: false);
+            return true;
+          },
+          child: Scaffold(
+            appBar: AppBar(
+              title: const Text(
+                'TalkReady Bot',
+                style: TextStyle(
+                  color: Color.fromARGB(255, 41, 115, 178),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 20,
+                ),
               ),
+              backgroundColor: Colors.white,
+              actions: [
+                if (_isProcessingTTS)
+                  const Padding(
+                    padding: EdgeInsets.all(8.0),
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.0,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                      ),
+                    ),
+                  ),
+              ],
             ),
-            backgroundColor: Colors.white,
-            actions: [
-              if (_isProcessingTTS)
-                const Padding(
-                  padding: EdgeInsets.all(8.0),
-                  child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.0,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+            body: Column(
+              children: [
+                Expanded(
+                  child: TutorialService.buildShowcase(
+                    context: showcaseContext,
+                    key: _chatAreaKey,
+                    title: 'Chat Area',
+                    description: 'Here, you’ll see your conversation with the TalkReady Bot. Your messages appear on the right, and the bot’s on the left.',
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: ListView.builder(
+                        controller: _scrollController,
+                        itemCount: _messages.length,
+                        itemBuilder: (context, index) {
+                          final message = _messages[index];
+                          return ChatMessage(
+                            message: message['text'],
+                            isUser: message['isUser'],
+                            userProfileImage: _userProfileImage,
+                            timestamp: message['timestamp'],
+                          );
+                        },
+                      ),
                     ),
                   ),
                 ),
-              TutorialService.buildShowcase(
-                context: showcaseContext,
-                key: _timerKey,
-                title: 'Practice Timer',
-                description: 'This shows your remaining practice time for today. Keep an eye on it!',
-                child: Padding(
-                  padding: const EdgeInsets.only(right: 16),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.blue.shade100,
-                      borderRadius: BorderRadius.circular(20),
+                if (_isListening)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Text(
+                      _lastRecognizedText.isEmpty
+                          ? 'Listening...'
+                          : 'Listening: $_lastRecognizedText',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        color: Colors.blue,
+                        fontStyle: FontStyle.italic,
+                      ),
                     ),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  ),
+                if (_isTyping)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
                     child: Row(
                       children: [
-                        const Icon(Icons.timer, size: 18, color: Colors.blue),
-                        const SizedBox(width: 4),
-                        Text(
-                          _formatTime(_remainingSeconds),
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blue,
+                        Expanded(
+                          child: TextField(
+                            controller: _textController,
+                            decoration: InputDecoration(
+                              hintText: 'Type your message...',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            onSubmitted: (_) => _submitTypedText(),
                           ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          icon: const Icon(Icons.send, color: Colors.blue),
+                          onPressed: _submitTypedText,
                         ),
                       ],
                     ),
                   ),
-                ),
-              ),
-            ],
-          ),
-          body: Column(
-            children: [
-              Expanded(
-                child: TutorialService.buildShowcase(
-                  context: showcaseContext,
-                  key: _chatAreaKey,
-                  title: 'Chat Area',
-                  description: 'Here, you’ll see your conversation with the TalkReady Bot. Your messages appear on the right, and the bot’s on the left.',
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: ListView.builder(
-                      controller: _scrollController,
-                      itemCount: _messages.length,
-                      itemBuilder: (context, index) {
-                        final message = _messages[index];
-                        return ChatMessage(
-                          message: message['text'],
-                          isUser: message['isUser'],
-                          userProfileImage: _userProfileImage,
-                          timestamp: message['timestamp'],
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              ),
-              if (_isListening)
                 Padding(
-                  padding: const EdgeInsets.only(top: 8.0),
-                  child: Text(
-                    _lastRecognizedText.isEmpty
-                        ? 'Listening...'
-                        : 'Listening: $_lastRecognizedText',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      color: Colors.blue,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ),
-              if (_isTyping)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _textController,
-                          decoration: InputDecoration(
-                            hintText: 'Type your message...',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          onSubmitted: (_) => _submitTypedText(),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        icon: const Icon(Icons.send, color: Colors.blue),
-                        onPressed: _submitTypedText,
-                      ),
-                    ],
-                  ),
-                ),
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 20),
-                child: IconRow(
-                  onMicTap: () => _isListening ? _stopListening() : _startListening(),
-                  onKeyboardTap: _toggleTyping,
-                  onModeSelected: (String title) {
-                    _stopAudio();
-                    final selectedScenario = _scenarioOptions.firstWhere(
-                        (scenario) => scenario['title'] == title);
-                    final route = selectedScenario['route'];
-                    if (route != null && mounted) {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => route(
-                            context,
-                            _accentLocale ?? 'en_US',
-                            _userName ?? 'User',
-                            _timeGoalSeconds,
-                          ),
-                        ),
-                      );
-                    }
-                  },
+                  padding: const EdgeInsets.symmetric(vertical: 20),
+                  child: IconRow(
+                    onMicTap: () => _isListening ? _stopListening() : _startListening(),
+                    onKeyboardTap: _toggleTyping,
                     isListening: _isListening,
                     isTyping: _isTyping,
-                    scenarioOptions: _scenarioOptions,
                     micKey: _micKey,
                     keyboardKey: _keyboardKey,
-                    modeKey: _modeKey,
                   ),
                 ),
               ],
@@ -1454,25 +1276,19 @@ class _ChatMessageState extends State<ChatMessage> {
 class IconRow extends StatelessWidget {
   final VoidCallback onMicTap;
   final VoidCallback onKeyboardTap;
-  final ValueChanged<String> onModeSelected;
   final bool isListening;
   final bool isTyping;
-  final List<Map<String, dynamic>> scenarioOptions;
   final GlobalKey micKey;
   final GlobalKey keyboardKey;
-  final GlobalKey modeKey;
 
   const IconRow({
     super.key,
     required this.onMicTap,
     required this.onKeyboardTap,
-    required this.onModeSelected,
     required this.isListening,
     required this.isTyping,
-    required this.scenarioOptions,
     required this.micKey,
     required this.keyboardKey,
-    required this.modeKey,
   });
 
   @override
@@ -1499,106 +1315,6 @@ class IconRow extends StatelessWidget {
             Colors.blue.shade300,
             onMicTap,
             isActive: isListening,
-          ),
-        ),
-        const SizedBox(width: 20),
-        TutorialService.buildShowcase(
-          context: context,
-          key: modeKey,
-          title: 'Practice Modes',
-          description: 'Tap here to choose different practice scenarios, like grammar or vocabulary exercises.',
-          child: PopupMenuButton<String>(
-            onSelected: onModeSelected,
-            offset: const Offset(0, 50),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(color: Colors.blue.shade100, width: 1),
-            ),
-            color: Colors.white,
-            elevation: 10,
-            padding: const EdgeInsets.all(8),
-            itemBuilder: (BuildContext context) {
-              return scenarioOptions.map((scenario) {
-                return PopupMenuItem<String>(
-                  value: scenario['title'],
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    margin: const EdgeInsets.symmetric(vertical: 4),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.blue.shade50,
-                          Colors.white,
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.blue.shade100.withOpacity(0.2),
-                          blurRadius: 6,
-                          offset: const Offset(0, 3),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: LinearGradient(
-                              colors: [Colors.blue.shade400, Colors.blue.shade600],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                          ),
-                          child: Icon(
-                            scenario['icon'],
-                            color: Colors.white,
-                            size: 28,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                scenario['title'],
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  color: Colors.blue.shade900,
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: 0.5,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Practice ${scenario['title'].split(' ').first.toLowerCase()} skills',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.blue.shade600,
-                                  fontStyle: FontStyle.italic,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              }).toList();
-            },
-            child: _buildIcon(
-              Icons.play_circle,
-              Colors.amber.shade200,
-              null,
-              isActive: false,
-            ),
           ),
         ),
       ],

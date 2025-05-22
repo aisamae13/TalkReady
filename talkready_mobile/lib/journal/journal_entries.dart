@@ -492,7 +492,7 @@ class _JournalEntriesPageState extends State<JournalEntriesPage> {
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
                                           // Left side: Date and Time
-                                          Container(
+                                          SizedBox(
                                             width: 85,
                                             child: Column(
                                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -796,7 +796,7 @@ class JournalEntryDetailsPage extends StatelessWidget {
   final Function(int, JournalEntry) updateEntry;
 
   const JournalEntryDetailsPage({
-    Key? key,
+    super.key,
     required this.entry,
     required this.entryIndex,
     required this.toggleFavorite,
@@ -804,7 +804,7 @@ class JournalEntryDetailsPage extends StatelessWidget {
     required this.entries,
     required this.addEntry,
     required this.updateEntry,
-  }) : super(key: key);
+  });
 
   String _getMonthName(int month) {
     const months = [

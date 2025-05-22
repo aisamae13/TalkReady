@@ -32,16 +32,19 @@ class _Module1PageState extends State<Module1Page> {
     'lesson2': false,
     'lesson3': false,
   };
+  final Map<String, int> _lessonAttemptCounts = {'lesson1': 0, 'lesson2': 0, 'lesson3': 0};
+  late Stopwatch _stopwatch;
 
   final Map<int, String> _videoIds = {
-    1: '0GVcQjDOW6Q', // Lesson 1.1: Nouns and Pronouns
-    2: 'LRJXMKZ4wOw', // Lesson 1.2: Simple Sentences
-    3: 'LfJPA8GwTdk', // Lesson 1.3: Verb and Tenses (Present Simple)
+    1: '0GVcQjDOW6Q',
+    2: 'LRJXMKZ4wOw',
+    3: 'LfJPA8GwTdk',
   };
 
   @override
   void initState() {
     super.initState();
+    _stopwatch = Stopwatch()..start();
     _loadLessonProgress().then((_) {
       setState(() {
         showActivity = _lessonCompletion['lesson$currentLesson'] ?? false;
@@ -77,7 +80,7 @@ class _Module1PageState extends State<Module1Page> {
     }
   }
 
-  Future<void> _saveLessonProgress(int lesson) async {
+  Future<bool> _saveLessonProgress(int lesson) async {
     try {
       final lessonId = 'lesson$lesson';
       await _firebaseService.updateLessonProgress('module1', lessonId, true);
@@ -85,8 +88,10 @@ class _Module1PageState extends State<Module1Page> {
         _lessonCompletion[lessonId] = true;
       });
       _logger.i('Saved lesson $lesson as completed');
+      return true;
     } catch (e) {
       _logger.e('Error saving lesson progress: $e');
+      return false;
     }
   }
 
@@ -158,47 +163,97 @@ class _Module1PageState extends State<Module1Page> {
     }
   }
 
-  void _validateAllAnswers(List<Map<String, dynamic>> questions) {
-    _logger.i('Validating answers for ${questions.length} questions in Lesson $currentLesson');
-    final List<List<String>> selectedAnswersCopy = _selectedAnswers
-        .map((list) => list.map((e) => e.toString()).toList())
-        .toList();
-    setState(() {
-      for (int i = 0; i < questions.length; i++) {
-        List<String> correctAnswers;
-        final rawCorrectAnswer = questions[i]['correctAnswer'];
-        final explanation = questions[i]['explanation'] ?? 'No explanation provided';
-        if (rawCorrectAnswer is String) {
-          correctAnswers = rawCorrectAnswer.toLowerCase().split(', ').map((e) => e.trim()).toList();
-        } else if (rawCorrectAnswer is List<dynamic>) {
-          correctAnswers = rawCorrectAnswer.map((e) => e.toString().toLowerCase().trim()).toList();
+void _validateAllAnswers(List<Map<String, dynamic>> questions) {
+  _logger.i('Validating answers for ${questions.length} questions in Lesson $currentLesson');
+  _lessonAttemptCounts['lesson$currentLesson'] = (_lessonAttemptCounts['lesson$currentLesson'] ?? 0) + 1;
+  final int attemptNumber = _lessonAttemptCounts['lesson$currentLesson']!;
+  final List<List<String>> selectedAnswersCopy = _selectedAnswers
+      .map((list) => list.map((e) => e.toString()).toList())
+      .toList();
+  setState(() {
+    for (int i = 0; i < questions.length; i++) {
+      List<String> correctAnswers;
+      final rawCorrectAnswer = questions[i]['correctAnswer'];
+      final explanation = questions[i]['explanation'] ?? 'No explanation provided';
+      if (rawCorrectAnswer is String) {
+        correctAnswers = rawCorrectAnswer.toLowerCase().split(', ').map((e) => e.trim()).toList();
+      } else if (rawCorrectAnswer is List<dynamic>) {
+        correctAnswers = rawCorrectAnswer.map((e) => e.toString().toLowerCase().trim()).toList();
+      } else {
+        correctAnswers = [];
+        _errorMessages[i] = 'Invalid correct answer format: $explanation';
+        _isCorrectStates[i] = false;
+        _answerCorrectness[i] = false;
+        _logger.e('Invalid correct answer format for question $i in Lesson $currentLesson');
+        continue;
+      }
+
+      List<String> selectedAnswers = selectedAnswersCopy[i].map((e) => e.toLowerCase()).toList();
+      bool isCorrect = correctAnswers.every((correct) => selectedAnswers.contains(correct)) &&
+          selectedAnswers.every((selected) => correctAnswers.contains(selected));
+
+      _isCorrectStates[i] = isCorrect;
+      _errorMessages[i] = isCorrect ? null : explanation;
+      _answerCorrectness[i] = isCorrect;
+      _logger.d('Validated question $i in Lesson $currentLesson: isCorrect=$isCorrect, selected=$selectedAnswers, correct=$correctAnswers');
+    }
+
+    final Map<int, String> lessonTitles = {
+      1: 'Lesson 1.1: Nouns and Pronouns',
+      2: 'Lesson 1.2: Simple Sentences',
+      3: 'Lesson 1.3: Verb and Tenses (Present Simple)',
+    };
+
+    if (_answerCorrectness.every((isCorrect) => isCorrect)) {
+      _stopwatch.stop();
+      int timeSpent = _stopwatch.elapsed.inSeconds;
+      int score = _answerCorrectness.where((c) => c).length; // 1 point per correct answer
+      int totalScore = currentLesson == 3 ? 10 : 8; // Total questions per lesson
+      String lessonId = lessonTitles[currentLesson]!;
+
+      List<Map<String, dynamic>> detailedResponses = questions.asMap().entries.map((e) {
+        return {
+          'question': e.value['question'],
+          'userAnswer': _selectedAnswers[e.key],
+          'correct': _isCorrectStates[e.key],
+        };
+      }).toList();
+
+      _saveLessonProgress(currentLesson).then((success) {
+        if (success) {
+          _firebaseService.logLessonActivity('module1', lessonId, attemptNumber, score, totalScore, timeSpent, detailedResponses);
+          _logger.i('Lesson $lessonId marked as completed with score $score/$totalScore, attempt $attemptNumber');
         } else {
-          correctAnswers = [];
-          _errorMessages[i] = 'Invalid correct answer format: $explanation';
-          _isCorrectStates[i] = false;
-          _answerCorrectness[i] = false;
-          _logger.e('Invalid correct answer format for question $i in Lesson $currentLesson');
-          continue;
+          _logger.e('Failed to mark Lesson $currentLesson as completed');
         }
+      });
+      _stopwatch.reset();
+    } else {
+      _stopwatch.stop();
+      int timeSpent = _stopwatch.elapsed.inSeconds;
+      int score = _answerCorrectness.where((c) => c).length;
+      int totalScore = currentLesson == 3 ? 10 : 8;
+      String lessonId = lessonTitles[currentLesson]!;
 
-        List<String> selectedAnswers = selectedAnswersCopy[i].map((e) => e.toLowerCase()).toList();
-        bool isCorrect = correctAnswers.every((correct) => selectedAnswers.contains(correct)) &&
-            selectedAnswers.every((selected) => correctAnswers.contains(selected));
+      List<Map<String, dynamic>> detailedResponses = questions.asMap().entries.map((e) {
+        return {
+          'question': e.value['question'],
+          'userAnswer': _selectedAnswers[e.key],
+          'correct': _isCorrectStates[e.key],
+        };
+      }).toList();
 
-        _isCorrectStates[i] = isCorrect;
-        _errorMessages[i] = isCorrect ? null : explanation;
-        _answerCorrectness[i] = isCorrect;
-        _logger.d('Validated question $i in Lesson $currentLesson: isCorrect=$isCorrect, selected=$selectedAnswers, correct=$correctAnswers');
-      }
-
-      if (_answerCorrectness.every((isCorrect) => isCorrect)) {
-        _saveLessonProgress(currentLesson);
-      }
-    });
-  }
+      _firebaseService.logLessonActivity('module1', lessonId, attemptNumber, score, totalScore, timeSpent, detailedResponses);
+      _logger.i('Logged attempt $attemptNumber for Lesson $lessonId with score $score/$totalScore');
+      _stopwatch.reset();
+      _stopwatch.start();
+    }
+  });
+}
 
   @override
   void dispose() {
+    _stopwatch.stop();
     _youtubeController.pause();
     _youtubeController.removeListener(() {});
     _youtubeController.dispose();
@@ -269,6 +324,8 @@ class _Module1PageState extends State<Module1Page> {
                                   _initializeStateLists();
                                   _youtubeController.pause();
                                   _updateYoutubeVideoId();
+                                  _stopwatch.reset();
+                                  _stopwatch.start();
                                   _logger.i('Switched to Lesson $currentLesson');
                                 });
                               }

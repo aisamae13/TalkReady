@@ -138,7 +138,7 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
 
     if (firstName == null || firstName.isEmpty) {
       logger.w('First name not found in Firestore');
-      return 'Bestie';
+      return 'User';
     }
 
     logger.i('Fetched first name: $firstName');

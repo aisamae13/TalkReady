@@ -67,33 +67,80 @@ class FirebaseService {
     }
   }
 
-  Future<void> updateLessonProgress(String moduleId, String lessonId, bool completed) async {
-    try {
-      if (userId == null) throw Exception('User not authenticated');
-      final moduleRef = _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('progress')
-          .doc(moduleId);
-      final doc = await moduleRef.get();
-      final data = doc.data() ?? {};
-      final lessons = data['lessons'] as Map<String, dynamic>? ?? {};
-      final config = courseConfig[moduleId] ?? {'lessons': [lessonId]};
-      for (var lesson in config['lessons']) {
-        lessons.putIfAbsent(lesson, () => false);
-      }
-      lessons[lessonId] = completed;
-      await moduleRef.set({
-        'lessons': lessons,
-        'lastUpdated': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-
-      final allCompleted = lessons.values.every((v) => v == true);
-      await moduleRef.update({'isCompleted': allCompleted});
-      _logger.i('Updated lesson $lessonId in module $moduleId: completed=$completed, moduleCompleted=$allCompleted, lessons=$lessons');
-    } catch (e) {
-      _logger.e('Error updating lesson progress for $moduleId/$lessonId: $e');
-      rethrow;
+ Future<void> updateLessonProgress(String moduleId, String lessonId, bool completed) async {
+  try {
+    if (userId == null) throw Exception('User not authenticated');
+    final moduleRef = _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('progress')
+        .doc(moduleId);
+    final doc = await moduleRef.get();
+    final data = doc.data() ?? {};
+    final lessons = data['lessons'] as Map<String, dynamic>? ?? {};
+    final config = courseConfig[moduleId] ?? {'lessons': [lessonId]};
+    for (var lesson in config['lessons']) {
+      lessons.putIfAbsent(lesson, () => false);
     }
+    lessons[lessonId] = completed;
+    await moduleRef.set({
+      'lessons': lessons,
+      'lastUpdated': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    final allCompleted = lessons.values.every((v) => v == true);
+    await moduleRef.update({'isCompleted': allCompleted});
+    _logger.i('Updated lesson $lessonId in module $moduleId: completed=$completed, moduleCompleted=$allCompleted, lessons=$lessons');
+  } catch (e) {
+    _logger.e('Error updating lesson progress for $moduleId/$lessonId: $e');
+    rethrow;
+  }
+}
+
+  Future<void> logLessonActivity(
+    String moduleId,
+    String lessonId,
+    int attemptNumber,
+    int score,
+    int totalScore, // Add totalScore parameter
+    int timeSpent,
+    List<Map<String, dynamic>>? detailedResponses) async {
+  try {
+    if (userId == null) throw Exception('User not authenticated');
+    final attemptId = 'attempt_${attemptNumber}_${DateTime.now().millisecondsSinceEpoch}';
+    final activityRef = _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('progress')
+        .doc(moduleId)
+        .collection('activityLogs')
+        .doc(attemptId);
+    await activityRef.set({
+      'attemptNumber': attemptNumber,
+      'attemptTimestamp': FieldValue.serverTimestamp(),
+      'detailedResponses': detailedResponses ?? [],
+      'lessonId': lessonId,
+      'score': score,
+      'totalScore': totalScore, // Add totalScore to Firestore
+      'timeSpent': timeSpent,
+    });
+    _logger.i('Logged activity for $lessonId in $moduleId, attempt $attemptNumber');
+  } catch (e) {
+    _logger.e('Error logging activity for $lessonId in $moduleId: $e');
+    rethrow;
+  }
+}
+
+  Future<QuerySnapshot> getActivityLogs(String moduleId, String lessonId) async {
+    if (userId == null) throw Exception('User not authenticated');
+    return _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('progress')
+        .doc(moduleId)
+        .collection('activityLogs')
+        .where('lessonId', isEqualTo: lessonId)
+        .orderBy('attemptTimestamp', descending: true)
+        .get();
   }
 }
