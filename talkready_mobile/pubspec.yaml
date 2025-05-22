@@ -113,7 +113,7 @@ flutter:
      - images/AI_Human_Hand.jpg
      - images/talkready_bot.png
      - images/robot_hi.gif
-     - .env
+     
 
 
   # An image asset can refer to one or more resolution-specific "variants", see

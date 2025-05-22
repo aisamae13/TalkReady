@@ -32,14 +32,34 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
+  // Updated onboarding check: looks for onboardingCompleted == true
   Future<bool> _hasCompletedOnboarding(String uid) async {
     try {
       DocumentSnapshot doc = await _firestore.collection('users').doc(uid).get();
       Map<String, dynamic>? userData = doc.data() as Map<String, dynamic>?;
-      return doc.exists &&
-          userData != null &&
-          userData.containsKey('onboarding') &&
-          (userData['onboarding'] as Map).isNotEmpty;
+
+      // If onboardingCompleted is already true, return true
+      if (doc.exists && userData != null && userData['onboardingCompleted'] == true) {
+        return true;
+      }
+
+      // Check if onboarding info fields exist (customize these fields as needed)
+      bool hasOnboardingInfo = userData != null &&
+          userData['firstName'] != null &&
+          userData['lastName'] != null &&
+          userData['firstName'].toString().isNotEmpty &&
+          userData['lastName'].toString().isNotEmpty;
+
+      if (hasOnboardingInfo) {
+        // Set onboardingCompleted to true if info exists
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .update({'onboardingCompleted': true});
+        return true;
+      }
+
+      return false;
     } catch (e) {
       return false;
     }
@@ -74,7 +94,20 @@ class _LoginPageState extends State<LoginPage> {
       );
 
       final UserCredential userCredential = await _auth.signInWithCredential(credential);
+
+      // Ensure user document exists in Firestore for Google users
       if (userCredential.user != null) {
+        final userDoc = _firestore.collection('users').doc(userCredential.user!.uid);
+        final docSnapshot = await userDoc.get();
+        if (!docSnapshot.exists) {
+          await userDoc.set({
+            'email': userCredential.user!.email,
+            'firstName': userCredential.user!.displayName?.split(' ').first ?? '',
+            'lastName': userCredential.user!.displayName?.split(' ').skip(1).join(' ') ?? '',
+            'onboardingCompleted': false,
+            'createdAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+        }
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Login successful!')),

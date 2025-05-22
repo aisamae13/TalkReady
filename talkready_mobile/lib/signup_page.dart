@@ -4,7 +4,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:talkready_mobile/welcome_page.dart';
 import 'dart:async';
 
-
 class SignUpPage extends StatefulWidget {
   const SignUpPage({super.key});
 
@@ -13,11 +12,8 @@ class SignUpPage extends StatefulWidget {
 }
 
 class _SignUpPageState extends State<SignUpPage> {
-  final _firstNameController = TextEditingController();
-  final _lastNameController = TextEditingController();
-  final _phoneController = TextEditingController();
-  final _birthdayController = TextEditingController();
   final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   final _smsCodeController = TextEditingController();
@@ -32,6 +28,8 @@ class _SignUpPageState extends State<SignUpPage> {
   bool _isResendAvailable = false;
   int _resendCooldown = 30;
   Timer? _resendTimer;
+
+  String? _selectedUserType;
 
   final _inputDecorationTheme = InputDecorationTheme(
     border: const OutlineInputBorder(),
@@ -77,16 +75,6 @@ class _SignUpPageState extends State<SignUpPage> {
         password: _passwordController.text,
       );
 
-      // Save user data to Firestore
-      await FirebaseFirestore.instance.collection('users').doc(userCredential.user!.uid).set({
-        'onboarding': {
-          'firstName': _firstNameController.text.trim(),
-          'lastName': _lastNameController.text.trim(),
-          'phone': _phoneNumber,
-          'birthday': _birthdayController.text,
-        },
-      }, SetOptions(merge: true));
-
       await _auth.currentUser?.sendEmailVerification();
 
       if (mounted) {
@@ -103,6 +91,13 @@ class _SignUpPageState extends State<SignUpPage> {
       }
 
       await _checkEmailVerification(_auth.currentUser);
+      // After email verification, move to user type selection
+      if (mounted) {
+        _pageController.nextPage(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+        );
+      }
     } on FirebaseAuthException catch (e) {
       String message;
       if (e.code == 'weak-password') {
@@ -143,12 +138,6 @@ class _SignUpPageState extends State<SignUpPage> {
       isVerified = user?.emailVerified ?? false;
 
       if (isVerified) {
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const WelcomePage()),
-          );
-        }
         return;
       }
 
@@ -166,49 +155,12 @@ class _SignUpPageState extends State<SignUpPage> {
     }
   }
 
-  Future<void> _selectDate(BuildContext context) async {
-    final now = DateTime.now();
-    final DateTime? pickedDate = await showDatePicker(
-      context: context,
-      initialDate: DateTime(now.year - 16, now.month, now.day),
-      firstDate: DateTime(1901, 1, 1),
-      lastDate: now.subtract(const Duration(days: 1)),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: Color(0xFF00568D),
-              onPrimary: Colors.white,
-              surface: Colors.white,
-              onSurface: Colors.black,
-            ),
-            textButtonTheme: TextButtonThemeData(
-              style: TextButton.styleFrom(
-                foregroundColor: Color(0xFF00568D),
-              ),
-            ),
-            dialogTheme: DialogThemeData(backgroundColor: Colors.white),
-          ),
-          child: child!,
-        );
-      },
-    );
-    if (pickedDate != null) {
-      setState(() {
-        _birthdayController.text = pickedDate.toLocal().toString().split(' ')[0];
-      });
-    }
-  }
-
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
-    _firstNameController.dispose();
-    _lastNameController.dispose();
     _phoneController.dispose();
-    _birthdayController.dispose();
     _smsCodeController.dispose();
     _pageController.dispose();
     _resendTimer?.cancel();
@@ -232,8 +184,14 @@ class _SignUpPageState extends State<SignUpPage> {
       await _auth.verifyPhoneNumber(
         phoneNumber: _phoneNumber,
         verificationCompleted: (PhoneAuthCredential credential) async {
-          await _auth.signInWithCredential(credential);
-          _navigateToAccountInfo();
+          await _auth.currentUser?.linkWithCredential(credential);
+          await _savePhoneToFirestore();
+          if (mounted) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const WelcomePage()),
+            );
+          }
         },
         verificationFailed: (FirebaseAuthException e) {
           String message;
@@ -259,7 +217,9 @@ class _SignUpPageState extends State<SignUpPage> {
             _isVerifyingPhone = false;
             _startResendCooldown();
           });
-          _navigateToVerification();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Verification code sent via SMS.')),
+          );
         },
         codeAutoRetrievalTimeout: (String verificationId) {
           setState(() {
@@ -283,27 +243,31 @@ class _SignUpPageState extends State<SignUpPage> {
     try {
       PhoneAuthCredential credential = PhoneAuthProvider.credential(
           verificationId: _verificationId!, smsCode: smsCode);
-      await _auth.signInWithCredential(credential);
-      _navigateToAccountInfo();
+      await _auth.currentUser?.linkWithCredential(credential);
+      await _savePhoneToFirestore();
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const WelcomePage()),
+        );
+      }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Invalid verification code.')),
+        const SnackBar(content: Text('Invalid verification code or phone already linked.')),
       );
     }
   }
 
-  void _navigateToVerification() {
-    _pageController.nextPage(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
-  }
-
-  void _navigateToAccountInfo() {
-    _pageController.nextPage(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
+  Future<void> _savePhoneToFirestore() async {
+    final user = _auth.currentUser;
+    if (user != null) {
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'onboarding': {
+          'phone': _phoneNumber,
+          if (_selectedUserType != null) 'userType': _selectedUserType,
+        },
+      }, SetOptions(merge: true));
+    }
   }
 
   void _startResendCooldown() {
@@ -344,7 +308,7 @@ class _SignUpPageState extends State<SignUpPage> {
             controller: _pageController,
             physics: const NeverScrollableScrollPhysics(),
             children: [
-              // Slide 1: Personal Information
+              // Slide 1: Email/Password Registration
               SingleChildScrollView(
                 child: Padding(
                   padding: const EdgeInsets.all(20.0),
@@ -352,163 +316,7 @@ class _SignUpPageState extends State<SignUpPage> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       const Text(
-                        'Step 1: Personal Information',
-                        style: TextStyle(fontSize: 24, color: Color(0xFF00568D)),
-                      ),
-                      const SizedBox(height: 20),
-                      TextField(
-                        controller: _firstNameController,
-                        decoration: const InputDecoration(
-                          labelText: 'First Name',
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: _lastNameController,
-                        decoration: const InputDecoration(
-                          labelText: 'Last Name',
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: _phoneController,
-                        decoration: const InputDecoration(
-                          labelText: 'Phone Number',
-                          prefixText: '+63 ',
-                        ),
-                        keyboardType: TextInputType.phone,
-                      ),
-                      const SizedBox(height: 10),
-                      TextFormField(
-                        controller: _birthdayController,
-                        decoration: InputDecoration(
-                          labelText: 'Birthday',
-                          suffixIcon: IconButton(
-                            icon: const Icon(Icons.calendar_today),
-                            onPressed: () => _selectDate(context),
-                          ),
-                        ),
-                        readOnly: true,
-                        onTap: () => _selectDate(context),
-                      ),
-                      const SizedBox(height: 20),
-                      ElevatedButton(
-                        onPressed: () {
-                          if (_firstNameController.text.isEmpty ||
-                              _lastNameController.text.isEmpty ||
-                              _phoneController.text.isEmpty ||
-                              _birthdayController.text.isEmpty) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Please fill in all fields')),
-                            );
-                            return;
-                          }
-                          _verifyPhoneNumber();
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF00568D),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-                        ),
-                        child: const Text('Next', style: TextStyle(fontSize: 16)),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              // Slide 2: Phone Verification
-              SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.all(20.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const Text(
-                        'Step 2: Verify Phone Number',
-                        style: TextStyle(fontSize: 24, color: Color(0xFF00568D)),
-                      ),
-                      const SizedBox(height: 20),
-                      if (_isVerifyingPhone)
-                        const Center(child: CircularProgressIndicator()),
-                      if (!_isVerifyingPhone) ...[
-                        TextFormField(
-                          controller: _smsCodeController,
-                          decoration: const InputDecoration(
-                            labelText: 'Verification Code',
-                          ),
-                          keyboardType: TextInputType.number,
-                          onFieldSubmitted: (code) {
-                            if (code.isNotEmpty) {
-                              _confirmVerificationCode(code);
-                            } else {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Please enter a code')),
-                              );
-                            }
-                          },
-                        ),
-                        const SizedBox(height: 20),
-                        ElevatedButton(
-                          onPressed: () {
-                            final smsCode = _smsCodeController.text.trim();
-                            if (smsCode.isEmpty) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Please enter a code')),
-                              );
-                              return;
-                            }
-                            _confirmVerificationCode(smsCode);
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF00568D),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-                          ),
-                          child: const Text('Verify Code', style: TextStyle(fontSize: 16)),
-                        ),
-                        const SizedBox(height: 10),
-                        ElevatedButton(
-                          onPressed: _isResendAvailable
-                              ? () {
-                                  _verifyPhoneNumber();
-                                }
-                              : null,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _isResendAvailable ? const Color(0xFF00568D) : Colors.grey,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-                          ),
-                          child: Text(_isResendAvailable ? 'Resend Code' : 'Resend in $_resendCooldown s'),
-                        ),
-                        const SizedBox(height: 10),
-                        ElevatedButton(
-                          onPressed: () {
-                            _pageController.previousPage(
-                              duration: const Duration(milliseconds: 300),
-                              curve: Curves.easeInOut,
-                            );
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.grey,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-                          ),
-                          child: const Text('Back', style: TextStyle(fontSize: 16)),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-              // Slide 3: Account Information
-              SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.all(20.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const Text(
-                        'Step 3: Account Information',
+                        'Step 1: Email Registration',
                         style: TextStyle(fontSize: 24, color: Color(0xFF00568D)),
                       ),
                       const SizedBox(height: 20),
@@ -554,20 +362,181 @@ class _SignUpPageState extends State<SignUpPage> {
                       const SizedBox(height: 20),
                       ElevatedButton(
                         onPressed: () {
-                          if (isValidEmail(_emailController.text.trim())) {
-                            _signUpWithEmail();
-                          } else {
+                          if (_emailController.text.isEmpty ||
+                              _passwordController.text.isEmpty ||
+                              _confirmPasswordController.text.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Please fill in all fields')),
+                            );
+                            return;
+                          }
+                          if (!isValidEmail(_emailController.text.trim())) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(content: Text('Please enter a valid email')),
                             );
+                            return;
                           }
+                          _signUpWithEmail();
                         },
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Color(0xFF00568D),
+                          backgroundColor: const Color(0xFF00568D),
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
                         ),
-                        child: const Text('Create Account', style: TextStyle(fontSize: 16)),
+                        child: const Text('Register & Send Email Verification', style: TextStyle(fontSize: 16)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              // Slide 2: User Type Selection
+              SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.all(20.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'Step 2: Select User Type',
+                        style: TextStyle(fontSize: 24, color: Color(0xFF00568D)),
+                      ),
+                      const SizedBox(height: 20),
+                      RadioListTile<String>(
+                        title: const Text('Trainer'),
+                        value: 'Trainer',
+                        groupValue: _selectedUserType,
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedUserType = value;
+                          });
+                        },
+                      ),
+                      RadioListTile<String>(
+                        title: const Text('Student'),
+                        value: 'Student',
+                        groupValue: _selectedUserType,
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedUserType = value;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 20),
+                      ElevatedButton(
+                        onPressed: _selectedUserType == null
+                            ? null
+                            : () {
+                                _pageController.nextPage(
+                                  duration: const Duration(milliseconds: 300),
+                                  curve: Curves.easeInOut,
+                                );
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _selectedUserType == null ? Colors.grey : const Color(0xFF00568D),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+                        ),
+                        child: const Text('Continue', style: TextStyle(fontSize: 16)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              // Slide 3: Phone Verification
+              SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.all(20.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'Step 3: Verify Phone Number',
+                        style: TextStyle(fontSize: 24, color: Color(0xFF00568D)),
+                      ),
+                      const SizedBox(height: 20),
+                      TextField(
+                        controller: _phoneController,
+                        decoration: const InputDecoration(
+                          labelText: 'Phone Number',
+                          prefixText: '+63 ',
+                        ),
+                        keyboardType: TextInputType.phone,
+                      ),
+                      const SizedBox(height: 10),
+                      ElevatedButton(
+                        onPressed: _isVerifyingPhone
+                            ? null
+                            : () {
+                                if (_phoneController.text.isEmpty) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Please enter your phone number')),
+                                  );
+                                  return;
+                                }
+                                _verifyPhoneNumber();
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF00568D),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+                        ),
+                        child: _isVerifyingPhone
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              )
+                            : const Text('Send Verification Code', style: TextStyle(fontSize: 16)),
+                      ),
+                      const SizedBox(height: 20),
+                      TextFormField(
+                        controller: _smsCodeController,
+                        decoration: const InputDecoration(
+                          labelText: 'Verification Code',
+                        ),
+                        keyboardType: TextInputType.number,
+                        onFieldSubmitted: (code) {
+                          if (code.isNotEmpty) {
+                            _confirmVerificationCode(code);
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Please enter a code')),
+                            );
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 20),
+                      ElevatedButton(
+                        onPressed: () {
+                          final smsCode = _smsCodeController.text.trim();
+                          if (smsCode.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Please enter a code')),
+                            );
+                            return;
+                          }
+                          _confirmVerificationCode(smsCode);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF00568D),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+                        ),
+                        child: const Text('Confirm Phone Verification', style: TextStyle(fontSize: 16)),
+                      ),
+                      const SizedBox(height: 10),
+                      ElevatedButton(
+                        onPressed: _isResendAvailable
+                            ? () {
+                                _verifyPhoneNumber();
+                              }
+                            : null,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _isResendAvailable ? const Color(0xFF00568D) : Colors.grey,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+                        ),
+                        child: Text(_isResendAvailable ? 'Resend Code' : 'Resend in $_resendCooldown s'),
                       ),
                       const SizedBox(height: 10),
                       ElevatedButton(

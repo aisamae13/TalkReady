@@ -10,6 +10,8 @@ import 'package:logger/logger.dart';
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:talkready_mobile/next_screen.dart';
+import 'package:talkready_mobile/TrainerDashboard.dart';
+import 'package:talkready_mobile/homepage.dart';
 
 void main() {
   runApp(const MyApp());
@@ -29,7 +31,9 @@ class MyApp extends StatelessWidget {
         future: Firebase.initializeApp(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.done) {
-            return const OnboardingScreen();
+            // Change 'trainer' to 'student' to test as student
+            return const OnboardingScreen(userType: 'trainer');
+            // return const OnboardingScreen(userType: 'student');
           }
           return const Center(child: CircularProgressIndicator(color: Color(0xFF00568D)));
         },
@@ -38,110 +42,46 @@ class MyApp extends StatelessWidget {
   }
 }
 
-enum QuestionType { multipleChoice, textInput, profilePic }
-
-class OnboardingOption {
-  final String title;
-  final String? description;
-
-  OnboardingOption({
-    required this.title,
-    this.description,
-  });
-}
-
-class OnboardingQuestion {
-  final String title;
-  final List<OnboardingOption> options;
-  final QuestionType questionType;
-  final String? placeholder;
-
-  OnboardingQuestion({
-    required this.title,
-    this.options = const [],
-    this.questionType = QuestionType.multipleChoice,
-    this.placeholder,
-  });
-}
-
-List<OnboardingQuestion> questions = [
-  OnboardingQuestion(
-    title: "What is your current goal?",
-    options: [
-      OnboardingOption(title: "Get ready for a job interview", description: "Prepare for job interviews in English."),
-      OnboardingOption(title: "Test my English Level", description: "Evaluate my current English skills."),
-      OnboardingOption(title: "Improve my conversational\nEnglish", description: "Enhance my ability to communicate in daily situations."),
-      OnboardingOption(title: "Improve my English for Work", description: "Enhance professional communication skills."),
-    ],
-  ),
-  OnboardingQuestion(
-    title: "How often do you prefer to learn?",
-    options: [
-      OnboardingOption(title: "Watching videos"),
-      OnboardingOption(title: "Practicing with conversations"),
-      OnboardingOption(title: "Reading and writing exercises"),
-      OnboardingOption(title: "A mix of all"),
-    ],
-  ),
-  OnboardingQuestion(
-    title: "What is your daily practice goal?",
-    options: [
-      OnboardingOption(title: "5 min/day"),
-      OnboardingOption(title: "10 min/day"),
-      OnboardingOption(title: "15 min/day"),
-      OnboardingOption(title: "30 min/day"),
-      OnboardingOption(title: "60 min/day"),
-    ],
-  ),
-  OnboardingQuestion(
-    title: "What is your desired accent?",
-    options: [
-      OnboardingOption(title: "Neutral", description: "A clear, accent-free pronunciation."),
-      OnboardingOption(title: "American 🇺🇸", description: "Standard American English accent."),
-      OnboardingOption(title: "British 🇬🇧", description: "Received Pronunciation (RP) or British English."),
-      OnboardingOption(title: "Australian 🇦🇺", description: "General Australian English accent."),
-    ],
-  ),
-  OnboardingQuestion(
-    title: "Upload your profile picture",
-    questionType: QuestionType.profilePic,
-  ),
-];
-
 class OnboardingScreen extends StatefulWidget {
-  const OnboardingScreen({super.key});
+  final String? userType;
+
+  const OnboardingScreen({super.key, this.userType});
 
   @override
   OnboardingScreenState createState() => OnboardingScreenState();
 }
 
 class OnboardingScreenState extends State<OnboardingScreen> {
-  final PageController _pageController = PageController(initialPage: 0);
+  final PageController _pageController = PageController();
   int _currentPage = 0;
 
-  List<int?> selectedOptions = List.filled(questions.length, null);
-  Map<int, String> textResponses = {};
-  File? _profilePic;
+  // Stage 1 fields
+  final TextEditingController _firstNameController = TextEditingController();
+  final TextEditingController _lastNameController = TextEditingController();
+  final TextEditingController _ageController = TextEditingController();
+  DateTime? _birthdate;
+  String? _selectedGender;
 
+  // Stage 2 fields
+  final TextEditingController _provinceController = TextEditingController();
+  final TextEditingController _municipalityController = TextEditingController();
+  final TextEditingController _barangayController = TextEditingController();
+
+  // Stage 3: Profile Pic
+  File? _profilePic;
   final ImagePicker _picker = ImagePicker();
   final Logger _logger = Logger();
 
   @override
   void dispose() {
     _pageController.dispose();
+    _firstNameController.dispose();
+    _lastNameController.dispose();
+    _ageController.dispose();
+    _provinceController.dispose();
+    _municipalityController.dispose();
+    _barangayController.dispose();
     super.dispose();
-  }
-
-  void _onOptionSelected(int questionIndex, int optionIndex) {
-    setState(() {
-      selectedOptions[questionIndex] = optionIndex;
-    });
-  }
-
-  void _onTextChanged(int questionIndex, String value) {
-    setState(() {
-      textResponses[questionIndex] = value;
-    });
   }
 
   Future<void> _pickProfilePic() async {
@@ -187,70 +127,105 @@ class OnboardingScreenState extends State<OnboardingScreen> {
     }
   }
 
-  bool _isCurrentQuestionAnswered() {
-    final currentQuestion = questions[_currentPage];
-    if (currentQuestion.questionType == QuestionType.multipleChoice) {
-      return selectedOptions[_currentPage] != null;
-    } else if (currentQuestion.questionType == QuestionType.textInput) {
-      return textResponses[_currentPage]?.isNotEmpty ?? false;
-    } else if (currentQuestion.questionType == QuestionType.profilePic) {
-      return true;
-    }
-    return false;
-  }
-
-  Future<void> _saveOnboardingResponsesAndNavigate() async {
-  try {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      throw Exception('User not authenticated');
-    }
-
-    final Map<String, dynamic> responses = {
-      'currentGoal': selectedOptions[0] != null ? questions[0].options[selectedOptions[0]!].title : null,
-      'learningPreference': selectedOptions[1] != null ? questions[1].options[selectedOptions[1]!].title : null,
-      'dailyPracticeGoal': selectedOptions[2] != null ? questions[2].options[selectedOptions[2]!].title : null,
-      'desiredAccent': selectedOptions[3] != null ? questions[3].options[selectedOptions[3]!].title : null,
-      'timestamp': FieldValue.serverTimestamp(),
-    };
-
-    if (_profilePic != null) {
-      _logger.i('Encoding profile picture to base64: ${_profilePic!.path}');
-      final imageBytes = await _profilePic!.readAsBytes();
-      final image = img.decodeImage(imageBytes)!;
-      final resizedImage = img.copyResize(image, width: 200);
-      final base64Image = img.encodePng(resizedImage);
-      if (base64Image.length > 1000000) {
-        _logger.e('Profile picture too large for Firestore (exceeds 1 MB)');
-        throw Exception('Profile picture is too large to store in Firestore');
+  Future<void> _saveToFirestoreAndNavigate() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        throw Exception('User not authenticated');
       }
-      responses['profilePicBase64'] = base64Encode(base64Image);
-      responses['profilePicSkipped'] = false;
-      _logger.i('Profile picture encoded successfully as base64');
-    } else {
-      _logger.w('No profile picture selected, skipping upload');
-      responses['profilePicBase64'] = null;
-      responses['profilePicSkipped'] = true;
+
+      final Map<String, dynamic> userInfo = {
+        'firstName': _firstNameController.text.trim(),
+        'lastName': _lastNameController.text.trim(),
+        'age': _ageController.text.trim(),
+        'birthdate': _birthdate != null ? Timestamp.fromDate(_birthdate!) : null,
+        'gender': _selectedGender,
+        'province': _provinceController.text.trim(),
+        'municipality': _municipalityController.text.trim(),
+        'barangay': _barangayController.text.trim(),
+        'timestamp': FieldValue.serverTimestamp(),
+      };
+
+      if (_profilePic != null) {
+        _logger.i('Encoding profile picture to base64: ${_profilePic!.path}');
+        final imageBytes = await _profilePic!.readAsBytes();
+        final image = img.decodeImage(imageBytes)!;
+        final resizedImage = img.copyResize(image, width: 200);
+        final base64Image = img.encodePng(resizedImage);
+        if (base64Image.length > 1000000) {
+          _logger.e('Profile picture too large for Firestore (exceeds 1 MB)');
+          throw Exception('Profile picture is too large to store in Firestore');
+        }
+        userInfo['profilePicBase64'] = base64Encode(base64Image);
+        userInfo['profilePicSkipped'] = false;
+        _logger.i('Profile picture encoded successfully as base64');
+      } else {
+        _logger.w('No profile picture selected, skipping upload');
+        userInfo['profilePicBase64'] = null;
+        userInfo['profilePicSkipped'] = true;
+      }
+
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .set(userInfo, SetOptions(merge: true));
+
+      if (!mounted) return;
+
+      print('DEBUG: userType is "${widget.userType}"');
+      if (widget.userType?.trim().toLowerCase() == 'trainer') {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => TrainerDashboard()),
+        );
+        return;
+      }
+      if (widget.userType?.trim().toLowerCase() == 'student') {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => NextScreen(responses: userInfo)),
+        );
+        return;
+      }
+      // Optionally handle other user types or fallback here
+
+    } catch (e) {
+      _logger.e('Error saving user information: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error saving user information: $e')),
+      );
     }
-
-    await FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .set({'onboarding': responses}, SetOptions(merge: true));
-
-    if (!mounted) return;
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (context) => NextScreen(responses: responses)),
-    );
-  } catch (e) {
-    _logger.e('Error saving responses: $e');
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Error saving responses: $e')),
-    );
   }
-}
+
+  bool _isStage1Valid() {
+    return _firstNameController.text.trim().isNotEmpty &&
+        _lastNameController.text.trim().isNotEmpty &&
+        _ageController.text.trim().isNotEmpty &&
+        _birthdate != null &&
+        _selectedGender != null;
+  }
+
+  bool _isStage2Valid() {
+    return _provinceController.text.trim().isNotEmpty &&
+        _municipalityController.text.trim().isNotEmpty &&
+        _barangayController.text.trim().isNotEmpty;
+  }
+
+  Future<void> _selectBirthdate(BuildContext context) async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _birthdate ?? DateTime(now.year - 18, now.month, now.day),
+      firstDate: DateTime(1900),
+      lastDate: now,
+    );
+    if (picked != null) {
+      setState(() {
+        _birthdate = picked;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -275,266 +250,306 @@ class OnboardingScreenState extends State<OnboardingScreen> {
             ],
           ),
         ),
-        child: Column(
+        child: PageView(
+          controller: _pageController,
+          physics: const NeverScrollableScrollPhysics(),
           children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18.0),
-              child: LinearProgressIndicator(
-                value: (_currentPage + 1) / questions.length,
-                backgroundColor: Colors.grey[300],
-                color: primaryColor,
-                minHeight: 4,
-              ),
-            ),
-            const SizedBox(height: 20),
-            Expanded(
-              child: PageView.builder(
-                physics: const NeverScrollableScrollPhysics(),
-                controller: _pageController,
-                itemCount: questions.length,
-                onPageChanged: (index) {
-                  setState(() {
-                    _currentPage = index;
-                  });
-                },
-                itemBuilder: (context, index) {
-                  final question = questions[index];
-                  return OnboardingPage(
-                    question: question,
-                    questionIndex: index,
-                    currentPage: _currentPage,
-                    selectedOptionIndex: selectedOptions[index],
-                    textResponse: textResponses[index] ?? "",
-                    profilePic: _profilePic,
-                    onOptionSelected: (optionIndex) => _onOptionSelected(index, optionIndex),
-                    onTextChanged: (value) => _onTextChanged(index, value),
-                    onPickProfilePic: _pickProfilePic,
-                  );
-                },
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  if (_currentPage > 0)
-                    TextButton(
-                      onPressed: () {
-                        _pageController.previousPage(
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeInOut,
-                        );
-                      },
-                      child: const Text(
-                        'Previous',
-                        style: TextStyle(fontSize: 16, color: primaryColor),
-                      ),
-                    ),
-                  ElevatedButton(
-                    onPressed: _isCurrentQuestionAnswered()
-                        ? () async {
-                            if (_currentPage < questions.length - 1) {
-                              _pageController.nextPage(
-                                duration: const Duration(milliseconds: 300),
-                                curve: Curves.easeInOut,
-                              );
-                            } else {
-                              await _saveOnboardingResponsesAndNavigate();
-                            }
-                          }
-                        : null,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: primaryColor,
-                      padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 8.0),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10.0),
-                      ),
-                    ),
-                    child: Text(
-                      _currentPage == questions.length - 1 ? 'Finish' : 'Continue',
-                      style: const TextStyle(fontSize: 16, color: Colors.white),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class OnboardingPage extends StatelessWidget {
-  final OnboardingQuestion question;
-  final int questionIndex;
-  final int currentPage;
-  final int? selectedOptionIndex;
-  final String textResponse;
-  final File? profilePic;
-  final Function(int) onOptionSelected;
-  final ValueChanged<String> onTextChanged;
-  final VoidCallback onPickProfilePic;
-
-  const OnboardingPage({
-    super.key,
-    required this.question,
-    required this.questionIndex,
-    required this.currentPage,
-    required this.selectedOptionIndex,
-    required this.textResponse,
-    required this.profilePic,
-    required this.onOptionSelected,
-    required this.onTextChanged,
-    required this.onPickProfilePic,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            question.title,
-            style: const TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: primaryColor,
-            ),
-          ),
-          const SizedBox(height: 20),
-          if (question.questionType == QuestionType.multipleChoice)
-            Expanded(
-              child: ListView.builder(
-                itemCount: question.options.length,
-                itemBuilder: (context, index) {
-                  bool isSelected = selectedOptionIndex == index;
-                  final option = question.options[index];
-
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 10.0),
-                    child: OutlinedButton(
-                      onPressed: () => onOptionSelected(index),
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: primaryColor, width: 1.5),
-                        backgroundColor: isSelected ? primaryColor : Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
-                        padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 20),
-                      ),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Row(
-                              children: [
-                                Flexible(
-                                  child: Text(
-                                    option.title,
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                      color: isSelected ? Colors.white : primaryColor,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 5),
-                            if (option.description != null)
-                              Text(
-                                option.description!,
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: isSelected ? Colors.white70 : Colors.grey[600],
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            )
-          else if (question.questionType == QuestionType.textInput)
-            Padding(
-              padding: const EdgeInsets.only(top: 10.0),
-              child: TextField(
-                onChanged: onTextChanged,
-                decoration: InputDecoration(
-                  hintText: question.placeholder ?? "",
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(5),
-                    borderSide: const BorderSide(color: primaryColor),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(5),
-                    borderSide: const BorderSide(color: primaryColor, width: 2),
-                  ),
-                ),
-              ),
-            )
-          else if (question.questionType == QuestionType.profilePic)
-            Padding(
-              padding: const EdgeInsets.only(top: 10.0),
-              child: Column(
-                children: [
-                  CircleAvatar(
-                    radius: 50,
-                    backgroundImage: profilePic != null ? FileImage(profilePic!) as ImageProvider : null,
-                    backgroundColor: profilePic == null ? Colors.grey[300] : null,
-                  ),
-                  const SizedBox(height: 20),
-                  Row(
+            // Stage 1: Name, Age, Birthdate, Gender
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                child: SingleChildScrollView(
+                  child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
+                      const Text(
+                        "Tell us about yourself",
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: primaryColor,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      TextField(
+                        controller: _firstNameController,
+                        decoration: const InputDecoration(
+                          labelText: "First Name",
+                          border: OutlineInputBorder(),
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                      const SizedBox(height: 15),
+                      TextField(
+                        controller: _lastNameController,
+                        decoration: const InputDecoration(
+                          labelText: "Last Name",
+                          border: OutlineInputBorder(),
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                      const SizedBox(height: 15),
+                      TextField(
+                        controller: _ageController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: "Age",
+                          border: OutlineInputBorder(),
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                      const SizedBox(height: 15),
+                      // Gender selection
+                      DropdownButtonFormField<String>(
+                        value: _selectedGender,
+                        decoration: const InputDecoration(
+                          labelText: "Gender",
+                          border: OutlineInputBorder(),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'Male', child: Text('Male')),
+                          DropdownMenuItem(value: 'Female', child: Text('Female')),
+                          DropdownMenuItem(value: 'Other', child: Text('Other')),
+                        ],
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedGender = value;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 15),
+                      GestureDetector(
+                        onTap: () => _selectBirthdate(context),
+                        child: AbsorbPointer(
+                          child: TextField(
+                            readOnly: true,
+                            decoration: InputDecoration(
+                              labelText: "Birthdate",
+                              border: const OutlineInputBorder(),
+                              hintText: _birthdate == null
+                                  ? "Select your birthdate"
+                                  : "${_birthdate!.year}-${_birthdate!.month.toString().padLeft(2, '0')}-${_birthdate!.day.toString().padLeft(2, '0')}",
+                            ),
+                            controller: TextEditingController(
+                              text: _birthdate == null
+                                  ? ""
+                                  : "${_birthdate!.year}-${_birthdate!.month.toString().padLeft(2, '0')}-${_birthdate!.day.toString().padLeft(2, '0')}",
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 30),
                       ElevatedButton(
-                        onPressed: onPickProfilePic,
+                        onPressed: _isStage1Valid()
+                            ? () {
+                                _pageController.nextPage(
+                                  duration: const Duration(milliseconds: 300),
+                                  curve: Curves.easeInOut,
+                                );
+                              }
+                            : null,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: primaryColor,
-                          padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 8.0),
+                          padding: const EdgeInsets.symmetric(horizontal: 40.0, vertical: 12.0),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(5),
+                            borderRadius: BorderRadius.circular(10.0),
                           ),
                         ),
                         child: const Text(
-                          'Upload Profile Picture',
+                          'Continue',
                           style: TextStyle(fontSize: 16, color: Colors.white),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      TextButton(
-                        onPressed: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Profile picture skipped')),
-                          );
-                          final onboardingScreenState = context.findAncestorStateOfType<OnboardingScreenState>();
-                          if (onboardingScreenState != null && currentPage < questions.length - 1) {
-                            onboardingScreenState._pageController.nextPage(
-                              duration: const Duration(milliseconds: 300),
-                              curve: Curves.easeInOut,
-                            );
-                          } else if (onboardingScreenState != null && currentPage == questions.length - 1) {
-                            onboardingScreenState._saveOnboardingResponsesAndNavigate();
-                          }
-                        },
-                        child: const Text(
-                          'Skip',
-                          style: TextStyle(fontSize: 16, color: primaryColor),
                         ),
                       ),
                     ],
                   ),
-                ],
+                ),
               ),
             ),
-        ],
+            // Stage 2: Province, Municipality, Barangay
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text(
+                        "Where do you live?",
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: primaryColor,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      TextField(
+                        controller: _provinceController,
+                        decoration: const InputDecoration(
+                          labelText: "Province",
+                          border: OutlineInputBorder(),
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                      const SizedBox(height: 15),
+                      TextField(
+                        controller: _municipalityController,
+                        decoration: const InputDecoration(
+                          labelText: "Municipality",
+                          border: OutlineInputBorder(),
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                      const SizedBox(height: 15),
+                      TextField(
+                        controller: _barangayController,
+                        decoration: const InputDecoration(
+                          labelText: "Barangay",
+                          border: OutlineInputBorder(),
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                      const SizedBox(height: 30),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          TextButton(
+                            onPressed: () {
+                              _pageController.previousPage(
+                                duration: const Duration(milliseconds: 300),
+                                curve: Curves.easeInOut,
+                              );
+                            },
+                            child: const Text(
+                              'Back',
+                              style: TextStyle(fontSize: 16, color: primaryColor),
+                            ),
+                          ),
+                          ElevatedButton(
+                            onPressed: _isStage2Valid()
+                                ? () {
+                                    _pageController.nextPage(
+                                      duration: const Duration(milliseconds: 300),
+                                      curve: Curves.easeInOut,
+                                    );
+                                  }
+                                : null,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: primaryColor,
+                              padding: const EdgeInsets.symmetric(horizontal: 40.0, vertical: 12.0),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10.0),
+                              ),
+                            ),
+                            child: const Text(
+                              'Continue',
+                              style: TextStyle(fontSize: 16, color: Colors.white),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            // Stage 3: Profile Pic
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text(
+                        "Upload your profile picture",
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: primaryColor,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      CircleAvatar(
+                        radius: 50,
+                        backgroundImage: _profilePic != null ? FileImage(_profilePic!) as ImageProvider : null,
+                        backgroundColor: _profilePic == null ? Colors.grey[300] : null,
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          ElevatedButton(
+                            onPressed: _pickProfilePic,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: primaryColor,
+                              padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 8.0),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(5),
+                              ),
+                            ),
+                            child: const Text(
+                              'Upload Profile Picture',
+                              style: TextStyle(fontSize: 16, color: Colors.white),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          TextButton(
+                            onPressed: () {
+                              setState(() {
+                                _profilePic = null;
+                              });
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Profile picture skipped')),
+                              );
+                            },
+                            child: const Text(
+                              'Skip',
+                              style: TextStyle(fontSize: 16, color: primaryColor),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 30),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          TextButton(
+                            onPressed: () {
+                              _pageController.previousPage(
+                                duration: const Duration(milliseconds: 300),
+                                curve: Curves.easeInOut,
+                              );
+                            },
+                            child: const Text(
+                              'Back',
+                              style: TextStyle(fontSize: 16, color: primaryColor),
+                            ),
+                          ),
+                          ElevatedButton(
+                            onPressed: () async {
+                              await _saveToFirestoreAndNavigate();
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: primaryColor,
+                              padding: const EdgeInsets.symmetric(horizontal: 40.0, vertical: 12.0),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10.0),
+                              ),
+                            ),
+                            child: const Text(
+                              'Finish',
+                              style: TextStyle(fontSize: 16, color: Colors.white),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

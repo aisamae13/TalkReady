@@ -32,12 +32,16 @@ class _ProfilePageState extends State<ProfilePage> {
   String? _firstName;
   String? _lastName;
   String? _email;
-  String? _dailyPracticeGoal;
-  String? _currentGoal;
-  String? _learningPreference;
-  String? _desiredAccent;
   String? _profilePicBase64;
   bool? _profilePicSkipped;
+
+  // Onboarding info fields
+  String? _age;
+  String? _gender;
+  String? _birthdate;
+  String? _province;
+  String? _municipality;
+  String? _barangay;
 
   int _selectedIndex = 4;
 
@@ -70,17 +74,17 @@ class _ProfilePageState extends State<ProfilePage> {
           _logger.i('Received Firestore snapshot: ${snapshot.data}');
           if (snapshot.exists) {
             final data = snapshot.data() ?? {};
-            final onboardingData = data['onboarding'] as Map<String, dynamic>? ?? {};
-            _logger.d('Parsed Firestore onboarding data: $onboardingData');
             setState(() {
-              _firstName = onboardingData['firstName'];
-              _lastName = onboardingData['lastName'];
-              _dailyPracticeGoal = onboardingData['dailyPracticeGoal'];
-              _currentGoal = onboardingData['currentGoal'];
-              _learningPreference = onboardingData['learningPreference'];
-              _desiredAccent = onboardingData['desiredAccent'];
-              _profilePicBase64 = onboardingData['profilePicBase64'] as String?;
-              _profilePicSkipped = onboardingData['profilePicSkipped'] as bool?;
+              _firstName = data['firstName'];
+              _lastName = data['lastName'];
+              _profilePicBase64 = data['profilePicBase64'] as String?;
+              _profilePicSkipped = data['profilePicSkipped'] as bool?;
+              _age = data['age']?.toString();
+              _gender = data['gender'];
+              _birthdate = _formatBirthdate(data['birthdate']);
+              _province = data['province'];
+              _municipality = data['municipality'];
+              _barangay = data['barangay'];
               _isLoading = false;
             });
           } else {
@@ -109,6 +113,16 @@ class _ProfilePageState extends State<ProfilePage> {
         const SnackBar(content: Text('No user logged in')),
       );
     }
+  }
+
+  String? _formatBirthdate(dynamic birthdate) {
+    if (birthdate == null) return null;
+    if (birthdate is Timestamp) {
+      final date = birthdate.toDate();
+      return "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
+    }
+    if (birthdate is String) return birthdate;
+    return birthdate.toString();
   }
 
   void _showEditNameDialog() {
@@ -264,8 +278,8 @@ class _ProfilePageState extends State<ProfilePage> {
       if (user != null) {
         _logger.i('Saving name to Firestore for UID: ${user.uid}');
         await _firestore.collection('users').doc(user.uid).update({
-          'onboarding.firstName': newFirstName,
-          'onboarding.lastName': newLastName,
+          'firstName': newFirstName,
+          'lastName': newLastName,
         });
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -284,176 +298,6 @@ class _ProfilePageState extends State<ProfilePage> {
           SnackBar(content: Text('Error saving name: $e')),
         );
       }
-    }
-  }
-
-  void _showDropdownDialog(
-      String title,
-      List<String> items,
-      String? currentValue,
-      void Function(String?) onChanged,
-      String firestoreField) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          elevation: 8,
-          backgroundColor: Colors.transparent,
-          child: Container(
-            width: MediaQuery.of(context).size.width * 0.9,
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  Colors.blue.shade50,
-                  Colors.white,
-                ],
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-              ),
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF00568D),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.maxFinite,
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxHeight: MediaQuery.of(context).size.height * 0.4,
-                    ),
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: items.length,
-                      itemBuilder: (context, index) {
-                        bool isSelected = currentValue == items[index];
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: GestureDetector(
-                            onTap: () {
-                              onChanged(items[index]);
-                              _saveProfileOptionToFirestore(firestoreField, items[index]);
-                              Navigator.pop(context);
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 12,
-                              ),
-                              decoration: BoxDecoration(
-                                color: isSelected
-                                    ? const Color(0xFF2973B2).withOpacity(0.1)
-                                    : Colors.transparent,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: isSelected
-                                      ? const Color(0xFF2973B2)
-                                      : Colors.grey.shade300,
-                                  width: 1,
-                                ),
-                              ),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      items[index],
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        color: isSelected
-                                            ? const Color(0xFF2973B2)
-                                            : Colors.black87,
-                                        fontWeight: isSelected
-                                            ? FontWeight.w600
-                                            : FontWeight.normal,
-                                      ),
-                                      softWrap: true,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  if (isSelected)
-                                    const Icon(
-                                      Icons.check_circle,
-                                      color: Color(0xFF2973B2),
-                                      size: 20,
-                                    ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Align(
-                  alignment: Alignment.center,
-                  child: Container(
-                    height: 40,
-                    width: 100,
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Color(0xFF00568D), width: 1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: TextButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                      },
-                      child: const Text(
-                        'Cancel',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Color(0xFF00568D),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Future<void> _saveProfileOptionToFirestore(String field, String value) async {
-    try {
-      final user = _auth.currentUser;
-      if (user != null) {
-        _logger.i('Saving $field to Firestore for UID: ${user.uid}');
-        await _firestore.collection('users').doc(user.uid).update({
-          'onboarding.$field': value,
-        });
-      }
-    } catch (e) {
-      _logger.e('Error saving $field: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error saving $field: $e')),
-      );
     }
   }
 
@@ -479,8 +323,8 @@ class _ProfilePageState extends State<ProfilePage> {
           final profilePicBase64 = base64Encode(base64Image);
 
           await _firestore.collection('users').doc(user.uid).update({
-            'onboarding.profilePicBase64': profilePicBase64,
-            'onboarding.profilePicSkipped': false,
+            'profilePicBase64': profilePicBase64,
+            'profilePicSkipped': false,
           });
 
           setState(() {
@@ -542,6 +386,31 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
+  Widget _buildInfoTile(String label, String? value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        children: [
+          Text(
+            '$label: ',
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+              color: Color(0xFF00568D),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value ?? '-',
+              style: const TextStyle(fontSize: 16),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -550,6 +419,7 @@ class _ProfilePageState extends State<ProfilePage> {
           ? const Center(child: CircularProgressIndicator(color: Color(0xFF00568D)))
           : Column(
               children: [
+                // Profile header
                 Container(
                   decoration: const BoxDecoration(
                     gradient: LinearGradient(
@@ -659,74 +529,62 @@ class _ProfilePageState extends State<ProfilePage> {
                     ),
                   ),
                 ),
-                Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-                    children: [
-                      _buildProfileOption(
-                        title: 'Daily Practice Goal',
-                        value: _dailyPracticeGoal,
-                        onChanged: (value) {
-                          setState(() {
-                            _dailyPracticeGoal = value;
-                          });
-                        },
-                        items: const [
-                          '5 min/day',
-                          '10 min/day',
-                          '15 min/day',
-                          '30 min/day',
-                          '60 min/day'
-                        ],
-                        firestoreField: 'dailyPracticeGoal',
+                // My Information button separated below the header
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF4F8FE),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: ListTile(
+                      leading: const Icon(Icons.info, color: Color(0xFF00568D)),
+                      title: const Text(
+                        'My Information',
+                        style: TextStyle(
+                          color: Color(0xFF00568D),
+                          fontWeight: FontWeight.w500,
+                          fontSize: 16,
+                        ),
                       ),
-                      _buildProfileOption(
-                        title: 'Current Goal',
-                        value: _currentGoal,
-                        onChanged: (value) {
-                          setState(() {
-                            _currentGoal = value;
-                          });
-                        },
-                        items: const [
-                          'Get ready for a job interview',
-                          'Test my English Level',
-                          'Improve my conversational English',
-                          'Improve my English for Work'
-                        ],
-                        firestoreField: 'currentGoal',
-                      ),
-                      _buildProfileOption(
-                        title: 'Learning Preference',
-                        value: _learningPreference,
-                        onChanged: (value) {
-                          setState(() {
-                            _learningPreference = value;
-                          });
-                        },
-                        items: const [
-                          'Watching videos',
-                          'Practicing with conversations',
-                          'Reading and writing exercises',
-                          'A mix of all'
-                        ],
-                        firestoreField: 'learningPreference',
-                      ),
-                      _buildProfileOption(
-                        title: 'Desired Accent',
-                        value: _desiredAccent,
-                        onChanged: null,
-                        items: const [
-                          'Neutral',
-                          'American 🇺🇸',
-                          'British 🇬🇧',
-                          'Australian 🇦🇺'
-                        ],
-                        firestoreField: 'desiredAccent',
-                      ),
-                    ],
+                      trailing: const Icon(Icons.arrow_forward_ios, color: Color(0xFF00568D), size: 18),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => Scaffold(
+                              appBar: AppBar(
+                                backgroundColor: const Color(0xFF2973B2),
+                                title: const Text(
+                                  'My Information',
+                                  style: TextStyle(color: Colors.white),
+                                ),
+                                leading: IconButton(
+                                  icon: const Icon(Icons.arrow_back, color: Colors.white),
+                                  onPressed: () => Navigator.pop(context),
+                                ),
+                              ),
+                              body: ListView(
+                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+                                children: [
+                                  _buildInfoTile('First Name', _firstName),
+                                  _buildInfoTile('Last Name', _lastName),
+                                  _buildInfoTile('Age', _age),
+                                  _buildInfoTile('Gender', _gender),
+                                  _buildInfoTile('Birthdate', _birthdate),
+                                  _buildInfoTile('Province', _province),
+                                  _buildInfoTile('Municipality', _municipality),
+                                  _buildInfoTile('Barangay', _barangay),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
                   ),
                 ),
+                Expanded(child: Container()),
               ],
             ),
       bottomNavigationBar: BottomNavigationBar(
@@ -744,101 +602,5 @@ class _ProfilePageState extends State<ProfilePage> {
         ],
       ),
     );
-  }
-
-  Widget _buildProfileOption({
-    required String title,
-    required String? value,
-    required void Function(String?)? onChanged,
-    required List<String> items,
-    required String firestoreField,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Container(
-        padding: const EdgeInsets.all(15),
-        decoration: BoxDecoration(
-          color: Colors.lightBlue[100]?.withOpacity(0.2),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Expanded(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    '${_getEmojiForTitle(title)} ',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      color: Color(0xFF00568D),
-                    ),
-                  ),
-                  Expanded(
-                    child: Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        color: Color(0xFF00568D),
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  if (value != null)
-                    Expanded(
-                      child: Text(
-                        value,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[600],
-                        ),
-                        textAlign: TextAlign.right,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  if (title != 'Desired Accent') const SizedBox(width: 8),
-                  if (title != 'Desired Accent')
-                    InkWell(
-                      onTap: onChanged != null && value != null
-                          ? () {
-                              _showDropdownDialog(title, items, value, onChanged, firestoreField);
-                            }
-                          : null,
-                      child: IconTheme(
-                        data: IconThemeData(size: 22),
-                        child: const Icon(Icons.arrow_forward_ios, color: Color(0xFF2973B2)),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _getEmojiForTitle(String title) {
-    switch (title) {
-      case 'Daily Practice Goal':
-        return '⏱️';
-      case 'Current Goal':
-        return '🎯';
-      case 'Learning Preference':
-        return '🧠';
-      case 'Desired Accent':
-        return '🎤';
-      default:
-        return '';
-    }
   }
 }

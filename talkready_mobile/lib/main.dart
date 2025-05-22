@@ -13,6 +13,11 @@ import 'signup_page.dart';
 import 'splash_screen.dart';
 import 'forgotpass.dart';
 import 'package:logger/logger.dart';
+import 'package:talkready_mobile/TrainerDashboard.dart'; // <-- Add this import
+import 'package:talkready_mobile/chooseUserType.dart'; 
+import 'onboarding_screen.dart';
+
+
 
 final logger = Logger(
   printer: PrettyPrinter(
@@ -75,6 +80,12 @@ class MyApp extends StatelessWidget {
         '/forgot-password': (context) => const ForgotPasswordPage(),
         '/courses': (context) => CoursesPage(),
         '/journal': (context) => JournalPage(),
+        '/trainer-dashboard': (context) => const TrainerDashboard(), // <-- Add this route
+        '/chooseUserType': (context) => const ChooseUserTypePage(),
+            '/onboarding': (context) {
+          final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>?;
+          return OnboardingScreen(userType: args?['userType']);
+        },
       },
     );
   }

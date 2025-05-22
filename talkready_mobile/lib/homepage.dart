@@ -52,7 +52,7 @@ class _HomePageState extends State<HomePage> {
 
       logger.i('Fetching progress for user: ${user.uid}');
       DocumentSnapshot doc = await FirebaseFirestore.instance
-          .collection('users')
+          .collection('users') // changed from 'users'
           .doc(user.uid)
           .get();
       Map<String, dynamic>? userData = doc.data() as Map<String, dynamic>?;
@@ -95,71 +95,71 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-void _onItemTapped(int index) {
-  logger.d('Tapped navigation item. Index: $index, currentIndex: $_selectedIndex');
-  if (index == _selectedIndex) return; // Avoid redundant navigation
+  void _onItemTapped(int index) {
+    logger.d('Tapped navigation item. Index: $index, currentIndex: $_selectedIndex');
+    if (index == _selectedIndex) return; // Avoid redundant navigation
 
-  setState(() {
-    _selectedIndex = index; // Update the selected index for visual feedback
-  });
+    setState(() {
+      _selectedIndex = index; // Update the selected index for visual feedback
+    });
 
-  switch (index) {
-    case 0: // Home
-      break;
-    case 1: // Courses
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => const CoursesPage()),
-      ).then((_) {
-        if (mounted) {
-          setState(() {
-            _selectedIndex = 0;
-          });
-        }
-      });
-      break;
-    case 2: // Journal
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => JournalPage()),
-      ).then((_) {
-        if (mounted) {
-          setState(() {
-            _selectedIndex = 0;
-          });
-        }
-      });
-      break;
-    case 3: // Programs
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => ProgressTrackerPage()), // Replace with your ProgramsPage widget
-      ).then((_) {
-        if (mounted) {
-          setState(() {
-            _selectedIndex = 0;
-          });
-        }
-      });
-      break;
-    case 4: // Profile
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => const ProfilePage()),
-      ).then((_) {
-        logger.d('Returned from ProfilePage');
-        if (mounted) {
-          setState(() {
-            _selectedIndex = 0;
-          });
-        }
-      });
-      break;
-    default:
-      logger.w('Unhandled navigation index: $index');
-      break;
+    switch (index) {
+      case 0: // Home
+        break;
+      case 1: // Courses
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const CoursesPage()),
+        ).then((_) {
+          if (mounted) {
+            setState(() {
+              _selectedIndex = 0;
+            });
+          }
+        });
+        break;
+      case 2: // Journal
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => JournalPage()),
+        ).then((_) {
+          if (mounted) {
+            setState(() {
+              _selectedIndex = 0;
+            });
+          }
+        });
+        break;
+      case 3: // Programs
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => ProgressTrackerPage()), // Replace with your ProgramsPage widget
+        ).then((_) {
+          if (mounted) {
+            setState(() {
+              _selectedIndex = 0;
+            });
+          }
+        });
+        break;
+      case 4: // Profile
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const ProfilePage()),
+        ).then((_) {
+          logger.d('Returned from ProfilePage');
+          if (mounted) {
+            setState(() {
+              _selectedIndex = 0;
+            });
+          }
+        });
+        break;
+      default:
+        logger.w('Unhandled navigation index: $index');
+        break;
+    }
   }
-}
 
   @override
   Widget build(BuildContext context) {

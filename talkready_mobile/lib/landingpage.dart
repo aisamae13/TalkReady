@@ -73,7 +73,7 @@ class _LandingPageState extends State<LandingPage> {
         if (!context.mounted) return;
 
         if (isNewUser) {
-          Navigator.pushNamed(context, '/welcome');
+          Navigator.pushNamed(context, '/chooseUserType');
         } else {
           showDialog(
             context: context,
@@ -94,7 +94,7 @@ class _LandingPageState extends State<LandingPage> {
               content: Text(
                 'Your Google account has already been used to login.',
                 style: TextStyle(
-                  color: Color(0xFF00568D).withValues(alpha: 0.8),
+                  color: Color(0xFF00568D).withOpacity(0.8),
                   fontSize: 16,
                 ),
               ),
@@ -173,7 +173,7 @@ class _LandingPageState extends State<LandingPage> {
 
   // State to track the current carousel page
   int _currentPage = 0;
-final CarouselSliderController _carouselController = CarouselSliderController();
+  final CarouselSliderController _carouselController = CarouselSliderController();
 
   @override
   Widget build(BuildContext context) {
@@ -207,7 +207,7 @@ final CarouselSliderController _carouselController = CarouselSliderController();
                         image: AssetImage(imagePath),
                         fit: BoxFit.cover,
                         colorFilter: ColorFilter.mode(
-                          Colors.black.withValues(alpha:0.5),
+                          Colors.black.withOpacity(0.5),
                           BlendMode.darken,
                         ),
                       ),
@@ -285,7 +285,7 @@ final CarouselSliderController _carouselController = CarouselSliderController();
                             shape: BoxShape.circle,
                             color: _currentPage == index
                                 ? Colors.white
-                                : Colors.white.withValues(alpha:0.4),
+                                : Colors.white.withOpacity(0.4),
                           ),
                         );
                       }).toList(),
@@ -351,7 +351,7 @@ final CarouselSliderController _carouselController = CarouselSliderController();
                     const SizedBox(height: 20),
                     ElevatedButton.icon(
                       onPressed: () {
-                        Navigator.pushNamed(context, '/signup');
+                        Navigator.pushNamed(context, '/signup', arguments: {'fromLanding': true});
                       },
                       icon: const Icon(
                         Icons.email,
