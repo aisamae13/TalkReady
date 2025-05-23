@@ -20,29 +20,29 @@ class _SettingsPageState extends State<SettingsPage> {
 
   // Sign out function
   Future<void> _signOut(BuildContext context) async {
-  try {
-    _logger.i('Attempting to sign out user');
-    await FirebaseAuth.instance.signOut();
-    _logger.i('User signed out successfully');
-    if (Navigator.canPop(context)) {
-      Navigator.pushNamedAndRemoveUntil(
-        context,
-        '/',
-        (route) => false,
+    try {
+      _logger.i('Attempting to sign out user');
+      await FirebaseAuth.instance.signOut();
+      _logger.i('User signed out successfully');
+      if (Navigator.canPop(context)) {
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '/',
+          (route) => false,
+        );
+      } else {
+        _logger.w('Unable to navigate to landing page: Navigator stack is empty');
+      }
+    } catch (e) {
+      _logger.e('Error signing out: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error signing out: $e')),
       );
-    } else {
-      _logger.w('Unable to navigate to landing page: Navigator stack is empty');
     }
-  } catch (e) {
-    _logger.e('Error signing out: $e');
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Error signing out: $e')),
-    );
   }
-}
-  // Re-authenticate user
 
-   Future<void> _deleteAccount(BuildContext context) async {
+  // Delete user account and Firestore document
+  Future<void> _deleteAccount(BuildContext context) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
@@ -180,7 +180,7 @@ class _SettingsPageState extends State<SettingsPage> {
             if (context.mounted) {
               Navigator.pushNamedAndRemoveUntil(
                 context,
-                '/login',
+                '/',
                 (route) => false,
               );
             }
@@ -196,7 +196,6 @@ class _SettingsPageState extends State<SettingsPage> {
       }
     }
   }
-
 
   // Custom AlertDialog widget
   Widget _buildCustomDialog({
@@ -413,7 +412,7 @@ class _SettingsPageState extends State<SettingsPage> {
         child: Container(
           padding: const EdgeInsets.all(15),
           decoration: BoxDecoration(
-            color: Colors.lightBlue[100]?.withValues(alpha: 0.2),
+            color: Colors.lightBlue[100]?.withAlpha(50),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Row(

@@ -7,6 +7,7 @@ import 'forgotpass.dart';
 import 'loading_screen.dart';
 import 'homepage.dart';
 import 'welcome_page.dart';
+import 'TrainerDashboard.dart'; // <-- Add this import
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -65,18 +66,44 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+  // Updated: Navigate based on userType
   Future<void> _navigateAfterLogin(User user) async {
-    bool hasOnboardingData = await _hasCompletedOnboarding(user.uid);
-    if (!mounted) return;
-    if (hasOnboardingData) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const HomePage()),
-      );
-    } else {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const WelcomePage()),
+    try {
+      DocumentSnapshot doc = await _firestore.collection('users').doc(user.uid).get();
+      Map<String, dynamic>? userData = doc.data() as Map<String, dynamic>?;
+
+      // Check userType
+      String? userType = userData?['userType']?.toString().toLowerCase();
+
+      // If onboarding is not completed, go to WelcomePage
+      bool hasOnboardingData = await _hasCompletedOnboarding(user.uid);
+      if (!mounted) return;
+
+      if (!hasOnboardingData) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const WelcomePage()),
+        );
+        return;
+      }
+
+      // Navigate based on userType
+      if (userType == 'trainer') {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => TrainerDashboard()),
+        );
+      } else {
+        // Default to HomePage for students and others
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const HomePage()),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Login error: $e')),
       );
     }
   }
