@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:carousel_slider/carousel_slider.dart';
-import 'package:youtube_player_flutter/youtube_player_flutter.dart' show YoutubePlayer, YoutubePlayerController, PlayerState, ProgressBarColors;
+import 'package:youtube_player_flutter/youtube_player_flutter.dart'
+    show YoutubePlayer, YoutubePlayerController, PlayerState, ProgressBarColors;
 import 'package:logger/logger.dart';
 import '../lessons/common_widgets.dart';
 import 'dart:async'; // Import for Timer
@@ -12,12 +13,15 @@ class buildLesson1_3 extends StatefulWidget {
   final YoutubePlayerController youtubeController;
   final bool showActivity;
   final VoidCallback onShowActivity;
-  final List<List<String>> selectedAnswers; 
   final List<bool?> isCorrectStates;
   final List<String?> errorMessages;
-  final Function(int, bool) onAnswerChanged; 
   final Function(int) onSlideChanged;
-  final Function(List<Map<String, dynamic>> questionsData, List<String> userAnswers, int timeSpent, int attemptNumber) onSubmitAnswers;
+  final Function(
+          List<Map<String, dynamic>> questionsData,
+          List<String> userAnswers, // This is what lesson1_3 will provide on submit
+          int timeSpent,
+          int attemptNumber)
+      onSubmitAnswers; // This callback signature is correct for how lesson1_3 uses it
   final int initialAttemptNumber;
 
   const buildLesson1_3({
@@ -28,10 +32,8 @@ class buildLesson1_3 extends StatefulWidget {
     required this.youtubeController,
     required this.showActivity,
     required this.onShowActivity,
-    required this.selectedAnswers,
     required this.isCorrectStates,
     required this.errorMessages,
-    required this.onAnswerChanged,
     required this.onSlideChanged,
     required this.onSubmitAnswers,
     required this.initialAttemptNumber,
@@ -54,26 +56,29 @@ class _Lesson1_3State extends State<buildLesson1_3> {
   final List<Map<String, dynamic>> slides = [
     {
       'title': 'Objective: Mastering Present Simple Tense',
-      'content': 'By the end of this lesson, you will be able to use the present simple tense correctly in sentences and apply subject-verb agreement in call center scenarios.',
+      'content':
+          'By the end of this lesson, you will be able to use the present simple tense correctly in sentences and apply subject-verb agreement in call center scenarios.',
     },
     {
       'title': 'Introduction to Present Simple Tense',
-      'content': 'The present simple tense describes regular actions, habits, and general truths. It is commonly used in call centers for daily communication.\n'
-          'Structure:\n'
-          '• Affirmative: Subject + Base verb (add -s for he/she/it)\n'
-          '  Example: I help customers. She helps customers.\n'
-          '• Negative: Subject + do/does + not + Base verb\n'
-          '  Example: I don’t help customers. He doesn’t answer calls.\n'
-          '• Interrogative: Do/Does + Subject + Base verb?\n'
-          '  Example: Do I help you? Does he answer calls?',
+      'content':
+          'The present simple tense describes regular actions, habits, and general truths. It is commonly used in call centers for daily communication.\n'
+              'Structure:\n'
+              '• Affirmative: Subject + Base verb (add -s for he/she/it)\n'
+              '  Example: I help customers. She helps customers.\n'
+              '• Negative: Subject + do/does + not + Base verb\n'
+              '  Example: I don’t help customers. He doesn’t answer calls.\n'
+              '• Interrogative: Do/Does + Subject + Base verb?\n'
+              '  Example: Do I help you? Does he answer calls?',
     },
     {
       'title': 'Subject-Verb Agreement in Present Simple',
-      'content': '• Singular Subjects (He, She, It): Add -s to the base verb in affirmative sentences.\n'
-          '  Example: She helps the customer.\n'
-          '• Plural Subjects (I, You, We, They): Use the base verb without -s.\n'
-          '  Example: I help the customer.\n'
-          'Correct agreement ensures clear and professional communication.',
+      'content':
+          '• Singular Subjects (He, She, It): Add -s to the base verb in affirmative sentences.\n'
+              '  Example: She helps the customer.\n'
+              '• Plural Subjects (I, You, We, They): Use the base verb without -s.\n'
+              '  Example: I help the customer.\n'
+              'Correct agreement ensures clear and professional communication.',
     },
     {
       'title': 'Call Center Examples',
@@ -86,17 +91,19 @@ class _Lesson1_3State extends State<buildLesson1_3> {
     },
     {
       'title': 'Conclusion',
-      'content': 'You learned how to form and use the present simple tense and apply subject-verb agreement. This skill is crucial for clear and accurate communication in call centers. Practice using it in real scenarios to enhance professionalism.',
+      'content':
+          'You learned how to form and use the present simple tense and apply subject-verb agreement. This skill is crucial for clear and accurate communication in call centers. Practice using it in real scenarios to enhance professionalism.',
     },
   ];
 
-   final List<Map<String, dynamic>> questions = [
+  final List<Map<String, dynamic>> questions = [
     {
       'id': 1,
       'question': 'I ___ (help) the customer with their order.',
       'type': 'verb',
       'correctAnswer': 'help',
-      'explanation': 'Base verb for plural subject (I) in affirmative sentence.',
+      'explanation':
+          'Base verb for plural subject (I) in affirmative sentence.',
     },
     {
       'id': 2,
@@ -110,7 +117,8 @@ class _Lesson1_3State extends State<buildLesson1_3> {
       'question': 'You ___ (resolve) customer issues efficiently.',
       'type': 'verb',
       'correctAnswer': 'resolve',
-      'explanation': 'Base verb for plural subject (You) in affirmative sentence.',
+      'explanation':
+          'Base verb for plural subject (You) in affirmative sentence.',
     },
     {
       'id': 4,
@@ -124,7 +132,8 @@ class _Lesson1_3State extends State<buildLesson1_3> {
       'question': 'They ___ (provide) excellent customer service.',
       'type': 'verb',
       'correctAnswer': 'provide',
-      'explanation': 'Base verb for plural subject (They) in affirmative sentence.',
+      'explanation':
+          'Base verb for plural subject (They) in affirmative sentence.',
     },
     {
       'id': 6,
@@ -138,7 +147,8 @@ class _Lesson1_3State extends State<buildLesson1_3> {
       'question': 'We ___ (check) the details of the order.',
       'type': 'verb',
       'correctAnswer': 'check',
-      'explanation': 'Base verb for plural subject (We) in affirmative sentence.',
+      'explanation':
+          'Base verb for plural subject (We) in affirmative sentence.',
     },
     {
       'id': 8,
@@ -159,23 +169,25 @@ class _Lesson1_3State extends State<buildLesson1_3> {
       'question': 'Does she ___ (assist) you with your problem?',
       'type': 'verb',
       'correctAnswer': 'assist',
-      'explanation': 'Base verb in interrogative form for singular subject (She).',
+      'explanation':
+          'Base verb in interrogative form for singular subject (She).',
     },
   ];
 
-
- @override
+  @override
   void initState() {
     super.initState();
     _currentAttempt = widget.initialAttemptNumber;
-    _controllers = List.generate(questions.length, (_) => TextEditingController());
+    _controllers = List.generate(questions.length, (i) {
+      final controller = TextEditingController();
+      // OPTIONAL: Pre-fill if initialUserAnswers is provided
+      // if (widget.initialUserAnswers != null && i < widget.initialUserAnswers!.length) {
+      //   controller.text = widget.initialUserAnswers![i];
+      // }
+      return controller;
+    });
     widget.youtubeController.addListener(_videoListener);
 
-    for (int i = 0; i < questions.length; i++) {
-      if (i < widget.selectedAnswers.length && widget.selectedAnswers[i].isNotEmpty) {
-        _controllers[i].text = widget.selectedAnswers[i].first;
-      }
-    }
     if (widget.showActivity) {
       _startTimer();
     }
@@ -188,34 +200,35 @@ class _Lesson1_3State extends State<buildLesson1_3> {
       oldWidget.youtubeController.removeListener(_videoListener);
       widget.youtubeController.addListener(_videoListener);
     }
-     if (widget.showActivity && !oldWidget.showActivity) {
+    if (widget.showActivity && !oldWidget.showActivity) {
       _resetTimer();
       _startTimer();
       _currentAttempt = widget.initialAttemptNumber;
     } else if (!widget.showActivity && oldWidget.showActivity) {
       _stopTimer();
     }
-     if (widget.initialAttemptNumber != oldWidget.initialAttemptNumber) {
-        _currentAttempt = widget.initialAttemptNumber;
-    }
-
-    if (widget.selectedAnswers != oldWidget.selectedAnswers) {
-        for (int i = 0; i < _controllers.length; i++) {
-            if (i < widget.selectedAnswers.length && widget.selectedAnswers[i].isNotEmpty) {
-                if (_controllers[i].text != widget.selectedAnswers[i].first) {
-                   _controllers[i].text = widget.selectedAnswers[i].first;
-                }
-            } else {
-                 _controllers[i].clear();
-            }
-        }
+    if (widget.initialAttemptNumber != oldWidget.initialAttemptNumber) {
+      _currentAttempt = widget.initialAttemptNumber;
+      // OPTIONAL: If supporting "Try Again" with pre-filled previous answers from parent
+      // if (widget.initialUserAnswers != null) {
+      //   for (int i = 0; i < _controllers.length; i++) {
+      //     if (i < widget.initialUserAnswers!.length) {
+      //       _controllers[i].text = widget.initialUserAnswers![i];
+      //     } else {
+      //       _controllers[i].clear();
+      //     }
+      //   }
+      // } else { // Clear for a fresh attempt if no initial answers provided
+      //    _controllers.forEach((controller) => controller.clear());
+      // }
     }
   }
 
   @override
   void dispose() {
     widget.youtubeController.removeListener(_videoListener);
-    _logger.i('Disposing ${_controllers.length} TextEditingControllers for Lesson 1.3');
+    _logger.i(
+        'Disposing ${_controllers.length} TextEditingControllers for Lesson 1.3');
     for (var controller in _controllers) {
       controller.dispose();
     }
@@ -224,7 +237,8 @@ class _Lesson1_3State extends State<buildLesson1_3> {
   }
 
   void _videoListener() {
-    if (widget.youtubeController.value.playerState == PlayerState.ended && !_videoFinished) {
+    if (widget.youtubeController.value.playerState == PlayerState.ended &&
+        !_videoFinished) {
       if (mounted) {
         setState(() {
           _videoFinished = true;
@@ -245,17 +259,19 @@ class _Lesson1_3State extends State<buildLesson1_3> {
         timer.cancel();
       }
     });
-    _logger.i('Stopwatch started for Lesson 1.3. Attempt: $_currentAttempt. Time: $_secondsElapsed');
+    _logger.i(
+        'Stopwatch started for Lesson 1.3. Attempt: $_currentAttempt. Time: $_secondsElapsed');
   }
 
   void _stopTimer() {
     _timer?.cancel();
-    _logger.i('Stopwatch stopped for Lesson 1.3. Attempt: $_currentAttempt. Time elapsed: $_secondsElapsed seconds.');
+    _logger.i(
+        'Stopwatch stopped for Lesson 1.3. Attempt: $_currentAttempt. Time elapsed: $_secondsElapsed seconds.');
   }
 
   void _resetTimer() {
     _stopTimer();
-     if (mounted) {
+    if (mounted) {
       setState(() {
         _secondsElapsed = 0;
       });
@@ -273,20 +289,24 @@ class _Lesson1_3State extends State<buildLesson1_3> {
     required String questionText, // This will now include the Qx: prefix
     required int questionIndex,
     required TextEditingController controller,
-    bool? isCorrect, 
-    String? errorMessage, 
+    bool? isCorrect,
+    String? errorMessage,
   }) {
     final parts = questionText.split('___');
     final String beforeText = parts.isNotEmpty ? parts[0] : '';
     final String afterText = parts.length > 1 ? parts[1] : '';
-    
+
     // Extract hint from the original question format if present, before Qx: prefix
     String hintText = 'Type here';
-    final originalQuestionPart = questionText.substring(questionText.indexOf(':') + 1).trim(); // Get text after "Qx: "
-    if (originalQuestionPart.contains('(') && originalQuestionPart.contains(')')) {
-        hintText = originalQuestionPart.substring(originalQuestionPart.indexOf('(') + 1, originalQuestionPart.indexOf(')'));
+    final originalQuestionPart = questionText
+        .substring(questionText.indexOf(':') + 1)
+        .trim(); // Get text after "Qx: "
+    if (originalQuestionPart.contains('(') &&
+        originalQuestionPart.contains(')')) {
+      hintText = originalQuestionPart.substring(
+          originalQuestionPart.indexOf('(') + 1,
+          originalQuestionPart.indexOf(')'));
     }
-
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
@@ -297,7 +317,9 @@ class _Lesson1_3State extends State<buildLesson1_3> {
             text: TextSpan(
               style: const TextStyle(fontSize: 16, color: Colors.black87),
               children: [
-                TextSpan(text: beforeText), // beforeText will contain the Qx: prefix and the part before ___
+                TextSpan(
+                    text:
+                        beforeText), // beforeText will contain the Qx: prefix and the part before ___
               ],
             ),
           ),
@@ -309,37 +331,44 @@ class _Lesson1_3State extends State<buildLesson1_3> {
                   controller: controller,
                   decoration: InputDecoration(
                     hintText: hintText,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
                       borderSide: BorderSide(
-                        color: isCorrect == null ? Colors.grey : (isCorrect == true ? Colors.green : Colors.red),
+                        color: isCorrect == null
+                            ? Colors.grey
+                            : (isCorrect == true ? Colors.green : Colors.red),
                       ),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
                       borderSide: BorderSide(
-                        color: isCorrect == null ? Theme.of(context).primaryColor : (isCorrect == true ? Colors.green : Colors.red),
+                        color: isCorrect == null
+                            ? Theme.of(context).primaryColor
+                            : (isCorrect == true ? Colors.green : Colors.red),
                         width: 2,
                       ),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
                       borderSide: BorderSide(
-                        color: isCorrect == null ? Colors.grey : (isCorrect == true ? Colors.green : Colors.red),
+                        color: isCorrect == null
+                            ? Colors.grey
+                            : (isCorrect == true ? Colors.green : Colors.red),
                       ),
                     ),
                     filled: true,
                     fillColor: Colors.white,
                   ),
-                  onChanged: (value) {
-                    // Parent will get the value upon submission
-                  },
+                  // Removed onChanged here as parent will get values on submit
                 ),
               ),
               if (afterText.isNotEmpty) ...[
                 const SizedBox(width: 4),
-                Text(afterText, style: const TextStyle(fontSize: 16, color: Colors.black87)),
+                Text(afterText,
+                    style:
+                        const TextStyle(fontSize: 16, color: Colors.black87)),
               ]
             ],
           ),
@@ -348,7 +377,9 @@ class _Lesson1_3State extends State<buildLesson1_3> {
               padding: const EdgeInsets.only(top: 4.0),
               child: Text(
                 errorMessage,
-                style: TextStyle(color: isCorrect == false ? Colors.red : Colors.green, fontSize: 12),
+                style: TextStyle(
+                    color: isCorrect == false ? Colors.red : Colors.green,
+                    fontSize: 12),
               ),
             ),
         ],
@@ -398,7 +429,8 @@ class _Lesson1_3State extends State<buildLesson1_3> {
               child: Container(
                 width: 8.0,
                 height: 8.0,
-                margin: const EdgeInsets.symmetric(vertical: 10.0, horizontal: 2.0),
+                margin:
+                    const EdgeInsets.symmetric(vertical: 10.0, horizontal: 2.0),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: widget.currentSlide == entry.key
@@ -433,10 +465,10 @@ class _Lesson1_3State extends State<buildLesson1_3> {
                     handleColor: Colors.amberAccent,
                   ),
                   onReady: () => _logger.d('Player is ready in Lesson 1.3.'),
-                   onEnded: (_) {
+                  onEnded: (_) {
                     _logger.i('Video ended callback received in Lesson 1.3.');
                     if (!_videoFinished && mounted) {
-                       setState(() {
+                      setState(() {
                         _videoFinished = true;
                       });
                     }
@@ -457,10 +489,11 @@ class _Lesson1_3State extends State<buildLesson1_3> {
                   textStyle: const TextStyle(fontSize: 16, color: Colors.white),
                   disabledBackgroundColor: Colors.grey[400],
                 ),
-                child: const Text('Proceed to Activity', style: TextStyle(color: Colors.white)),
+                child: const Text('Proceed to Activity',
+                    style: TextStyle(color: Colors.white)),
               ),
             ),
-             if (!_videoFinished)
+            if (!_videoFinished)
               const Padding(
                 padding: EdgeInsets.only(top: 8.0),
                 child: Text(
@@ -473,14 +506,17 @@ class _Lesson1_3State extends State<buildLesson1_3> {
         ],
         if (widget.showActivity) ...[
           const SizedBox(height: 16),
-           Padding(
+          Padding(
             padding: const EdgeInsets.symmetric(vertical: 8.0),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
                   'Time: ${_formatDuration(_secondsElapsed)}',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.black54),
+                  style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.black54),
                 ),
               ],
             ),
@@ -503,36 +539,74 @@ class _Lesson1_3State extends State<buildLesson1_3> {
             int questionIndex = entry.key;
             Map<String, dynamic> questionData = entry.value;
             return buildFillInTheBlankQuestion(
-              questionText: 'Q${questionData['id']}: ${questionData['question']}',
+              questionText:
+                  'Q${questionData['id']}: ${questionData['question']}',
               questionIndex: questionIndex,
-              controller: _controllers[questionIndex],
-              isCorrect: widget.isCorrectStates[questionIndex],
-              errorMessage: widget.errorMessages[questionIndex],
+              controller: _controllers[questionIndex], // This is correct
+              isCorrect: widget.isCorrectStates.length > questionIndex
+                  ? widget.isCorrectStates[questionIndex]
+                  : null, // Pass feedback state
+              errorMessage: widget.errorMessages.length > questionIndex
+                  ? widget.errorMessages[questionIndex]
+                  : null, // Pass feedback state
             );
           }),
           const SizedBox(height: 16),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: !_isSubmitting ? () async {
-                setState(() { _isSubmitting = true; });
-                _stopTimer();
-                List<String> userAnswers = _controllers.map((controller) => controller.text.trim()).toList();
-                await widget.onSubmitAnswers(questions, userAnswers, _secondsElapsed, _currentAttempt);
-                if (mounted) {
-                  setState(() {
-                    _isSubmitting = false;
-                    _currentAttempt++; // <-- increment attempt after submit
-                  });
-                }
-              } : null, 
+              onPressed: !_isSubmitting
+                  ? () async {
+                      setState(() {
+                        _isSubmitting = true;
+                      });
+                      _stopTimer();
+                      List<String> userAnswers = _controllers
+                          .map((controller) => controller.text.trim())
+                          .toList();
+
+                      try {
+                        await widget.onSubmitAnswers(questions, userAnswers,
+                            _secondsElapsed, _currentAttempt);
+                        // If successful, the _isSubmitting will be reset below in the finally block,
+                        // and you can still proceed with UI changes for success if needed here,
+                        // or rely on the parent (module1.dart) to show success messages.
+                        // For example, the current attempt increment can stay here if successful.
+                        if (mounted) {
+                          setState(() {
+                            _currentAttempt++;
+                          });
+                        }
+                      } catch (e) {
+                        _logger.e(
+                            "Error during onSubmitAnswers for Lesson 1.3: $e");
+                        // The parent (module1.dart) should ideally show its own error SnackBar.
+                        // If not, you can show a generic one here too.
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                                content: Text(
+                                    'An error occurred while submitting: $e. Please try again.')),
+                          );
+                        }
+                      } finally {
+                        // This block will always execute, whether there was an error or not.
+                        if (mounted) {
+                          setState(() {
+                            _isSubmitting =
+                                false; // Ensure loading indicator always stops
+                          });
+                        }
+                      }
+                    }
+                  : null,
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF00568D),
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 textStyle: const TextStyle(fontSize: 16, color: Colors.white),
               ),
-              child: _isSubmitting 
-                  ? const SizedBox( 
+              child: _isSubmitting
+                  ? const SizedBox(
                       height: 20,
                       width: 20,
                       child: CircularProgressIndicator(
@@ -540,7 +614,8 @@ class _Lesson1_3State extends State<buildLesson1_3> {
                         valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                       ),
                     )
-                  : const Text('Submit Answers', style: TextStyle(color: Colors.white)), 
+                  : const Text('Submit Answers',
+                      style: TextStyle(color: Colors.white)),
             ),
           ),
         ],
