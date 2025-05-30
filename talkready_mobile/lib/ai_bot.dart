@@ -161,16 +161,16 @@ class _AIBotScreenState extends State<AIBotScreen> {
         if (mounted) {
           String greetingMessage;
           try {
-            greetingMessage = _generateRandomGreeting(); 
+            greetingMessage = _generateRandomGreeting();
           } catch (e) {
             logger.e('Error generating personalized greeting: $e. Using fallback.');
             greetingMessage = "Hello${_userName != null && _userName!.isNotEmpty ? ", $_userName" : ""}! How can I help you practice today?";
             _showSnackBar('Could not display a personalized greeting at this time.');
           }
-          
+
           logger.i(
               'Adding new session greeting to _messages: {"text": "$greetingMessage", "isUser": false, "timestamp": "${DateTime.now().toIso8601String()}"}');
-          
+
           final initialBotMessageData = {
             'text': greetingMessage,
             'isUser': false,
@@ -178,7 +178,7 @@ class _AIBotScreenState extends State<AIBotScreen> {
           };
           setState(() {
             _messages.add(initialBotMessageData);
-            _pruneMessages(); 
+            _pruneMessages();
           });
           _speakText(greetingMessage, isUser: false);
           _scrollToBottom();
@@ -201,7 +201,7 @@ class _AIBotScreenState extends State<AIBotScreen> {
         'text': initialLocalMessage['text'],
         'sender': 'bot',
         'timestamp': Timestamp.fromDate(DateTime.parse(initialLocalMessage['timestamp'])),
-        'audioUrl': null, 
+        'audioUrl': null,
       };
 
       DocumentReference sessionRef = _firestore.collection('chatSessions').doc();
@@ -211,10 +211,10 @@ class _AIBotScreenState extends State<AIBotScreen> {
         'userId': user.uid,
         'startTime': FieldValue.serverTimestamp(),
         'lastActivity': FieldValue.serverTimestamp(),
-        'messages': [firestoreInitialMessage], 
+        'messages': [firestoreInitialMessage],
       });
       logger.i('New chat session created with ID: $_currentChatSessionId and initial message.');
-      
+
     } catch (e) {
       logger.e('Error initializing new chat session: $e');
       _showSnackBar('Could not start a new chat session: $e');
@@ -229,7 +229,7 @@ class _AIBotScreenState extends State<AIBotScreen> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       logger.e("Cannot add message to session: user not logged in.");
-      return; 
+      return;
     }
 
     try {
@@ -288,7 +288,7 @@ class _AIBotScreenState extends State<AIBotScreen> {
       return;
     }
 
-    if (startTour == false) { 
+    if (startTour == false) {
       logger.i('User chose to start tutorial walkthrough');
       try {
         await Future.delayed(const Duration(milliseconds: 600));
@@ -310,7 +310,7 @@ class _AIBotScreenState extends State<AIBotScreen> {
         logger.e('Error starting tutorial: $e');
         _showSnackBar('Failed to start tutorial: $e');
       }
-    } else { 
+    } else {
       logger.i('User skipped tutorial or dismissed dialog');
       setState(() {
         _hasSeenTutorial = true;
@@ -471,8 +471,8 @@ class _AIBotScreenState extends State<AIBotScreen> {
         if (_userName == null || _userName!.isEmpty) {
           if (user.displayName != null && user.displayName!.isNotEmpty) {
             _userName = user.displayName!.split(' ').first;
-            if (_userName!.isEmpty && user.displayName!.isNotEmpty) { 
-                _userName = user.displayName; 
+            if (_userName!.isEmpty && user.displayName!.isNotEmpty) {
+                _userName = user.displayName;
             }
           }
           if (_userName == null || _userName!.isEmpty) {
@@ -544,9 +544,9 @@ class _AIBotScreenState extends State<AIBotScreen> {
       if (mounted) _showSnackBar('Error fetching preferences: $e. Using defaults.');
     } finally {
       if (mounted) {
-        setState(() {}); 
+        setState(() {});
       }
-      _initializeTts(); 
+      _initializeTts();
     }
   }
 
@@ -660,12 +660,12 @@ class _AIBotScreenState extends State<AIBotScreen> {
       if (mounted) {
         setState(() {
           _messages.add(userMessageData);
-          _pruneMessages(); 
+          _pruneMessages();
         });
       }
-      _addMessageToActiveChatSession(userMessageData); 
+      _addMessageToActiveChatSession(userMessageData);
       _scrollToBottom();
-      // _speakText(processedText, isUser: true); 
+      // _speakText(processedText, isUser: true);
       _generateAIResponse(processedText);
       _evaluateUserInput(processedText);
       _textController.clear();
@@ -741,10 +741,10 @@ class _AIBotScreenState extends State<AIBotScreen> {
             setState(() {
               _messages.add(userMessageData);
               _lastRecognizedText = processedText;
-              _pruneMessages(); 
+              _pruneMessages();
             });
           }
-          _addMessageToActiveChatSession(userMessageData, audioUrl: audioUrl); 
+          _addMessageToActiveChatSession(userMessageData, audioUrl: audioUrl);
           _scrollToBottom();
           logger.i('Transcribed text: $processedText');
 
@@ -870,7 +870,7 @@ class _AIBotScreenState extends State<AIBotScreen> {
           'role': 'system',
           'content': prompt,
         },
-        ..._messages.map((msg) => { 
+        ..._messages.map((msg) => {
               'role': msg['isUser'] ? 'user' : 'assistant',
               'content': msg['text'],
             }),
@@ -978,7 +978,7 @@ class _AIBotScreenState extends State<AIBotScreen> {
       if (_currentLearningPrompt != null) {
         systemMessage = _currentLearningPrompt!.promptText;
       } else {
-        final userName = _userName ?? "User"; 
+        final userName = _userName ?? "User";
         systemMessage =
             'You are an advanced English-speaking assistant named TalkReady. You are designed to help non-native speakers improve their spoken English skills. Based on user’s speaking level, You provide clear, friendly, and constructive feedback while encouraging natural and confident communication. The user\'s name is $userName.';
       }
@@ -997,13 +997,13 @@ class _AIBotScreenState extends State<AIBotScreen> {
           _messages.add(aiMessageData);
           _isProcessingTTS = false;
           _isTyping = false;
-          _pruneMessages(); 
+          _pruneMessages();
         });
-        _addMessageToActiveChatSession(aiMessageData); 
+        _addMessageToActiveChatSession(aiMessageData);
         _scrollToBottom();
         logger.i('AI message added: $aiResponse');
         _speakText(aiResponse, isUser: false);
-        _evaluateUserInput(userInput); 
+        _evaluateUserInput(userInput);
       }
     }
   }
@@ -1015,7 +1015,7 @@ class _AIBotScreenState extends State<AIBotScreen> {
       double fluencyScore = await _analyzeFluency(userInput);
       double grammarScore = await _analyzeGrammar(userInput);
       double vocabScore = await _analyzeVocabulary(userInput);
-      double pronunciationScore = 0.0; 
+      double pronunciationScore = 0.0;
       double interactionScore = await _analyzeInteraction(userInput, _messages);
 
       if (mounted) {
@@ -1182,7 +1182,7 @@ class _AIBotScreenState extends State<AIBotScreen> {
 
   void _pruneMessages() {
 // ...existing code...
-    if (_messages.length > 20) { 
+    if (_messages.length > 20) {
       _messages.removeRange(0, _messages.length - 20);
       logger.i('Pruned local _messages list to last 20');
     }
@@ -1253,9 +1253,9 @@ class _AIBotScreenState extends State<AIBotScreen> {
         setState(() => _isProcessingTTS = false);
       }
       logger.i('Audio stopped successfully routine finished.');
-    } catch (e, s) { 
+    } catch (e, s) {
       logger.e('Error stopping audio: $e', error: e, stackTrace: s);
-      if (mounted) { 
+      if (mounted) {
         _showSnackBar('Failed to stop audio: $e');
       }
     }
@@ -1283,9 +1283,9 @@ class _AIBotScreenState extends State<AIBotScreen> {
       };
       setState(() {
         _messages.add(botMessageData);
-        _pruneMessages(); 
+        _pruneMessages();
       });
-      _addMessageToActiveChatSession(botMessageData); 
+      _addMessageToActiveChatSession(botMessageData);
       _speakText(text, isUser: false);
       _scrollToBottom();
     }
@@ -1381,9 +1381,9 @@ class _AIBotScreenState extends State<AIBotScreen> {
     if (_isPlayerInitialized) {
       _player.closePlayer();
     }
-    _stopAudio(); 
+    _stopAudio();
     _textController.dispose();
-    _audioPlayer.release(); 
+    _audioPlayer.release();
     _audioPlayer.dispose();
     _scrollController.dispose();
     super.dispose();
