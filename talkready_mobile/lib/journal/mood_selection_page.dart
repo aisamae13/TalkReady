@@ -47,7 +47,7 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) {
-        logger.w('No authenticated user found');
+        logger.w('No authenticated user found for loading tags');
         setState(() {
           _isLoadingTags = false;
         });
@@ -68,22 +68,44 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
         };
       }).toList();
 
-      setState(() {
-        tags = [
-          ...tags,
-          ...customTags,
-        ];
-        _isLoadingTags = false;
-      });
-      logger.i('Loaded ${customTags.length} custom tags from Firestore');
+      // Ensure default tags are not duplicated if _loadTags is called multiple times
+      // or if custom tags have the same name as default tags.
+      // A more robust way would be to ensure default tags are added only once.
+      // For now, let's clear and add default tags first, then custom ones.
+      List<Map<String, dynamic>> defaultTags = [
+        {'name': 'Personal', 'iconCodePoint': '58944'},
+        {'name': 'Work', 'iconCodePoint': '59475'},
+        {'name': 'Travel', 'iconCodePoint': '59126'},
+        {'name': 'Study', 'iconCodePoint': '58394'},
+        {'name': 'Food', 'iconCodePoint': '59522'},
+        {'name': 'Plant', 'iconCodePoint': '59330'},
+      ];
+
+      // Filter out custom tags that might already exist in defaultTags by name
+      final uniqueCustomTags = customTags.where((customTag) {
+        return !defaultTags.any((defaultTag) => defaultTag['name'] == customTag['name']);
+      }).toList();
+
+      if (mounted) {
+        setState(() {
+          tags = [
+            ...defaultTags,
+            ...uniqueCustomTags,
+          ];
+          _isLoadingTags = false;
+        });
+      }
+      logger.i('Loaded ${customTags.length} custom tags from Firestore. Total tags: ${tags.length}');
     } catch (e) {
       logger.e('Error loading tags: $e');
-      setState(() {
-        _isLoadingTags = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error loading tags')),
-      );
+      if (mounted) {
+        setState(() {
+          _isLoadingTags = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error loading tags')),
+        );
+      }
     }
   }
 
@@ -91,7 +113,7 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) {
-        logger.w('No authenticated user found');
+        logger.w('No authenticated user found for adding custom tag');
         return;
       }
 
@@ -105,49 +127,57 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
         'iconCodePoint': iconCodePoint,
       });
 
-      setState(() {
-        tags.add({
-          'name': name,
-          'iconCodePoint': iconCodePoint,
+      if (mounted) {
+        setState(() {
+          // Avoid adding duplicate tag if it somehow got added by another means
+          if (!tags.any((tag) => tag['name'] == name)) {
+            tags.add({
+              'name': name,
+              'iconCodePoint': iconCodePoint,
+            });
+          }
+          selectedTag = name; // Automatically select the newly added tag
         });
-      });
+      }
       logger.i('Added custom tag: $name with iconCodePoint: $iconCodePoint');
     } catch (e) {
       logger.e('Error adding custom tag: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error adding custom tag')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error adding custom tag')),
+        );
+      }
     }
   }
 
   Future<String> _fetchUserName() async {
-  try {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      logger.w('No authenticated user found');
-      return 'User';
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        logger.w('No authenticated user found');
+        return 'User'; // Default name
+      }
+
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+
+      // Corrected: Access firstName directly from the document data
+      final firstName = doc.data()?['firstName'] as String?;
+
+      if (firstName == null || firstName.isEmpty) {
+        logger.w('First name not found in Firestore or is empty');
+        return 'User'; // Default if not found or empty
+      }
+
+      logger.i('Fetched first name: $firstName');
+      return firstName;
+    } catch (e) {
+      logger.e('Error fetching first name: $e');
+      return 'User'; // Consistent default on error
     }
-
-    final doc = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .get();
-
-    final onboardingData = doc.data()?['onboarding'] as Map<String, dynamic>?;
-    final firstName = onboardingData?['firstName'] as String?;
-
-    if (firstName == null || firstName.isEmpty) {
-      logger.w('First name not found in Firestore');
-      return 'User';
-    }
-
-    logger.i('Fetched first name: $firstName');
-    return firstName;
-  } catch (e) {
-    logger.e('Error fetching first name: $e');
-    return 'Bestie';
   }
-}
 
   void _navigateToJournalWriting(String? mood, String? tag) {
     logger.i('Navigating to JournalWritingPage with mood: $mood, tag: $tag');
@@ -235,30 +265,21 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
                         FutureBuilder<String>(
                           future: _userNameFuture,
                           builder: (context, snapshot) {
-                            if (snapshot.connectionState == ConnectionState.waiting) {
-                              return const Text(
-                                'Hi, Bestie! How are you feeling today?',
-                                style: TextStyle(
-                                  fontSize: 24,
-                                  color: Color(0xFF00568D),
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              );
+                            String greetingName = 'User'; // Default greeting name
+
+                            if (snapshot.connectionState == ConnectionState.done) {
+                              if (snapshot.hasError) {
+                                logger.e('Error in FutureBuilder fetching user name: ${snapshot.error}');
+                                // greetingName remains 'User' (or the default from _fetchUserName)
+                              } else if (snapshot.hasData && snapshot.data!.isNotEmpty) {
+                                greetingName = snapshot.data!;
+                              }
+                              // If data is null or empty, _fetchUserName should have returned 'User'
                             }
-                            if (snapshot.hasError) {
-                              logger.e('Error in FutureBuilder: ${snapshot.error}');
-                              return const Text(
-                                'Hi, Bestie! How are you feeling today?',
-                                style: TextStyle(
-                                  fontSize: 24,
-                                  color: Color(0xFF00568D),
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              );
-                            }
-                            final userName = snapshot.data ?? 'Bestie';
+                            // While waiting, it will use the default 'User'
+                            
                             return Text(
-                              'Hi, $userName! How are you feeling today?',
+                              'Hi, $greetingName! How are you feeling today?',
                               style: const TextStyle(
                                 fontSize: 24,
                                 color: Color(0xFF00568D),
@@ -347,7 +368,7 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
                                 codePoint = int.parse(tag['iconCodePoint']);
                               } catch (e) {
                                 logger.e('Invalid iconCodePoint for tag ${tag['name']}: ${tag['iconCodePoint']}');
-                                codePoint = Icons.tag.codePoint;
+                                codePoint = Icons.tag.codePoint; // Default icon
                               }
                               return ChoiceChip(
                                 label: Row(
@@ -393,7 +414,7 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
                                 showDialog(
                                   context: context,
                                   builder: (context) {
-                                    String? customTag;
+                                    String? customTagName; // Renamed to avoid conflict
                                     IconData selectedIcon = Icons.tag;
                                     return Dialog(
                                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -435,7 +456,7 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
                                                 const SizedBox(height: 20),
                                                 TextField(
                                                   onChanged: (value) {
-                                                    customTag = value;
+                                                    customTagName = value;
                                                   },
                                                   decoration: InputDecoration(
                                                     hintText: 'Enter tag name',
@@ -470,8 +491,8 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
                                                     Icons.favorite,
                                                     Icons.bookmark,
                                                     Icons.music_note,
-                                                    Icons.sports,
-                                                    Icons.local_dining,
+                                                    Icons.sports_soccer, // Example: changed from Icons.sports
+                                                    Icons.restaurant, // Example: changed from Icons.local_dining
                                                     Icons.pets,
                                                   ].map((icon) {
                                                     bool isSelected = selectedIcon == icon;
@@ -552,11 +573,10 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
                                                         ),
                                                         child: ElevatedButton(
                                                           onPressed: () {
-                                                            if (customTag != null && customTag!.isNotEmpty) {
-                                                              _addCustomTag(customTag!, selectedIcon);
-                                                              setState(() {
-                                                                selectedTag = customTag!;
-                                                              });
+                                                            if (customTagName != null && customTagName!.isNotEmpty) {
+                                                              _addCustomTag(customTagName!, selectedIcon);
+                                                              // No need to call setState here for selectedTag,
+                                                              // _addCustomTag already handles it if mounted.
                                                             }
                                                             Navigator.pop(context);
                                                           },
@@ -596,11 +616,16 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
                   Center(
                     child: Container(
                       decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [
-                            Color(0xFF00568D),
-                            Color(0xFF003F6A),
-                          ],
+                        gradient: LinearGradient(
+                          colors: (selectedMood != null && selectedTag != null)
+                              ? [
+                                  const Color(0xFF00568D),
+                                  const Color(0xFF003F6A),
+                                ]
+                              : [
+                                  Colors.grey.shade400,
+                                  Colors.grey.shade600,
+                                ],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
@@ -619,7 +644,7 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
                                 logger.i('Continue button pressed with mood: $selectedMood, tag: $selectedTag');
                                 _navigateToJournalWriting(selectedMood!, selectedTag!);
                               }
-                            : null,
+                            : null, // Button is disabled if mood or tag is not selected
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.transparent,
                           shadowColor: Colors.transparent,
@@ -627,6 +652,8 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(15),
                           ),
+                          disabledForegroundColor: Colors.white.withOpacity(0.7),
+                          disabledBackgroundColor: Colors.transparent, // Keep gradient for disabled state
                         ),
                         child: const Text(
                           'Continue',

@@ -5,6 +5,11 @@ import 'package:logger/logger.dart';
 import 'mood_selection_page.dart';
 import 'journal_writing_page.dart';
 import 'journal_entries.dart';
+import 'package:talkready_mobile/custom_animated_bottom_bar.dart';
+import '../homepage.dart';
+import '../courses_page.dart';
+import '../progress_page.dart';
+import '../profile.dart';
 
 final logger = Logger(
   printer: PrettyPrinter(
@@ -16,6 +21,23 @@ final logger = Logger(
     dateTimeFormat: DateTimeFormat.onlyTimeAndSinceStart,
   ),
 );
+
+// Helper function for creating a slide page route
+Route _createSlidingPageRoute({
+  required Widget page,
+  required int newIndex,
+  required int oldIndex,
+  required Duration duration, // duration will be ignored
+}) {
+  return PageRouteBuilder(
+    pageBuilder: (context, animation, secondaryAnimation) => page,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      return child; // Return child directly for no animation
+    },
+    transitionDuration: Duration.zero, // Instant transition
+    reverseTransitionDuration: Duration.zero, // Instant reverse transition
+  );
+}
 
 class JournalEntry {
   final String mood;
@@ -72,8 +94,8 @@ class JournalPage extends StatefulWidget {
 
 class _JournalPageState extends State<JournalPage> {
   final List<JournalEntry> _entries = [];
-  final Logger logger = Logger();
   bool _isLoading = true;
+  int _selectedIndex = 2; // Journal is index 2
 
   @override
   void initState() {
@@ -110,9 +132,11 @@ class _JournalPageState extends State<JournalPage> {
       setState(() {
         _isLoading = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error loading journal entries')),
-      );
+      if(mounted){
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error loading journal entries')),
+        );
+      }
     }
   }
 
@@ -144,9 +168,11 @@ class _JournalPageState extends State<JournalPage> {
       logger.i('Added journal entry with ID: ${docRef.id}, mood: ${entry.mood}, tag: ${entry.tag}');
     } catch (e) {
       logger.e('Error adding entry: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error saving journal entry')),
-      );
+      if(mounted){
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error saving journal entry')),
+        );
+      }
     }
   }
 
@@ -185,9 +211,11 @@ class _JournalPageState extends State<JournalPage> {
       logger.i('Updated journal entry with ID: ${entry.id}');
     } catch (e) {
       logger.e('Error updating entry: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error updating journal entry')),
-      );
+      if(mounted){
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error updating journal entry')),
+        );
+      }
     }
   }
 
@@ -218,9 +246,11 @@ class _JournalPageState extends State<JournalPage> {
       logger.i('Deleted journal entry with ID: ${entry.id}');
     } catch (e) {
       logger.e('Error deleting entry: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error deleting journal entry')),
-      );
+      if(mounted){
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error deleting journal entry')),
+        );
+      }
     }
   }
 
@@ -251,98 +281,163 @@ class _JournalPageState extends State<JournalPage> {
         .catchError((e) => logger.e('Error updating favorite status: $e'));
   }
 
+  void _onItemTapped(int index) {
+    if (_selectedIndex == index) return;
+
+    final int oldNavIndex = _selectedIndex;
+    setState(() {
+      _selectedIndex = index;
+    });
+
+    Widget nextPage;
+    switch (index) {
+      case 0:
+        nextPage = const HomePage();
+        break;
+      case 1:
+        nextPage = const CoursesPage();
+        break;
+      case 2:
+        // Already on JournalPage
+        nextPage = const JournalPage(); // Should not happen
+        break;
+      case 3:
+        nextPage = const ProgressTrackerPage();
+        break;
+      case 4:
+        nextPage = const ProfilePage();
+        break;
+      default:
+        return;
+    }
+
+    Navigator.pushReplacement(
+      context,
+      _createSlidingPageRoute(
+        page: nextPage,
+        newIndex: index,
+        oldIndex: oldNavIndex,
+        duration: const Duration(milliseconds: 300), // This duration is now ignored
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-  return Scaffold(
-    body: Center(
-      child: CircularProgressIndicator(
-        color: Color(0xFF00568D),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Journal', style: TextStyle(color: Color(0xFF00568D))),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        automaticallyImplyLeading: false,
       ),
-    ),
-  );
-}
-    return Navigator(
-      initialRoute: '/mood-selection',
-      onGenerateRoute: (settings) {
-        switch (settings.name) {
-          case '/mood-selection':
-            return MaterialPageRoute(
-              builder: (context) => MoodSelectionPage(
-                onMoodSelected: (mood, tag) {
-                  logger.i('MoodSelectionPage callback - mood: $mood, tag: $tag');
-                  Navigator.pushNamed(
-                    context,
-                    '/journal-writing',
-                    arguments: {
-                      'mood': mood,
-                      'tag': tag,
-                      'entries': _entries,
-                      'addEntry': _addEntry,
-                      'updateEntry': _updateEntry,
-                      'deleteEntry': _deleteEntry,
-                      'toggleFavorite': _toggleFavorite,
-                    },
-                  );
-                },
+      body: _isLoading
+          ? const Center(
+              child: CircularProgressIndicator(
+                color: Color(0xFF00568D),
               ),
-            );
+            )
+          : Navigator(
+              initialRoute: '/mood-selection',
+              onGenerateRoute: (settings) {
+                switch (settings.name) {
+                  case '/mood-selection':
+                    return MaterialPageRoute(
+                      builder: (context) => MoodSelectionPage(
+                        onMoodSelected: (mood, tag) {
+                          logger.i('MoodSelectionPage callback - mood: $mood, tag: $tag');
+                          Navigator.of(context).pushNamed(
+                            '/journal-writing',
+                            arguments: {
+                              'mood': mood,
+                              'tag': tag,
+                              'entries': _entries,
+                              'addEntry': _addEntry,
+                              'updateEntry': _updateEntry,
+                              'deleteEntry': _deleteEntry,
+                              'toggleFavorite': _toggleFavorite,
+                            },
+                          );
+                        },
+                      ),
+                    );
 
-          case '/journal-writing':
-            final args = settings.arguments as Map<String, dynamic>?;
-            if (args == null ||
-                !args.containsKey('mood') ||
-                !args.containsKey('tag') ||
-                !args.containsKey('entries') ||
-                !args.containsKey('addEntry') ||
-                !args.containsKey('updateEntry') ||
-                !args.containsKey('deleteEntry') ||
-                !args.containsKey('toggleFavorite')) {
-              logger.e('Missing arguments for JournalWritingPage: $args');
-              return MaterialPageRoute(
-                builder: (context) => const Scaffold(
-                  body: Center(child: Text('Error: Missing arguments')),
-                ),
-              );
-            }
-            final mood = args['mood'] as String?;
-            final tag = args['tag'] as String?;
-            if (mood == null || tag == null) {
-              logger.w('Navigating to JournalWritingPage with null mood or tag: mood=$mood, tag=$tag');
-            } else {
-              logger.i('Navigating to JournalWritingPage with args: mood=$mood, tag=$tag');
-            }
-            return MaterialPageRoute(
-              builder: (context) => JournalWritingPage(
-                mood: mood,
-                tag: tag,
-                entries: args['entries'] as List<JournalEntry>,
-                addEntry: args['addEntry'] as Function(JournalEntry),
-                updateEntry: args['updateEntry'] as Function(int, JournalEntry),
-                deleteEntry: args['deleteEntry'] as Function(int),
-                toggleFavorite: args['toggleFavorite'] as Function(int),
-              ),
-            );
+                  case '/journal-writing':
+                    final args = settings.arguments as Map<String, dynamic>?;
+                    if (args == null ||
+                        !args.containsKey('mood') ||
+                        !args.containsKey('tag') ||
+                        !args.containsKey('entries') ||
+                        !args.containsKey('addEntry') ||
+                        !args.containsKey('updateEntry') ||
+                        !args.containsKey('deleteEntry') ||
+                        !args.containsKey('toggleFavorite')) {
+                      logger.e('Missing arguments for JournalWritingPage: $args');
+                      return MaterialPageRoute(
+                        builder: (context) => const Scaffold(
+                          body: Center(child: Text('Error: Missing arguments')),
+                        ),
+                      );
+                    }
+                    final mood = args['mood'] as String?;
+                    final tag = args['tag'] as String?;
+                    if (mood == null || tag == null) {
+                      logger.w('Navigating to JournalWritingPage with null mood or tag: mood=$mood, tag=$tag');
+                    } else {
+                      logger.i('Navigating to JournalWritingPage with args: mood=$mood, tag=$tag');
+                    }
+                    return MaterialPageRoute(
+                      builder: (context) => JournalWritingPage(
+                        mood: mood,
+                        tag: tag,
+                        entries: args['entries'] as List<JournalEntry>,
+                        addEntry: args['addEntry'] as Function(JournalEntry),
+                        updateEntry: args['updateEntry'] as Function(int, JournalEntry),
+                        deleteEntry: args['deleteEntry'] as Function(int),
+                        toggleFavorite: args['toggleFavorite'] as Function(int),
+                      ),
+                    );
 
-          case '/journal-entries':
-            return MaterialPageRoute(
-              builder: (context) => JournalEntriesPage(
-                entries: _entries,
-                addEntry: _addEntry,
-                updateEntry: _updateEntry,
-                deleteEntry: _deleteEntry,
-                toggleFavorite: _toggleFavorite,
-              ),
-            );
+                  case '/journal-entries':
+                    return MaterialPageRoute(
+                      builder: (context) => JournalEntriesPage(
+                        entries: _entries,
+                        addEntry: _addEntry,
+                        updateEntry: _updateEntry,
+                        deleteEntry: _deleteEntry,
+                        toggleFavorite: _toggleFavorite,
+                      ),
+                    );
 
-          default:
-            return MaterialPageRoute(
-              builder: (context) => const Scaffold(
-                body: Center(child: Text('Page not found')),
-              ),
-            );
-        }
-      },
+                  default:
+                    return MaterialPageRoute(
+                      builder: (context) => const Scaffold(
+                        body: Center(child: Text('Page not found within Journal')),
+                      ),
+                    );
+                }
+              },
+            ),
+      bottomNavigationBar: AnimatedBottomNavBar(
+        currentIndex: _selectedIndex,
+        onTap: _onItemTapped,
+        items: [
+          CustomBottomNavItem(icon: Icons.home, label: 'Home'),
+          CustomBottomNavItem(icon: Icons.book, label: 'Courses'),
+          CustomBottomNavItem(icon: Icons.library_books, label: 'Journal'),
+          CustomBottomNavItem(icon: Icons.trending_up, label: 'Progress'),
+          CustomBottomNavItem(icon: Icons.person, label: 'Profile'),
+        ],
+        activeColor: Colors.white,
+        inactiveColor: Colors.grey[600]!,
+        notchColor: Colors.blue,
+        backgroundColor: Colors.white,
+        selectedIconSize: 28.0,
+        iconSize: 25.0,
+        barHeight: 55,
+        selectedIconPadding: 10,
+        animationDuration: const Duration(milliseconds: 300),
+      ),
     );
   }
 }

@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:carousel_slider/carousel_slider.dart';
-import 'package:youtube_player_flutter/youtube_player_flutter.dart';
+import 'package:youtube_player_flutter/youtube_player_flutter.dart' show YoutubePlayer, YoutubePlayerController, PlayerState, ProgressBarColors;
 import 'package:logger/logger.dart';
 import '../lessons/common_widgets.dart';
+import 'dart:async'; // Import for Timer
 
 class buildLesson1_3 extends StatefulWidget {
   final BuildContext context;
@@ -11,12 +12,13 @@ class buildLesson1_3 extends StatefulWidget {
   final YoutubePlayerController youtubeController;
   final bool showActivity;
   final VoidCallback onShowActivity;
-  final List<List<String>> selectedAnswers;
+  final List<List<String>> selectedAnswers; 
   final List<bool?> isCorrectStates;
   final List<String?> errorMessages;
-  final Function(int, bool) onAnswerChanged;
+  final Function(int, bool) onAnswerChanged; 
   final Function(int) onSlideChanged;
-  final Function(List<Map<String, dynamic>>) onSubmitAnswers;
+  final Function(List<Map<String, dynamic>> questionsData, List<String> userAnswers, int timeSpent, int attemptNumber) onSubmitAnswers;
+  final int initialAttemptNumber;
 
   const buildLesson1_3({
     super.key,
@@ -32,6 +34,7 @@ class buildLesson1_3 extends StatefulWidget {
     required this.onAnswerChanged,
     required this.onSlideChanged,
     required this.onSubmitAnswers,
+    required this.initialAttemptNumber,
   });
 
   @override
@@ -40,8 +43,13 @@ class buildLesson1_3 extends StatefulWidget {
 
 class _Lesson1_3State extends State<buildLesson1_3> {
   final Logger _logger = Logger();
-  final List<TextEditingController> _controllers = List.generate(10, (_) => TextEditingController());
-  bool _isSubmitted = false;
+  late List<TextEditingController> _controllers;
+  bool _videoFinished = false;
+  bool _isSubmitting = false; // Added
+
+  Timer? _timer;
+  int _secondsElapsed = 0;
+  late int _currentAttempt;
 
   final List<Map<String, dynamic>> slides = [
     {
@@ -82,62 +90,72 @@ class _Lesson1_3State extends State<buildLesson1_3> {
     },
   ];
 
-  final List<Map<String, dynamic>> questions = [
+   final List<Map<String, dynamic>> questions = [
     {
+      'id': 1,
       'question': 'I ___ (help) the customer with their order.',
       'type': 'verb',
       'correctAnswer': 'help',
       'explanation': 'Base verb for plural subject (I) in affirmative sentence.',
     },
     {
+      'id': 2,
       'question': 'The agent ___ (answer) the phone calls promptly.',
       'type': 'verb',
       'correctAnswer': 'answers',
       'explanation': 'Base verb + -s for singular subject (The agent).',
     },
     {
+      'id': 3,
       'question': 'You ___ (resolve) customer issues efficiently.',
       'type': 'verb',
       'correctAnswer': 'resolve',
       'explanation': 'Base verb for plural subject (You) in affirmative sentence.',
     },
     {
+      'id': 4,
       'question': 'She ___ (assist) customers every day.',
       'type': 'verb',
       'correctAnswer': 'assists',
       'explanation': 'Base verb + -s for singular subject (She).',
     },
     {
+      'id': 5,
       'question': 'They ___ (provide) excellent customer service.',
       'type': 'verb',
       'correctAnswer': 'provide',
       'explanation': 'Base verb for plural subject (They) in affirmative sentence.',
     },
     {
+      'id': 6,
       'question': 'The customer ___ (explain) the issue.',
       'type': 'verb',
       'correctAnswer': 'explains',
       'explanation': 'Base verb + -s for singular subject (The customer).',
     },
     {
+      'id': 7,
       'question': 'We ___ (check) the details of the order.',
       'type': 'verb',
       'correctAnswer': 'check',
       'explanation': 'Base verb for plural subject (We) in affirmative sentence.',
     },
     {
+      'id': 8,
       'question': 'He ___ (not, answer) the customer’s question.',
       'type': 'verb',
       'correctAnswer': 'does not answer',
       'explanation': 'Negative form for singular subject (He).',
     },
     {
+      'id': 9,
       'question': 'I ___ (not, work) on weekends.',
       'type': 'verb',
       'correctAnswer': 'do not work',
       'explanation': 'Negative form for plural subject (I).',
     },
     {
+      'id': 10,
       'question': 'Does she ___ (assist) you with your problem?',
       'type': 'verb',
       'correctAnswer': 'assist',
@@ -145,93 +163,192 @@ class _Lesson1_3State extends State<buildLesson1_3> {
     },
   ];
 
-  @override
+
+ @override
   void initState() {
     super.initState();
-    for (int i = 0; i < _controllers.length; i++) {
+    _currentAttempt = widget.initialAttemptNumber;
+    _controllers = List.generate(questions.length, (_) => TextEditingController());
+    widget.youtubeController.addListener(_videoListener);
+
+    for (int i = 0; i < questions.length; i++) {
       if (i < widget.selectedAnswers.length && widget.selectedAnswers[i].isNotEmpty) {
         _controllers[i].text = widget.selectedAnswers[i].first;
       }
+    }
+    if (widget.showActivity) {
+      _startTimer();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant buildLesson1_3 oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.youtubeController != widget.youtubeController) {
+      oldWidget.youtubeController.removeListener(_videoListener);
+      widget.youtubeController.addListener(_videoListener);
+    }
+     if (widget.showActivity && !oldWidget.showActivity) {
+      _resetTimer();
+      _startTimer();
+      _currentAttempt = widget.initialAttemptNumber;
+    } else if (!widget.showActivity && oldWidget.showActivity) {
+      _stopTimer();
+    }
+     if (widget.initialAttemptNumber != oldWidget.initialAttemptNumber) {
+        _currentAttempt = widget.initialAttemptNumber;
+    }
+
+    if (widget.selectedAnswers != oldWidget.selectedAnswers) {
+        for (int i = 0; i < _controllers.length; i++) {
+            if (i < widget.selectedAnswers.length && widget.selectedAnswers[i].isNotEmpty) {
+                if (_controllers[i].text != widget.selectedAnswers[i].first) {
+                   _controllers[i].text = widget.selectedAnswers[i].first;
+                }
+            } else {
+                 _controllers[i].clear();
+            }
+        }
     }
   }
 
   @override
   void dispose() {
-    _logger.i('Disposing ${_controllers.length} TextEditingControllers');
+    widget.youtubeController.removeListener(_videoListener);
+    _logger.i('Disposing ${_controllers.length} TextEditingControllers for Lesson 1.3');
     for (var controller in _controllers) {
       controller.dispose();
     }
+    _stopTimer();
     super.dispose();
   }
 
+  void _videoListener() {
+    if (widget.youtubeController.value.playerState == PlayerState.ended && !_videoFinished) {
+      if (mounted) {
+        setState(() {
+          _videoFinished = true;
+        });
+      }
+      _logger.i('Video finished in Lesson 1.3');
+    }
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) {
+        setState(() {
+          _secondsElapsed++;
+        });
+      } else {
+        timer.cancel();
+      }
+    });
+    _logger.i('Stopwatch started for Lesson 1.3. Attempt: $_currentAttempt. Time: $_secondsElapsed');
+  }
+
+  void _stopTimer() {
+    _timer?.cancel();
+    _logger.i('Stopwatch stopped for Lesson 1.3. Attempt: $_currentAttempt. Time elapsed: $_secondsElapsed seconds.');
+  }
+
+  void _resetTimer() {
+    _stopTimer();
+     if (mounted) {
+      setState(() {
+        _secondsElapsed = 0;
+      });
+    }
+  }
+
+  String _formatDuration(int totalSeconds) {
+    final duration = Duration(seconds: totalSeconds);
+    final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
+
   Widget buildFillInTheBlankQuestion({
-    required String question,
-    required String correctAnswer,
-    required String explanation,
+    required String questionText, // This will now include the Qx: prefix
     required int questionIndex,
-    required List<String> selectedAnswers,
-    required bool? isCorrect,
-    required String? errorMessage,
     required TextEditingController controller,
-    required Function(List<String>) onSelectionChanged,
-    required Function(bool) onAnswerChanged,
+    bool? isCorrect, 
+    String? errorMessage, 
   }) {
+    final parts = questionText.split('___');
+    final String beforeText = parts.isNotEmpty ? parts[0] : '';
+    final String afterText = parts.length > 1 ? parts[1] : '';
+    
+    // Extract hint from the original question format if present, before Qx: prefix
+    String hintText = 'Type here';
+    final originalQuestionPart = questionText.substring(questionText.indexOf(':') + 1).trim(); // Get text after "Qx: "
+    if (originalQuestionPart.contains('(') && originalQuestionPart.contains(')')) {
+        hintText = originalQuestionPart.substring(originalQuestionPart.indexOf('(') + 1, originalQuestionPart.indexOf(')'));
+    }
+
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          RichText(
+            text: TextSpan(
+              style: const TextStyle(fontSize: 16, color: Colors.black87),
+              children: [
+                TextSpan(text: beforeText), // beforeText will contain the Qx: prefix and the part before ___
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
           Row(
             children: [
               Expanded(
-                child: Text(
-                  'Question ${questionIndex + 1}: $question',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                child: TextField(
+                  controller: controller,
+                  decoration: InputDecoration(
+                    hintText: hintText,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: isCorrect == null ? Colors.grey : (isCorrect == true ? Colors.green : Colors.red),
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: isCorrect == null ? Theme.of(context).primaryColor : (isCorrect == true ? Colors.green : Colors.red),
+                        width: 2,
+                      ),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(
+                        color: isCorrect == null ? Colors.grey : (isCorrect == true ? Colors.green : Colors.red),
+                      ),
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                  ),
+                  onChanged: (value) {
+                    // Parent will get the value upon submission
+                  },
                 ),
               ),
-              if (isCorrect != null)
-                Padding(
-                  padding: const EdgeInsets.only(left: 8.0),
-                  child: Icon(
-                    isCorrect ? Icons.check_circle : Icons.cancel,
-                    color: isCorrect ? Colors.green : Colors.red,
-                    size: 24,
-                  ),
-                ),
+              if (afterText.isNotEmpty) ...[
+                const SizedBox(width: 4),
+                Text(afterText, style: const TextStyle(fontSize: 16, color: Colors.black87)),
+              ]
             ],
           ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: controller,
-            decoration: InputDecoration(
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              hintText: 'Enter the correct verb',
-            ),
-            onChanged: (value) {
-              _logger.d('TextField input for question $questionIndex: $value');
-              final newSelections = [value.trim()];
-              setState(() {
-                widget.selectedAnswers[questionIndex] = List<String>.from(newSelections);
-                // Clear previous feedback when editing
-                widget.isCorrectStates[questionIndex] = null;
-                widget.errorMessages[questionIndex] = null;
-              });
-              onSelectionChanged(newSelections);
-              // Avoid immediate validation until resubmission
-              _logger.d('Answer updated for question $questionIndex in Lesson 1.3: $newSelections');
-            },
-          ),
-          if (_isSubmitted && isCorrect != null)
+          if (errorMessage != null && errorMessage.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 4.0),
               child: Text(
-                isCorrect ? 'Correct!' : 'Incorrect: $errorMessage',
-                style: TextStyle(
-                  color: isCorrect ? Colors.green : Colors.red,
-                  fontSize: 14,
-                ),
+                errorMessage,
+                style: TextStyle(color: isCorrect == false ? Colors.red : Colors.green, fontSize: 12),
               ),
             ),
         ],
@@ -279,14 +396,14 @@ class _Lesson1_3State extends State<buildLesson1_3> {
             return GestureDetector(
               onTap: () => widget.carouselController.jumpToPage(entry.key),
               child: Container(
-                width: 12.0,
-                height: 12.0,
-                margin: const EdgeInsets.symmetric(horizontal: 4.0),
+                width: 8.0,
+                height: 8.0,
+                margin: const EdgeInsets.symmetric(vertical: 10.0, horizontal: 2.0),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: widget.currentSlide == entry.key
                       ? const Color(0xFF00568D)
-                      : Colors.grey.withOpacity(0.5),
+                      : Colors.grey,
                 ),
               ),
             );
@@ -307,20 +424,24 @@ class _Lesson1_3State extends State<buildLesson1_3> {
             height: 200,
             child: Builder(
               builder: (context) {
-                try {
-                  _logger.i('Rendering YouTube player for Lesson 1.3, videoId=${widget.youtubeController.initialVideoId}');
-                  return YoutubePlayer(
-                    controller: widget.youtubeController,
-                    showVideoProgressIndicator: true,
-                    progressIndicatorColor: const Color(0xFF00568D),
-                    onReady: () {
-                      _logger.i('YouTube player is ready for Lesson 1.3');
-                    },
-                  );
-                } catch (e) {
-                  _logger.e('Error rendering YouTube player in Lesson 1.3: $e');
-                  return const Text('Error loading video');
-                }
+                return YoutubePlayer(
+                  controller: widget.youtubeController,
+                  showVideoProgressIndicator: true,
+                  progressIndicatorColor: Colors.amber,
+                  progressColors: const ProgressBarColors(
+                    playedColor: Colors.amber,
+                    handleColor: Colors.amberAccent,
+                  ),
+                  onReady: () => _logger.d('Player is ready in Lesson 1.3.'),
+                   onEnded: (_) {
+                    _logger.i('Video ended callback received in Lesson 1.3.');
+                    if (!_videoFinished && mounted) {
+                       setState(() {
+                        _videoFinished = true;
+                      });
+                    }
+                  },
+                );
               },
             ),
           ),
@@ -329,21 +450,41 @@ class _Lesson1_3State extends State<buildLesson1_3> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: widget.onShowActivity,
+                onPressed: _videoFinished ? widget.onShowActivity : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF00568D),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  textStyle: const TextStyle(fontSize: 16, color: Colors.white),
+                  disabledBackgroundColor: Colors.grey[400],
                 ),
-                child: const Text('Proceed to Activity'),
+                child: const Text('Proceed to Activity', style: TextStyle(color: Colors.white)),
               ),
             ),
+             if (!_videoFinished)
+              const Padding(
+                padding: EdgeInsets.only(top: 8.0),
+                child: Text(
+                  'Please watch the video to the end to proceed.',
+                  style: TextStyle(color: Colors.red, fontSize: 14),
+                  textAlign: TextAlign.center,
+                ),
+              ),
           ],
         ],
         if (widget.showActivity) ...[
           const SizedBox(height: 16),
+           Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Time: ${_formatDuration(_secondsElapsed)}',
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.black54),
+                ),
+              ],
+            ),
+          ),
           const Text(
             'Interactive Activity: Complete the Sentences',
             style: TextStyle(
@@ -354,90 +495,54 @@ class _Lesson1_3State extends State<buildLesson1_3> {
           ),
           const SizedBox(height: 8),
           const Text(
-            'Objective: Fill in the blanks with the correct form of the verb in the present simple tense.',
+            'Objective: Fill in the blanks with the correct form of the verb in present simple tense.',
             style: TextStyle(fontSize: 16, color: Colors.black87),
           ),
           const SizedBox(height: 16),
           ...questions.asMap().entries.map((entry) {
-            final index = entry.key;
-            if (index >= widget.selectedAnswers.length ||
-                index >= widget.isCorrectStates.length ||
-                index >= widget.errorMessages.length ||
-                index >= _controllers.length) {
-              _logger.e('Index $index out of bounds in Lesson 1.3. '
-                  'selectedAnswers=${widget.selectedAnswers.length}, '
-                  'isCorrectStates=${widget.isCorrectStates.length}, '
-                  'errorMessages=${widget.errorMessages.length}, '
-                  '_controllers=${_controllers.length}');
-              return const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8.0),
-                child: Text(
-                  'Error: Unable to load question due to data mismatch',
-                  style: TextStyle(color: Colors.red),
-                ),
-              );
-            }
+            int questionIndex = entry.key;
+            Map<String, dynamic> questionData = entry.value;
             return buildFillInTheBlankQuestion(
-              question: entry.value['question'],
-              correctAnswer: entry.value['correctAnswer'],
-              explanation: entry.value['explanation'],
-              questionIndex: index,
-              selectedAnswers: widget.selectedAnswers[index],
-              isCorrect: widget.isCorrectStates[index],
-              errorMessage: widget.errorMessages[index],
-              controller: _controllers[index],
-              onSelectionChanged: (List<String> newSelections) {
-                setState(() {
-                  _logger.d('Updating selectedAnswers[$index]: $newSelections');
-                  widget.selectedAnswers[index] = List<String>.from(newSelections);
-                });
-              },
-              onAnswerChanged: (isCorrect) {
-                widget.onAnswerChanged(index, isCorrect);
-                _logger.d('Answer changed for question $index in Lesson 1.3: isCorrect=$isCorrect');
-              },
+              questionText: 'Q${questionData['id']}: ${questionData['question']}',
+              questionIndex: questionIndex,
+              controller: _controllers[questionIndex],
+              isCorrect: widget.isCorrectStates[questionIndex],
+              errorMessage: widget.errorMessages[questionIndex],
             );
           }),
           const SizedBox(height: 16),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: () {
-                setState(() {
-                  _isSubmitted = true;
-                });
-                _logger.i('Submit Answers button pressed for Lesson 1.3');
-                widget.onSubmitAnswers(questions);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(_isSubmitted ? 'Answers submitted! Check your results.' : 'Please answer all questions.'),
-                    backgroundColor: _isSubmitted ? Colors.green : Colors.red,
-                    duration: const Duration(seconds: 3),
-                  ),
-                );
-              },
+              onPressed: !_isSubmitting ? () async {
+                setState(() { _isSubmitting = true; });
+                _stopTimer();
+                List<String> userAnswers = _controllers.map((controller) => controller.text.trim()).toList();
+                await widget.onSubmitAnswers(questions, userAnswers, _secondsElapsed, _currentAttempt);
+                if (mounted) {
+                  setState(() {
+                    _isSubmitting = false;
+                    _currentAttempt++; // <-- increment attempt after submit
+                  });
+                }
+              } : null, 
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orange,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+                backgroundColor: const Color(0xFF00568D),
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                textStyle: const TextStyle(fontSize: 16, color: Colors.white),
               ),
-              child: Text(_isSubmitted ? 'Resubmit Answers' : 'Submit Answers'),
+              child: _isSubmitting 
+                  ? const SizedBox( 
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 3,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : const Text('Submit Answers', style: TextStyle(color: Colors.white)), 
             ),
           ),
-          if (_isSubmitted)
-            Padding(
-              padding: const EdgeInsets.only(top: 16.0),
-              child: Text(
-                'Results: ${widget.isCorrectStates.where((state) => state == true).length}/${questions.length} correct',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
-              ),
-            ),
         ],
       ],
     );

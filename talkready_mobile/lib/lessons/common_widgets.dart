@@ -67,7 +67,8 @@ Widget buildSlide({
 Widget buildInteractiveQuestion({
   required String question,
   required String type,
-  required String correctAnswer,
+  required List<String> words,
+  required List<String> correctAnswer,
   required String explanation,
   required int questionIndex,
   required List<String> selectedAnswers,
@@ -79,6 +80,7 @@ Widget buildInteractiveQuestion({
   return _InteractiveQuestionWidget(
     question: question,
     type: type,
+    words: words,
     correctAnswer: correctAnswer,
     explanation: explanation,
     questionIndex: questionIndex,
@@ -93,7 +95,8 @@ Widget buildInteractiveQuestion({
 class _InteractiveQuestionWidget extends StatefulWidget {
   final String question;
   final String type;
-  final String correctAnswer;
+  final List<String> words;
+  final List<String> correctAnswer;
   final String explanation;
   final int questionIndex;
   final List<String> selectedAnswers;
@@ -105,6 +108,7 @@ class _InteractiveQuestionWidget extends StatefulWidget {
   const _InteractiveQuestionWidget({
     required this.question,
     required this.type,
+    required this.words,
     required this.correctAnswer,
     required this.explanation,
     required this.questionIndex,
@@ -119,153 +123,249 @@ class _InteractiveQuestionWidget extends StatefulWidget {
   _InteractiveQuestionWidgetState createState() => _InteractiveQuestionWidgetState();
 }
 
-class _InteractiveQuestionWidgetState extends State<_InteractiveQuestionWidget> {
+class _InteractiveQuestionWidgetState extends State<_InteractiveQuestionWidget> with SingleTickerProviderStateMixin {
+  late AnimationController _pulseController;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+      lowerBound: 0.97,
+      upperBound: 1.03,
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     List<String> options;
     bool isSingleSelection = widget.type == 'word_selection';
 
-    // Calculate the maximum number of selections allowed
     final int maxSelections = isSingleSelection
         ? 1
-        : widget.correctAnswer.split(', ').length;
-
-    // Split the question at the first period to separate the instruction from the sentence
-    final questionParts = widget.question.split('.');
-    String sentenceToAnalyze = widget.question; // Default to full question
-    if (questionParts.length > 1) {
-      sentenceToAnalyze = questionParts.sublist(1).join('.').trim();
-    }
+        : widget.correctAnswer.length;
 
     if (widget.type == 'sentence_type') {
       options = ['declarative', 'interrogative', 'imperative', 'exclamatory'];
     } else {
-      options = sentenceToAnalyze
-          .replaceAll(RegExp(r'[^\w\s]'), '')
-          .split(' ')
-          .where((word) => word.isNotEmpty)
-          .toList();
-
-      // Group multi-word answers (e.g., "Good morning")
-      final correctAnswerParts = widget.correctAnswer.split(', ').map((e) => e.toLowerCase()).toList();
-      final displayOptions = <String>[];
-      int i = 0;
-      while (i < options.length) {
-        String word = options[i];
-        bool foundMultiWord = false;
-        for (String correctPart in correctAnswerParts) {
-          if (correctPart.contains(' ')) {
-            final parts = correctPart.split(' ');
-            if (i + parts.length <= options.length) {
-              final potentialPhrase = options.sublist(i, i + parts.length).join(' ').toLowerCase();
-              if (potentialPhrase == correctPart) {
-                displayOptions.add(options.sublist(i, i + parts.length).join(' '));
-                i += parts.length;
-                foundMultiWord = true;
-                break;
-              }
-            }
-          }
-        }
-        if (!foundMultiWord) {
-          displayOptions.add(word);
-          i++;
-        }
-      }
-      options = displayOptions;
+      options = widget.words;
     }
+
+    final normalizedCorrectAnswers = widget.correctAnswer.map((ans) => ans.toLowerCase()).toList();
 
     return AnimatedOpacity(
       opacity: 1.0,
       duration: const Duration(milliseconds: 500),
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 16.0),
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 10),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          gradient: widget.isCorrect == true
+              ? LinearGradient(
+                  colors: [Colors.green[50]!, Colors.green[100]!],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                )
+              : widget.isCorrect == false
+                  ? LinearGradient(
+                      colors: [Colors.red[50]!, Colors.red[100]!],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    )
+                  : LinearGradient(
+                      colors: [Colors.blue[50]!, Colors.grey[50]!],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: widget.isCorrect == true
+                ? Colors.green.withOpacity(0.5)
+                : widget.isCorrect == false
+                    ? Colors.red.withOpacity(0.5)
+                    : Colors.grey.withOpacity(0.2),
+            width: 1.2,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black12.withOpacity(0.06),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               widget.question,
-              style: const TextStyle(fontSize: 14, color: Colors.black87),
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF00568D),
+              ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 14),
             Wrap(
-              spacing: 8.0,
-              runSpacing: 8.0,
+              spacing: 10.0,
+              runSpacing: 10.0,
               children: options.map((option) {
-                final isSelected = widget.selectedAnswers.contains(option.toLowerCase());
-                final isCorrectAnswer = widget.isCorrect == true &&
-                    widget.correctAnswer.toLowerCase().split(', ').contains(option.toLowerCase());
-                final isIncorrect = widget.isCorrect == false &&
-                    isSelected &&
-                    !widget.correctAnswer.toLowerCase().split(', ').contains(option.toLowerCase());
+                final normalizedOption = option.toLowerCase();
+                final isSelected = widget.selectedAnswers.contains(normalizedOption);
+                final isThisOptionCorrect = normalizedCorrectAnswers.contains(normalizedOption);
 
-                return TextButton(
-                  onPressed: () {
-                    setState(() {
-                      final newSelections = List<String>.from(widget.selectedAnswers);
-                      final normalizedOption = option.toLowerCase();
-                      if (isSingleSelection) {
-                        newSelections.clear();
-                        if (!isSelected) {
-                          newSelections.add(normalizedOption);
-                        }
-                      } else {
-                        if (newSelections.contains(normalizedOption)) {
-                          newSelections.remove(normalizedOption);
-                        } else if (newSelections.length < maxSelections) {
-                          newSelections.add(normalizedOption);
-                        } else {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('You can only select up to $maxSelections answers.'),
-                              duration: const Duration(seconds: 2),
-                            ),
-                          );
-                        }
-                      }
-                      _logger.d('Question ${widget.questionIndex}: newSelections=$newSelections');
-                      widget.onSelectionChanged(newSelections);
-                      bool isCorrect = newSelections.length == widget.correctAnswer.split(', ').length &&
-                          newSelections.every((selection) =>
-                              widget.correctAnswer.toLowerCase().split(', ').contains(selection));
-                      widget.onAnswerChanged(isCorrect);
-                    });
-                  },
-                  style: TextButton.styleFrom(
-                    backgroundColor: isCorrectAnswer
-                        ? Colors.green.withOpacity(0.3)
-                        : isIncorrect
-                            ? Colors.red.withOpacity(0.3)
-                            : isSelected
-                                ? Colors.blue.withOpacity(0.3)
-                                : Colors.grey.withOpacity(0.1),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: Text(
-                    option,
-                    style: TextStyle(
-                      color: isCorrectAnswer
-                          ? Colors.green[900]
-                          : isIncorrect
-                              ? Colors.red[900]
+                bool displayAsCorrect = widget.isCorrect == true && isSelected && isThisOptionCorrect;
+                bool displayAsIncorrect = widget.isCorrect == false && isSelected && !isThisOptionCorrect;
+
+                return ScaleTransition(
+                  scale: isSelected ? _pulseController : AlwaysStoppedAnimation(1.0),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 250),
+                    curve: Curves.easeInOut,
+                    decoration: BoxDecoration(
+                      gradient: displayAsCorrect
+                          ? LinearGradient(colors: [Colors.green[200]!, Colors.green[50]!])
+                          : displayAsIncorrect
+                              ? LinearGradient(colors: [Colors.red[200]!, Colors.red[50]!])
                               : isSelected
-                                  ? Colors.blue[900]
-                                  : Colors.black87,
-                      fontWeight: FontWeight.normal,
+                                  ? LinearGradient(colors: [Colors.blue[100]!, Colors.blue[50]!])
+                                  : null,
+                      color: displayAsCorrect
+                          ? Colors.green.withOpacity(0.18)
+                          : displayAsIncorrect
+                              ? Colors.red.withOpacity(0.18)
+                              : isSelected
+                                  ? Colors.blue.withOpacity(0.13)
+                                  : Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: displayAsCorrect
+                            ? Colors.green
+                            : displayAsIncorrect
+                                ? Colors.red
+                                : isSelected
+                                    ? Colors.blue
+                                    : Colors.grey[300]!,
+                        width: displayAsCorrect || displayAsIncorrect ? 2 : 1,
+                      ),
+                      boxShadow: [
+                        if (isSelected)
+                          BoxShadow(
+                            color: Colors.blue.withOpacity(0.10),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3),
+                          ),
+                      ],
+                    ),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(8),
+                        splashColor: Colors.blueAccent.withOpacity(0.18),
+                        onTap: () {
+                          setState(() {
+                            final newSelections = List<String>.from(widget.selectedAnswers);
+                            if (isSingleSelection) {
+                              newSelections.clear();
+                              if (!isSelected) {
+                                newSelections.add(normalizedOption);
+                              }
+                            } else {
+                              if (newSelections.contains(normalizedOption)) {
+                                newSelections.remove(normalizedOption);
+                              } else if (newSelections.length < maxSelections) {
+                                newSelections.add(normalizedOption);
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('You can only select up to $maxSelections answer(s).'),
+                                    duration: const Duration(seconds: 2),
+                                  ),
+                                );
+                              }
+                            }
+                            _logger.d('Question ${widget.questionIndex}: newSelections=$newSelections');
+                            widget.onSelectionChanged(newSelections);
+
+                            bool allSelectedAreCorrect = newSelections.every((sel) => normalizedCorrectAnswers.contains(sel));
+                            bool allCorrectAreSelected = normalizedCorrectAnswers.every((correct) => newSelections.contains(correct));
+                            bool currentOverallCorrectness = newSelections.isNotEmpty && allSelectedAreCorrect && allCorrectAreSelected && newSelections.length == normalizedCorrectAnswers.length;
+
+                            widget.onAnswerChanged(currentOverallCorrectness);
+                          });
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 250),
+                                child: isSelected
+                                    ? Icon(Icons.check_circle, color: Colors.blue[700], size: 20, key: ValueKey(true))
+                                    : Icon(Icons.circle_outlined, color: Colors.grey[400], size: 20, key: ValueKey(false)),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                option,
+                                style: TextStyle(
+                                  color: displayAsCorrect
+                                      ? Colors.green[900]
+                                      : displayAsIncorrect
+                                          ? Colors.red[900]
+                                          : isSelected
+                                              ? Colors.blue[900]
+                                              : Colors.black87,
+                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                  fontSize: 15,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 );
               }).toList(),
             ),
             if (widget.isCorrect != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                widget.isCorrect! ? widget.explanation : widget.errorMessage ?? '',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: widget.isCorrect! ? Colors.green : Colors.red,
+              const SizedBox(height: 12),
+              AnimatedOpacity(
+                opacity: 1.0,
+                duration: const Duration(milliseconds: 400),
+                child: Row(
+                  children: [
+                    Icon(
+                      widget.isCorrect! ? Icons.celebration : Icons.error_outline,
+                      color: widget.isCorrect! ? Colors.green : Colors.red,
+                      size: 24,
+                    ),
+                    if (widget.isCorrect!)
+                      const Padding(
+                        padding: EdgeInsets.only(left: 4.0),
+                        child: Text('🎉', style: TextStyle(fontSize: 22)),
+                      ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        widget.isCorrect! ? widget.explanation : (widget.errorMessage ?? 'Please try again.'),
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: widget.isCorrect! ? Colors.green[800] : Colors.red[800],
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],

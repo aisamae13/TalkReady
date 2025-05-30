@@ -7,7 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:logger/logger.dart';
-import 'settings/settings.dart';
+import '../settings/settings.dart';
 
 class TrainerProfile extends StatefulWidget {
   const TrainerProfile({super.key});

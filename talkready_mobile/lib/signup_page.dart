@@ -5,7 +5,7 @@ import 'package:talkready_mobile/welcome_page.dart';
 import 'dart:async';
 
 class SignUpPage extends StatefulWidget {
-  const SignUpPage({super.key});
+  const SignUpPage({super.key, String? userType});
 
   @override
   State<SignUpPage> createState() => _SignUpPageState();
@@ -28,8 +28,6 @@ class _SignUpPageState extends State<SignUpPage> {
   bool _isResendAvailable = false;
   int _resendCooldown = 30;
   Timer? _resendTimer;
-
-  String? _selectedUserType;
 
   final _inputDecorationTheme = InputDecorationTheme(
     border: const OutlineInputBorder(),
@@ -91,7 +89,7 @@ class _SignUpPageState extends State<SignUpPage> {
       }
 
       await _checkEmailVerification(_auth.currentUser);
-      // After email verification, move to user type selection
+      // After email verification, move to phone verification
       if (mounted) {
         _pageController.nextPage(
           duration: const Duration(milliseconds: 300),
@@ -187,10 +185,7 @@ class _SignUpPageState extends State<SignUpPage> {
           await _auth.currentUser?.linkWithCredential(credential);
           await _savePhoneToFirestore();
           if (mounted) {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (context) => const WelcomePage()),
-            );
+            Navigator.pushReplacementNamed(context, '/chooseUserType');
           }
         },
         verificationFailed: (FirebaseAuthException e) {
@@ -246,10 +241,7 @@ class _SignUpPageState extends State<SignUpPage> {
       await _auth.currentUser?.linkWithCredential(credential);
       await _savePhoneToFirestore();
       if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const WelcomePage()),
-        );
+        Navigator.pushReplacementNamed(context, '/chooseUserType');
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -264,7 +256,6 @@ class _SignUpPageState extends State<SignUpPage> {
       await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
         'onboarding': {
           'phone': _phoneNumber,
-          if (_selectedUserType != null) 'userType': _selectedUserType,
         },
       }, SetOptions(merge: true));
     }
@@ -389,7 +380,7 @@ class _SignUpPageState extends State<SignUpPage> {
                   ),
                 ),
               ),
-              // Slide 2: User Type Selection
+              // Slide 2: Phone Verification
               SingleChildScrollView(
                 child: Padding(
                   padding: const EdgeInsets.all(20.0),
@@ -397,60 +388,7 @@ class _SignUpPageState extends State<SignUpPage> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       const Text(
-                        'Step 2: Select User Type',
-                        style: TextStyle(fontSize: 24, color: Color(0xFF00568D)),
-                      ),
-                      const SizedBox(height: 20),
-                      RadioListTile<String>(
-                        title: const Text('Trainer'),
-                        value: 'Trainer',
-                        groupValue: _selectedUserType,
-                        onChanged: (value) {
-                          setState(() {
-                            _selectedUserType = value;
-                          });
-                        },
-                      ),
-                      RadioListTile<String>(
-                        title: const Text('Student'),
-                        value: 'Student',
-                        groupValue: _selectedUserType,
-                        onChanged: (value) {
-                          setState(() {
-                            _selectedUserType = value;
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 20),
-                      ElevatedButton(
-                        onPressed: _selectedUserType == null
-                            ? null
-                            : () {
-                                _pageController.nextPage(
-                                  duration: const Duration(milliseconds: 300),
-                                  curve: Curves.easeInOut,
-                                );
-                              },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _selectedUserType == null ? Colors.grey : const Color(0xFF00568D),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-                        ),
-                        child: const Text('Continue', style: TextStyle(fontSize: 16)),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              // Slide 3: Phone Verification
-              SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.all(20.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const Text(
-                        'Step 3: Verify Phone Number',
+                        'Step 2: Verify Phone Number',
                         style: TextStyle(fontSize: 24, color: Color(0xFF00568D)),
                       ),
                       const SizedBox(height: 20),

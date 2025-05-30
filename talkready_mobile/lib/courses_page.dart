@@ -3,21 +3,30 @@ import 'package:logger/logger.dart';
 import 'firebase_service.dart';
 import 'modules/module1.dart';
 import 'modules/module2.dart';
+import 'modules/module3.dart'; // Added import for Module3Page
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:talkready_mobile/custom_animated_bottom_bar.dart';
+import 'homepage.dart';
+import 'journal/journal_page.dart';
+import 'progress_page.dart';
+import 'profile.dart';
 
-void main() {
-  runApp(const MyApp());
-}
-
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: const CoursesPage(),
-    );
-  }
+// Helper function for creating a slide page route
+Route _createSlidingPageRoute({
+  required Widget page,
+  required int newIndex,
+  required int oldIndex,
+  required Duration duration, // duration will be ignored
+}) {
+  return PageRouteBuilder(
+    pageBuilder: (context, animation, secondaryAnimation) => page,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      return child; // Return child directly for no animation
+    },
+    transitionDuration: Duration.zero, // Instant transition
+    reverseTransitionDuration: Duration.zero, // Instant reverse transition
+  );
 }
 
 class CoursesPage extends StatefulWidget {
@@ -36,9 +45,9 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
       'color': Colors.red,
       'icon': Icons.book,
       'lessons': <Map<String, dynamic>>[
-        {'title': 'Lesson 1.1: Nouns and Pronouns', 'completed': false},
-        {'title': 'Lesson 1.2: Simple Sentences', 'completed': false},
-        {'title': 'Lesson 1.3: Verb and Tenses (Present Simple)', 'completed': false},
+        {'title': 'Lesson 1.1: Nouns and Pronouns', 'completed': false, 'firebaseKey': 'lesson1'},
+        {'title': 'Lesson 1.2: Simple Sentences', 'completed': false, 'firebaseKey': 'lesson2'},
+        {'title': 'Lesson 1.3: Verb and Tenses (Present Simple)', 'completed': false, 'firebaseKey': 'lesson3'},
       ],
       'isLocked': false,
       'isCompleted': false,
@@ -48,9 +57,9 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
       'color': Colors.orange,
       'icon': Icons.chat,
       'lessons': <Map<String, dynamic>>[
-        {'title': 'Lesson 2.1: Greetings and Introductions', 'completed': false},
-        {'title': 'Lesson 2.2: Asking for Information', 'completed': false},
-        {'title': 'Lesson 2.3: Numbers and Dates', 'completed': false},
+        {'title': 'Lesson 2.1: Greetings and Introductions', 'completed': false, 'firebaseKey': 'lesson1'},
+        {'title': 'Lesson 2.2: Asking for Information', 'completed': false, 'firebaseKey': 'lesson2'},
+        {'title': 'Lesson 2.3: Numbers and Dates', 'completed': false, 'firebaseKey': 'lesson3'},
       ],
       'isLocked': true,
       'isCompleted': false,
@@ -60,8 +69,8 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
       'color': Colors.green,
       'icon': Icons.mic,
       'lessons': <Map<String, dynamic>>[
-        {'title': 'Lesson 3.1: Listening Comprehension', 'completed': false},
-        {'title': 'Lesson 3.2: Speaking Practice', 'completed': false},
+        {'title': 'Lesson 3.1: Listening Comprehension', 'completed': false, 'firebaseKey': 'lesson1'},
+        {'title': 'Lesson 3.2: Speaking Practice', 'completed': false, 'firebaseKey': 'lesson2'},
       ],
       'isLocked': true,
       'isCompleted': false,
@@ -71,8 +80,8 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
       'color': Colors.purple,
       'icon': Icons.support_agent,
       'lessons': <Map<String, dynamic>>[
-        {'title': 'Lesson 4.1: Asking for Clarification', 'completed': false},
-        {'title': 'Lesson 4.2: Providing Solutions', 'completed': false},
+        {'title': 'Lesson 4.1: Asking for Clarification', 'completed': false, 'firebaseKey': 'lesson1'},
+        {'title': 'Lesson 4.2: Providing Solutions', 'completed': false, 'firebaseKey': 'lesson2'},
       ],
       'isLocked': true,
       'isCompleted': false,
@@ -82,8 +91,8 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
       'color': Colors.pink,
       'icon': Icons.edit,
       'lessons': <Map<String, dynamic>>[
-        {'title': 'Review: Go through key concepts', 'completed': false},
-        {'title': 'Final Test: A combination of grammar, vocabulary, and practical speaking exercises', 'completed': false},
+        {'title': 'Review: Go through key concepts', 'completed': false, 'firebaseKey': 'lesson1'},
+        {'title': 'Final Test: A combination of grammar, vocabulary, and practical speaking exercises', 'completed': false, 'firebaseKey': 'lesson2'},
       ],
       'isLocked': true,
       'isCompleted': false,
@@ -96,8 +105,8 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
       'color': Colors.teal,
       'icon': Icons.library_books,
       'lessons': <Map<String, dynamic>>[
-        {'title': 'Lesson 6.1: Complex Sentences', 'completed': false},
-        {'title': 'Lesson 6.2: Past and Future Tenses', 'completed': false},
+        {'title': 'Lesson 6.1: Complex Sentences', 'completed': false, 'firebaseKey': 'lesson1'},
+        {'title': 'Lesson 6.2: Past and Future Tenses', 'completed': false, 'firebaseKey': 'lesson2'},
       ],
       'isLocked': true,
       'isCompleted': false,
@@ -107,8 +116,8 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
       'color': Colors.indigo,
       'icon': Icons.business,
       'lessons': <Map<String, dynamic>>[
-        {'title': 'Lesson 7.1: Business Terms', 'completed': false},
-        {'title': 'Lesson 7.2: Email Writing', 'completed': false},
+        {'title': 'Lesson 7.1: Business Terms', 'completed': false, 'firebaseKey': 'lesson1'},
+        {'title': 'Lesson 7.2: Email Writing', 'completed': false, 'firebaseKey': 'lesson2'},
       ],
       'isLocked': true,
       'isCompleted': false,
@@ -118,8 +127,8 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
       'color': Colors.lime,
       'icon': Icons.headset,
       'lessons': <Map<String, dynamic>>[
-        {'title': 'Lesson 8.1: Accents & Dialects', 'completed': false},
-        {'title': 'Lesson 8.2: Note-taking', 'completed': false},
+        {'title': 'Lesson 8.1: Accents & Dialects', 'completed': false, 'firebaseKey': 'lesson1'},
+        {'title': 'Lesson 8.2: Note-taking', 'completed': false, 'firebaseKey': 'lesson2'},
       ],
       'isLocked': true,
       'isCompleted': false,
@@ -129,8 +138,8 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
       'color': Colors.amber,
       'icon': Icons.people,
       'lessons': <Map<String, dynamic>>[
-        {'title': 'Lesson 9.1: Handling Complaints', 'completed': false},
-        {'title': 'Lesson 9.2: Upselling', 'completed': false},
+        {'title': 'Lesson 9.1: Handling Complaints', 'completed': false, 'firebaseKey': 'lesson1'},
+        {'title': 'Lesson 9.2: Upselling', 'completed': false, 'firebaseKey': 'lesson2'},
       ],
       'isLocked': true,
       'isCompleted': false,
@@ -140,8 +149,8 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
       'color': Colors.cyan,
       'icon': Icons.check_circle,
       'lessons': <Map<String, dynamic>>[
-        {'title': 'Review: Intermediate Concepts', 'completed': false},
-        {'title': 'Test: Mixed Skills', 'completed': false},
+        {'title': 'Review: Intermediate Concepts', 'completed': false, 'firebaseKey': 'lesson1'},
+        {'title': 'Test: Mixed Skills', 'completed': false, 'firebaseKey': 'lesson2'},
       ],
       'isLocked': true,
       'isCompleted': false,
@@ -154,8 +163,8 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
       'color': Colors.deepPurple,
       'icon': Icons.bookmark,
       'lessons': <Map<String, dynamic>>[
-        {'title': 'Lesson 11.1: Subtle Grammar', 'completed': false},
-        {'title': 'Lesson 11.2: Idioms', 'completed': false},
+        {'title': 'Lesson 11.1: Subtle Grammar', 'completed': false, 'firebaseKey': 'lesson1'},
+        {'title': 'Lesson 11.2: Idioms', 'completed': false, 'firebaseKey': 'lesson2'},
       ],
       'isLocked': true,
       'isCompleted': false,
@@ -165,8 +174,8 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
       'color': Colors.blueGrey,
       'icon': Icons.microwave,
       'lessons': <Map<String, dynamic>>[
-        {'title': 'Lesson 12.1: Structuring Talks', 'completed': false},
-        {'title': 'Lesson 12.2: Delivery', 'completed': false},
+        {'title': 'Lesson 12.1: Structuring Talks', 'completed': false, 'firebaseKey': 'lesson1'},
+        {'title': 'Lesson 12.2: Delivery', 'completed': false, 'firebaseKey': 'lesson2'},
       ],
       'isLocked': true,
       'isCompleted': false,
@@ -176,8 +185,8 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
       'color': Colors.brown,
       'icon': Icons.handshake,
       'lessons': <Map<String, dynamic>>[
-        {'title': 'Lesson 13.1: Persuasion', 'completed': false},
-        {'title': 'Lesson 13.2: Closing Deals', 'completed': false},
+        {'title': 'Lesson 13.1: Persuasion', 'completed': false, 'firebaseKey': 'lesson1'},
+        {'title': 'Lesson 13.2: Closing Deals', 'completed': false, 'firebaseKey': 'lesson2'},
       ],
       'isLocked': true,
       'isCompleted': false,
@@ -187,8 +196,8 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
       'color': Colors.deepOrange,
       'icon': Icons.phone_callback,
       'lessons': <Map<String, dynamic>>[
-        {'title': 'Lesson 14.1: Escalation', 'completed': false},
-        {'title': 'Lesson 14.2: De-escalation', 'completed': false},
+        {'title': 'Lesson 14.1: Escalation', 'completed': false, 'firebaseKey': 'lesson1'},
+        {'title': 'Lesson 14.2: De-escalation', 'completed': false, 'firebaseKey': 'lesson2'},
       ],
       'isLocked': true,
       'isCompleted': false,
@@ -198,13 +207,37 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
       'color': Colors.purpleAccent,
       'icon': Icons.star,
       'lessons': <Map<String, dynamic>>[
-        {'title': 'Review: Advanced Concepts', 'completed': false},
-        {'title': 'Final Test: Mastery', 'completed': false},
+        {'title': 'Review: Advanced Concepts', 'completed': false, 'firebaseKey': 'lesson1'},
+        {'title': 'Final Test: Mastery', 'completed': false, 'firebaseKey': 'lesson2'},
       ],
       'isLocked': true,
       'isCompleted': false,
     },
   ];
+
+  int _selectedIndex = 1; // Courses is index 1
+
+  List<Map<String, dynamic>> _getAllModuleEntries() {
+    final List<Map<String, dynamic>> allEntries = [];
+    int globalModuleIndex = 1;
+
+    void addModulesToList(List<Map<String, dynamic>> moduleList) {
+      for (int i = 0; i < moduleList.length; i++) {
+        allEntries.add({
+          'config': moduleList[i],
+          'id': 'module$globalModuleIndex',
+          'listRef': moduleList,
+          'originalIndex': i,
+        });
+        globalModuleIndex++;
+      }
+    }
+
+    addModulesToList(beginnerModules);
+    addModulesToList(intermediateModules);
+    addModulesToList(advancedModules);
+    return allEntries;
+  }
 
   @override
   void initState() {
@@ -216,6 +249,7 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      logger.i("App resumed, re-checking module status.");
       _checkModuleStatus();
     }
   }
@@ -227,59 +261,79 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
   }
 
   Future<void> _checkModuleStatus() async {
-    if (firebaseService.userId == null) {
-      logger.w('No authenticated user, redirecting to LoginPage');
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          Navigator.pushReplacementNamed(context, '/login');
-        }
-      });
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      logger.w('No authenticated user, cannot check module status.');
       return;
     }
+    logger.i('Starting _checkModuleStatus for user ${user.uid}');
 
     try {
-      final allModules = [
-        ...beginnerModules.asMap().entries.map((e) => {'index': e.key, 'id': 'module${e.key + 1}', 'list': beginnerModules}),
-        ...intermediateModules.asMap().entries.map((e) => {'index': e.key, 'id': 'module${e.key + 6}', 'list': intermediateModules}),
-        ...advancedModules.asMap().entries.map((e) => {'index': e.key, 'id': 'module${e.key + 11}', 'list': advancedModules}),
-      ];
+      final List<Map<String, dynamic>> allModuleConfigurations = _getAllModuleEntries();
+      bool previousModuleWasCompletedAndUnlocked = true;
+      logger.d('Initial previousModuleWasCompletedAndUnlocked: $previousModuleWasCompletedAndUnlocked');
 
-      bool previousModuleCompleted = true;
-      for (var module in allModules) {
-        final progress = await firebaseService.getModuleProgress(module['id'] as String);
-        final lessons = (progress['lessons'] as Map<dynamic, dynamic>?)?.cast<String, dynamic>() ?? {};
-        final isCompleted = progress['isCompleted'] as bool? ?? false;
-        logger.i('Module ${module['id']}: isCompleted=$isCompleted, lessons=$lessons');
+      for (var moduleEntry in allModuleConfigurations) {
+        final moduleConfig = moduleEntry['config'] as Map<String, dynamic>;
+        final moduleId = moduleEntry['id'] as String;
+        final List<Map<String, dynamic>> moduleListRef = moduleEntry['listRef'] as List<Map<String, dynamic>>;
+        final int originalIndexInList = moduleEntry['originalIndex'] as int;
+
+        logger.i('Processing $moduleId...');
+        final progress = await firebaseService.getModuleProgress(moduleId);
+        final lessonsFromFirestore = (progress['lessons'] as Map<dynamic, dynamic>?)?.cast<String, bool>() ?? {};
+        final isCompletedFromFirestore = progress['isCompleted'] as bool? ?? false;
+        bool isUnlockedFromFirestore = progress['isUnlocked'] as bool? ?? (moduleId == 'module1');
+
+        logger.d('$moduleId - Firestore Data: isCompleted=$isCompletedFromFirestore, isUnlocked=$isUnlockedFromFirestore, lessons=${lessonsFromFirestore.entries.where((e)=> e.value == true).length}/${lessonsFromFirestore.length}');
+        logger.d('$moduleId - Before lock check: previousModuleWasCompletedAndUnlocked=$previousModuleWasCompletedAndUnlocked');
+
+        bool currentModuleShouldBeLocked;
+        if (moduleId == 'module1') {
+          currentModuleShouldBeLocked = !isUnlockedFromFirestore;
+          logger.d('$moduleId (module1) - currentModuleShouldBeLocked based on its own isUnlocked: $currentModuleShouldBeLocked');
+        } else {
+          currentModuleShouldBeLocked = !previousModuleWasCompletedAndUnlocked;
+          logger.d('$moduleId - currentModuleShouldBeLocked based on previous: $currentModuleShouldBeLocked');
+        }
+
+        if (!currentModuleShouldBeLocked && !isUnlockedFromFirestore) {
+          logger.i('Condition MET to unlock $moduleId: currentModuleShouldBeLocked=false, isUnlockedFromFirestore=false. Calling unlockModule...');
+          await firebaseService.unlockModule(moduleId);
+          isUnlockedFromFirestore = true;
+          logger.i('$moduleId has been unlocked. isUnlockedFromFirestore is now true for this iteration.');
+        } else {
+            if (currentModuleShouldBeLocked) {
+                 logger.d('Condition NOT MET to unlock $moduleId because currentModuleShouldBeLocked is true.');
+            } else if (isUnlockedFromFirestore) {
+                 logger.d('Condition NOT MET to unlock $moduleId because isUnlockedFromFirestore is already true.');
+            }
+        }
 
         if (mounted) {
           setState(() {
-            final moduleList = module['list'] as List<Map<String, dynamic>>?;
-            final moduleIndex = module['index'] as int?;
+            final moduleToUpdate = moduleListRef[originalIndexInList];
+            moduleToUpdate['isLocked'] = currentModuleShouldBeLocked;
+            moduleToUpdate['isCompleted'] = isCompletedFromFirestore;
+            logger.d('$moduleId - UI Update: isLocked=${moduleToUpdate['isLocked']}, isCompleted (Firestore)=${moduleToUpdate['isCompleted']}');
 
-            if (moduleList != null && moduleIndex != null) {
-              final moduleData = moduleList[moduleIndex];
-              moduleData['isLocked'] = !previousModuleCompleted;
-              moduleData['isCompleted'] = isCompleted;
-              for (int i = 0; i < moduleData['lessons'].length; i++) {
-                moduleData['lessons'][i]['completed'] = lessons['lesson${i + 1}'] as bool? ?? false;
-                logger.d('Lesson ${i + 1} completed: ${moduleData['lessons'][i]['completed']}');
-              }
-            } else {
-              logger.e('Module list or index is null for module ${module['id']}');
+            final uiLessons = moduleToUpdate['lessons'] as List<Map<String, dynamic>>;
+            for (int i = 0; i < uiLessons.length; i++) {
+              String firestoreLessonKey = uiLessons[i]['firebaseKey'] as String? ?? 'lesson${i + 1}';
+              uiLessons[i]['completed'] = lessonsFromFirestore[firestoreLessonKey] ?? false;
             }
           });
         }
-
-        previousModuleCompleted = isCompleted;
+        previousModuleWasCompletedAndUnlocked = isCompletedFromFirestore && isUnlockedFromFirestore;
+        logger.i('$moduleId - At end of its processing, setting previousModuleWasCompletedAndUnlocked for NEXT module to: $previousModuleWasCompletedAndUnlocked (isCompletedFromFirestore=$isCompletedFromFirestore && isUnlockedFromFirestore=$isUnlockedFromFirestore)');
       }
 
-      logger.i('Module status updated');
-      setState(() {});
-    } catch (e) {
-      logger.e('Error checking module status: $e');
+      logger.i('Module status and unlock check complete.');
       if (mounted) {
         setState(() {});
       }
+    } catch (e, stacktrace) {
+      logger.e('Error checking module status: $e', error: e, stackTrace: stacktrace);
     }
   }
 
@@ -287,25 +341,25 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
     int totalLessons = 0;
     int completedLessons = 0;
 
-    for (var module in [...beginnerModules, ...intermediateModules, ...advancedModules]) {
-      final lessons = module['lessons'] as List<Map<String, dynamic>>;
-      totalLessons += lessons.length;
-      completedLessons += lessons.where((lesson) => lesson['completed'] as bool).length;
+    for (var moduleList in [beginnerModules, intermediateModules, advancedModules]) {
+      for (var module in moduleList) {
+        final lessons = module['lessons'] as List<Map<String, dynamic>>;
+        totalLessons += lessons.length;
+        completedLessons += lessons.where((lesson) => lesson['completed'] as bool? ?? false).length;
+      }
     }
-
     return totalLessons > 0 ? completedLessons / totalLessons : 0.0;
   }
 
   String _formatLessonTitle(String lessonId) {
-    // Insert \n after colons or at logical breaks for wrapping
     return lessonId.replaceAll(': ', ':\n').replaceAll(' - ', '\n');
   }
 
-  Future<void> _showActivityLog(String moduleId, String lessonId, Color moduleColor) async {
+  Future<void> _showActivityLog(String moduleId, String lessonTitleForLog, Color moduleColor) async {
     try {
-      logger.i('Fetching activity logs for moduleId: $moduleId, lessonId: $lessonId');
-      final activitySnapshots = await firebaseService.getActivityLogs(moduleId, lessonId);
-      logger.i('Found ${activitySnapshots.docs.length} activity logs for $lessonId');
+      logger.i('Fetching activity logs for moduleId: $moduleId, lessonTitleForLog: $lessonTitleForLog');
+      final List<Map<String, dynamic>> activityLogs = await firebaseService.getActivityLogs(moduleId, lessonTitleForLog);
+      logger.i('Found ${activityLogs.length} activity logs for $lessonTitleForLog');
 
       showDialog(
         context: context,
@@ -358,7 +412,7 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'Activity Log for\n${_formatLessonTitle(lessonId)}',
+                          'Activity Log for\n${_formatLessonTitle(lessonTitleForLog)}',
                           style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -372,11 +426,12 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
                   ),
                 ),
                 Flexible(
-                  child: activitySnapshots.docs.isEmpty
+                  child: activityLogs.isEmpty
                       ? Container(
                           padding: const EdgeInsets.all(16),
+                           margin: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.5),
+                            color: Colors.black.withOpacity(0.05),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: const Center(
@@ -384,21 +439,31 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
                               'No activity logs found for this lesson.',
                               style: TextStyle(
                                 fontSize: 16,
-                                color: Colors.white,
+                                color: Colors.black54,
                                 fontStyle: FontStyle.italic,
                               ),
+                              textAlign: TextAlign.center,
                             ),
                           ),
                         )
                       : SingleChildScrollView(
                           child: Column(
-                            children: activitySnapshots.docs.map((doc) {
-                              final data = doc.data() as Map<String, dynamic>? ?? {};
+                            children: activityLogs.map((logData) {
+                              final data = logData;
                               final score = data['score'] as int? ?? 0;
                               final totalScore = data['totalScore'] as int? ?? 8;
                               final attemptNumber = data['attemptNumber'] as int? ?? 0;
                               final timeSpent = data['timeSpent'] as int? ?? 0;
-                              final timestamp = data['attemptTimestamp']?.toDate() ?? DateTime.now();
+                              final timestampValue = data['attemptTimestamp'];
+                              DateTime timestamp;
+                              if (timestampValue is Timestamp) {
+                                timestamp = timestampValue.toDate();
+                              } else if (timestampValue is String) {
+                                timestamp = DateTime.tryParse(timestampValue) ?? DateTime.now();
+                              } else {
+                                timestamp = DateTime.now();
+                              }
+
                               return Container(
                                 margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                 padding: const EdgeInsets.all(12),
@@ -419,10 +484,8 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
                                       radius: 20,
                                       backgroundColor: moduleColor.withOpacity(0.1),
                                       child: Text(
-                                        '#$attemptNumber',
+                                        '#$attemptNumber', // <-- This already shows the attempt number
                                         style: TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.bold,
                                           color: moduleColor,
                                         ),
                                       ),
@@ -432,22 +495,10 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
-                                          Text(
-                                            'Score: $score/$totalScore',
-                                            style: TextStyle(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.w600,
-                                              color: moduleColor,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            'Time: ${timeSpent}s | ${timestamp.day}/${timestamp.month}/${timestamp.year}',
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              color: Colors.grey[600],
-                                            ),
-                                          ),
+                                          Text('Attempt: $attemptNumber', style: const TextStyle(fontWeight: FontWeight.bold)), // <-- Add this line for clarity
+                                          Text('Score: $score / $totalScore', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                          Text('Time Spent: $timeSpent seconds'),
+                                          Text('Date: ${timestamp.toLocal().toString().substring(0, 16)}'),
                                         ],
                                       ),
                                     ),
@@ -490,82 +541,125 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
           ),
         ),
       );
-    } catch (e) {
-      logger.e('Error fetching activity logs for $moduleId/$lessonId: $e');
-      showDialog(
-        context: context,
-        builder: (context) => Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          elevation: 8,
-          backgroundColor: Colors.transparent,
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  Colors.white,
-                  moduleColor.withOpacity(0.1),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
+    } catch (e, stacktrace) {
+      logger.e('Error showing activity logs for $moduleId/$lessonTitleForLog: $e', error: e, stackTrace: stacktrace);
+      if(mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => Dialog(
+            shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.2),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ],
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Error',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: moduleColor,
-                  ),
+            elevation: 8,
+            backgroundColor: Colors.transparent,
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.white,
+                    moduleColor.withOpacity(0.1),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Failed to load activity logs. Please try again later.',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.black54,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.2),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
                   ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () => Navigator.pop(context),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: moduleColor,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Error',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: moduleColor,
                     ),
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                    elevation: 2,
                   ),
-                  child: const Text(
-                    'OK',
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Failed to load activity logs. Please try again later.',
                     style: TextStyle(
                       fontSize: 16,
-                      fontWeight: FontWeight.w600,
+                      color: Colors.black54,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: moduleColor,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      elevation: 2,
+                    ),
+                    child: const Text(
+                      'OK',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
-      );
+        );
+      }
     }
+  }
+
+  void _onItemTapped(int index) {
+    if (_selectedIndex == index) return;
+
+    final int oldNavIndex = _selectedIndex;
+    setState(() {
+      _selectedIndex = index;
+    });
+
+    Widget nextPage;
+    switch (index) {
+      case 0:
+        nextPage = const HomePage();
+        break;
+      case 1:
+        // Already on CoursesPage
+        nextPage = const CoursesPage(); // Should not happen if check above is active
+        break;
+      case 2:
+        nextPage = const JournalPage();
+        break;
+      case 3:
+        nextPage = const ProgressTrackerPage();
+        break;
+      case 4:
+        nextPage = const ProfilePage();
+        break;
+      default:
+        return;
+    }
+
+    Navigator.pushReplacement(
+      context,
+      _createSlidingPageRoute(
+        page: nextPage,
+        newIndex: index,
+        oldIndex: oldNavIndex,
+        duration: const Duration(milliseconds: 300), // This duration is now ignored
+      ),
+    );
   }
 
   @override
@@ -574,124 +668,143 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Courses'),
-        backgroundColor: Colors.transparent,
+        title: const Text('Courses', style: TextStyle(color: Color(0xFF00568D))),
+        backgroundColor: Colors.white,
         foregroundColor: const Color(0xFF00568D),
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            logger.i('Back button pressed on CoursesPage');
-            Navigator.pop(context);
-          },
-        ),
+        automaticallyImplyLeading: false,
       ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                LinearProgressIndicator(
-                  value: progress,
-                  backgroundColor: Colors.grey[300],
-                  color: const Color(0xFF00568D),
-                  minHeight: 8,
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Beginner',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.blue,
+          child: ScrollConfiguration(
+            behavior: const ScrollBehavior().copyWith(overscroll: false),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                   Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: LinearProgressIndicator(
+                        value: progress,
+                        backgroundColor: Colors.grey[300],
+                        color: const Color(0xFF2973B2),
+                        minHeight: 10,
+                      ),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Start your journey to master English communication skills step-by-step.',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.black54,
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Beginner',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF00568D),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                _buildModuleSection('Beginner', beginnerModules),
-                const SizedBox(height: 16),
-                const Text(
-                  'Intermediate',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.blue,
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Start your journey to master English communication skills step-by-step.',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.black54,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Next: Intermediate - ${beginnerModules.every((m) => m['isCompleted']) ? 'Unlocked' : 'Locked'}',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
+                  const SizedBox(height: 16),
+                  _buildModuleSection('Beginner', beginnerModules),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Intermediate',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF00568D),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                _buildModuleSection('Intermediate', intermediateModules),
-                const SizedBox(height: 16),
-                const Text(
-                  'Advanced',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.blue,
+                  const SizedBox(height: 8),
+                  const SizedBox(height: 16),
+                  _buildModuleSection('Intermediate', intermediateModules),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Advanced',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF00568D),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Next: Advanced - ${intermediateModules.every((m) => m['isCompleted']) ? 'Unlocked' : 'Locked'}',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                _buildModuleSection('Advanced', advancedModules),
-              ],
+                  const SizedBox(height: 8),
+                  const SizedBox(height: 16),
+                  _buildModuleSection('Advanced', advancedModules),
+                ],
+              ),
             ),
           ),
         ),
       ),
+      bottomNavigationBar: AnimatedBottomNavBar(
+        currentIndex: _selectedIndex,
+        onTap: _onItemTapped,
+        items: [
+          CustomBottomNavItem(icon: Icons.home, label: 'Home'),
+          CustomBottomNavItem(icon: Icons.book, label: 'Courses'),
+          CustomBottomNavItem(icon: Icons.library_books, label: 'Journal'),
+          CustomBottomNavItem(icon: Icons.trending_up, label: 'Progress'),
+          CustomBottomNavItem(icon: Icons.person, label: 'Profile'),
+        ],
+        activeColor: Colors.white,
+        inactiveColor: Colors.grey[600]!,
+        notchColor: Colors.blue,
+        backgroundColor: Colors.white,
+        selectedIconSize: 28.0,
+        iconSize: 25.0,
+        barHeight: 55,
+        selectedIconPadding: 10,
+        animationDuration: const Duration(milliseconds: 300),
+      ),
     );
   }
 
-  Widget _buildModuleSection(String level, List<Map<String, dynamic>> modules) {
+  Widget _buildModuleSection(String level, List<Map<String, dynamic>> modulesInLevel) {
+    int globalStartIndex = 0;
+    if (level == 'Beginner') {
+      globalStartIndex = 1;
+    } else if (level == 'Intermediate') {
+      globalStartIndex = beginnerModules.length + 1;
+    } else if (level == 'Advanced') {
+      globalStartIndex = beginnerModules.length + intermediateModules.length + 1;
+    }
+
     return Column(
-      children: modules.asMap().entries.map((entry) {
-        final module = entry.value;
-        final bool isCompleted = module['isCompleted'] as bool;
-        final bool isLocked = module['isLocked'] as bool;
-        final lessons = module['lessons'] as List<Map<String, dynamic>>;
-        final bool isInProgress = !isLocked && !isCompleted && lessons.any((lesson) => lesson['completed'] as bool);
-        final moduleId = 'module${entry.key + (level == 'Beginner' ? 1 : level == 'Intermediate' ? 6 : 11)}';
+      children: modulesInLevel.asMap().entries.map((entry) {
+        final localIndex = entry.key;
+        final moduleData = entry.value;
+        final bool isLocked = moduleData['isLocked'] as bool? ?? true;
+        final lessons = moduleData['lessons'] as List<Map<String, dynamic>>;
+        final bool allLessonsLocallyCompleted = lessons.every((lesson) => lesson['completed'] as bool? ?? false);
+        final bool isInProgress = !isLocked && !allLessonsLocallyCompleted && lessons.any((lesson) => lesson['completed'] as bool? ?? false);
+        final moduleId = 'module${globalStartIndex + localIndex}';
 
         return Padding(
           padding: const EdgeInsets.only(bottom: 16.0),
           child: Card(
-            elevation: 5,
+            elevation: 4,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(15),
               side: BorderSide(
-                color: (module['color'] as Color).withOpacity(0.3),
+                color: (moduleData['color'] as Color).withOpacity(0.5),
                 width: 1,
               ),
             ),
             child: Container(
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(15),
                 gradient: LinearGradient(
                   colors: [
                     Colors.white,
-                    (module['color'] as Color).withOpacity(0.1),
+                    (moduleData['color'] as Color).withOpacity(0.05),
                   ],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
@@ -705,71 +818,108 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
                     Row(
                       children: [
                         Icon(
-                          module['icon'] as IconData,
-                          color: module['color'] as Color,
-                          size: 24,
+                          moduleData['icon'] as IconData,
+                          color: moduleData['color'] as Color,
+                          size: 28,
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            module['module'] as String,
+                            moduleData['module'] as String,
                             style: TextStyle(
-                              fontSize: 16,
+                              fontSize: 18,
                               fontWeight: FontWeight.bold,
-                              color: module['color'] as Color,
+                              color: moduleData['color'] as Color,
                             ),
                           ),
                         ),
                         if (isLocked)
                           const Icon(
-                            Icons.lock,
+                            Icons.lock_outline,
                             color: Colors.grey,
-                            size: 20,
+                            size: 24,
                           ),
-                        if (isCompleted)
-                          const Icon(
-                            Icons.check_circle,
-                            color: Colors.green,
-                            size: 20,
+                        if (!isLocked && allLessonsLocallyCompleted)
+                          Icon(
+                            Icons.check_circle_outline,
+                            color: Colors.green[600],
+                            size: 24,
                           ),
                       ],
                     ),
                     const SizedBox(height: 12),
                     if (!isLocked) ...[
-                      ...lessons.asMap().entries.map<Widget>((entry) {
-                        final lesson = entry.value;
+                      ...lessons.asMap().entries.map<Widget>((lessonEntry) {
+                        final lesson = lessonEntry.value;
+                        final lessonTitle = lesson['title'] as String;
+                        final lessonFirebaseKey = lesson['firebaseKey'] as String? ?? 'lesson${lessonEntry.key + 1}';
+                        String lessonTitleForLog = lessonTitle;
+
                         return Padding(
-                          padding: const EdgeInsets.only(bottom: 8.0),
+                          padding: const EdgeInsets.only(bottom: 8.0, left: 8.0),
                           child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                            crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-                              const Text(
-                                '• ',
-                                style: TextStyle(fontSize: 16),
+                              Icon(
+                                (lesson['completed'] as bool? ?? false) ? Icons.check_box_outlined : Icons.check_box_outline_blank,
+                                color: (lesson['completed'] as bool? ?? false) ? Colors.green : Colors.grey,
+                                size: 20,
                               ),
+                              const SizedBox(width: 8),
                               Expanded(
-                                child: Text(
-                                  lesson['title'] as String,
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: (lesson['completed'] as bool) ? Colors.green : Colors.black,
+                                child: InkWell(
+                                  onTap: () async {
+                                    // Navigation logic for lesson revisit
+                                    if (level == 'Beginner') {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) {
+                                            if (moduleId == 'module1') {
+                                              return Module1Page(targetLessonKey: lessonFirebaseKey);
+                                            } else if (moduleId == 'module2') {
+                                              return Module2Page(targetLessonKey: lessonFirebaseKey);
+                                            } else if (moduleId == 'module3') { // Added condition for Module 3
+                                              return Module3Page(targetLessonKey: lessonFirebaseKey);
+                                            } else {
+                                              return Scaffold(body: Center(child: Text('Module $moduleId not implemented')));
+                                            }
+                                          },
+                                        ),
+                                      );
+                                    } else if (level == 'Intermediate') {
+                                      // Add navigation for intermediate modules if they exist
+                                      // Example:
+                                      // Navigator.push(
+                                      //   context,
+                                      //   MaterialPageRoute(
+                                      //     builder: (context) => ModuleXPage(targetLessonKey: lessonFirebaseKey),
+                                      //   ),
+                                      // );
+                                    }
+                                    // Add similar navigation for Advanced modules if implemented
+                                  },
+                                  child: Text(
+                                    lessonTitle,
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      color: Colors.black87,
+                                      decoration: (lesson['completed'] as bool? ?? false)
+                                          ? TextDecoration.lineThrough
+                                          : TextDecoration.none,
+                                    ),
                                   ),
                                 ),
                               ),
-                              if (lesson['completed'] as bool)
-                                const Icon(
-                                  Icons.check,
-                                  color: Colors.green,
-                                  size: 16,
-                                ),
-                              const SizedBox(width: 8),
                               IconButton(
-                                icon: const Icon(Icons.history, size: 16),
-                                color: const Color(0xFF00568D),
+                                icon: Icon(Icons.history_edu_outlined, size: 20),
+                                color: const Color(0xFF00568D).withOpacity(0.8),
                                 onPressed: () async {
-                                  await _showActivityLog(moduleId, lesson['title'], module['color'] as Color);
+                                  await _showActivityLog(moduleId, lessonTitleForLog, moduleData['color'] as Color);
                                 },
                                 tooltip: 'View Activity Log',
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
                               ),
                             ],
                           ),
@@ -777,76 +927,90 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
                       }),
                     ] else ...[
                       const Padding(
-                        padding: EdgeInsets.only(top: 8.0),
+                        padding: EdgeInsets.only(top: 8.0, left: 8.0),
                         child: Text(
-                          'Locked - Complete previous module to unlock',
+                          'Locked - Complete previous module to unlock.',
                           style: TextStyle(
                             fontSize: 14,
-                            color: Colors.grey,
+                            color: Colors.black54,
+                            fontStyle: FontStyle.italic,
                           ),
                         ),
                       ),
                     ],
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: isLocked
-                            ? null
-                            : () async {
-                                logger.i('Navigating to ${module['module']}');
-                                Widget destination;
-                                if (module['module'].contains('Module 1')) {
-                                  destination = const Module1Page();
-                                } else if (module['module'].contains('Module 2')) {
-                                  destination = const Module2Page();
-                                } else {
-                                  destination = Scaffold(
-                                    appBar: AppBar(
-                                      title: Text(module['module'] as String),
-                                    ),
-                                    body: Center(
-                                      child: Text('${module['module']} is unlocked but not implemented yet.'),
-                                    ),
-                                  );
-                                }
-                                await Navigator.push(
-                                  context,
-                                  MaterialPageRoute(builder: (context) => destination),
-                                );
-                                await _checkModuleStatus();
-                              },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: isLocked
-                              ? Colors.grey[400]
-                              : isCompleted
-                                  ? Colors.green
+                    const SizedBox(height: 16),
+                 
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          icon: Icon(isLocked
+                              ? Icons.lock_outline
+                              : allLessonsLocallyCompleted
+                                  ? Icons.check_circle_outline
                                   : isInProgress
-                                      ? Colors.orange
-                                      : const Color(0xFF00568D),
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          elevation: isLocked ? 0 : 5,
-                          shadowColor: Colors.black.withOpacity(0.3),
-                        ),
-                        child: Tooltip(
-                          message: isLocked ? 'Complete the previous module to unlock' : '',
-                          child: Text(
+                                      ? Icons.play_circle_outline
+                                      : Icons.play_arrow_outlined),
+                          label: Text(
                             isLocked
-                                ? 'Locked'
-                                : isCompleted
-                                    ? 'Completed ${module['module'].split(':')[0]}'
+                                ? 'Module Locked'
+                                : allLessonsLocallyCompleted
+                                    ? 'Module Completed'
                                     : isInProgress
-                                        ? 'In Progress'
-                                        : 'Go to ${module['module'].split(':')[0]}',
-                            style: const TextStyle(fontSize: 16),
+                                        ? 'Continue Module'
+                                        : 'Start Module',
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                          ),
+                          // Disable the button if the module is completed
+                          onPressed: isLocked || allLessonsLocallyCompleted
+                              ? null
+                              : () async {
+                                  logger.i('Navigating to ${moduleData['module']} (ID: $moduleId) - Go to Module button');
+                                  Widget destination;
+                                  switch (moduleId) {
+                                    case 'module1':
+                                      destination = const Module1Page();
+                                      break;
+                                    case 'module2':
+                                      destination = const Module2Page();
+                                      break;
+                                    case 'module3': // Added case for Module 3
+                                      destination = const Module3Page();
+                                      break;
+                                    default:
+                                      destination = Scaffold(
+                                        appBar: AppBar(
+                                          title: Text(moduleData['module'] as String),
+                                        ),
+                                        body: Center(
+                                          child: Text('$moduleId: ${moduleData['module']} is unlocked but the page is not implemented yet.'),
+                                        ),
+                                      );
+                                  }
+                                  await Navigator.push(
+                                    context,
+                                    MaterialPageRoute(builder: (context) => destination),
+                                  );
+                                  logger.i("Returned from $moduleId (Go to Module button), re-checking module status.");
+                                  await _checkModuleStatus();
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: isLocked
+                                ? Colors.grey[350]
+                                : allLessonsLocallyCompleted
+                                    ? Colors.green[600]
+                                    : isInProgress
+                                        ? Colors.orange[600]
+                                        : const Color(0xFF00568D),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            elevation: isLocked || allLessonsLocallyCompleted ? 1 : 3,
                           ),
                         ),
                       ),
-                    ),
+
                   ],
                 ),
               ),

@@ -3,6 +3,7 @@ import 'package:carousel_slider/carousel_slider.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:logger/logger.dart';
 import '../lessons/common_widgets.dart';
+import 'dart:async'; // Import for Timer
 
 class buildLesson1_1 extends StatefulWidget {
   final BuildContext context;
@@ -16,7 +17,9 @@ class buildLesson1_1 extends StatefulWidget {
   final List<String?> errorMessages;
   final Function(int, bool) onAnswerChanged;
   final Function(int) onSlideChanged;
-  final Function(List<Map<String, dynamic>>) onSubmitAnswers;
+  final Function(List<Map<String, dynamic>> questionsData, int timeSpent, int attemptNumber) onSubmitAnswers;
+  final Function(int questionIndex, List<String> selectedWords) onWordsSelected;
+  final int initialAttemptNumber;
 
   const buildLesson1_1({
     super.key,
@@ -32,6 +35,8 @@ class buildLesson1_1 extends StatefulWidget {
     required this.onAnswerChanged,
     required this.onSlideChanged,
     required this.onSubmitAnswers,
+    required this.onWordsSelected,
+    required this.initialAttemptNumber,
   });
 
   @override
@@ -40,6 +45,12 @@ class buildLesson1_1 extends StatefulWidget {
 
 class _Lesson1_1State extends State<buildLesson1_1> {
   final Logger _logger = Logger();
+  bool _videoFinished = false;
+  bool _isSubmitting = false; // Added
+
+  Timer? _timer;
+  int _secondsElapsed = 0;
+  late int _currentAttempt;
 
   final List<Map<String, dynamic>> slides = [
     {
@@ -71,56 +82,155 @@ class _Lesson1_1State extends State<buildLesson1_1> {
     },
   ];
 
-  final List<Map<String, dynamic>> questions = [
+    final List<Map<String, dynamic>> questions = [
     {
+      'id': 1,
       'question': 'Identify the pronouns. Thank you for calling XYZ Corp. How can I assist you today?',
       'type': 'pronoun',
+      'words': ['Thank', 'you', 'for', 'calling', 'XYZ', 'Corp.', 'How', 'can', 'I', 'assist', 'you', 'today?'],
       'correctAnswer': 'I, you',
       'explanation': 'I, you: Pronouns (I refers to the agent, you refers to the customer).',
     },
     {
+      'id': 2,
       'question': 'Identify the pronouns. We are processing your order now.',
       'type': 'pronoun',
+      'words': ['We', 'are', 'processing', 'your', 'order', 'now.'],
       'correctAnswer': 'we, your',
       'explanation': 'We: Pronoun (refers to the team), Your: Possessive pronoun (refers to the customer’s order).',
     },
     {
+      'id': 3,
       'question': 'Identify the pronouns. The system shows it is ready.',
       'type': 'pronoun',
+      'words': ['The', 'system', 'shows', 'it', 'is', 'ready.'],
       'correctAnswer': 'it',
       'explanation': 'It: Pronoun (refers to the system or order).',
     },
     {
+      'id': 4,
       'question': 'Identify the pronouns. Can I offer you any additional assistance?',
       'type': 'pronoun',
+      'words': ['Can', 'I', 'offer', 'you', 'any', 'additional', 'assistance?'],
       'correctAnswer': 'I, you',
       'explanation': 'I, you: Pronouns (I refers to the agent, you refers to the customer).',
     },
     {
+      'id': 5,
       'question': 'Identify the nouns. The agent will help the customer.',
       'type': 'noun',
+      'words': ['The', 'agent', 'will', 'help', 'the', 'customer.'],
       'correctAnswer': 'agent, customer',
       'explanation': 'Agent, customer: Nouns (agent is the person helping, customer is the person being helped).',
     },
     {
+      'id': 6,
       'question': 'Identify the nouns. Your order is ready for shipment.',
       'type': 'noun',
+      'words': ['Your', 'order', 'is', 'ready', 'for', 'shipment.'],
       'correctAnswer': 'order, shipment',
       'explanation': 'Order, shipment: Nouns (order is the thing being shipped, shipment is the process).',
     },
     {
+      'id': 7,
       'question': 'Identify the nouns. John called Amazon yesterday.',
       'type': 'noun',
+      'words': ['John', 'called', 'Amazon', 'yesterday.'],
       'correctAnswer': 'John, Amazon',
       'explanation': 'John, Amazon: Proper nouns (John is a person, Amazon is a company).',
     },
     {
+      'id': 8,
       'question': 'Identify the nouns. The refund was processed by the team.',
       'type': 'noun',
+      'words': ['The', 'refund', 'was', 'processed', 'by', 'the', 'team.'],
       'correctAnswer': 'refund, team',
       'explanation': 'Refund, team: Nouns (refund is the thing processed, team is the group processing it).',
     },
   ];
+  
+  @override
+  void initState() {
+    super.initState();
+    _currentAttempt = widget.initialAttemptNumber;
+    widget.youtubeController.addListener(_videoListener);
+    if (widget.showActivity) {
+      _startTimer();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant buildLesson1_1 oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.youtubeController != oldWidget.youtubeController) {
+      oldWidget.youtubeController.removeListener(_videoListener);
+      widget.youtubeController.addListener(_videoListener);
+    }
+    if (widget.showActivity && !oldWidget.showActivity) {
+      _resetTimer();
+      _startTimer();
+      // If activity is shown, ensure attempt number is current
+      _currentAttempt = widget.initialAttemptNumber;
+    } else if (!widget.showActivity && oldWidget.showActivity) {
+      _stopTimer();
+    }
+    if (widget.initialAttemptNumber != oldWidget.initialAttemptNumber) {
+        _currentAttempt = widget.initialAttemptNumber;
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.youtubeController.removeListener(_videoListener);
+    _stopTimer();
+    super.dispose();
+  }
+
+  void _videoListener() {
+    if (widget.youtubeController.value.playerState == PlayerState.ended && !_videoFinished) {
+      if (mounted) {
+        setState(() {
+          _videoFinished = true;
+        });
+      }
+      _logger.i('Video finished in Lesson 1.1');
+    }
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) {
+        setState(() {
+          _secondsElapsed++;
+        });
+      } else {
+        timer.cancel();
+      }
+    });
+    _logger.i('Stopwatch started for Lesson 1.1. Attempt: $_currentAttempt. Time: $_secondsElapsed');
+  }
+
+  void _stopTimer() {
+    _timer?.cancel();
+    _logger.i('Stopwatch stopped for Lesson 1.1. Attempt: $_currentAttempt. Time elapsed: $_secondsElapsed seconds.');
+  }
+
+  void _resetTimer() {
+    _stopTimer();
+    if (mounted) {
+      setState(() {
+        _secondsElapsed = 0;
+      });
+    }
+  }
+
+  String _formatDuration(int totalSeconds) {
+    final duration = Duration(seconds: totalSeconds);
+    final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -162,14 +272,14 @@ class _Lesson1_1State extends State<buildLesson1_1> {
             return GestureDetector(
               onTap: () => widget.carouselController.jumpToPage(entry.key),
               child: Container(
-                width: 12.0,
-                height: 12.0,
-                margin: const EdgeInsets.symmetric(horizontal: 4.0),
+                width: 8.0,
+                height: 8.0,
+                margin: const EdgeInsets.symmetric(vertical: 10.0, horizontal: 2.0),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: widget.currentSlide == entry.key
                       ? const Color(0xFF00568D)
-                      : Colors.grey.withOpacity(0.5),
+                      : Colors.grey,
                 ),
               ),
             );
@@ -190,20 +300,26 @@ class _Lesson1_1State extends State<buildLesson1_1> {
             height: 200,
             child: Builder(
               builder: (context) {
-                try {
-                  _logger.i('Rendering YouTube player for Lesson 1.1, videoId=${widget.youtubeController.initialVideoId}');
-                  return YoutubePlayer(
-                    controller: widget.youtubeController,
-                    showVideoProgressIndicator: true,
-                    progressIndicatorColor: const Color(0xFF00568D),
-                    onReady: () {
-                      _logger.i('YouTube player is ready for Lesson 1.1');
-                    },
-                  );
-                } catch (e) {
-                  _logger.e('Error rendering YouTube player in Lesson 1.1: $e');
-                  return const Text('Error loading video');
-                }
+                return YoutubePlayer(
+                  controller: widget.youtubeController,
+                  showVideoProgressIndicator: true,
+                  progressIndicatorColor: Colors.amber,
+                  progressColors: const ProgressBarColors(
+                    playedColor: Colors.amber,
+                    handleColor: Colors.amberAccent,
+                  ),
+                  onReady: () {
+                    _logger.d('Player is ready for videoId: ${widget.youtubeController.initialVideoId} in Lesson 1.1.');
+                  },
+                  onEnded: (_) {
+                     _logger.i('Video ended callback received in Lesson 1.1.');
+                    if (!_videoFinished && mounted) {
+                       setState(() {
+                        _videoFinished = true;
+                      });
+                    }
+                  },
+                );
               },
             ),
           ),
@@ -212,21 +328,41 @@ class _Lesson1_1State extends State<buildLesson1_1> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: widget.onShowActivity,
+                onPressed: _videoFinished ? widget.onShowActivity : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF00568D),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  textStyle: const TextStyle(fontSize: 16, color: Colors.white),
+                  disabledBackgroundColor: Colors.grey[400],
                 ),
-                child: const Text('Proceed to Activity'),
+                child: const Text('Proceed to Activity', style: TextStyle(color: Colors.white)),
               ),
             ),
+            if (!_videoFinished)
+              const Padding(
+                padding: EdgeInsets.only(top: 8.0),
+                child: Text(
+                  'Please watch the video to the end to proceed.',
+                  style: TextStyle(color: Colors.red, fontSize: 14),
+                  textAlign: TextAlign.center,
+                ),
+              ),
           ],
         ],
         if (widget.showActivity) ...[
           const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween, 
+              children: [
+                Text(
+                  'Time: ${_formatDuration(_secondsElapsed)}',
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.black54),
+                ),
+              ],
+            ),
+          ),
           const Text(
             'Interactive Activity: Pronoun and Noun Identification',
             style: TextStyle(
@@ -242,24 +378,37 @@ class _Lesson1_1State extends State<buildLesson1_1> {
           ),
           const SizedBox(height: 16),
           ...questions.asMap().entries.map((entry) {
+            int questionIndex = entry.key;
+            Map<String, dynamic> questionData = entry.value;
+            
+            List<String> wordsList = (questionData['words'] as List<dynamic>?)?.cast<String>() ?? 
+                                     (questionData['question'] as String?)?.split(' ') ?? [];
+            
+            List<String> correctAnswerList;
+            final correctAnswerValue = questionData['correctAnswer'];
+            if (correctAnswerValue is String) {
+              correctAnswerList = correctAnswerValue.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+            } else if (correctAnswerValue is List) {
+              correctAnswerList = correctAnswerValue.cast<String>();
+            } else {
+              correctAnswerList = [];
+            }
+
             return buildInteractiveQuestion(
-              question: entry.value['question'],
-              type: entry.value['type'],
-              correctAnswer: entry.value['correctAnswer'],
-              explanation: entry.value['explanation'],
-              questionIndex: entry.key,
-              selectedAnswers: widget.selectedAnswers[entry.key],
-              isCorrect: widget.isCorrectStates[entry.key],
-              errorMessage: widget.errorMessages[entry.key],
-              onSelectionChanged: (List<String> newSelections) {
-                setState(() {
-                  _logger.d('Updating selectedAnswers[${entry.key}]: $newSelections');
-                  widget.selectedAnswers[entry.key] = List<String>.from(newSelections);
-                });
+              question: 'Q${questionData['id']}: ${questionData['question'] as String? ?? ''}',
+              type: questionData['type'] as String? ?? '',
+              words: wordsList, 
+              correctAnswer: correctAnswerList, 
+              explanation: questionData['explanation'] as String? ?? '',
+              questionIndex: questionIndex,
+              selectedAnswers: widget.selectedAnswers[questionIndex],
+              isCorrect: widget.isCorrectStates[questionIndex],
+              errorMessage: widget.errorMessages[questionIndex],
+              onSelectionChanged: (List<String> newSelectedWords) {
+                widget.onWordsSelected(questionIndex, newSelectedWords);
               },
-              onAnswerChanged: (isCorrect) {
-                widget.onAnswerChanged(entry.key, isCorrect);
-                _logger.d('Answer changed for question ${entry.key} in Lesson 1.1: isCorrect=$isCorrect');
+              onAnswerChanged: (bool isCorrect) {
+                widget.onAnswerChanged(questionIndex, isCorrect);
               },
             );
           }),
@@ -267,18 +416,32 @@ class _Lesson1_1State extends State<buildLesson1_1> {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: () {
-                _logger.i('Submit Answers button pressed for Lesson 1.1');
-                widget.onSubmitAnswers(questions);
-              },
+              onPressed: !_isSubmitting ? () async {
+  setState(() { _isSubmitting = true; });
+  _stopTimer();
+  await widget.onSubmitAnswers(questions, _secondsElapsed, _currentAttempt);
+  if (mounted) {
+    setState(() {
+      _isSubmitting = false;
+      _currentAttempt++; // <-- increment attempt after submit
+    });
+  }
+} : null,
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orange,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+                backgroundColor: const Color(0xFF00568D),
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                textStyle: const TextStyle(fontSize: 16, color: Colors.white),
               ),
-              child: const Text('Submit Answers'),
+              child: _isSubmitting 
+                  ? const SizedBox( 
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 3,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : const Text('Submit Answers', style: TextStyle(color: Colors.white)), 
             ),
           ),
         ],

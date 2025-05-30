@@ -7,7 +7,8 @@ import 'forgotpass.dart';
 import 'loading_screen.dart';
 import 'homepage.dart';
 import 'welcome_page.dart';
-import 'TrainerDashboard.dart'; // <-- Add this import
+import 'package:talkready_mobile/Teachers/TrainerDashboard.dart'; // <-- Add this import
+
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});

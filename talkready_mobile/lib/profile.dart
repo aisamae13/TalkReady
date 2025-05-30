@@ -7,11 +7,32 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:logger/logger.dart';
+import 'package:talkready_mobile/custom_animated_bottom_bar.dart';
+import 'homepage.dart';
 import 'courses_page.dart';
 import 'journal/journal_page.dart';
-import 'homepage.dart';
 import 'progress_page.dart';
-import 'settings/settings.dart';
+import 'package:talkready_mobile/settings/about_us.dart';
+import 'package:talkready_mobile/settings/comm_guide.dart';
+import 'package:talkready_mobile/settings/faq_support.dart';
+import 'package:talkready_mobile/settings/terms_of_service.dart';
+
+// Helper function for creating a slide page route
+Route _createSlidingPageRoute({
+  required Widget page,
+  required int newIndex,
+  required int oldIndex,
+  required Duration duration, // duration will be ignored
+}) {
+  return PageRouteBuilder(
+    pageBuilder: (context, animation, secondaryAnimation) => page,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      return child; // Return child directly for no animation
+    },
+    transitionDuration: Duration.zero, // Instant transition
+    reverseTransitionDuration: Duration.zero, // Instant reverse transition
+  );
+}
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -35,7 +56,6 @@ class _ProfilePageState extends State<ProfilePage> {
   String? _profilePicBase64;
   bool? _profilePicSkipped;
 
-  // Onboarding info fields
   String? _age;
   String? _gender;
   String? _birthdate;
@@ -43,7 +63,7 @@ class _ProfilePageState extends State<ProfilePage> {
   String? _municipality;
   String? _barangay;
 
-  int _selectedIndex = 4;
+  int _selectedIndex = 4; // Profile is index 4
 
   @override
   void initState() {
@@ -99,9 +119,11 @@ class _ProfilePageState extends State<ProfilePage> {
           setState(() {
             _isLoading = false;
           });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error listening to user data: $error')),
-          );
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Error listening to user data: $error')),
+            );
+          }
         },
       );
     } else {
@@ -109,9 +131,11 @@ class _ProfilePageState extends State<ProfilePage> {
       setState(() {
         _isLoading = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No user logged in')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No user logged in')),
+        );
+      }
     }
   }
 
@@ -210,7 +234,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       height: 40,
                       width: 100,
                       decoration: BoxDecoration(
-                        border: Border.all(color: Color(0xFF00568D), width: 1),
+                        border: Border.all(color: const Color(0xFF00568D), width: 1),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: TextButton(
@@ -233,7 +257,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       height: 40,
                       width: 100,
                       decoration: BoxDecoration(
-                        border: Border.all(color: Color(0xFF00568D), width: 1),
+                        border: Border.all(color: const Color(0xFF00568D), width: 1),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: TextButton(
@@ -316,9 +340,16 @@ class _ProfilePageState extends State<ProfilePage> {
           final image = img.decodeImage(imageBytes)!;
           final resizedImage = img.copyResize(image, width: 200);
           final base64Image = img.encodePng(resizedImage);
+
           if (base64Image.length > 1000000) {
-            _logger.e('Profile picture too large for Firestore (exceeds 1 MB)');
-            throw Exception('Profile picture is too large to store in Firestore');
+            _logger.e('Profile picture too large for Firestore (exceeds 1 MB after encoding)');
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Image is too large. Please choose a smaller one.')),
+              );
+            }
+            setState(() => _isLoading = false);
+            return;
           }
           final profilePicBase64 = base64Encode(base64Image);
 
@@ -334,6 +365,8 @@ class _ProfilePageState extends State<ProfilePage> {
           });
 
           _logger.i('Profile picture saved as base64 for UID: ${user.uid}');
+        } else {
+           setState(() => _isLoading = false);
         }
       }
     } catch (e) {
@@ -341,10 +374,272 @@ class _ProfilePageState extends State<ProfilePage> {
       setState(() {
         _isLoading = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error uploading profile picture: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error uploading profile picture: $e')),
+        );
+      }
     }
+  }
+
+  Future<void> _signOut(BuildContext context) async {
+    try {
+      _logger.i('Attempting to sign out user');
+      await FirebaseAuth.instance.signOut();
+      _logger.i('User signed out successfully');
+      if (mounted) {
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '/',
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      _logger.e('Error signing out: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error signing out: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteAccount(BuildContext context) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        final initialConfirmation = await showDialog<bool>(
+          context: context,
+          builder: (context) => _buildCustomDialog(
+            context: context,
+            title: 'Delete Account',
+            content:
+                'Are you sure you want to permanently delete your account? This action cannot be undone.',
+            cancelText: 'Cancel',
+            confirmText: 'Continue',
+            onConfirm: () => Navigator.pop(context, true),
+          ),
+        );
+
+        if (initialConfirmation == true) {
+          final finalConfirmation = await showDialog<bool>(
+            context: context,
+            builder: (context) {
+              String inputText = '';
+              return StatefulBuilder(
+                builder: (context, setStateDialog) {
+                  return Dialog(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    elevation: 5,
+                    backgroundColor: Colors.white,
+                    child: Padding(
+                      padding: const EdgeInsets.all(20.0),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Final Confirmation',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF00568D),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          const Text(
+                            'To confirm account deletion, please type "confirm" below. This action cannot be undone.',
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: Colors.grey
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          TextField(
+                            onChanged: (value) {
+                              setStateDialog(() {
+                                inputText = value;
+                              });
+                            },
+                            decoration: const InputDecoration(
+                              border: OutlineInputBorder(),
+                              labelText: 'Type "confirm"',
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              ElevatedButton(
+                                onPressed: () => Navigator.pop(context, false),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.grey[300],
+                                  foregroundColor: Colors.grey[800],
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 20, vertical: 10),
+                                ),
+                                child: const Text(
+                                  'Cancel',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              ElevatedButton(
+                                onPressed: inputText.toLowerCase() == 'confirm'
+                                    ? () => Navigator.pop(context, true)
+                                    : null,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: inputText.toLowerCase() == 'confirm'
+                                      ? const Color(0xFFD32F2F)
+                                      : Colors.grey,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 20, vertical: 10),
+                                ),
+                                child: const Text(
+                                  'Delete',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+          );
+
+          if (finalConfirmation == true) {
+            _logger.i('Attempting to delete account for UID: ${user.uid}');
+            await FirebaseFirestore.instance
+                .collection('users')
+                .doc(user.uid)
+                .delete();
+            _logger.i('Firestore data deleted for UID: ${user.uid}');
+            await user.delete();
+            _logger.i('User account deleted successfully');
+            if (mounted) {
+              Navigator.pushNamedAndRemoveUntil(
+                context,
+                '/',
+                (route) => false,
+              );
+            }
+          }
+        }
+      }
+    } catch (e) {
+      _logger.e('Error deleting account: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error deleting account: $e')),
+        );
+      }
+    }
+  }
+
+  Widget _buildCustomDialog({
+    required BuildContext context,
+    required String title,
+    required String content,
+    required String cancelText,
+    required String confirmText,
+    required VoidCallback onConfirm,
+  }) {
+    return Dialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(15),
+      ),
+      elevation: 5,
+      backgroundColor: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF00568D),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              content,
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey[800],
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.grey[300],
+                    foregroundColor: Colors.grey[800],
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 10),
+                  ),
+                  child: Text(
+                    cancelText,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                ElevatedButton(
+                  onPressed: onConfirm,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: title == 'Sign Out' ? const Color(0xFF00568D) : Colors.red.shade700,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 10),
+                  ),
+                  child: Text(
+                    confirmText,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -356,6 +651,7 @@ class _ProfilePageState extends State<ProfilePage> {
   void _onItemTapped(int index) {
     if (_selectedIndex == index) return;
 
+    final int oldNavIndex = _selectedIndex;
     setState(() {
       _selectedIndex = index;
     });
@@ -369,12 +665,13 @@ class _ProfilePageState extends State<ProfilePage> {
         nextPage = const CoursesPage();
         break;
       case 2:
-        nextPage = JournalPage();
+        nextPage = const JournalPage();
         break;
       case 3:
-        nextPage = ProgressTrackerPage();
+        nextPage = const ProgressTrackerPage();
         break;
       case 4:
+        // Already on ProfilePage
         return;
       default:
         return;
@@ -382,7 +679,12 @@ class _ProfilePageState extends State<ProfilePage> {
 
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(builder: (context) => nextPage),
+      _createSlidingPageRoute(
+        page: nextPage,
+        newIndex: index,
+        oldIndex: oldNavIndex,
+        duration: const Duration(milliseconds: 300), // This duration is now ignored
+      ),
     );
   }
 
@@ -415,191 +717,292 @@ class _ProfilePageState extends State<ProfilePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
+      appBar: AppBar(
+        title: const Text('Profile', style: TextStyle(color: Colors.white)),
+        backgroundColor: const Color(0xFF2973B2),
+        iconTheme: const IconThemeData(color: Colors.white),
+        elevation: 0,
+        automaticallyImplyLeading: false,
+      ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: Color(0xFF00568D)))
-          : Column(
-              children: [
-                // Profile header
-                Container(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Color(0xFF2973B2), Color(0xFF618DB2)],
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                    ),
-                    borderRadius: BorderRadius.only(
-                      bottomLeft: Radius.circular(30),
-                      bottomRight: Radius.circular(30),
-                    ),
-                  ),
-                  child: SafeArea(
-                    child: Column(
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: IconButton(
-                                icon: const Icon(Icons.settings, color: Colors.white, size: 35),
-                                onPressed: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(builder: (context) => SettingsPage()),
-                                  );
-                                },
-                              ),
-                            ),
-                          ],
+          : ScrollConfiguration(
+              behavior: const ScrollBehavior().copyWith(overscroll: false),
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    Container(
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Color(0xFF2973B2), Color(0xFF618DB2)],
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
                         ),
-                        Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 10.0),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  border: Border.all(color: Color(0xFF9CA8C7), width: 4.0),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.3),
-                                      spreadRadius: 2,
-                                      blurRadius: 5,
-                                      offset: const Offset(0, 3),
-                                    ),
-                                  ],
-                                ),
-                                child: CircleAvatar(
-                                  radius: 70,
-                                  backgroundImage: _profilePicBase64 != null
-                                      ? MemoryImage(base64Decode(_profilePicBase64!)) as ImageProvider
-                                      : null,
-                                  backgroundColor: _profilePicBase64 == null && _profilePicSkipped == true
-                                      ? null
-                                      : Colors.grey[300],
-                                  child: _profilePicBase64 == null && _profilePicSkipped == true
-                                      ? Icon(Icons.person, size: 70, color: Colors.grey[600])
-                                      : null,
-                                ),
-                              ),
-                            ),
-                            Positioned(
-                              bottom: 12,
-                              right: 10,
-                              child: CircleAvatar(
-                                radius: 18,
-                                backgroundColor: Colors.blue.shade100,
-                                child: IconButton(
-                                  icon: Icon(Icons.add, color: Colors.blue),
-                                  onPressed: _pickAndUploadProfilePic,
-                                  padding: EdgeInsets.zero,
-                                  iconSize: 24,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              _firstName != null && _lastName != null
-                                  ? '$_firstName $_lastName'
-                                  : 'User',
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.edit, color: Colors.white, size: 20),
-                              onPressed: _showEditNameDialog,
-                            ),
-                          ],
-                        ),
-                        if (_email != null)
-                          Text(
-                            _email!,
-                            style: const TextStyle(fontSize: 14, color: Colors.white70),
-                          ),
-                        const SizedBox(height: 20),
-                      ],
-                    ),
-                  ),
-                ),
-                // My Information button separated below the header
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF4F8FE),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: ListTile(
-                      leading: const Icon(Icons.info, color: Color(0xFF00568D)),
-                      title: const Text(
-                        'My Information',
-                        style: TextStyle(
-                          color: Color(0xFF00568D),
-                          fontWeight: FontWeight.w500,
-                          fontSize: 16,
+                        borderRadius: BorderRadius.only(
+                          bottomLeft: Radius.circular(30),
+                          bottomRight: Radius.circular(30),
                         ),
                       ),
-                      trailing: const Icon(Icons.arrow_forward_ios, color: Color(0xFF00568D), size: 18),
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => Scaffold(
-                              appBar: AppBar(
-                                backgroundColor: const Color(0xFF2973B2),
-                                title: const Text(
-                                  'My Information',
-                                  style: TextStyle(color: Colors.white),
+                      child: SafeArea(
+                        top: false,
+                        child: Column(
+                          children: [
+                            const SizedBox(height: 16),
+                            Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                Container(
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: const Color(0xFF9CA8C7), width: 4.0),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.3),
+                                        spreadRadius: 2,
+                                        blurRadius: 5,
+                                        offset: const Offset(0, 3),
+                                      ),
+                                    ],
+                                  ),
+                                  child: CircleAvatar(
+                                    radius: 70,
+                                    backgroundImage: _profilePicBase64 != null
+                                        ? MemoryImage(base64Decode(_profilePicBase64!)) as ImageProvider
+                                        : null,
+                                    backgroundColor: _profilePicBase64 == null && _profilePicSkipped == true
+                                        ? null
+                                        : Colors.grey[300],
+                                    child: _profilePicBase64 == null && _profilePicSkipped == true
+                                        ? Icon(Icons.person, size: 70, color: Colors.grey[600])
+                                        : null,
+                                  ),
                                 ),
-                                leading: IconButton(
-                                  icon: const Icon(Icons.arrow_back, color: Colors.white),
-                                  onPressed: () => Navigator.pop(context),
+                                Positioned(
+                                  bottom: 12,
+                                  right: 10,
+                                  child: CircleAvatar(
+                                    radius: 18,
+                                    backgroundColor: Colors.blue.shade100,
+                                    child: IconButton(
+                                      icon: const Icon(Icons.add, color: Colors.blue),
+                                      onPressed: _pickAndUploadProfilePic,
+                                      padding: EdgeInsets.zero,
+                                      iconSize: 24,
+                                    ),
+                                  ),
                                 ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  _firstName != null && _lastName != null
+                                      ? '$_firstName $_lastName'
+                                      : 'User',
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.edit, color: Colors.white, size: 20),
+                                  onPressed: _showEditNameDialog,
+                                ),
+                              ],
+                            ),
+                            if (_email != null)
+                              Text(
+                                _email!,
+                                style: const TextStyle(fontSize: 14, color: Colors.white70),
                               ),
-                              body: ListView(
-                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-                                children: [
-                                  _buildInfoTile('First Name', _firstName),
-                                  _buildInfoTile('Last Name', _lastName),
-                                  _buildInfoTile('Age', _age),
-                                  _buildInfoTile('Gender', _gender),
-                                  _buildInfoTile('Birthdate', _birthdate),
-                                  _buildInfoTile('Province', _province),
-                                  _buildInfoTile('Municipality', _municipality),
-                                  _buildInfoTile('Barangay', _barangay),
-                                ],
+                            const SizedBox(height: 20),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
+                      child: _buildSettingsTile(
+                        title: 'My Information',
+                        icon: Icons.info_outline,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => Scaffold(
+                                appBar: AppBar(
+                                  backgroundColor: const Color(0xFF2973B2),
+                                  title: const Text(
+                                    'My Information',
+                                    style: TextStyle(color: Colors.white),
+                                  ),
+                                  leading: IconButton(
+                                    icon: const Icon(Icons.arrow_back, color: Colors.white),
+                                    onPressed: () => Navigator.pop(context),
+                                  ),
+                                ),
+                                body: ScrollConfiguration(
+                                  behavior: const ScrollBehavior().copyWith(overscroll: false),
+                                  child: ListView(
+                                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+                                    children: [
+                                      _buildInfoTile('First Name', _firstName),
+                                      _buildInfoTile('Last Name', _lastName),
+                                      _buildInfoTile('Age', _age),
+                                      _buildInfoTile('Gender', _gender),
+                                      _buildInfoTile('Birthdate', _birthdate),
+                                      _buildInfoTile('Province', _province),
+                                      _buildInfoTile('Municipality', _municipality),
+                                      _buildInfoTile('Barangay', _barangay),
+                                    ],
+                                  ),
+                                ),
                               ),
                             ),
+                          );
+                        },
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Column(
+                        children: [
+                          _buildSettingsTile(
+                            title: 'FAQ & Support',
+                            icon: Icons.quiz_outlined,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => const FaqAndSupport()),
+                              );
+                            },
                           ),
-                        );
-                      },
+                          _buildSettingsTile(
+                            title: 'Community Guidelines',
+                            icon: Icons.group_outlined,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => const CommunityGuidelines()),
+                              );
+                            },
+                          ),
+                          _buildSettingsTile(
+                            title: 'About Us',
+                            icon: Icons.info_outline,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => const AboutUs()),
+                              );
+                            },
+                          ),
+                          _buildSettingsTile(
+                            title: 'Terms of Service',
+                            icon: Icons.description_outlined,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => const TermsOfService()),
+                              );
+                            },
+                          ),
+                          _buildSettingsTile(
+                            title: 'Sign Out',
+                            icon: Icons.logout,
+                            onTap: () async {
+                              final shouldSignOut = await showDialog<bool>(
+                                context: context,
+                                builder: (context) => _buildCustomDialog(
+                                  context: context,
+                                  title: 'Sign Out',
+                                  content: 'Are you sure you want to sign out?',
+                                  cancelText: 'Cancel',
+                                  confirmText: 'Sign Out',
+                                  onConfirm: () => Navigator.pop(context, true),
+                                ),
+                              );
+
+                              if (shouldSignOut == true && mounted) {
+                                await _signOut(context);
+                              }
+                            },
+                          ),
+                          _buildSettingsTile(
+                            title: 'Delete Account',
+                            icon: Icons.delete_forever_outlined,
+                            onTap: () async {
+                              await _deleteAccount(context);
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                  ],
+                ),
+              ),
+            ),
+      bottomNavigationBar: AnimatedBottomNavBar(
+        currentIndex: _selectedIndex,
+        onTap: _onItemTapped,
+        items: [
+          CustomBottomNavItem(icon: Icons.home, label: 'Home'),
+          CustomBottomNavItem(icon: Icons.book, label: 'Courses'),
+          CustomBottomNavItem(icon: Icons.library_books, label: 'Journal'),
+          CustomBottomNavItem(icon: Icons.trending_up, label: 'Progress'),
+          CustomBottomNavItem(icon: Icons.person, label: 'Profile'),
+        ],
+        activeColor: Colors.white,
+        inactiveColor: Colors.grey[600]!,
+        notchColor: Colors.blue,
+        backgroundColor: Colors.white,
+        selectedIconSize: 28.0,
+        iconSize: 25.0,
+        barHeight: 55,
+        selectedIconPadding: 10,
+        animationDuration: const Duration(milliseconds: 300),
+      ),
+    );
+  }
+
+  Widget _buildSettingsTile({
+    required String title,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: const Color(0xFFF4F8FE),
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+            child: Row(
+              children: [
+                Icon(icon, color: const Color(0xFF00568D), size: 24),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      color: Color(0xFF00568D),
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ),
-                Expanded(child: Container()),
+                const Icon(Icons.arrow_forward_ios, color: const Color(0xFF00568D), size: 18),
               ],
             ),
-      bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: const Color(0xFF00568D),
-        unselectedItemColor: Colors.grey,
-        currentIndex: _selectedIndex,
-        onTap: _onItemTapped,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-          BottomNavigationBarItem(icon: Icon(Icons.book), label: 'Courses'),
-          BottomNavigationBarItem(icon: Icon(Icons.library_books), label: 'Journal'),
-          BottomNavigationBarItem(icon: Icon(Icons.trending_up), label: 'Progress'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
-        ],
+          ),
+        ),
       ),
     );
   }

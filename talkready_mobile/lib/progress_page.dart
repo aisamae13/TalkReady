@@ -2,6 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:logger/logger.dart';
+import 'package:talkready_mobile/custom_animated_bottom_bar.dart';
+import 'homepage.dart';
+import 'courses_page.dart';
+import 'journal/journal_page.dart';
+import 'profile.dart';
 
 class ProgressTrackerPage extends StatefulWidget {
   const ProgressTrackerPage({super.key});
@@ -19,6 +24,50 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage> {
     'Vocabulary': 0.0,
     'Interaction': 0.0,
   };
+
+  int _selectedIndex = 3; // Progress is index 3
+
+  void _onItemTapped(int index) {
+    if (_selectedIndex == index) return;
+
+    final int oldNavIndex = _selectedIndex;
+    setState(() {
+      _selectedIndex = index;
+    });
+
+    Widget nextPage;
+    switch (index) {
+      case 0:
+        nextPage = const HomePage();
+        break;
+      case 1:
+        nextPage = const CoursesPage();
+        break;
+      case 2:
+        nextPage = const JournalPage();
+        break;
+      case 3:
+        // Already on ProgressTrackerPage
+        return;
+      case 4:
+        nextPage = const ProfilePage();
+        break;
+      default:
+        return;
+    }
+
+    Navigator.pushReplacement(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) => nextPage,
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return child; // No animation for instant transition
+        },
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -75,6 +124,7 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage> {
         backgroundColor: Colors.white,
         elevation: 0,
         foregroundColor: const Color(0xFF00568D),
+        automaticallyImplyLeading: false,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
@@ -96,7 +146,6 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage> {
               style: TextStyle(fontSize: 16, color: Colors.grey),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 20),
 
             // Skill Progress Bars
             ...skillProgress.keys
@@ -128,6 +177,26 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage> {
             ),
           ],
         ),
+      ),
+      bottomNavigationBar: AnimatedBottomNavBar(
+        currentIndex: _selectedIndex,
+        onTap: _onItemTapped,
+        items: [
+          CustomBottomNavItem(icon: Icons.home, label: 'Home'),
+          CustomBottomNavItem(icon: Icons.book, label: 'Courses'),
+          CustomBottomNavItem(icon: Icons.library_books, label: 'Journal'),
+          CustomBottomNavItem(icon: Icons.trending_up, label: 'Progress'),
+          CustomBottomNavItem(icon: Icons.person, label: 'Profile'),
+        ],
+        activeColor: Colors.white,
+        inactiveColor: Colors.grey[600]!,
+        notchColor: Colors.blue,
+        backgroundColor: Colors.white,
+        selectedIconSize: 28.0,
+        iconSize: 25.0,
+        barHeight: 55,
+        selectedIconPadding: 10,
+        animationDuration: const Duration(milliseconds: 300),
       ),
     );
   }

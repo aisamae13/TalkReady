@@ -13,11 +13,23 @@ import 'signup_page.dart';
 import 'splash_screen.dart';
 import 'forgotpass.dart';
 import 'package:logger/logger.dart';
-import 'package:talkready_mobile/TrainerDashboard.dart'; // <-- Add this import
-import 'package:talkready_mobile/chooseUserType.dart'; 
+import 'package:talkready_mobile/Teachers/TrainerDashboard.dart';
+import 'package:talkready_mobile/chooseUserType.dart';
 import 'onboarding_screen.dart';
+import 'package:talkready_mobile/all_notifications_page.dart';
 
+// Assessment Page Imports
+import 'package:talkready_mobile/Teachers/Assessment/ClassAssessmentsListPage.dart';
+import 'package:talkready_mobile/Teachers/Assessment/CreateAssessmentPage.dart';
+import 'package:talkready_mobile/Teachers/Assessment/ViewAssessmentResultsPage.dart';
 
+// ClassManager Page Imports
+import 'package:talkready_mobile/Teachers/ClassManager/CreateClassForm.dart';
+import 'package:talkready_mobile/Teachers/ClassManager/MyClassesPage.dart';
+import 'package:talkready_mobile/Teachers/ClassManager/EditClassPage.dart';
+import 'package:talkready_mobile/Teachers/ClassManager/ManageClassStudents.dart';
+import 'package:talkready_mobile/Teachers/ClassManager/ManageClassContent.dart';
+import 'package:talkready_mobile/Teachers/ClassManager/EditAssessmentPage.dart'; // Assuming this is the correct location
 
 final logger = Logger(
   printer: PrettyPrinter(
@@ -36,12 +48,11 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // Initialize Firebase App Check with the debug provider
   await FirebaseAppCheck.instance.activate(
     androidProvider: AndroidProvider.debug,
+    appleProvider: AppleProvider.debug, // Add this for iOS debug
   );
 
-  // Load the .env file
   try {
     await dotenv.load(fileName: ".env");
     logger.i('Successfully loaded .env file');
@@ -54,7 +65,6 @@ void main() async {
     logger.e('Failed to load .env file: $e');
   }
 
-  // Run the app
   runApp(const MyApp());
 }
 
@@ -63,29 +73,128 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final Map<String, WidgetBuilder> staticRoutes = {
+      '/splash': (context) => const SplashScreen(),
+      '/': (context) => const LandingPage(),
+      '/login': (context) => LoginPage(),
+      '/welcome': (context) => const WelcomePage(),
+      '/homepage': (context) => const HomePage(),
+      '/forgot-password': (context) => const ForgotPasswordPage(),
+      '/courses': (context) => CoursesPage(),
+      '/journal': (context) => JournalPage(),
+      '/trainer-dashboard': (context) => const TrainerDashboard(),
+      '/chooseUserType': (context) => const ChooseUserTypePage(),
+      '/notifications': (context) => const AllNotificationsPage(),
+      // ClassManager static routes
+      '/trainer/classes': (context) => const MyClassesPage(),
+      '/trainer/classes/create': (context) => const CreateClassForm(),
+    };
+
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'TalkReady',
       theme: ThemeData(
         primarySwatch: Colors.blue,
+        visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
-      initialRoute: '/',
-      routes: {
-        '/splash': (context) => const SplashScreen(),
-        '/': (context) => const LandingPage(),
-        '/login': (context) => LoginPage(),
-        '/welcome': (context) => const WelcomePage(),
-        '/homepage': (context) => const HomePage(),
-        '/signup': (context) => const SignUpPage(),
-        '/forgot-password': (context) => const ForgotPasswordPage(),
-        '/courses': (context) => CoursesPage(),
-        '/journal': (context) => JournalPage(),
-        '/trainer-dashboard': (context) => const TrainerDashboard(), // <-- Add this route
-        '/chooseUserType': (context) => const ChooseUserTypePage(),
-            '/onboarding': (context) {
-          final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>?;
-          return OnboardingScreen(userType: args?['userType']);
-        },
+      initialRoute: '/splash',
+      routes: staticRoutes,
+      onGenerateRoute: (settings) {
+        final args = settings.arguments;
+        final String? routeName = settings.name;
+
+        if (routeName != null) {
+          final uri = Uri.parse(routeName);
+          final segments = uri.pathSegments;
+
+          // Class Assessments List: /class/<classId>/assessments
+          if (segments.length == 3 && segments[0] == 'class' && segments[2] == 'assessments') {
+            final classId = segments[1];
+            return MaterialPageRoute(
+              builder: (_) => ClassAssessmentsListPage(classId: classId),
+              settings: settings,
+            );
+          }
+
+          // View Assessment Results: /assessment/<assessmentId>/results
+          if (segments.length == 3 && segments[0] == 'assessment' && segments[2] == 'results') {
+            final assessmentId = segments[1];
+            return MaterialPageRoute(
+              builder: (_) => ViewAssessmentResultsPage(assessmentId: assessmentId),
+              settings: settings,
+            );
+          }
+
+          // Edit Assessment Page: /trainer/assessments/<assessmentId>/edit
+          if (segments.length == 4 && segments[0] == 'trainer' && segments[1] == 'assessments' && segments[3] == 'edit') {
+            final assessmentId = segments[2];
+            return MaterialPageRoute(
+              builder: (_) => EditAssessmentPage(assessmentId: assessmentId),
+              settings: settings,
+            );
+          }
+
+          // Edit Class Page: /trainer/classes/<classId>/edit
+          if (segments.length == 4 && segments[0] == 'trainer' && segments[1] == 'classes' && segments[3] == 'edit') {
+            final classId = segments[2];
+            return MaterialPageRoute(
+              builder: (_) => EditClassPage(classId: classId),
+              settings: settings,
+            );
+          }
+          // Manage Class Students Page: /trainer/classes/<classId>/students
+          if (segments.length == 4 && segments[0] == 'trainer' && segments[1] == 'classes' && segments[3] == 'students') {
+            final classId = segments[2];
+            return MaterialPageRoute(
+              builder: (_) => ManageClassStudentsPage(classId: classId),
+              settings: settings,
+            );
+          }
+          // Manage Class Content Page: /trainer/classes/<classId>/content
+          if (segments.length == 4 && segments[0] == 'trainer' && segments[1] == 'classes' && segments[3] == 'content') {
+            final classId = segments[2];
+            return MaterialPageRoute(
+              builder: (_) => ManageClassContentPage(classId: classId),
+              settings: settings,
+            );
+          }
+        }
+
+        switch (routeName) {
+          case '/signup':
+            final userTypeArgs = args as Map<String, dynamic>?;
+            return MaterialPageRoute(
+              builder: (_) => SignUpPage(userType: userTypeArgs?['userType'] as String?),
+              settings: settings,
+            );
+          case '/onboarding':
+            final onboardingArgs = args as Map<String, dynamic>?;
+            return MaterialPageRoute(
+              builder: (_) => OnboardingScreen(userType: onboardingArgs?['userType'] as String?),
+              settings: settings,
+            );
+          case '/create-assessment':
+            // Ensure classId is passed as a String?
+            final classId = (args is Map<String, dynamic> ? args['initialClassId'] as String? : null) ?? (args is String ? args : null);
+            return MaterialPageRoute(
+              builder: (_) => CreateAssessmentPage(initialClassId: classId),
+              settings: settings,
+            );
+          default:
+            if (routeName != null && staticRoutes.containsKey(routeName)) {
+              final WidgetBuilder? builder = staticRoutes[routeName];
+              if (builder != null) {
+                return MaterialPageRoute(builder: builder, settings: settings);
+              }
+            }
+            return MaterialPageRoute(
+              builder: (_) => Scaffold(
+                body: Center(
+                  child: Text('No route defined for $routeName or arguments mismatch.'),
+                ),
+              ),
+            );
+        }
       },
     );
   }

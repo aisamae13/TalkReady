@@ -38,6 +38,14 @@
           }
         },
         {
+          "client_id": "687695411049-lmre9rhspfjd1dgq1a5lgcln647pirs7.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.talkready_mobile",
+            "certificate_hash": "e51980ca13d6111e700b7de414c5935e757214f5"
+          }
+        },
+        {
           "client_id": "687695411049-cticpm42avjnm6t5qrj2bvv2i00ovoaf.apps.googleusercontent.com",
           "client_type": 3
         }

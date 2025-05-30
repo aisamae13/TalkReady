@@ -10,8 +10,9 @@ import 'package:logger/logger.dart';
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:talkready_mobile/next_screen.dart';
-import 'package:talkready_mobile/TrainerDashboard.dart';
+import 'package:talkready_mobile/Teachers/TrainerDashboard.dart';
 import 'package:talkready_mobile/homepage.dart';
+import 'package:flutter_animate/flutter_animate.dart'; // Add this to pubspec.yaml
 
 void main() {
   runApp(const MyApp());
@@ -52,7 +53,6 @@ class OnboardingScreen extends StatefulWidget {
 }
 
 class OnboardingScreenState extends State<OnboardingScreen> {
-  final PageController _pageController = PageController();
   int _currentPage = 0;
 
   // Stage 1 fields
@@ -74,7 +74,6 @@ class OnboardingScreenState extends State<OnboardingScreen> {
 
   @override
   void dispose() {
-    _pageController.dispose();
     _firstNameController.dispose();
     _lastNameController.dispose();
     _ageController.dispose();
@@ -227,328 +226,394 @@ class OnboardingScreenState extends State<OnboardingScreen> {
     }
   }
 
+  Widget _buildProgressIndicator() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 24.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: List.generate(3, (index) {
+          final isActive = _currentPage == index;
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            margin: const EdgeInsets.symmetric(horizontal: 6),
+            width: isActive ? 28 : 12,
+            height: 12,
+            decoration: BoxDecoration(
+              color: isActive ? primaryColor : Colors.grey[300],
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: isActive
+                  ? [BoxShadow(color: primaryColor.withOpacity(0.3), blurRadius: 8)]
+                  : [],
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
+  Widget _buildCard({required Widget child}) {
+    return Card(
+      elevation: 8,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(28.0),
+        child: child,
+      ),
+    );
+  }
+
+  Widget _buildStage1() {
+    return _buildCard(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            "Tell us about yourself",
+            style: TextStyle(
+              fontSize: 26,
+              fontWeight: FontWeight.bold,
+              color: primaryColor,
+              letterSpacing: 1.2,
+            ),
+          ),
+          const SizedBox(height: 24),
+          TextField(
+            controller: _firstNameController,
+            decoration: InputDecoration(
+              labelText: "First Name",
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              prefixIcon: Icon(Icons.person_outline),
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _lastNameController,
+            decoration: InputDecoration(
+              labelText: "Last Name",
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              prefixIcon: Icon(Icons.person),
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _ageController,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(
+              labelText: "Age",
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              prefixIcon: Icon(Icons.cake_outlined),
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 16),
+          // Gender selection
+          DropdownButtonFormField<String>(
+            value: _selectedGender,
+            decoration: InputDecoration(
+              labelText: "Gender",
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              prefixIcon: Icon(Icons.wc),
+            ),
+            items: const [
+              DropdownMenuItem(value: 'Male', child: Text('Male')),
+              DropdownMenuItem(value: 'Female', child: Text('Female')),
+              DropdownMenuItem(value: 'Other', child: Text('Other')),
+            ],
+            onChanged: (value) {
+              setState(() {
+                _selectedGender = value;
+              });
+            },
+          ),
+          const SizedBox(height: 16),
+          GestureDetector(
+            onTap: () => _selectBirthdate(context),
+            child: AbsorbPointer(
+              child: TextField(
+                readOnly: true,
+                decoration: InputDecoration(
+                  labelText: "Birthdate",
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  prefixIcon: Icon(Icons.calendar_today),
+                  hintText: _birthdate == null
+                      ? "Select your birthdate"
+                      : "${_birthdate!.year}-${_birthdate!.month.toString().padLeft(2, '0')}-${_birthdate!.day.toString().padLeft(2, '0')}",
+                ),
+                controller: TextEditingController(
+                  text: _birthdate == null
+                      ? ""
+                      : "${_birthdate!.year}-${_birthdate!.month.toString().padLeft(2, '0')}-${_birthdate!.day.toString().padLeft(2, '0')}",
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 32),
+          AnimatedOpacity(
+            opacity: _isStage1Valid() ? 1 : 0.5,
+            duration: const Duration(milliseconds: 300),
+            child: ElevatedButton(
+              onPressed: _isStage1Valid()
+                  ? () {
+                      setState(() {
+                        _currentPage++;
+                      });
+                    }
+                  : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: primaryColor,
+                padding: const EdgeInsets.symmetric(horizontal: 48.0, vertical: 16.0),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16.0),
+                ),
+                elevation: 4,
+              ),
+              child: const Text(
+                'Continue',
+                style: TextStyle(fontSize: 18, color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStage2() {
+    return _buildCard(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            "Where do you live?",
+            style: TextStyle(
+              fontSize: 26,
+              fontWeight: FontWeight.bold,
+              color: primaryColor,
+              letterSpacing: 1.2,
+            ),
+          ),
+          const SizedBox(height: 24),
+          TextField(
+            controller: _provinceController,
+            decoration: InputDecoration(
+              labelText: "Province",
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              prefixIcon: Icon(Icons.location_city),
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _municipalityController,
+            decoration: InputDecoration(
+              labelText: "Municipality",
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              prefixIcon: Icon(Icons.location_on),
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _barangayController,
+            decoration: InputDecoration(
+              labelText: "Barangay",
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              prefixIcon: Icon(Icons.home_work_outlined),
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 32),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _currentPage--;
+                  });
+                },
+                icon: Icon(Icons.arrow_back, color: primaryColor),
+                label: Text('Back', style: TextStyle(fontSize: 16, color: primaryColor)),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: primaryColor),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+              AnimatedOpacity(
+                opacity: _isStage2Valid() ? 1 : 0.5,
+                duration: const Duration(milliseconds: 300),
+                child: ElevatedButton.icon(
+                  onPressed: _isStage2Valid()
+                      ? () {
+                          setState(() {
+                            _currentPage++;
+                          });
+                        }
+                      : null,
+                  icon: Icon(Icons.arrow_forward, color: Colors.white),
+                  label: Text('Continue', style: TextStyle(fontSize: 16, color: Colors.white)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primaryColor,
+                    padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 14.0),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12.0),
+                    ),
+                    elevation: 4,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStage3() {
+    return _buildCard(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            "Upload your profile picture",
+            style: TextStyle(
+              fontSize: 26,
+              fontWeight: FontWeight.bold,
+              color: primaryColor,
+              letterSpacing: 1.2,
+            ),
+          ),
+          const SizedBox(height: 24),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 500),
+            child: _profilePic != null
+                ? CircleAvatar(
+                    key: ValueKey(_profilePic),
+                    radius: 56,
+                    backgroundImage: FileImage(_profilePic!),
+                  )
+                : CircleAvatar(
+                    key: ValueKey('empty'),
+                    radius: 56,
+                    backgroundColor: Colors.grey[200],
+                    child: Icon(Icons.person, size: 56, color: Colors.grey[400]),
+                  ),
+          ),
+          const SizedBox(height: 20),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ElevatedButton.icon(
+                onPressed: _pickProfilePic,
+                icon: Icon(Icons.upload, color: Colors.white),
+                label: Text('Upload', style: TextStyle(fontSize: 16, color: Colors.white)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryColor,
+                  padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 12.0),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  elevation: 4,
+                ),
+              ),
+              const SizedBox(width: 16),
+              OutlinedButton(
+                onPressed: () async {
+                  setState(() {
+                    _profilePic = null;
+                  });
+                  await _saveToFirestoreAndNavigate();
+                },
+                child: Text('Skip', style: TextStyle(fontSize: 16, color: primaryColor)),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: primaryColor),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 32),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _currentPage--;
+                  });
+                },
+                icon: Icon(Icons.arrow_back, color: primaryColor),
+                label: Text('Back', style: TextStyle(fontSize: 16, color: primaryColor)),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: primaryColor),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+              ElevatedButton.icon(
+                onPressed: () async {
+                  await _saveToFirestoreAndNavigate();
+                },
+                icon: Icon(Icons.check_circle, color: Colors.white),
+                label: Text('Finish', style: TextStyle(fontSize: 16, color: Colors.white)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryColor,
+                  padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 14.0),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12.0),
+                  ),
+                  elevation: 4,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final stages = [
+      _buildStage1(),
+      _buildStage2(),
+      _buildStage3(),
+    ];
+
     return Scaffold(
+      backgroundColor: Colors.grey[100],
       appBar: AppBar(
         title: const Text(
           'Before We Start',
-          style: TextStyle(fontSize: 20, color: primaryColor),
+          style: TextStyle(fontSize: 22, color: primaryColor, fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
         backgroundColor: Colors.transparent,
         elevation: 0,
+        iconTheme: IconThemeData(color: primaryColor),
       ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFF00568D).withOpacity(0.1),
-              Colors.grey[50]!,
+      resizeToAvoidBottomInset: true, // <-- Add this line
+      body: SafeArea(
+        child: SingleChildScrollView( // <-- Wrap with this
+          child: Column(
+            children: [
+              _buildProgressIndicator(),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 500),
+                transitionBuilder: (child, animation) =>
+                    FadeTransition(opacity: animation, child: SlideTransition(
+                      position: Tween<Offset>(
+                        begin: const Offset(0.1, 0),
+                        end: Offset.zero,
+                      ).animate(animation),
+                      child: child,
+                    )),
+                child: stages[_currentPage],
+              ),
             ],
           ),
-        ),
-        child: PageView(
-          controller: _pageController,
-          physics: const NeverScrollableScrollPhysics(),
-          children: [
-            // Stage 1: Name, Age, Birthdate, Gender
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20.0),
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Text(
-                        "Tell us about yourself",
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: primaryColor,
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      TextField(
-                        controller: _firstNameController,
-                        decoration: const InputDecoration(
-                          labelText: "First Name",
-                          border: OutlineInputBorder(),
-                        ),
-                        onChanged: (_) => setState(() {}),
-                      ),
-                      const SizedBox(height: 15),
-                      TextField(
-                        controller: _lastNameController,
-                        decoration: const InputDecoration(
-                          labelText: "Last Name",
-                          border: OutlineInputBorder(),
-                        ),
-                        onChanged: (_) => setState(() {}),
-                      ),
-                      const SizedBox(height: 15),
-                      TextField(
-                        controller: _ageController,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: "Age",
-                          border: OutlineInputBorder(),
-                        ),
-                        onChanged: (_) => setState(() {}),
-                      ),
-                      const SizedBox(height: 15),
-                      // Gender selection
-                      DropdownButtonFormField<String>(
-                        value: _selectedGender,
-                        decoration: const InputDecoration(
-                          labelText: "Gender",
-                          border: OutlineInputBorder(),
-                        ),
-                        items: const [
-                          DropdownMenuItem(value: 'Male', child: Text('Male')),
-                          DropdownMenuItem(value: 'Female', child: Text('Female')),
-                          DropdownMenuItem(value: 'Other', child: Text('Other')),
-                        ],
-                        onChanged: (value) {
-                          setState(() {
-                            _selectedGender = value;
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 15),
-                      GestureDetector(
-                        onTap: () => _selectBirthdate(context),
-                        child: AbsorbPointer(
-                          child: TextField(
-                            readOnly: true,
-                            decoration: InputDecoration(
-                              labelText: "Birthdate",
-                              border: const OutlineInputBorder(),
-                              hintText: _birthdate == null
-                                  ? "Select your birthdate"
-                                  : "${_birthdate!.year}-${_birthdate!.month.toString().padLeft(2, '0')}-${_birthdate!.day.toString().padLeft(2, '0')}",
-                            ),
-                            controller: TextEditingController(
-                              text: _birthdate == null
-                                  ? ""
-                                  : "${_birthdate!.year}-${_birthdate!.month.toString().padLeft(2, '0')}-${_birthdate!.day.toString().padLeft(2, '0')}",
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 30),
-                      ElevatedButton(
-                        onPressed: _isStage1Valid()
-                            ? () {
-                                _pageController.nextPage(
-                                  duration: const Duration(milliseconds: 300),
-                                  curve: Curves.easeInOut,
-                                );
-                              }
-                            : null,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: primaryColor,
-                          padding: const EdgeInsets.symmetric(horizontal: 40.0, vertical: 12.0),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10.0),
-                          ),
-                        ),
-                        child: const Text(
-                          'Continue',
-                          style: TextStyle(fontSize: 16, color: Colors.white),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            // Stage 2: Province, Municipality, Barangay
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20.0),
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Text(
-                        "Where do you live?",
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: primaryColor,
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      TextField(
-                        controller: _provinceController,
-                        decoration: const InputDecoration(
-                          labelText: "Province",
-                          border: OutlineInputBorder(),
-                        ),
-                        onChanged: (_) => setState(() {}),
-                      ),
-                      const SizedBox(height: 15),
-                      TextField(
-                        controller: _municipalityController,
-                        decoration: const InputDecoration(
-                          labelText: "Municipality",
-                          border: OutlineInputBorder(),
-                        ),
-                        onChanged: (_) => setState(() {}),
-                      ),
-                      const SizedBox(height: 15),
-                      TextField(
-                        controller: _barangayController,
-                        decoration: const InputDecoration(
-                          labelText: "Barangay",
-                          border: OutlineInputBorder(),
-                        ),
-                        onChanged: (_) => setState(() {}),
-                      ),
-                      const SizedBox(height: 30),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          TextButton(
-                            onPressed: () {
-                              _pageController.previousPage(
-                                duration: const Duration(milliseconds: 300),
-                                curve: Curves.easeInOut,
-                              );
-                            },
-                            child: const Text(
-                              'Back',
-                              style: TextStyle(fontSize: 16, color: primaryColor),
-                            ),
-                          ),
-                          ElevatedButton(
-                            onPressed: _isStage2Valid()
-                                ? () {
-                                    _pageController.nextPage(
-                                      duration: const Duration(milliseconds: 300),
-                                      curve: Curves.easeInOut,
-                                    );
-                                  }
-                                : null,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: primaryColor,
-                              padding: const EdgeInsets.symmetric(horizontal: 40.0, vertical: 12.0),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10.0),
-                              ),
-                            ),
-                            child: const Text(
-                              'Continue',
-                              style: TextStyle(fontSize: 16, color: Colors.white),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            // Stage 3: Profile Pic
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20.0),
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Text(
-                        "Upload your profile picture",
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: primaryColor,
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      CircleAvatar(
-                        radius: 50,
-                        backgroundImage: _profilePic != null ? FileImage(_profilePic!) as ImageProvider : null,
-                        backgroundColor: _profilePic == null ? Colors.grey[300] : null,
-                      ),
-                      const SizedBox(height: 20),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          ElevatedButton(
-                            onPressed: _pickProfilePic,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: primaryColor,
-                              padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 8.0),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(5),
-                              ),
-                            ),
-                            child: const Text(
-                              'Upload Profile Picture',
-                              style: TextStyle(fontSize: 16, color: Colors.white),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          TextButton(
-                            onPressed: () {
-                              setState(() {
-                                _profilePic = null;
-                              });
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Profile picture skipped')),
-                              );
-                            },
-                            child: const Text(
-                              'Skip',
-                              style: TextStyle(fontSize: 16, color: primaryColor),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 30),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          TextButton(
-                            onPressed: () {
-                              _pageController.previousPage(
-                                duration: const Duration(milliseconds: 300),
-                                curve: Curves.easeInOut,
-                              );
-                            },
-                            child: const Text(
-                              'Back',
-                              style: TextStyle(fontSize: 16, color: primaryColor),
-                            ),
-                          ),
-                          ElevatedButton(
-                            onPressed: () async {
-                              await _saveToFirestoreAndNavigate();
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: primaryColor,
-                              padding: const EdgeInsets.symmetric(horizontal: 40.0, vertical: 12.0),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10.0),
-                              ),
-                            ),
-                            child: const Text(
-                              'Finish',
-                              style: TextStyle(fontSize: 16, color: Colors.white),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
         ),
       ),
     );

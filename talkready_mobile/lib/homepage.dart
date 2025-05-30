@@ -1,13 +1,33 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'dart:math';
+import 'dart:math' as math; // Renamed to avoid conflict
 import 'ai_bot.dart';
 import 'profile.dart';
 import 'package:logger/logger.dart';
 import 'courses_page.dart';
 import 'journal/journal_page.dart';
+import 'package:flutter/animation.dart';
+import 'package:talkready_mobile/all_notifications_page.dart';
 import 'progress_page.dart';
+import 'package:talkready_mobile/custom_animated_bottom_bar.dart';
+
+// Helper function for creating a slide page route
+Route _createSlidingPageRoute({
+  required Widget page,
+  required int newIndex,
+  required int oldIndex,
+  required Duration duration, // duration will be ignored
+}) {
+  return PageRouteBuilder(
+    pageBuilder: (context, animation, secondaryAnimation) => page,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      return child; // Return child directly for no animation
+    },
+    transitionDuration: Duration.zero, // Instant transition
+    reverseTransitionDuration: Duration.zero, // Instant reverse transition
+  );
+}
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -17,7 +37,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  int _selectedIndex = 0; // Track the currently selected tab
+  int _selectedIndex = 0; // Home is index 0
   String? selectedSkill;
   final Map<String, double> skillPercentages = {
     'Fluency': 0.0,
@@ -27,13 +47,12 @@ class _HomePageState extends State<HomePage> {
     'Interaction': 0.0,
   };
 
-  // Initialize logger
   final Logger logger = Logger();
 
   @override
   void initState() {
     super.initState();
-    _fetchProgress(); // Load progress when the page initializes
+    _fetchProgress();
   }
 
   Future<void> _fetchProgress() async {
@@ -42,17 +61,14 @@ class _HomePageState extends State<HomePage> {
       logger.e('No user logged in');
       return;
     }
-
     try {
-      // Validate user.uid
       if (user.uid.isEmpty) {
         logger.e('Invalid user UID: empty');
         throw ArgumentError('User UID cannot be empty');
       }
-
       logger.i('Fetching progress for user: ${user.uid}');
       DocumentSnapshot doc = await FirebaseFirestore.instance
-          .collection('users') // changed from 'users'
+          .collection('users')
           .doc(user.uid)
           .get();
       Map<String, dynamic>? userData = doc.data() as Map<String, dynamic>?;
@@ -85,6 +101,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   double get overallPercentage {
+    if (skillPercentages.isEmpty) return 0.0;
     return skillPercentages.values.reduce((a, b) => a + b) /
         skillPercentages.length;
   }
@@ -97,69 +114,53 @@ class _HomePageState extends State<HomePage> {
 
   void _onItemTapped(int index) {
     logger.d('Tapped navigation item. Index: $index, currentIndex: $_selectedIndex');
-    if (index == _selectedIndex) return; // Avoid redundant navigation
+    if (_selectedIndex == index) {
+      return;
+    }
+
+    final int oldNavIndex = _selectedIndex;
 
     setState(() {
-      _selectedIndex = index; // Update the selected index for visual feedback
+      _selectedIndex = index;
     });
 
+    Widget nextPage;
     switch (index) {
-      case 0: // Home
+      case 0:
+        // Already on Home or navigating to Home.
+        // If HomePage is the root, pushReplacement with HomePage might be redundant
+        // but ensures state consistency if HomePage could be pushed over something else.
+        nextPage = const HomePage();
         break;
-      case 1: // Courses
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const CoursesPage()),
-        ).then((_) {
-          if (mounted) {
-            setState(() {
-              _selectedIndex = 0;
-            });
-          }
-        });
+      case 1:
+        nextPage = const CoursesPage();
         break;
-      case 2: // Journal
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => JournalPage()),
-        ).then((_) {
-          if (mounted) {
-            setState(() {
-              _selectedIndex = 0;
-            });
-          }
-        });
+      case 2:
+        nextPage = const JournalPage();
         break;
-      case 3: // Programs
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => ProgressTrackerPage()), // Replace with your ProgramsPage widget
-        ).then((_) {
-          if (mounted) {
-            setState(() {
-              _selectedIndex = 0;
-            });
-          }
-        });
+      case 3:
+        nextPage = const ProgressTrackerPage();
         break;
-      case 4: // Profile
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const ProfilePage()),
-        ).then((_) {
-          logger.d('Returned from ProfilePage');
-          if (mounted) {
-            setState(() {
-              _selectedIndex = 0;
-            });
-          }
-        });
+      case 4:
+        nextPage = const ProfilePage();
         break;
       default:
         logger.w('Unhandled navigation index: $index');
-        break;
+        return;
     }
+
+    Navigator.pushReplacement(
+      context,
+      _createSlidingPageRoute(
+        page: nextPage,
+        newIndex: index,
+        oldIndex: oldNavIndex,
+        duration: const Duration(milliseconds: 300), // This duration is now ignored
+      ),
+    );
   }
+
+  // _resetToHomeIndex method is removed
 
   @override
   Widget build(BuildContext context) {
@@ -175,163 +176,181 @@ class _HomePageState extends State<HomePage> {
           backgroundColor: Colors.transparent,
           elevation: 0,
           foregroundColor: const Color(0xFF00568D),
-          automaticallyImplyLeading: false, // Disable app bar back button
+          automaticallyImplyLeading: false,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.notifications),
+              tooltip: 'Notifications',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const AllNotificationsPage()),
+                );
+              },
+            ),
+          ],
         ),
-        body: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(20.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                const Text(
-                  'Speaking Level Test',
-                  style: TextStyle(
-                    fontSize: 24,
-                    color: Color(0xFF00568D),
-                    fontWeight: FontWeight.bold,
+        body: ScrollConfiguration(
+          behavior: const ScrollBehavior().copyWith(overscroll: false),
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(20.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  const Text(
+                    'Speaking Level Test',
+                    style: TextStyle(
+                      fontSize: 24,
+                      color: Color(0xFF00568D),
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
                   ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  'Find out your English level and get level up recommendation',
-                  style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 20),
-                Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    PentagonGraph(
-                      size: 200,
-                      progress: overallPercentage,
-                      selectedSkill: selectedSkill,
-                    ),
-                    Text(
-                      '${((selectedSkill != null ? skillPercentages[selectedSkill]! : overallPercentage) * 100).toStringAsFixed(0)}%',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.grey[700],
+                  const SizedBox(height: 10),
+                  Text(
+                    'Find out your English level and get level up recommendation',
+                    style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 20),
+                  Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      PentagonGraph(
+                        size: 200,
+                        progress: overallPercentage,
+                        selectedSkill: selectedSkill,
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                Wrap(
-                  alignment: WrapAlignment.center,
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: skillPercentages.keys.map((skill) {
-                    final Map<String, Color> skillColors = {
-                      "Grammar": const Color(0xFFD8F6F7),
-                      "Fluency": const Color(0xFFDEE3FF),
-                      "Interaction": const Color(0xFFFFD6D6),
-                      "Pronunciation": const Color(0xFFFFF0C3),
-                      "Vocabulary": const Color(0xFFE0FFD6),
-                    };
-
-                    bool isSelected = selectedSkill == skill;
-
-                    return InkWell(
-                      onTap: () {
-                        _handleSkillSelected(skill);
-                      },
-                      borderRadius: BorderRadius.circular(20),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 20, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? skillColors[skill]?.withOpacity(0.5)
-                              : skillColors[skill] ?? Colors.grey,
-                          borderRadius: BorderRadius.circular(20),
+                      Text(
+                        '${((selectedSkill != null ? skillPercentages[selectedSkill]! : overallPercentage) * 100).toStringAsFixed(0)}%',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey[700],
                         ),
-                        child: Text(
-                          skill,
-                          style: const TextStyle(
-                            color: Colors.black,
-                            fontWeight: FontWeight.w500,
-                            fontSize: 16,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: skillPercentages.keys.map((skill) {
+                      final Map<String, Color> skillColors = {
+                        "Grammar": const Color(0xFFD8F6F7),
+                        "Fluency": const Color(0xFFDEE3FF),
+                        "Interaction": const Color(0xFFFFD6D6),
+                        "Pronunciation": const Color(0xFFFFF0C3),
+                        "Vocabulary": const Color(0xFFE0FFD6),
+                      };
+                      bool isSelected = selectedSkill == skill;
+                      return InkWell(
+                        onTap: () {
+                          _handleSkillSelected(skill);
+                        },
+                        borderRadius: BorderRadius.circular(20),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? skillColors[skill]?.withOpacity(0.5)
+                                : skillColors[skill] ?? Colors.grey,
+                            borderRadius: BorderRadius.circular(20),
                           ),
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 20),
-                const Text(
-                  'AI-Powered Vocabulary Booster',
-                  style: TextStyle(
-                    fontSize: 20,
-                    color: Color(0xFF00568D),
-                    fontWeight: FontWeight.bold,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  'Learn new words that our AI thinks fit your interests and English level',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.grey[600],
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 5),
-                Image.asset(
-                  'images/ai_robot.gif',
-                  width: 250,
-                  height: 250,
-                ),
-                SizedBox(
-                  width: 250,
-                  height: 40,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => AIBotScreen(
-                            onBackPressed: () {
-                              Navigator.pop(context);
-                            },
+                          child: Text(
+                            skill,
+                            style: const TextStyle(
+                              color: Colors.black,
+                              fontWeight: FontWeight.w500,
+                              fontSize: 16,
+                            ),
                           ),
                         ),
                       );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF00568D),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(5),
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 5),
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'AI-Powered Vocabulary Booster',
+                    style: TextStyle(
+                      fontSize: 20,
+                      color: Color(0xFF00568D),
+                      fontWeight: FontWeight.bold,
                     ),
-                    child: const Text(
-                      'Start Practice',
-                      style: TextStyle(fontSize: 16),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Learn new words that our AI thinks fit your interests and English level',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.grey[600],
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 5),
+                  Image.asset(
+                    'images/ai_robot.gif',
+                    width: 250,
+                    height: 250,
+                  ),
+                  SizedBox(
+                    width: 250,
+                    height: 40,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => AIBotScreen(
+                              onBackPressed: () {
+                                Navigator.pop(context);
+                              },
+                            ),
+                          ),
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF00568D),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 5),
+                      ),
+                      child: const Text(
+                        'Start Practice',
+                        style: TextStyle(fontSize: 16),
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
-        bottomNavigationBar: BottomNavigationBar(
-          type: BottomNavigationBarType.fixed,
-          selectedItemColor: const Color(0xFF00568D),
-          unselectedItemColor: Colors.grey,
+        bottomNavigationBar: AnimatedBottomNavBar(
           currentIndex: _selectedIndex,
           onTap: _onItemTapped,
-          items: const [
-            BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-            BottomNavigationBarItem(icon: Icon(Icons.book), label: 'Courses'),
-            BottomNavigationBarItem(
-                icon: Icon(Icons.library_books), label: 'Journal'),
-            BottomNavigationBarItem(icon: Icon(Icons.trending_up), label: 'Progress'),
-            BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
+          items: [
+            CustomBottomNavItem(icon: Icons.home, label: 'Home'),
+            CustomBottomNavItem(icon: Icons.book, label: 'Courses'),
+            CustomBottomNavItem(icon: Icons.library_books, label: 'Journal'),
+            CustomBottomNavItem(icon: Icons.trending_up, label: 'Progress'),
+            CustomBottomNavItem(icon: Icons.person, label: 'Profile'),
           ],
+          activeColor: Colors.white,
+          inactiveColor: Colors.grey[600]!,
+          notchColor: Colors.blue,
+          backgroundColor: Colors.white,
+          selectedIconSize: 28.0,
+          iconSize: 25.0,
+          barHeight: 55,
+          selectedIconPadding: 10,
+          animationDuration: const Duration(milliseconds: 300),
         ),
       ),
     );
@@ -388,7 +407,6 @@ class PentagonPainter extends CustomPainter {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = size.width / 2;
 
-    // Draw base tiers
     final basePaint = Paint()
       ..color = greyColor.withOpacity(0.1)
       ..style = PaintingStyle.stroke
@@ -398,7 +416,6 @@ class PentagonPainter extends CustomPainter {
       _drawPentagon(canvas, center, radius * (i / 5), basePaint);
     }
 
-    // Draw progress fill with selected color or default grey
     final progressPaint = Paint()..style = PaintingStyle.fill;
 
     if (skillColor != null) {
@@ -421,7 +438,6 @@ class PentagonPainter extends CustomPainter {
     _createPentagonPath(progressPath, center, radius * progress);
     canvas.drawPath(progressPath, progressPaint);
 
-    // Draw outline
     final outlinePaint = Paint()
       ..color = skillColor ?? greyColor
       ..style = PaintingStyle.stroke
@@ -437,9 +453,9 @@ class PentagonPainter extends CustomPainter {
 
   void _createPentagonPath(Path path, Offset center, double radius) {
     for (int i = 0; i < 5; i++) {
-      final angle = 2 * pi / 5 * i - pi / 2;
-      final x = center.dx + radius * cos(angle);
-      final y = center.dy + radius * sin(angle);
+      final angle = 2 * math.pi / 5 * i - math.pi / 2;
+      final x = center.dx + radius * math.cos(angle);
+      final y = center.dy + radius * math.sin(angle);
       if (i == 0) {
         path.moveTo(x, y);
       } else {
@@ -450,5 +466,8 @@ class PentagonPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+  bool shouldRepaint(covariant PentagonPainter oldDelegate) =>
+      oldDelegate.progress != progress ||
+      oldDelegate.selectedSkill != selectedSkill ||
+      oldDelegate.skillColor != skillColor;
 }
