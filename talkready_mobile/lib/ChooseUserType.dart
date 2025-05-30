@@ -47,7 +47,7 @@ class ChooseUserTypePage extends StatelessWidget {
           gradient: LinearGradient(
             colors: [
               Colors.white,
-              Color(0xFFB2FEFA), // sky blue
+              Color.fromARGB(255, 178, 211, 254), // sky blue
             ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -111,7 +111,7 @@ class ChooseUserTypePage extends StatelessWidget {
                             AnimatedUserTypeButton(
                               icon: Icons.school,
                               label: 'I am a Trainer',
-                              color: Color(0xFF2196F3), // Solid blue
+                              color: Color(0xFF4CAF50), // Solid blue
                               onTap: () => _saveUserTypeAndNavigate(context, 'trainer'),
                             ),
                             const SizedBox(height: 28),
@@ -231,12 +231,13 @@ class _AnimatedUserTypeButtonState extends State<AnimatedUserTypeButton>
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(widget.icon, color: Colors.white, size: 34),
-                      const SizedBox(width: 18),
-                      Text(
+                      const SizedBox(width: 12),
+                      Flexible(
+                      child: Text(
                         widget.label,
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 22,
+                          fontSize: 18,
                           fontWeight: FontWeight.bold,
                           letterSpacing: 1.2,
                           shadows: [
@@ -247,6 +248,7 @@ class _AnimatedUserTypeButtonState extends State<AnimatedUserTypeButton>
                             ),
                           ],
                         ),
+                      ),
                       ),
                     ],
                   ),

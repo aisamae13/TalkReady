@@ -374,7 +374,7 @@ class _SignUpPageState extends State<SignUpPage> {
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
                         ),
-                        child: const Text('Register & Send Email Verification', style: TextStyle(fontSize: 16)),
+                        child: const Text('Register Email', style: TextStyle(fontSize: 16)),
                       ),
                     ],
                   ),
