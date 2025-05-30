@@ -2,10 +2,12 @@ import 'package:flutter/material.dart' hide CarouselController;
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:logger/logger.dart';
+import 'package:cloud_firestore/cloud_firestore.dart'; // Needed for Timestamp
+
 import '../firebase_service.dart';
-import '../lessons/lesson1_1.dart';
-import '../lessons/lesson1_2.dart';
-import '../lessons/lesson1_3.dart';
+import '../lessons/lesson1_1.dart'; // Assuming buildLesson1_1 is correctly defined here
+import '../lessons/lesson1_2.dart'; // Assuming buildLesson1_2 is correctly defined here
+import '../lessons/lesson1_3.dart'; // Assuming buildLesson1_3 is correctly defined here
 
 class Module1Page extends StatefulWidget {
   final String? targetLessonKey; // To specify which lesson to open
@@ -21,21 +23,47 @@ class _Module1PageState extends State<Module1Page> {
   bool showActivity = false;
   late YoutubePlayerController _youtubeController;
   int _currentSlide = 0;
-  final CarouselSliderController _carouselController = CarouselSliderController();
-  late List<bool> _answerCorrectness;
-  late List<List<String>> _selectedAnswers;
+  final CarouselSliderController _carouselController =
+      CarouselSliderController();
+
+  // These lists will be initialized based on the current lesson's question count
+  late List<List<String>>
+      _selectedAnswers; // For word selection questions (L1.1, L1.2)
+  late List<String>
+      _fillInBlankAnswers; // For fill-in-the-blank questions (L1.3)
   late List<bool?> _isCorrectStates;
   late List<String?> _errorMessages;
+
   String? _youtubeError;
   final Logger _logger = Logger();
   final FirebaseService _firebaseService = FirebaseService();
+
   Map<String, bool> _lessonCompletion = {
     'lesson1': false,
     'lesson2': false,
     'lesson3': false,
   };
-  late Map<String, int> _lessonAttemptCounts;
-  late Stopwatch _stopwatch;
+  // This map will store the count of *completed* attempts for the detailed log
+  late Map<String, int> _lessonSpecificAttemptCounts;
+
+  // This map is for the module-level attempt count that updateLessonProgress uses
+  late Map<String, int> _moduleLevelLessonAttemptCounts;
+
+  bool _isContentLoaded = false;
+
+  // Map lesson number to its Firestore key for lessonAttempts
+  final Map<int, String> _firestoreLessonKeys = {
+    1: "Lesson 1.1",
+    2: "Lesson 1.2", // Assuming this pattern
+    3: "Lesson 1.3", // Assuming this pattern
+  };
+
+  // Map lesson number to its title for the old log system (if you keep it)
+  final Map<int, String> _lessonTitlesForOldLog = {
+    1: 'Lesson 1.1: Nouns and Pronouns',
+    2: 'Lesson 1.2: Simple Sentences',
+    3: 'Lesson 1.3: Verb and Tenses (Present Simple)',
+  };
 
   final Map<int, String> _videoIds = {
     1: '0GVcQjDOW6Q', // Lesson 1.1: Nouns and Pronouns
@@ -43,33 +71,38 @@ class _Module1PageState extends State<Module1Page> {
     3: 'LfJPA8GwTdk', // Lesson 1.3: Verb and Tenses (Present Simple)
   };
 
-  bool _isContentLoaded = false; // Flag to track loading state
-
   @override
   void initState() {
     super.initState();
-    _stopwatch = Stopwatch()..start();
-    _lessonAttemptCounts = {'lesson1': 0, 'lesson2': 0, 'lesson3': 0};
+    _lessonSpecificAttemptCounts = {
+      'Lesson 1.1': 0,
+      'Lesson 1.2': 0,
+      'Lesson 1.3': 0
+    };
+    _moduleLevelLessonAttemptCounts = {
+      'lesson1': 0,
+      'lesson2': 0,
+      'lesson3': 0
+    };
     _performAsyncInit();
   }
 
   Future<void> _performAsyncInit() async {
     try {
-      await _loadLessonProgress();
-      _initializeStateLists(); // Call this after currentLesson is potentially set by _loadLessonProgress
+      await _loadLessonProgressAndAttempts();
+      _initializeStateListsForCurrentLesson();
       _initializeYoutubeController();
 
       if (mounted) {
         setState(() {
-          if (widget.targetLessonKey != null) {
-            // Determine showActivity based on the specific target lesson's completion
-            showActivity = _lessonCompletion[widget.targetLessonKey!] ?? false;
-             _logger.i("Target lesson ${widget.targetLessonKey} specified. showActivity set to: $showActivity");
-          } else {
-            // Default behavior if no target lesson is specified
-            showActivity = _lessonCompletion['lesson$currentLesson'] ?? false;
-            _logger.i("No target lesson. currentLesson: $currentLesson. showActivity set to: $showActivity");
+          String lessonKeyForShowActivity = 'lesson$currentLesson';
+          if (widget.targetLessonKey != null &&
+              _lessonCompletion.containsKey(widget.targetLessonKey)) {
+            lessonKeyForShowActivity = widget.targetLessonKey!;
           }
+          showActivity = _lessonCompletion[lessonKeyForShowActivity] ?? false;
+          _logger.i(
+              "AsyncInit: currentLesson: $currentLesson, targetKey: ${widget.targetLessonKey}, showActivity for '$lessonKeyForShowActivity': $showActivity");
           _isContentLoaded = true;
         });
       }
@@ -78,109 +111,207 @@ class _Module1PageState extends State<Module1Page> {
       if (mounted) {
         setState(() {
           _youtubeError = "Failed to load lesson content. Please try again.";
-          _isContentLoaded = true; // Ensure UI can build even with error
+          _isContentLoaded = true;
         });
       }
     }
   }
 
-  Future<void> _loadLessonProgress() async {
+  Future<void> _loadLessonProgressAndAttempts() async {
+    if (_firebaseService.userId == null) {
+      _logger.w("User not logged in, cannot load progress. Using defaults.");
+      _lessonCompletion = {
+        'lesson1': false,
+        'lesson2': false,
+        'lesson3': false
+      };
+      _lessonSpecificAttemptCounts = {
+        'Lesson 1.1': 0,
+        'Lesson 1.2': 0,
+        'Lesson 1.3': 0
+      };
+      _moduleLevelLessonAttemptCounts = {
+        'lesson1': 0,
+        'lesson2': 0,
+        'lesson3': 0
+      };
+      _determineCurrentLessonFromProgress(); // Sets currentLesson based on defaults
+      return;
+    }
+
     try {
-      final progress = await _firebaseService.getModuleProgress('module1');
-      final lessonsData = progress['lessons'] as Map<String, dynamic>? ?? {};
-      final attemptData = progress['attempts'] as Map<String, dynamic>? ?? {};
+      // Load module-level progress (completion status, module-level attempts)
+      final moduleProgressData =
+          await _firebaseService.getModuleProgress('module1');
+      final lessonsCompletionData =
+          moduleProgressData['lessons'] as Map<String, dynamic>? ?? {};
+      final moduleAttemptsData =
+          moduleProgressData['attempts'] as Map<String, dynamic>? ?? {};
 
       _lessonCompletion = {
-        'lesson1': lessonsData['lesson1'] ?? false,
-        'lesson2': lessonsData['lesson2'] ?? false,
-        'lesson3': lessonsData['lesson3'] ?? false,
+        'lesson1': lessonsCompletionData['lesson1'] ?? false,
+        'lesson2': lessonsCompletionData['lesson2'] ?? false,
+        'lesson3': lessonsCompletionData['lesson3'] ?? false,
+      };
+      _moduleLevelLessonAttemptCounts = {
+        // For _saveLessonProgress
+        'lesson1': moduleAttemptsData['lesson1'] as int? ?? 0,
+        'lesson2': moduleAttemptsData['lesson2'] as int? ?? 0,
+        'lesson3': moduleAttemptsData['lesson3'] as int? ?? 0,
       };
 
-      _lessonAttemptCounts = {
-        'lesson1': attemptData['lesson1'] as int? ?? 0,
-        'lesson2': attemptData['lesson2'] as int? ?? 0,
-        'lesson3': attemptData['lesson3'] as int? ?? 0,
-      };
+      // Load detailed attempt counts from userProgress.lessonAttempts
+      final userProgressDoc = await FirebaseFirestore.instance
+          .collection('userProgress')
+          .doc(_firebaseService.userId)
+          .get();
 
-      if (widget.targetLessonKey != null) {
-        _logger.i("Target lesson key provided: ${widget.targetLessonKey}");
-        switch (widget.targetLessonKey) {
-          case 'lesson1':
-            currentLesson = 1;
-            break;
-          case 'lesson2':
-            currentLesson = 2;
-            break;
-          case 'lesson3':
-            currentLesson = 3;
-            break;
-          default:
-            _logger.w("Unknown targetLessonKey: ${widget.targetLessonKey}. Defaulting to normal progression.");
-            // Fallback logic if targetLessonKey is invalid
-            if (!(_lessonCompletion['lesson1'] ?? false)) {
-              currentLesson = 1;
-            } else if (!(_lessonCompletion['lesson2'] ?? false)) {
-              currentLesson = 2;
-            } else if (!(_lessonCompletion['lesson3'] ?? false)) {
-              currentLesson = 3;
-            } else {
-              currentLesson = 3; // All complete, default to last
-            }
-        }
+      if (userProgressDoc.exists) {
+        final data = userProgressDoc.data();
+        final lessonAttemptsMap =
+            data?['lessonAttempts'] as Map<String, dynamic>?;
+        _firestoreLessonKeys.forEach((lessonNum, keyString) {
+          if (lessonAttemptsMap != null &&
+              lessonAttemptsMap.containsKey(keyString)) {
+            final attemptsArray =
+                lessonAttemptsMap[keyString] as List<dynamic>?;
+            _lessonSpecificAttemptCounts[keyString] =
+                attemptsArray?.length ?? 0;
+          } else {
+            _lessonSpecificAttemptCounts[keyString] = 0;
+          }
+        });
       } else {
-        _logger.i("No target lesson key. Determining current lesson by progress.");
-        if (!(_lessonCompletion['lesson1'] ?? false)) {
-          currentLesson = 1;
-        } else if (!(_lessonCompletion['lesson2'] ?? false)) {
-          currentLesson = 2;
-        } else if (!(_lessonCompletion['lesson3'] ?? false)) {
-          currentLesson = 3;
-        } else {
-          currentLesson = 3; // All complete, default to last
-        }
+        _firestoreLessonKeys.forEach((_, keyString) {
+          _lessonSpecificAttemptCounts[keyString] = 0;
+        });
       }
-      _logger.i('Loaded lesson progress for module1: currentLesson=$currentLesson, lessonCompletion=$_lessonCompletion, targetKey=${widget.targetLessonKey}, attempts=$_lessonAttemptCounts');
+
+      _determineCurrentLessonFromProgress(); // Sets currentLesson
+
+      _logger.i(
+          'Loaded Progress for Module 1: currentLesson=$currentLesson, completion=$_lessonCompletion, specificAttempts=$_lessonSpecificAttemptCounts, moduleAttempts=$_moduleLevelLessonAttemptCounts, targetKey=${widget.targetLessonKey}');
     } catch (e) {
-      _logger.e('Error loading lesson progress for module1: $e');
-      // Optionally, set default values or rethrow to be handled by caller
-      rethrow; // Or handle more gracefully, e.g., by setting default states
+      _logger.e('Error loading all progress for module1: $e');
+      _lessonCompletion = {
+        'lesson1': false,
+        'lesson2': false,
+        'lesson3': false
+      };
+      _lessonSpecificAttemptCounts = {
+        'Lesson 1.1': 0,
+        'Lesson 1.2': 0,
+        'Lesson 1.3': 0
+      };
+      _moduleLevelLessonAttemptCounts = {
+        'lesson1': 0,
+        'lesson2': 0,
+        'lesson3': 0
+      };
+      _determineCurrentLessonFromProgress(); // Sets currentLesson based on defaults
+      rethrow;
     }
   }
 
-  Future<bool> _saveLessonProgress(int lessonNumberInModule) async {
+  void _determineCurrentLessonFromProgress() {
+    if (widget.targetLessonKey != null) {
+      _logger.i("Target lesson key provided: ${widget.targetLessonKey}");
+      switch (widget.targetLessonKey) {
+        case 'lesson1':
+          currentLesson = 1;
+          break;
+        case 'lesson2':
+          currentLesson = 2;
+          break;
+        case 'lesson3':
+          currentLesson = 3;
+          break;
+        default:
+          _logger.w(
+              "Unknown targetLessonKey: ${widget.targetLessonKey}. Defaulting to normal progression.");
+          _setLessonBySequentialProgress();
+      }
+    } else {
+      _logger.i(
+          "No target lesson key. Determining current lesson by sequential progress.");
+      _setLessonBySequentialProgress();
+    }
+  }
+
+  void _setLessonBySequentialProgress() {
+    if (!(_lessonCompletion['lesson1'] ?? false)) {
+      currentLesson = 1;
+    } else if (!(_lessonCompletion['lesson2'] ?? false)) {
+      currentLesson = 2;
+    } else if (!(_lessonCompletion['lesson3'] ?? false)) {
+      currentLesson = 3;
+    } else {
+      currentLesson = 3; // All complete, default to last
+    }
+  }
+
+  // This existing method updates the module-level completion and simple attempt count
+  Future<bool> _saveModuleLessonProgress(int lessonNumberInModule) async {
     try {
       final lessonFirebaseKey = 'lesson$lessonNumberInModule';
-      // _lessonAttemptCounts is used here. It should be up-to-date with attemptNumberFromLesson for the current lesson.
-      await _firebaseService.updateLessonProgress('module1', lessonFirebaseKey, true, attempts: _lessonAttemptCounts);
+      // Use the _moduleLevelLessonAttemptCounts for this specific type of progress update
+      // This map should be incremented *after* a successful attempt if needed for this function
+      // Or this function just marks completion and doesn't care about specific counts if it's just a flag.
+      // Let's assume this call is primarily to mark the lesson as 'true' in module.lessons.lessonX
+      // and the attempt count here is the module-level one which might just be a simple increment.
+
+      // For now, we'll pass the _moduleLevelLessonAttemptCounts as is.
+      // It needs to be updated if its meaning is "total attempts taken for this lesson type in this module"
+      int newModuleLevelAttemptCount =
+          (_moduleLevelLessonAttemptCounts[lessonFirebaseKey] ?? 0) + 1;
+      Map<String, int> updatedModuleAttempts =
+          Map.from(_moduleLevelLessonAttemptCounts);
+      updatedModuleAttempts[lessonFirebaseKey] = newModuleLevelAttemptCount;
+
+      await _firebaseService.updateLessonProgress(
+          'module1', lessonFirebaseKey, true,
+          attempts: updatedModuleAttempts);
+
       if (mounted) {
         setState(() {
           _lessonCompletion[lessonFirebaseKey] = true;
+          _moduleLevelLessonAttemptCounts =
+              updatedModuleAttempts; // Keep local state in sync
         });
       }
-      _logger.i('Saved $lessonFirebaseKey as completed for module1 with attempts: ${_lessonAttemptCounts[lessonFirebaseKey]}');
+      _logger.i(
+          'Saved $lessonFirebaseKey as completed for module1 (module-level). Attempts map: $updatedModuleAttempts');
       return true;
     } catch (e) {
-      _logger.e('Error saving lesson progress for module1 ($lessonNumberInModule): $e');
+      _logger.e(
+          'Error saving module-level lesson progress for module1 ($lessonNumberInModule): $e');
       return false;
     }
   }
 
-  void _initializeStateLists() {
-    // Lesson 1.1 and 1.2 have 8 questions, Lesson 1.3 has 10 questions.
-    int questionCount = currentLesson == 3 ? 10 : 8;
-    _logger.i('Initializing state lists for Lesson $currentLesson (module1): questionCount=$questionCount');
-    _answerCorrectness = List<bool>.filled(questionCount, false);
-    _selectedAnswers = List<List<String>>.generate(questionCount, (_) => <String>[]);
+  void _initializeStateListsForCurrentLesson() {
+    int questionCount =
+        currentLesson == 3 ? 10 : 8; // L1.1 & L1.2 have 8, L1.3 has 10
+    _logger.i(
+        'Initializing state lists for Lesson $currentLesson (module1): questionCount=$questionCount');
+
+    _selectedAnswers =
+        List<List<String>>.generate(questionCount, (_) => <String>[]);
+    _fillInBlankAnswers =
+        List<String>.filled(questionCount, ""); // Only for L1.3
+
     _isCorrectStates = List<bool?>.filled(questionCount, null);
     _errorMessages = List<String?>.filled(questionCount, null);
   }
 
   void _initializeYoutubeController() {
     String? videoId = _videoIds[currentLesson];
-    _logger.i('Initializing YouTube controller for Lesson $currentLesson (module1): videoId=$videoId');
+    _logger.i(
+        'Initializing YouTube controller for Lesson $currentLesson (module1): videoId=$videoId');
     if (videoId == null || videoId.isEmpty) {
-      _logger.w('No video ID for Lesson $currentLesson (module1), controller will use empty ID.');
-      videoId = ''; // Prevent null error, player will show error state
+      _logger.w(
+          'No video ID for Lesson $currentLesson (module1), controller will use empty ID.');
+      videoId = '';
     }
     _youtubeController = YoutubePlayerController(
       initialVideoId: videoId,
@@ -189,32 +320,38 @@ class _Module1PageState extends State<Module1Page> {
         mute: false,
         enableCaption: true,
         captionLanguage: 'en',
-        hideControls: false, // Show controls by default
+        hideControls: false,
       ),
     );
-    // Add listener for errors
     _youtubeController.addListener(() {
       if (_youtubeController.value.errorCode != 0 && mounted) {
         setState(() {
-          _youtubeError = 'Error playing video: ${_youtubeController.value.errorCode}';
+          _youtubeError =
+              'Error playing video: ${_youtubeController.value.errorCode}';
         });
-        _logger.e('YouTube Player Error (module1): ${_youtubeController.value.errorCode}');
+        _logger.e(
+            'YouTube Player Error (module1): ${_youtubeController.value.errorCode}');
       }
     });
   }
 
   void _updateYoutubeVideoId() {
     String? videoId = _videoIds[currentLesson];
-    _logger.i('Updating YouTube video for Lesson $currentLesson (module1): videoId=$videoId');
+    _logger.i(
+        'Updating YouTube video for Lesson $currentLesson (module1): videoId=$videoId');
     if (videoId != null && videoId.isNotEmpty) {
       try {
-        // It's generally safer to create a new controller instance
-        // than to try and load a new video into an existing one if issues arise.
-        _youtubeController.pause(); // Pause current video if playing
-        _youtubeController.removeListener(() {}); // Clean up old listeners
-        _youtubeController.dispose(); // Dispose of the old controller
+        final oldController = _youtubeController;
+        // It's important to remove listeners before disposing
+        oldController.removeListener(
+            () {}); // This needs a specific listener function if you added one with specific logic.
+        // For the general error listener, it will be added to the new one.
+        oldController.pause(); // Good practice
 
-        _youtubeController = YoutubePlayerController( // Create a new one
+        // Delay disposal slightly if experiencing issues, though usually direct disposal is fine
+        // Future.delayed(Duration(milliseconds: 100), () => oldController.dispose());
+
+        _youtubeController = YoutubePlayerController(
           initialVideoId: videoId,
           flags: const YoutubePlayerFlags(
             autoPlay: false,
@@ -224,26 +361,37 @@ class _Module1PageState extends State<Module1Page> {
             hideControls: false,
           ),
         );
-        _youtubeController.addListener(() { // Add error listener to new controller
-            if (_youtubeController.value.errorCode != 0 && mounted) {
-                setState(() {
-                _youtubeError = 'Error playing video: ${_youtubeController.value.errorCode}';
-                });
-                _logger.e('YouTube Player Error on update (module1): ${_youtubeController.value.errorCode}');
-            }
+        _youtubeController.addListener(() {
+          if (_youtubeController.value.errorCode != 0 && mounted) {
+            setState(() {
+              _youtubeError =
+                  'Error playing video: ${_youtubeController.value.errorCode}';
+            });
+            _logger.e(
+                'YouTube Player Error on update (module1): ${_youtubeController.value.errorCode}');
+          }
         });
+        // Dispose the old controller *after* the new one is ready or after a short delay
+        // This can sometimes help with transition issues on some platforms.
+        // For robustness, ensure the old one is truly disposed.
+        // If the above dispose causes issues by being too quick, you might keep a reference and dispose later,
+        // but typically replacing the controller instance and disposing the old one is the way.
+        oldController.dispose(); // Dispose after new one is set up
 
         if (mounted) {
           setState(() {
-            _youtubeError = null; // Clear previous errors
+            _youtubeError = null;
           });
         }
-        _logger.i('Successfully updated YouTube video for Lesson $currentLesson (module1): videoId=$videoId');
+        _logger.i(
+            'Successfully updated YouTube video for Lesson $currentLesson (module1): videoId=$videoId');
       } catch (e) {
-        _logger.e('Error loading YouTube video for Lesson $currentLesson (module1): $e');
+        _logger.e(
+            'Error loading YouTube video for Lesson $currentLesson (module1): $e');
         if (mounted) {
           setState(() {
-            _youtubeError = 'Failed to load video for Lesson $currentLesson. Please try again.';
+            _youtubeError =
+                'Failed to load video for Lesson $currentLesson. Please try again.';
           });
         }
       }
@@ -257,140 +405,203 @@ class _Module1PageState extends State<Module1Page> {
     }
   }
 
-  Future<void> _validateAllAnswers({
+  // This is the callback passed to the lesson widgets.
+  // It now incorporates score calculation and calling the new Firebase service method.
+  Future<void> _handleLessonSubmission({
     required List<Map<String, dynamic>> questionsData,
-    List<String>? userAnswersFromLesson1_3, // Specific for Lesson 1.3
+    List<String>?
+        userAnswersFromLesson1_3, // Specific for Lesson 1.3's fill-in-the-blanks
     required int timeSpentFromLesson,
-    required int attemptNumberFromLesson, // This is the current attempt number from the lesson
+    // attemptNumberFromLessonWidget is the initialAttemptNumber for that session (0-indexed for current try, or count of past attempts)
+    required int attemptNumberFromLessonWidget,
   }) async {
-    final String lessonKey = 'lesson$currentLesson';
-    // Ensure _lessonAttemptCounts is updated with the attempt number from the lesson widget
-    _lessonAttemptCounts[lessonKey] = attemptNumberFromLesson;
+    final String lessonKeyForModuleProgress =
+        'lesson$currentLesson'; // e.g., "lesson1"
+    final String firestoreLessonKey =
+        _firestoreLessonKeys[currentLesson]!; // e.g., "Lesson 1.1"
+    final String lessonTitleForOldLog = _lessonTitlesForOldLog[currentLesson]!;
 
-    _logger.i('Validating answers for ${questionsData.length} questions in Lesson $currentLesson (module1). Attempt: $attemptNumberFromLesson, Time: $timeSpentFromLesson s');
+    _logger.i(
+        'Handling submission for $firestoreLessonKey. Time: $timeSpentFromLesson s. '
+        'Attempt number from lesson widget (initial for this try): $attemptNumberFromLessonWidget');
 
-    List<List<String>> selectedAnswersForValidation;
-
-    // Handle answers from Lesson 1.3 (fill-in-the-blanks) differently
-    if (userAnswersFromLesson1_3 != null && currentLesson == 3) {
-      selectedAnswersForValidation = userAnswersFromLesson1_3.map((answer) => [answer.trim()]).toList();
-      // Update the main _selectedAnswers list for UI consistency if needed
+    // --- 1. Validate all questions answered (example) ---
+    bool allAnswered = true;
+    if (currentLesson == 1 || currentLesson == 2) {
+      // Word selection
+      allAnswered = _selectedAnswers.every((answers) => answers.isNotEmpty);
+    } else if (currentLesson == 3) {
+      // Fill in the blank
+      allAnswered = userAnswersFromLesson1_3
+              ?.every((answer) => answer.trim().isNotEmpty) ??
+          false;
+    }
+    if (!allAnswered) {
+      _logger.w(
+          '$firestoreLessonKey submission attempt, but not all questions answered.');
       if (mounted) {
-        setState(() {
-          for (int i = 0; i < userAnswersFromLesson1_3.length; i++) {
-            if (i < _selectedAnswers.length) {
-              _selectedAnswers[i] = [userAnswersFromLesson1_3[i].trim()];
-            }
-          }
-        });
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Please answer all questions before submitting.')));
       }
-    } else {
-      // For Lesson 1.1 and 1.2 (word selection)
-      selectedAnswersForValidation = _selectedAnswers
-          .map((list) => list.map((e) => e.toString().trim()).toList())
-          .toList();
+      return;
     }
 
-    // Check if all questions have been answered
-    for (int i = 0; i < questionsData.length; i++) {
-      if (selectedAnswersForValidation.length <= i || selectedAnswersForValidation[i].isEmpty || (selectedAnswersForValidation[i].length == 1 && selectedAnswersForValidation[i].first.isEmpty)) {
-        _logger.w('Lesson $currentLesson (module1) submission attempt $attemptNumberFromLesson, but question ${i + 1} was not answered.');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Please answer all questions before submitting.'))
-          );
-        }
-        return; // Stop validation if any question is unanswered
-      }
-    }
+    // --- 2. Calculate Score ---
+    int calculatedScore = 0;
+    int totalQuestions = questionsData.length;
 
-    if (mounted) {
-      setState(() {
-        // Ensure lists are correctly sized for the current questionsData
-        if (_answerCorrectness.length != questionsData.length) _answerCorrectness = List<bool>.filled(questionsData.length, false);
-        if (_isCorrectStates.length != questionsData.length) _isCorrectStates = List<bool?>.filled(questionsData.length, null);
-        if (_errorMessages.length != questionsData.length) _errorMessages = List<String?>.filled(questionsData.length, null);
-        
+    if (currentLesson == 1 || currentLesson == 2) {
+      // Scoring for Lesson 1.1 and 1.2 (Word Selection)
+      if (questionsData.length != _selectedAnswers.length) {
+        _logger.e(
+            "Score Calc Error: Question data length (${questionsData.length}) != selected answers length (${_selectedAnswers.length}) for $firestoreLessonKey");
+      } else {
         for (int i = 0; i < questionsData.length; i++) {
-          List<String> correctAnswers;
-          final rawCorrectAnswer = questionsData[i]['correctAnswer'];
-          final explanation = questionsData[i]['explanation'] ?? 'No explanation provided'; // Default explanation
+          List<String> selectedWords =
+              _selectedAnswers[i].map((e) => e.toLowerCase()).toList();
+          String correctAnswerString =
+              questionsData[i]['correctAnswer'] as String;
+          List<String> correctWords = correctAnswerString
+              .split(',')
+              .map((e) => e.trim().toLowerCase())
+              .toList();
 
-          // Handle different formats of correctAnswer
-          if (rawCorrectAnswer is String) {
-            correctAnswers = rawCorrectAnswer.toLowerCase().split(', ').map((e) => e.trim()).toList();
-          } else if (rawCorrectAnswer is List<dynamic>) {
-            correctAnswers = rawCorrectAnswer.map((e) => e.toString().toLowerCase().trim()).toList();
-          } else {
-            // Invalid format for correctAnswer
-            correctAnswers = []; // No correct answer to compare against
-            if (i < _errorMessages.length) _errorMessages[i] = 'Invalid correct answer format: $explanation';
-            if (i < _isCorrectStates.length) _isCorrectStates[i] = false;
-            if (i < _answerCorrectness.length) _answerCorrectness[i] = false;
-            _logger.e('Invalid correct answer format for question $i in Lesson $currentLesson (module1)');
-            continue; // Move to the next question
+          bool isCorrect = selectedWords.length == correctWords.length &&
+              correctWords.every((word) => selectedWords.contains(word)) &&
+              selectedWords.every((word) => correctWords.contains(word));
+          if (isCorrect) {
+            calculatedScore++;
           }
-
-          // Get current selected answers for this question
-          List<String> currentSelected = selectedAnswersForValidation[i].map((e) => e.toLowerCase()).toList();
-
-          // Validate the answer
-          bool isCorrect = correctAnswers.every((correct) => currentSelected.contains(correct)) &&
-              currentSelected.every((selected) => correctAnswers.contains(selected));
-
-          if (i < _isCorrectStates.length) _isCorrectStates[i] = isCorrect;
-          if (i < _errorMessages.length) _errorMessages[i] = isCorrect ? null : explanation;
-          if (i < _answerCorrectness.length) _answerCorrectness[i] = isCorrect;
-          _logger.d('Validated question $i in Lesson $currentLesson (module1): isCorrect=$isCorrect, selected=$currentSelected, correct=$correctAnswers');
+          if (i < _isCorrectStates.length)
+            _isCorrectStates[i] = isCorrect; // Update UI feedback state
+          if (i < _errorMessages.length)
+            _errorMessages[i] = isCorrect
+                ? null
+                : (questionsData[i]['explanation'] ?? 'Incorrect');
         }
-      });
+      }
+    } else if (currentLesson == 3) {
+      // Scoring for Lesson 1.3 (Fill-in-the-blank)
+      if (userAnswersFromLesson1_3 != null &&
+          questionsData.length == userAnswersFromLesson1_3.length) {
+        for (int i = 0; i < questionsData.length; i++) {
+          String userAnswer = userAnswersFromLesson1_3[i].trim().toLowerCase();
+
+          // CORRECTED PART: Treat correctAnswer as a String
+          String correctAnswer =
+              (questionsData[i]['correctAnswer'] as String? ?? "")
+                  .trim()
+                  .toLowerCase();
+          // Added '??"" ' for null safety, though your data has it.
+
+          bool isCorrect =
+              correctAnswer == userAnswer; // Direct string comparison
+
+          if (isCorrect) {
+            calculatedScore++;
+          }
+          // Update UI feedback states
+          if (i < _isCorrectStates.length) _isCorrectStates[i] = isCorrect;
+          if (i < _errorMessages.length) {
+            _errorMessages[i] = isCorrect
+                ? null
+                : (questionsData[i]['explanation'] as String? ?? 'Incorrect');
+          }
+        }
+      } else {
+        _logger.e(
+            "Score Calc Error: Mismatch in question/answer lengths or null userAnswersFromLesson1_3 for Lesson 1.3");
+      }
     }
 
-    int score = _answerCorrectness.where((c) => c).length;
-    int totalScore = questionsData.length;
+    _logger.i(
+        "$firestoreLessonKey Calculated Score: $calculatedScore / $totalQuestions");
 
-    final Map<int, String> lessonTitles = {
-      1: 'Lesson 1.1: Nouns and Pronouns',
-      2: 'Lesson 1.2: Simple Sentences',
-      3: 'Lesson 1.3: Verb and Tenses (Present Simple)',
-    };
-    String lessonIdForLogging = lessonTitles[currentLesson]!; // Assuming currentLesson is always 1, 2, or 3
+    // --- 3. Determine Attempt Number to Save ---
+    // _lessonSpecificAttemptCounts stores the number of *already successfully saved* attempts for this specific lesson key.
+    int currentCompletedSpecificAttempts =
+        _lessonSpecificAttemptCounts[firestoreLessonKey] ?? 0;
+    int attemptNumberToSave = currentCompletedSpecificAttempts + 1;
 
-    List<Map<String, dynamic>> detailedResponses = questionsData.asMap().entries.map((e) {
-      int idx = e.key;
+    // --- 4. Log activity using the old system (optional, if you're migrating) ---
+    // Consider if you still need this if the new system captures everything.
+    /*
+    List<Map<String, dynamic>> detailedResponsesForOldLog = questionsData.asMap().entries.map((e) {
       return {
         'question': e.value['question'],
-        'userAnswer': idx < selectedAnswersForValidation.length ? selectedAnswersForValidation[idx] : <String>[],
-        'correct': idx < _isCorrectStates.length ? _isCorrectStates[idx] : false,
+        'userAnswer': currentLesson == 3 ? 
+                      (e.key < (userAnswersFromLesson1_3?.length ?? 0) ? [userAnswersFromLesson1_3![e.key]] : []) : 
+                      (e.key < _selectedAnswers.length ? _selectedAnswers[e.key] : []),
+        'correct': e.key < _isCorrectStates.length ? _isCorrectStates[e.key] : false,
       };
     }).toList();
+    await _firebaseService.logLessonActivity(
+        'module1', lessonTitleForOldLog, attemptNumberToSave, calculatedScore, totalQuestions, timeSpentFromLesson, detailedResponsesForOldLog);
+    */
 
-    // Log activity with the attemptNumberFromLesson
-    await _firebaseService.logLessonActivity('module1', lessonIdForLogging, attemptNumberFromLesson, score, totalScore, timeSpentFromLesson, detailedResponses);
-    
-    // Save progress, which will use the updated _lessonAttemptCounts
-    bool success = await _saveLessonProgress(currentLesson);
-    if (success) {
-      _logger.i('Lesson $lessonIdForLogging (module1) marked as completed. Logged attempt $attemptNumberFromLesson with score $score/$totalScore, time $timeSpentFromLesson s.');
+    // --- 5. Call new FirebaseService method to save specific attempt details ---
+    try {
+      await _firebaseService.saveSpecificLessonAttempt(
+        lessonIdKey: firestoreLessonKey, // e.g., "Lesson 1.1"
+        score: calculatedScore,
+        attemptNumberToSave: attemptNumberToSave,
+        timeSpent: timeSpentFromLesson,
+      );
+      _logger.i(
+          "Successfully saved specific attempt $attemptNumberToSave for $firestoreLessonKey to lessonAttempts.");
+
       if (mounted) {
         setState(() {
-          showActivity = true; // Show activity/results section
+          // Update local count of completed specific attempts
+          _lessonSpecificAttemptCounts[firestoreLessonKey] =
+              attemptNumberToSave;
+
+          // Mark lesson as "touched" or "completed" in the module-level progress
+          _lessonCompletion[lessonKeyForModuleProgress] = true;
+
+          // Update module-level attempt count (simple increment)
+          int newModuleLevelAttemptCount =
+              (_moduleLevelLessonAttemptCounts[lessonKeyForModuleProgress] ??
+                      0) +
+                  1;
+          _moduleLevelLessonAttemptCounts[lessonKeyForModuleProgress] =
+              newModuleLevelAttemptCount;
+
+          showActivity = true; // Ensure results/feedback section is shown
         });
+        // Now update the module-level progress in Firestore (completion flag and simple attempt count)
+        await _saveModuleLessonProgress(currentLesson);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text(
+                  '$firestoreLessonKey progress saved! Score: $calculatedScore/$totalQuestions')),
+        );
       }
-    } else {
-      _logger.e('Failed to mark Lesson $currentLesson (module1) as completed, but still logging attempt.');
-      // Note: logLessonActivity was already called above.
+    } catch (e) {
+      _logger.e("Failed to save specific attempt for $firestoreLessonKey: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text(
+                  'Error saving detailed attempt for $firestoreLessonKey: $e')),
+        );
+      }
     }
   }
 
   @override
   void dispose() {
-    _stopwatch.stop();
-    // Only dispose if the controller was initialized and no critical error prevented it.
-    if (_isContentLoaded && _youtubeError == null && mounted) { // Check mounted as well
+    // _stopwatch.stop(); // Stopwatch was removed, timer is handled in lesson widgets
+    if (_isContentLoaded && _youtubeError == null && mounted) {
+      // Check if _youtubeController was initialized
+      try {
         _youtubeController.pause();
-        _youtubeController.removeListener(() {}); // Clean up listeners
+        _youtubeController.removeListener(() {});
         _youtubeController.dispose();
+      } catch (e) {
+        _logger.w("Error disposing YouTube controller: $e");
+      }
     }
     super.dispose();
     _logger.i('Disposed Module1Page');
@@ -401,43 +612,31 @@ class _Module1PageState extends State<Module1Page> {
     if (!_isContentLoaded) {
       return Scaffold(
         appBar: AppBar(
-          title: const Text(
-            'Module 1: Basic English Grammar',
-            style: TextStyle(fontSize: 15), // Adjusted for potentially long titles
-          ),
-          backgroundColor: Colors.transparent, // Make AppBar transparent
-          foregroundColor: const Color(0xFF00568D), // Set icon and text color
-          elevation: 0, // Remove shadow
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back),
-            onPressed: () => Navigator.pop(context),
-          ),
-        ),
+            title: const Text('Module 1', style: TextStyle(fontSize: 18))),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
-    // Determine if the entire module is completed
-    bool isModuleCompleted = _lessonCompletion.values.every((completed) => completed);
-    // Determine if the current lesson is completed (based on loaded progress)
-    bool currentLessonLocallyCompleted = _lessonCompletion['lesson$currentLesson'] ?? false;
+    bool isModuleCompleted =
+        _lessonCompletion.values.every((completed) => completed);
+    bool currentLessonIsCompletedForUI =
+        _lessonCompletion['lesson$currentLesson'] ?? false;
 
+    // Determine the initial attempt number to pass to the lesson widget
+    // This is the count of *previously completed* attempts for this specific lesson.
+    int initialAttemptNumberForLessonWidget =
+        _lessonSpecificAttemptCounts[_firestoreLessonKeys[currentLesson]!] ?? 0;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Module 1: Basic English Grammar',
-          style: TextStyle(fontSize: 15), // Adjusted for potentially long titles
-        ),
-        backgroundColor: Colors.transparent, // Make AppBar transparent
-        foregroundColor: const Color(0xFF00568D), // Set icon and text color
-        elevation: 0, // Remove shadow
+        title: const Text('Module 1: Basic English Grammar',
+            style: TextStyle(fontSize: 18)),
+        backgroundColor: Colors.transparent,
+        foregroundColor: const Color(0xFF00568D),
+        elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            _logger.i('Back button pressed on Module1Page. Popping.');
-            Navigator.pop(context);
-          }
+          onPressed: () => Navigator.pop(context),
         ),
       ),
       body: SafeArea(
@@ -450,113 +649,114 @@ class _Module1PageState extends State<Module1Page> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(
-                        'Lesson $currentLesson of 3',
-                        style: const TextStyle(fontSize: 16, color: Colors.grey),
-                      ),
+                      Text('Lesson $currentLesson of 3',
+                          style: const TextStyle(
+                              fontSize: 16, color: Colors.grey)),
                     ],
                   ),
                   const SizedBox(height: 16),
                   if (_youtubeError != null)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 8.0),
-                      child: Text(
-                        _youtubeError!,
-                        style: const TextStyle(color: Colors.red, fontSize: 16),
-                        textAlign: TextAlign.center,
-                      ),
+                      child: Text(_youtubeError!,
+                          style:
+                              const TextStyle(color: Colors.red, fontSize: 16),
+                          textAlign: TextAlign.center),
                     ),
-                  // Only build lesson content if there's no YouTube error
-                  if (_youtubeError == null) _buildLessonContent(),
+                  if (_youtubeError == null)
+                    _buildLessonContent(
+                        initialAttemptNumberForLessonWidget), // Pass initial attempt number
 
-                  // Conditional "Next Lesson" button
-                  if (showActivity && currentLessonLocallyCompleted && currentLesson < 3 && _youtubeError == null) ...[
-                    const SizedBox(height: 16),
+                  if (showActivity &&
+                      currentLessonIsCompletedForUI &&
+                      currentLesson < 3 &&
+                      _youtubeError == null) ...[
+                    const SizedBox(height: 24),
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
                         onPressed: () {
-                                _logger.i('Next Lesson button pressed, switching to Lesson ${currentLesson + 1} (module1)');
-                                if (mounted) {
-                                  setState(() {
-                                    currentLesson++;
-                                    // Determine if the new lesson's activity should be shown based on its completion status
-                                    showActivity = _lessonCompletion['lesson$currentLesson'] ?? false;
-                                    _currentSlide = 0; // Reset slide for the new lesson
-                                    _carouselController.jumpToPage(0);
-                                    _initializeStateLists(); // Re-initialize lists for the new lesson's question count
-                                    _updateYoutubeVideoId(); // Load the new lesson's video
-                                    _stopwatch.reset(); // Reset and start stopwatch for the new lesson
-                                    _stopwatch.start();
-                                    _logger.i('Switched to Lesson $currentLesson (module1). showActivity: $showActivity');
-                                  });
-                                }
-                              },
+                          _logger.i(
+                              'Next Lesson button pressed, switching to Lesson ${currentLesson + 1}');
+                          if (mounted) {
+                            setState(() {
+                              currentLesson++;
+                              String newLessonKeyForShowActivity =
+                                  'lesson$currentLesson';
+                              showActivity = _lessonCompletion[
+                                      newLessonKeyForShowActivity] ??
+                                  false;
+                              _currentSlide = 0;
+                              _carouselController.jumpToPage(0);
+                              _initializeStateListsForCurrentLesson();
+                              _updateYoutubeVideoId();
+                              _logger.i(
+                                  'Switched to Lesson $currentLesson. showActivity: $showActivity');
+                            });
+                          }
+                        },
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF00568D), // Theme color
+                          backgroundColor: const Color(0xFF00568D),
                           foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
+                              borderRadius: BorderRadius.circular(12)),
                         ),
-                        child: const Text('Next Lesson'),
+                        child: const Text('Next Lesson',
+                            style: TextStyle(fontSize: 16)),
                       ),
                     ),
                   ],
-                  // Conditional "Module Completed" button
-                  if (showActivity && currentLessonLocallyCompleted && currentLesson == 3 && isModuleCompleted && _youtubeError == null) ...[
-                    const SizedBox(height: 16),
+                  if (showActivity &&
+                      currentLessonIsCompletedForUI &&
+                      currentLesson == 3 &&
+                      isModuleCompleted &&
+                      _youtubeError == null) ...[
+                    const SizedBox(height: 24),
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
                         onPressed: () {
-                                _logger.i('Complete Module & Return to Courses button pressed (Module 1).');
-                                if (mounted) {
-                                   Navigator.pop(context); // Go back to the courses page
-                                }
-                              },
+                          _logger
+                              .i('Module 1 Completed. Returning to Courses.');
+                          Navigator.pop(context);
+                        },
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green, // Success color
+                          backgroundColor: Colors.green,
                           foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
+                              borderRadius: BorderRadius.circular(12)),
                         ),
-                        child: const Text('Module Completed - Return to Courses'),
+                        child: const Text(
+                            'Module Completed - Return to Courses',
+                            style: TextStyle(fontSize: 16)),
                       ),
                     ),
                   ],
-                  // Case: Last lesson completed, but module not yet fully marked as complete (e.g., due to async operations)
-                  // Still allow user to exit as they've finished the last lesson's activity.
-                  if (showActivity && currentLessonLocallyCompleted && currentLesson == 3 && !isModuleCompleted && _youtubeError == null) ...[
-                     const SizedBox(height: 16),
+                  if (showActivity &&
+                      currentLessonIsCompletedForUI &&
+                      currentLesson == 3 &&
+                      !isModuleCompleted &&
+                      _youtubeError == null) ...[
+                    const SizedBox(height: 24),
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
                         onPressed: () {
-                                _logger.i('Complete Lesson 1.3 & Return to Courses button pressed (module not yet fully marked complete).');
-                                if (mounted) {
-                                   // Check one last time if all lessons are now marked complete
-                                   bool allDone = _lessonCompletion.values.every((c) => c);
-                                   if (allDone) {
-                                       _logger.i('Module 1 confirmed complete. Popping to CoursesPage.');
-                                       Navigator.pop(context);
-                                   } else {
-                                       // This case might occur if Firebase updates are slow or if there's a logic discrepancy.
-                                       // For a better user experience, allow them to exit.
-                                       _logger.w('Lesson 1.3 marked complete, but module state not fully updated or other lessons incomplete. Popping anyway. State: $_lessonCompletion');
-                                       Navigator.pop(context);
-                                   }
-                                }
-                              },
+                          _logger.i(
+                              'Last lesson of Module 1 completed. Returning to Courses.');
+                          Navigator.pop(context);
+                        },
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF00568D), // Theme color
+                          backgroundColor: const Color(0xFF00568D),
                           foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
+                              borderRadius: BorderRadius.circular(12)),
                         ),
-                        child: const Text('Complete Module & Return to Courses'),
+                        child: const Text('Finish Module & Return',
+                            style: TextStyle(fontSize: 16)),
                       ),
                     ),
                   ]
@@ -569,40 +769,55 @@ class _Module1PageState extends State<Module1Page> {
     );
   }
 
-  Widget _buildLessonContent() {
+  Widget _buildLessonContent(int initialAttemptNumberForLessonUi) {
+    // Accept initialAttemptNumber
+    // This check might be redundant if _initializeStateListsForCurrentLesson is always called when currentLesson changes.
     int questionCount = currentLesson == 3 ? 10 : 8;
     if (_selectedAnswers.length != questionCount ||
         _isCorrectStates.length != questionCount ||
-        _errorMessages.length != questionCount ||
-        _answerCorrectness.length != questionCount) {
-      _logger.w('List length mismatch for Lesson $currentLesson (module1) in _buildLessonContent. Re-initializing lists.');
-      _initializeStateLists();
+        _errorMessages.length != questionCount) {
+      _logger.w(
+          'Re-initializing lists in _buildLessonContent for Lesson $currentLesson');
+      _initializeStateListsForCurrentLesson();
     }
 
-    // Calculate the next attempt number
-    int nextAttemptNumber = (_lessonAttemptCounts['lesson$currentLesson'] ?? 0) + 1;
-    _logger.i('Module 1, Lesson $currentLesson: Initializing with attempt number: $nextAttemptNumber');
-
-    // Callback for interactive word selection questions
-    Function(int, List<String>) onWordsSelectedCallback = (int questionIndex, List<String> selectedWords) {
+    // This is the callback for Lesson 1.1 and 1.2 (word selection)
+    onWordsSelectedCallback(int questionIndex, List<String> selectedWords) {
       if (mounted) {
         setState(() {
           if (questionIndex < _selectedAnswers.length) {
             _selectedAnswers[questionIndex] = selectedWords;
-            _logger.d('Module 1, Lesson $currentLesson, Q$questionIndex selection updated: $selectedWords');
-            // Optionally reset validation state for this question
-            if (questionIndex < _isCorrectStates.length) _isCorrectStates[questionIndex] = null;
-            if (questionIndex < _errorMessages.length) _errorMessages[questionIndex] = null;
-          } else {
-            _logger.w('onWordsSelectedCallback: questionIndex $questionIndex out of bounds for _selectedAnswers (length: ${_selectedAnswers.length})');
+            _logger.d(
+                'Module 1, Lesson $currentLesson, Q$questionIndex selection updated: $selectedWords');
+            if (questionIndex < _isCorrectStates.length)
+              _isCorrectStates[questionIndex] = null;
+            if (questionIndex < _errorMessages.length)
+              _errorMessages[questionIndex] = null;
           }
         });
       }
-    };
+    }
+
+    // This is the callback for Lesson 1.3 (fill-in-the-blank)
+    onFillInBlankAnswerChangedCallback(int questionIndex, String answer) {
+      if (mounted) {
+        setState(() {
+          if (questionIndex < _fillInBlankAnswers.length) {
+            _fillInBlankAnswers[questionIndex] = answer;
+            _logger.d(
+                'Module 1, Lesson 1.3, Q$questionIndex answer updated: $answer');
+            if (questionIndex < _isCorrectStates.length)
+              _isCorrectStates[questionIndex] = null;
+            if (questionIndex < _errorMessages.length)
+              _errorMessages[questionIndex] = null;
+          }
+        });
+      }
+    }
 
     switch (currentLesson) {
       case 1:
-        return buildLesson1_1( 
+        return buildLesson1_1(
           context: context,
           currentSlide: _currentSlide,
           carouselController: _carouselController,
@@ -611,26 +826,28 @@ class _Module1PageState extends State<Module1Page> {
           onShowActivity: () {
             if (mounted) setState(() => showActivity = true);
           },
-          selectedAnswers: _selectedAnswers,
+          selectedAnswers: _selectedAnswers, // For L1.1 word selection
           isCorrectStates: _isCorrectStates,
           errorMessages: _errorMessages,
           onAnswerChanged: (index, isCorrect) {
-            _logger.d('Answer changed for question $index in Lesson $currentLesson (module1)');
+            /* General feedback if needed */
           },
           onSlideChanged: (index) {
             if (mounted) setState(() => _currentSlide = index);
-            _logger.d('Slide changed to $index in Lesson $currentLesson (module1)');
           },
-          onSubmitAnswers: (questions, timeSpent, attemptNumber) => _validateAllAnswers(
+          onSubmitAnswers: (questions, timeSpent, attemptNumberFromWidget) =>
+              _handleLessonSubmission(
             questionsData: questions,
             timeSpentFromLesson: timeSpent,
-            attemptNumberFromLesson: attemptNumber,
+            attemptNumberFromLessonWidget: attemptNumberFromWidget,
           ),
-          onWordsSelected: onWordsSelectedCallback,
-          initialAttemptNumber: nextAttemptNumber, 
+          onWordsSelected: onWordsSelectedCallback, // Specific to L1.1
+          initialAttemptNumber:
+              initialAttemptNumberForLessonUi, // Pass the 0-indexed count of previous attempts
         );
       case 2:
         return buildLesson1_2(
+          // Ensure buildLesson1_2 uses a similar callback structure
           context: context,
           currentSlide: _currentSlide,
           carouselController: _carouselController,
@@ -639,26 +856,25 @@ class _Module1PageState extends State<Module1Page> {
           onShowActivity: () {
             if (mounted) setState(() => showActivity = true);
           },
-          selectedAnswers: _selectedAnswers,
+          selectedAnswers: _selectedAnswers, // For L1.2 word selection
           isCorrectStates: _isCorrectStates,
           errorMessages: _errorMessages,
-          onAnswerChanged: (index, isCorrect) {
-            _logger.d('Answer changed for question $index in Lesson $currentLesson (module1)');
-          },
+          onAnswerChanged: (index, isCorrect) {/* ... */},
           onSlideChanged: (index) {
             if (mounted) setState(() => _currentSlide = index);
-            _logger.d('Slide changed to $index in Lesson $currentLesson (module1)');
           },
-          onSubmitAnswers: (questions, timeSpent, attemptNumber) => _validateAllAnswers(
+          onSubmitAnswers: (questions, timeSpent, attemptNumberFromWidget) =>
+              _handleLessonSubmission(
             questionsData: questions,
             timeSpentFromLesson: timeSpent,
-            attemptNumberFromLesson: attemptNumber,
+            attemptNumberFromLessonWidget: attemptNumberFromWidget,
           ),
-          onWordsSelected: onWordsSelectedCallback,
-          initialAttemptNumber: nextAttemptNumber, 
+          onWordsSelected: onWordsSelectedCallback, // Specific to L1.2
+          initialAttemptNumber: initialAttemptNumberForLessonUi,
         );
       case 3:
         return buildLesson1_3(
+          // Ensure buildLesson1_3 has a suitable callback
           context: context,
           currentSlide: _currentSlide,
           carouselController: _carouselController,
@@ -667,26 +883,29 @@ class _Module1PageState extends State<Module1Page> {
           onShowActivity: () {
             if (mounted) setState(() => showActivity = true);
           },
-          selectedAnswers: _selectedAnswers,
+          // For Lesson 1.3, _selectedAnswers might not be directly used if it's fill-in-the-blank
+          // Instead, you'll collect answers differently.
+          // The `_handleLessonSubmission` will need to use `userAnswersFromLesson1_3`
+
           isCorrectStates: _isCorrectStates,
           errorMessages: _errorMessages,
-          onAnswerChanged: (index, isCorrect) {
-            _logger.d('Answer changed for question $index in Lesson $currentLesson (module1)');
-          },
           onSlideChanged: (index) {
             if (mounted) setState(() => _currentSlide = index);
-            _logger.d('Slide changed to $index in Lesson $currentLesson (module1)');
           },
-          onSubmitAnswers: (questions, userAnswers, timeSpent, attemptNumber) => _validateAllAnswers(
+          onSubmitAnswers: (questions, answersFromL1_3, timeSpent,
+                  attemptNumberFromWidget) =>
+              _handleLessonSubmission(
             questionsData: questions,
-            userAnswersFromLesson1_3: userAnswers,
+            userAnswersFromLesson1_3:
+                answersFromL1_3, // Pass these specific answers
             timeSpentFromLesson: timeSpent,
-            attemptNumberFromLesson: attemptNumber,
+            attemptNumberFromLessonWidget: attemptNumberFromWidget,
           ),
-          initialAttemptNumber: nextAttemptNumber, 
+          initialAttemptNumber: initialAttemptNumberForLessonUi,
         );
       default:
-        _logger.w('Invalid lesson number: $currentLesson (module1)');
+        _logger
+            .w('Invalid lesson number: $currentLesson in _buildLessonContent');
         return Container(child: Text('Error: Invalid lesson $currentLesson'));
     }
   }
