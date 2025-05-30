@@ -529,8 +529,8 @@ class _Module1PageState extends State<Module1Page> {
     List<Map<String, dynamic>> detailedResponsesForOldLog = questionsData.asMap().entries.map((e) {
       return {
         'question': e.value['question'],
-        'userAnswer': currentLesson == 3 ? 
-                      (e.key < (userAnswersFromLesson1_3?.length ?? 0) ? [userAnswersFromLesson1_3![e.key]] : []) : 
+        'userAnswer': currentLesson == 3 ?
+                      (e.key < (userAnswersFromLesson1_3?.length ?? 0) ? [userAnswersFromLesson1_3![e.key]] : []) :
                       (e.key < _selectedAnswers.length ? _selectedAnswers[e.key] : []),
         'correct': e.key < _isCorrectStates.length ? _isCorrectStates[e.key] : false,
       };
