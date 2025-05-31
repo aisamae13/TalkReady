@@ -10,7 +10,7 @@ Future<List<Map<String, dynamic>>> getTrainerClassesFromService(String trainerId
   final snapshot = await FirebaseFirestore.instance
       .collection('classes')
       .where('trainerId', isEqualTo: trainerId)
-      .orderBy('createdAt', descending: true)
+      .orderBy('createdAt', descending: true) // Query with filter and order
       .get();
   return snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
 }

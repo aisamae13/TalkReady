@@ -23,6 +23,7 @@ class AnimatedBottomNavBar extends StatefulWidget {
   final Duration animationDuration;
   final double iconProtrusion;
   final double extraNotchDepth;
+  final double? customNotchWidthFactor; // <-- New optional parameter
 
   const AnimatedBottomNavBar({
     super.key,
@@ -33,13 +34,14 @@ class AnimatedBottomNavBar extends StatefulWidget {
     this.inactiveColor = Colors.black,
     this.backgroundColor = const Color(0xFF2196F3),
     this.notchColor = Colors.white,
-    this.barHeight = 25.0,
-    this.iconSize = 40.0,
-    this.selectedIconSize = 50.0,
+    this.barHeight = 18.0,
+    this.iconSize = 24.0,
+    this.selectedIconSize = 28.0,
     this.selectedIconPadding = 10.0,
     this.animationDuration = const Duration(milliseconds: 300),
     this.iconProtrusion = 18.0,
     this.extraNotchDepth = 8.5,
+    this.customNotchWidthFactor, // <-- Initialize new parameter
   });
 
   @override
@@ -79,7 +81,10 @@ class _AnimatedBottomNavBarState extends State<AnimatedBottomNavBar>
     }
     if (widget.iconProtrusion != oldWidget.iconProtrusion ||
         widget.barHeight != oldWidget.barHeight ||
-        widget.extraNotchDepth != oldWidget.extraNotchDepth) {
+        widget.extraNotchDepth != oldWidget.extraNotchDepth ||
+        widget.selectedIconSize != oldWidget.selectedIconSize ||
+        widget.selectedIconPadding != oldWidget.selectedIconPadding ||
+        widget.customNotchWidthFactor != oldWidget.customNotchWidthFactor) { // <-- Check new param
       setState(() {});
     }
   }
@@ -88,12 +93,28 @@ class _AnimatedBottomNavBarState extends State<AnimatedBottomNavBar>
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final double actualSelectedIconSize = widget.selectedIconSize;
-    final double selectedIconPadding = widget.selectedIconPadding;
-    final double selectedIconCircleRadius = actualSelectedIconSize / 2 + selectedIconPadding;
+    final double selectedIconPaddingValue = widget.selectedIconPadding;
+    final double selectedIconCircleRadius = actualSelectedIconSize / 2 + selectedIconPaddingValue;
     final double selectedIconCircleDiameter = 2 * selectedIconCircleRadius;
+
     final double totalWidgetHeight = widget.barHeight + widget.iconProtrusion;
     final double painterNotchDepth = selectedIconCircleRadius + widget.extraNotchDepth;
+
     final double itemWidth = widget.items.isNotEmpty ? screenWidth / widget.items.length : screenWidth;
+
+    double notchWidthFactorToUse;
+
+    if (widget.customNotchWidthFactor != null) {
+      notchWidthFactorToUse = widget.customNotchWidthFactor!;
+    } else {
+      // Default dynamic calculation
+      const double notchToIconWidthRatio = 1.5; // Notch visual width will be ~1.5x the icon diameter
+      final double desiredNotchSpan = selectedIconCircleDiameter * notchToIconWidthRatio;
+      // The factor is how much of the itemWidth the notch should span
+      notchWidthFactorToUse = (itemWidth > 0 && widget.items.isNotEmpty)
+          ? desiredNotchSpan / itemWidth
+          : 1.0; // Default if itemWidth is 0 or no items
+    }
 
     return Container(
       height: totalWidgetHeight,
@@ -112,7 +133,6 @@ class _AnimatedBottomNavBarState extends State<AnimatedBottomNavBar>
         clipBehavior: Clip.none,
         alignment: Alignment.bottomCenter,
         children: [
-          // Painted bottom bar with animated notch
           Positioned(
             left: 0,
             right: 0,
@@ -127,14 +147,13 @@ class _AnimatedBottomNavBarState extends State<AnimatedBottomNavBar>
                     itemCount: widget.items.length,
                     animatedIndex: _animation.value,
                     barColor: widget.backgroundColor,
-                    notchDepth: selectedIconCircleRadius + widget.extraNotchDepth + 4, // DEEPER notch
-                    notchWidthFactor: 2.2, // MUCH wider notch
+                    notchDepth: painterNotchDepth,
+                    notchWidthFactor: notchWidthFactorToUse, // <-- Use determined factor
                   ),
                 );
               },
             ),
           ),
-          // Row of tappable icons (unselected style)
           SizedBox(
             height: totalWidgetHeight,
             child: Row(
@@ -152,13 +171,14 @@ class _AnimatedBottomNavBarState extends State<AnimatedBottomNavBar>
                       child: SizedBox(
                         height: widget.barHeight,
                         child: Center(
-                          child: index == widget.currentIndex
-                              ? const SizedBox.shrink() // Hide the icon for the selected tab
-                              : Icon(
-                                  item.icon,
-                                  size: widget.iconSize,
-                                  color: widget.inactiveColor,
-                                ),
+                          child: Opacity(
+                            opacity: (_animation.value.round() == index && _controller.isAnimating) || widget.currentIndex == index ? 0.0 : 1.0,
+                            child: Icon(
+                              item.icon,
+                              size: widget.iconSize,
+                              color: widget.inactiveColor,
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -167,17 +187,20 @@ class _AnimatedBottomNavBarState extends State<AnimatedBottomNavBar>
               }).toList(),
             ),
           ),
-          // Animated sliding selected icon
           if (widget.items.isNotEmpty)
             AnimatedBuilder(
               animation: _animation,
               builder: (context, _) {
                 double selectedIconCenterX = itemWidth * (_animation.value + 0.5);
                 double positionedLeft = selectedIconCenterX - (selectedIconCircleDiameter / 2);
-                final IconData currentIconData = widget.items[widget.currentIndex].icon;
+                int iconToShowIndex = widget.currentIndex;
+                if (_controller.isAnimating) {
+                    iconToShowIndex = widget.currentIndex;
+                }
+                final IconData currentIconData = widget.items[iconToShowIndex].icon;
                 return Positioned(
                   left: positionedLeft,
-                  top: 0, // Move icon up so it sits deeper in the notch
+                  top: 0,
                   width: selectedIconCircleDiameter,
                   height: selectedIconCircleDiameter,
                   child: Container(
@@ -233,63 +256,44 @@ class BottomBarPainter extends CustomPainter {
     final paint = Paint()
       ..color = barColor
       ..style = PaintingStyle.fill;
-
     final path = Path();
-    if (itemCount <= 0 || animatedIndex < 0 || animatedIndex >= itemCount) {
-      // Draw a simple rectangle if invalid state
+    if (itemCount <= 0) {
       path.addRect(Rect.fromLTWH(0, 0, size.width, size.height));
       canvas.drawPath(path, paint);
       return;
     }
-
     final itemWidth = size.width / itemCount;
     final notchCenter = itemWidth * (animatedIndex + 0.5);
     final notchRadius = itemWidth * notchWidthFactor / 2;
-    final notchSmoothness = 0.75;
     final startX = notchCenter - notchRadius;
     final endX = notchCenter + notchRadius;
-
-    path.moveTo(0, 0); // Start at top-left
-    path.lineTo(math.max(0, startX), 0); // Line to the start of the notch area
-
+    path.moveTo(0, 0);
+    path.lineTo(math.max(0, startX), 0);
     if (startX < endX && startX < size.width && endX > 0) {
-      // Condition to draw the curved notch is met
-
-      // Left curve into notch
+      const double curveSmoothness = 0.45;
       path.cubicTo(
-        startX + notchRadius * notchSmoothness,
+        startX + notchRadius * curveSmoothness,
         0,
-        notchCenter - notchRadius * 0.5,
+        notchCenter - notchRadius * (1 - curveSmoothness),
         notchDepth,
         notchCenter,
         notchDepth,
       );
-      // Right curve out of notch
       path.cubicTo(
-        notchCenter + notchRadius * 0.5,
+        notchCenter + notchRadius * (1 - curveSmoothness),
         notchDepth,
-        endX - notchRadius * notchSmoothness,
+        endX - notchRadius * curveSmoothness,
         0,
         math.min(size.width, endX),
         0,
       );
-      // Current point is now (math.min(size.width, endX), 0)
     } else {
-      // Condition to draw curved notch is NOT met (e.g., notch is off-screen or invalid).
-      // Draw a straight line across the top segment where the notch would be.
-      // Current point is (math.max(0, startX), 0).
       path.lineTo(math.min(size.width, math.max(0, endX)), 0);
     }
-
-    // After handling the notch area (either curved or straight line segment),
-    // complete the rest of the top edge of the bar by drawing to the top-right corner.
     path.lineTo(size.width, 0);
-
-    // Draw the right side, bottom side, and close the path (left side).
     path.lineTo(size.width, size.height);
     path.lineTo(0, size.height);
     path.close();
-
     canvas.drawPath(path, paint);
   }
 

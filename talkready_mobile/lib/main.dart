@@ -31,6 +31,16 @@ import 'package:talkready_mobile/Teachers/ClassManager/ManageClassStudents.dart'
 import 'package:talkready_mobile/Teachers/ClassManager/ManageClassContent.dart';
 import 'package:talkready_mobile/Teachers/ClassManager/EditAssessmentPage.dart'; // Assuming this is the correct location
 
+// Reports Page Import
+import 'package:talkready_mobile/Teachers/Reports/TrainerReports.dart';
+
+// Announcement Page Import
+import 'package:talkready_mobile/Teachers/Announcement/CreateAnnouncementPage.dart';
+
+// Content Page Imports
+import 'package:talkready_mobile/Teachers/Contents/QuickUploadMaterialPage.dart';
+import 'package:talkready_mobile/Teachers/Contents/SelectClassForContentPage.dart';
+
 final logger = Logger(
   printer: PrettyPrinter(
     methodCount: 2,
@@ -88,6 +98,13 @@ class MyApp extends StatelessWidget {
       // ClassManager static routes
       '/trainer/classes': (context) => const MyClassesPage(),
       '/trainer/classes/create': (context) => const CreateClassForm(),
+      // Reports static routes
+      '/trainer/reports': (context) => const TrainerReportsPage(),
+      // Announcement static routes
+      '/trainer/announcements/create': (context) => const CreateAnnouncementPage(),
+      // Content static routes
+      '/trainer/content/upload': (context) => const QuickUploadMaterialPage(),
+      '/trainer/content/select-class': (context) => const SelectClassForContentPage(),
     };
 
     return MaterialApp(
@@ -180,6 +197,12 @@ class MyApp extends StatelessWidget {
               builder: (_) => CreateAssessmentPage(initialClassId: classId),
               settings: settings,
             );
+          // Remove CreateAnnouncementPage from here if it was added previously, as it's now in staticRoutes
+          // case '/trainer/announcements/create': // Or whatever route name you used before
+          //   return MaterialPageRoute(
+          //     builder: (_) => const CreateAnnouncementPage(),
+          //     settings: settings,
+          //   );
           default:
             if (routeName != null && staticRoutes.containsKey(routeName)) {
               final WidgetBuilder? builder = staticRoutes[routeName];

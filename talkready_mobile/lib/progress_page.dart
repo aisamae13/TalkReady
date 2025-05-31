@@ -197,6 +197,7 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage> {
         barHeight: 55,
         selectedIconPadding: 10,
         animationDuration: const Duration(milliseconds: 300),
+        customNotchWidthFactor: 1.8, // <-- Added this line
       ),
     );
   }

@@ -630,6 +630,7 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
         barHeight: 55,
         selectedIconPadding: 10,
         animationDuration: const Duration(milliseconds: 300),
+        customNotchWidthFactor: 1.8, // <-- Added this line
       ),
     );
   }

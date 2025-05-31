@@ -437,6 +437,7 @@ class _JournalPageState extends State<JournalPage> {
         barHeight: 55,
         selectedIconPadding: 10,
         animationDuration: const Duration(milliseconds: 300),
+        customNotchWidthFactor: 1.8, // <-- Added this line
       ),
     );
   }

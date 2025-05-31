@@ -351,6 +351,7 @@ class _HomePageState extends State<HomePage> {
           barHeight: 55,
           selectedIconPadding: 10,
           animationDuration: const Duration(milliseconds: 300),
+          customNotchWidthFactor: 1.8, // This line was already present and correct
         ),
       ),
     );

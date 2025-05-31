@@ -500,7 +500,7 @@ try {
                                 : null,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: inputText.toLowerCase() == 'confirm'
-                                  ? const Color(0xFFD32F2F)
+                                  ? Colors.red.shade700 // Changed to Colors.red.shade700
                                   : Colors.grey,
                               foregroundColor: Colors.white,
                               shape: RoundedRectangleBorder(
@@ -732,6 +732,10 @@ Widget _buildSettingsTile({
   required IconData icon,
   required VoidCallback onTap,
 }) {
+  final bool isDeleteAccount = title == 'Delete Account';
+  final Color tileColor = isDeleteAccount ? Colors.red.shade700 : const Color(0xFF00568D);
+  final Color iconColor = isDeleteAccount ? Colors.red.shade700 : const Color(0xFF00568D);
+
   return Padding(
     padding: const EdgeInsets.only(bottom: 10.0),
     child: InkWell(
@@ -746,19 +750,19 @@ Widget _buildSettingsTile({
         ),
         child: Row(
           children: [
-            Icon(icon, color: const Color(0xFF00568D), size: 22),
+            Icon(icon, color: iconColor, size: 22),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
                 title,
-                style: const TextStyle(
+                style: TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 16,
-                  color: Color(0xFF00568D),
+                  color: tileColor,
                 ),
               ),
             ),
-            const Icon(Icons.arrow_forward_ios, color: Color(0xFF00568D), size: 16),
+            Icon(Icons.arrow_forward_ios, color: tileColor, size: 16),
           ],
         ),
       ),
@@ -1193,6 +1197,7 @@ return Scaffold(
     barHeight: 55,
     selectedIconPadding: 10,
     animationDuration: const Duration(milliseconds: 300),
+    customNotchWidthFactor: 1.8, // <-- Added this line
   ),
 );
 }
