@@ -4,6 +4,8 @@ import 'firebase_service.dart';
 import 'modules/module1.dart';
 import 'modules/module2.dart';
 import 'modules/module3.dart'; // Added import for Module3Page
+import 'modules/module4.dart'; // <-- Add this import
+import 'modules/module5.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:talkready_mobile/custom_animated_bottom_bar.dart';
@@ -99,121 +101,9 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
     },
   ];
 
-  final List<Map<String, dynamic>> intermediateModules = [
-    {
-      'module': 'Module 6: Intermediate Grammar & Complex Sentences',
-      'color': Colors.teal,
-      'icon': Icons.library_books,
-      'lessons': <Map<String, dynamic>>[
-        {'title': 'Lesson 6.1: Complex Sentences', 'completed': false, 'firebaseKey': 'lesson1'},
-        {'title': 'Lesson 6.2: Past and Future Tenses', 'completed': false, 'firebaseKey': 'lesson2'},
-      ],
-      'isLocked': true,
-      'isCompleted': false,
-    },
-    {
-      'module': 'Module 7: Business Vocabulary & Emails',
-      'color': Colors.indigo,
-      'icon': Icons.business,
-      'lessons': <Map<String, dynamic>>[
-        {'title': 'Lesson 7.1: Business Terms', 'completed': false, 'firebaseKey': 'lesson1'},
-        {'title': 'Lesson 7.2: Email Writing', 'completed': false, 'firebaseKey': 'lesson2'},
-      ],
-      'isLocked': true,
-      'isCompleted': false,
-    },
-    {
-      'module': 'Module 8: Advanced Listening Skills',
-      'color': Colors.lime,
-      'icon': Icons.headset,
-      'lessons': <Map<String, dynamic>>[
-        {'title': 'Lesson 8.1: Accents & Dialects', 'completed': false, 'firebaseKey': 'lesson1'},
-        {'title': 'Lesson 8.2: Note-taking', 'completed': false, 'firebaseKey': 'lesson2'},
-      ],
-      'isLocked': true,
-      'isCompleted': false,
-    },
-    {
-      'module': 'Module 9: Customer Interaction Scenarios',
-      'color': Colors.amber,
-      'icon': Icons.people,
-      'lessons': <Map<String, dynamic>>[
-        {'title': 'Lesson 9.1: Handling Complaints', 'completed': false, 'firebaseKey': 'lesson1'},
-        {'title': 'Lesson 9.2: Upselling', 'completed': false, 'firebaseKey': 'lesson2'},
-      ],
-      'isLocked': true,
-      'isCompleted': false,
-    },
-    {
-      'module': 'Module 10: Intermediate Assessment',
-      'color': Colors.cyan,
-      'icon': Icons.check_circle,
-      'lessons': <Map<String, dynamic>>[
-        {'title': 'Review: Intermediate Concepts', 'completed': false, 'firebaseKey': 'lesson1'},
-        {'title': 'Test: Mixed Skills', 'completed': false, 'firebaseKey': 'lesson2'},
-      ],
-      'isLocked': true,
-      'isCompleted': false,
-    },
-  ];
-
-  final List<Map<String, dynamic>> advancedModules = [
-    {
-      'module': 'Module 11: Advanced Grammar & Nuance',
-      'color': Colors.deepPurple,
-      'icon': Icons.bookmark,
-      'lessons': <Map<String, dynamic>>[
-        {'title': 'Lesson 11.1: Subtle Grammar', 'completed': false, 'firebaseKey': 'lesson1'},
-        {'title': 'Lesson 11.2: Idioms', 'completed': false, 'firebaseKey': 'lesson2'},
-      ],
-      'isLocked': true,
-      'isCompleted': false,
-    },
-    {
-      'module': 'Module 12: Professional Presentations',
-      'color': Colors.blueGrey,
-      'icon': Icons.microwave,
-      'lessons': <Map<String, dynamic>>[
-        {'title': 'Lesson 12.1: Structuring Talks', 'completed': false, 'firebaseKey': 'lesson1'},
-        {'title': 'Lesson 12.2: Delivery', 'completed': false, 'firebaseKey': 'lesson2'},
-      ],
-      'isLocked': true,
-      'isCompleted': false,
-    },
-    {
-      'module': 'Module 13: Negotiation Skills',
-      'color': Colors.brown,
-      'icon': Icons.handshake,
-      'lessons': <Map<String, dynamic>>[
-        {'title': 'Lesson 13.1: Persuasion', 'completed': false, 'firebaseKey': 'lesson1'},
-        {'title': 'Lesson 13.2: Closing Deals', 'completed': false, 'firebaseKey': 'lesson2'},
-      ],
-      'isLocked': true,
-      'isCompleted': false,
-    },
-    {
-      'module': 'Module 14: Advanced Call Handling',
-      'color': Colors.deepOrange,
-      'icon': Icons.phone_callback,
-      'lessons': <Map<String, dynamic>>[
-        {'title': 'Lesson 14.1: Escalation', 'completed': false, 'firebaseKey': 'lesson1'},
-        {'title': 'Lesson 14.2: De-escalation', 'completed': false, 'firebaseKey': 'lesson2'},
-      ],
-      'isLocked': true,
-      'isCompleted': false,
-    },
-    {
-      'module': 'Module 15: Advanced Assessment',
-      'color': Colors.purpleAccent,
-      'icon': Icons.star,
-      'lessons': <Map<String, dynamic>>[
-        {'title': 'Review: Advanced Concepts', 'completed': false, 'firebaseKey': 'lesson1'},
-        {'title': 'Final Test: Mastery', 'completed': false, 'firebaseKey': 'lesson2'},
-      ],
-      'isLocked': true,
-      'isCompleted': false,
-    },
-  ];
+  // Remove modules 6-15
+  final List<Map<String, dynamic>> intermediateModules = [];
+  final List<Map<String, dynamic>> advancedModules = [];
 
   int _selectedIndex = 1; // Courses is index 1
 
@@ -714,30 +604,7 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
                   ),
                   const SizedBox(height: 16),
                   _buildModuleSection('Beginner', beginnerModules),
-                  const SizedBox(height: 24),
-                  const Text(
-                    'Intermediate',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF00568D),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  const SizedBox(height: 16),
-                  _buildModuleSection('Intermediate', intermediateModules),
-                  const SizedBox(height: 24),
-                  const Text(
-                    'Advanced',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF00568D),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  const SizedBox(height: 16),
-                  _buildModuleSection('Advanced', advancedModules),
+                  // Removed Intermediate and Advanced sections
                 ],
               ),
             ),
@@ -768,14 +635,8 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
   }
 
   Widget _buildModuleSection(String level, List<Map<String, dynamic>> modulesInLevel) {
-    int globalStartIndex = 0;
-    if (level == 'Beginner') {
-      globalStartIndex = 1;
-    } else if (level == 'Intermediate') {
-      globalStartIndex = beginnerModules.length + 1;
-    } else if (level == 'Advanced') {
-      globalStartIndex = beginnerModules.length + intermediateModules.length + 1;
-    }
+    // Only handle Beginner modules
+    int globalStartIndex = 1;
 
     return Column(
       children: modulesInLevel.asMap().entries.map((entry) {
@@ -870,34 +731,26 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
                                 child: InkWell(
                                   onTap: () async {
                                     // Navigation logic for lesson revisit
-                                    if (level == 'Beginner') {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (context) {
-                                            if (moduleId == 'module1') {
-                                              return Module1Page(targetLessonKey: lessonFirebaseKey);
-                                            } else if (moduleId == 'module2') {
-                                              return Module2Page(targetLessonKey: lessonFirebaseKey);
-                                            } else if (moduleId == 'module3') { // Added condition for Module 3
-                                              return Module3Page(targetLessonKey: lessonFirebaseKey);
-                                            } else {
-                                              return Scaffold(body: Center(child: Text('Module $moduleId not implemented')));
-                                            }
-                                          },
-                                        ),
-                                      );
-                                    } else if (level == 'Intermediate') {
-                                      // Add navigation for intermediate modules if they exist
-                                      // Example:
-                                      // Navigator.push(
-                                      //   context,
-                                      //   MaterialPageRoute(
-                                      //     builder: (context) => ModuleXPage(targetLessonKey: lessonFirebaseKey),
-                                      //   ),
-                                      // );
-                                    }
-                                    // Add similar navigation for Advanced modules if implemented
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) {
+                                          if (moduleId == 'module1') {
+                                            return Module1Page(targetLessonKey: lessonFirebaseKey);
+                                          } else if (moduleId == 'module2') {
+                                            return Module2Page(targetLessonKey: lessonFirebaseKey);
+                                          } else if (moduleId == 'module3') {
+                                            return Module3Page(targetLessonKey: lessonFirebaseKey);
+                                          } else if (moduleId == 'module4') {
+                                            return Module4Page(targetLessonKey: lessonFirebaseKey);
+                                          } else if (moduleId == 'module5') {
+                                            return Module5Page(targetLessonKey: lessonFirebaseKey);
+                                          } else {
+                                            return Scaffold(body: Center(child: Text('Module $moduleId not implemented')));
+                                          }
+                                        },
+                                      ),
+                                    );
                                   },
                                   child: Text(
                                     lessonTitle,
@@ -973,8 +826,14 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
                                     case 'module2':
                                       destination = const Module2Page();
                                       break;
-                                    case 'module3': // Added case for Module 3
+                                    case 'module3':
                                       destination = const Module3Page();
+                                      break;
+                                    case 'module4':
+                                      destination = const Module4Page();
+                                      break;
+                                    case 'module5':
+                                      destination = const Module5Page();
                                       break;
                                     default:
                                       destination = Scaffold(

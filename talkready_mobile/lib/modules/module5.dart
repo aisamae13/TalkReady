@@ -1,26 +1,22 @@
-import 'package:flutter/material.dart' hide CarouselController;
+import 'package:flutter/material.dart';
 import 'package:carousel_slider/carousel_slider.dart';
-import 'package:youtube_player_flutter/youtube_player_flutter.dart';
-import 'package:logger/logger.dart';
 import '../firebase_service.dart';
-import '../lessons/lesson4_1.dart';
-import '../lessons/lesson4_2.dart';
+import '../lessons/lesson5_1.dart';
+import '../lessons/lesson5_2.dart';
 
-class Module4Page extends StatefulWidget {
+class Module5Page extends StatefulWidget {
   final String? targetLessonKey;
-  const Module4Page({super.key, this.targetLessonKey});
+  const Module5Page({super.key, this.targetLessonKey});
 
   @override
-  State<Module4Page> createState() => _Module4PageState();
+  State<Module5Page> createState() => _Module5PageState();
 }
 
-class _Module4PageState extends State<Module4Page> {
+class _Module5PageState extends State<Module5Page> {
   int currentLesson = 1;
   bool showActivity = false;
-  YoutubePlayerController? _youtubeController;
   int _currentSlide = 0;
   final CarouselSliderController _carouselController = CarouselSliderController();
-  final Logger _logger = Logger();
   final FirebaseService _firebaseService = FirebaseService();
 
   late List<List<String>> _selectedAnswers;
@@ -28,24 +24,15 @@ class _Module4PageState extends State<Module4Page> {
   late List<String?> _errorMessages;
   late List<bool> _answerCorrectness;
 
-  String? _youtubeError;
-  Map<String, bool> _lessonCompletion = {
-    'lesson1': false,
-    'lesson2': false,
-  };
+  Map<String, bool> _lessonCompletion = {'lesson1': false, 'lesson2': false};
   late Map<String, int> _lessonAttemptCounts;
   late Stopwatch _stopwatch;
   bool _isContentLoaded = false;
   bool _isLoading = false;
 
-  final Map<int, String> _videoIds = {
-    1: 'ENCnqouZgyQ', // Lesson 4.1
-    2: 'IddzjASeuUE', // Lesson 4.2
-  };
-
   final Map<int, int> _lessonQuestionCountsMap = {
-    1: 3,
-    2: 3,
+    1: 3, // Adjust as needed
+    2: 5, // Adjust as needed
   };
 
   @override
@@ -57,81 +44,46 @@ class _Module4PageState extends State<Module4Page> {
   }
 
   Future<void> _performAsyncInit() async {
-    try {
-      await _loadLessonProgress();
-      _initializeStateLists();
-      _initializeYoutubeController();
-
-      if (mounted) {
-        setState(() {
-          if (widget.targetLessonKey != null) {
-            showActivity = _lessonCompletion[widget.targetLessonKey!] ?? false;
-          } else {
-            showActivity = _lessonCompletion['lesson$currentLesson'] ?? false;
-          }
-          _isContentLoaded = true;
-        });
-      }
-    } catch (error) {
-      if (mounted) {
-        setState(() {
-          _youtubeError = "Failed to load lesson content. Please try again.";
-          _isContentLoaded = true;
-        });
-      }
-    }
+    await _loadLessonProgress();
+    _initializeStateLists();
+    if (mounted) setState(() => _isContentLoaded = true);
   }
 
   Future<void> _loadLessonProgress() async {
-    try {
-      final progress = await _firebaseService.getModuleProgress('module4');
-      final lessonsData = progress['lessons'] as Map<String, dynamic>? ?? {};
-      final attemptData = progress['attempts'] as Map<String, dynamic>? ?? {};
-
-      _lessonCompletion = {
-        'lesson1': lessonsData['lesson1'] ?? false,
-        'lesson2': lessonsData['lesson2'] ?? false,
-      };
-
-      _lessonAttemptCounts = {
-        'lesson1': attemptData['lesson1'] as int? ?? 0,
-        'lesson2': attemptData['lesson2'] as int? ?? 0,
-      };
-
-      if (widget.targetLessonKey != null) {
-        switch (widget.targetLessonKey) {
-          case 'lesson1':
-            currentLesson = 1;
-            break;
-          case 'lesson2':
-            currentLesson = 2;
-            break;
-          default:
-            if (!(_lessonCompletion['lesson1'] ?? false)) currentLesson = 1;
-            else if (!(_lessonCompletion['lesson2'] ?? false)) currentLesson = 2;
-            else currentLesson = 2;
-        }
-      } else {
-        if (!(_lessonCompletion['lesson1'] ?? false)) currentLesson = 1;
-        else if (!(_lessonCompletion['lesson2'] ?? false)) currentLesson = 2;
-        else currentLesson = 2;
+    final progress = await _firebaseService.getModuleProgress('module5');
+    final lessonsData = progress['lessons'] as Map<String, dynamic>? ?? {};
+    final attemptData = progress['attempts'] as Map<String, dynamic>? ?? {};
+    _lessonCompletion = {
+      'lesson1': lessonsData['lesson1'] ?? false,
+      'lesson2': lessonsData['lesson2'] ?? false,
+    };
+    _lessonAttemptCounts = {
+      'lesson1': attemptData['lesson1'] as int? ?? 0,
+      'lesson2': attemptData['lesson2'] as int? ?? 0,
+    };
+    if (widget.targetLessonKey != null) {
+      switch (widget.targetLessonKey) {
+        case 'lesson1': currentLesson = 1; break;
+        case 'lesson2': currentLesson = 2; break;
+        default:
+          if (!(_lessonCompletion['lesson1'] ?? false)) currentLesson = 1;
+          else if (!(_lessonCompletion['lesson2'] ?? false)) currentLesson = 2;
+          else currentLesson = 2;
       }
-    } catch (e) {
-      rethrow;
+    } else {
+      if (!(_lessonCompletion['lesson1'] ?? false)) currentLesson = 1;
+      else if (!(_lessonCompletion['lesson2'] ?? false)) currentLesson = 2;
+      else currentLesson = 2;
     }
   }
 
   Future<bool> _saveLessonProgress(int lessonNumberInModule) async {
     try {
       final lessonFirebaseKey = 'lesson$lessonNumberInModule';
-      await _firebaseService.updateLessonProgress('module4', lessonFirebaseKey, true, attempts: _lessonAttemptCounts);
-      if (mounted) {
-        setState(() {
-          _lessonCompletion[lessonFirebaseKey] = true;
-        });
-      }
+      await _firebaseService.updateLessonProgress('module5', lessonFirebaseKey, true, attempts: _lessonAttemptCounts);
+      if (mounted) setState(() => _lessonCompletion[lessonFirebaseKey] = true);
       return true;
-    } catch (e) {
+    } catch (_) {
       return false;
     }
   }
@@ -142,41 +94,6 @@ class _Module4PageState extends State<Module4Page> {
     _selectedAnswers = List<List<String>>.generate(questionCount, (_) => <String>[], growable: true);
     _isCorrectStates = List<bool?>.filled(questionCount, null, growable: true);
     _errorMessages = List<String?>.filled(questionCount, null, growable: true);
-  }
-
-  void _initializeYoutubeController() {
-    String? videoId = _videoIds[currentLesson];
-    _youtubeController?.dispose();
-    _youtubeController = YoutubePlayerController(
-      initialVideoId: videoId ?? '',
-      flags: const YoutubePlayerFlags(
-        autoPlay: false, mute: false, enableCaption: true, captionLanguage: 'en', hideControls: false,
-      ),
-    );
-    _youtubeController!.addListener(() {
-      if (_youtubeController!.value.errorCode != 0 && mounted) {
-        setState(() => _youtubeError = 'Error playing video: ${_youtubeController!.value.errorCode}');
-      }
-    });
-  }
-
-  void _updateYoutubeVideoId() {
-    String? videoId = _videoIds[currentLesson];
-    // Dispose old controller and create a new one for the new lesson
-    _youtubeController?.pause();
-    _youtubeController?.dispose();
-    _youtubeController = YoutubePlayerController(
-      initialVideoId: videoId ?? '',
-      flags: const YoutubePlayerFlags(
-        autoPlay: false, mute: false, enableCaption: true, captionLanguage: 'en', hideControls: false,
-      ),
-    );
-    _youtubeController!.addListener(() {
-      if (_youtubeController!.value.errorCode != 0 && mounted) {
-        setState(() => _youtubeError = 'Error playing video: ${_youtubeController!.value.errorCode}');
-      }
-    });
-    if (mounted) setState(() => _youtubeError = null);
   }
 
   Future<void> _validateAllAnswers(
@@ -204,11 +121,6 @@ class _Module4PageState extends State<Module4Page> {
 
     if (mounted) {
       setState(() {
-        if (_answerCorrectness.length != questionsData.length) _answerCorrectness = List<bool>.filled(questionsData.length, false, growable: true);
-        if (_selectedAnswers.length != questionsData.length) _selectedAnswers = List<List<String>>.generate(questionsData.length, (_) => [], growable: true);
-        if (_isCorrectStates.length != questionsData.length) _isCorrectStates = List<bool?>.filled(questionsData.length, null, growable: true);
-        if (_errorMessages.length != questionsData.length) _errorMessages = List<String?>.filled(questionsData.length, null, growable: true);
-
         for (int i = 0; i < questionsData.length; i++) {
           List<String> correctAnswers;
           final rawCorrectAnswer = questionsData[i]['correctAnswer'];
@@ -246,10 +158,10 @@ class _Module4PageState extends State<Module4Page> {
     int totalScore = questionsData.length;
 
     final Map<int, String> lessonTitles = {
-      1: 'Lesson 4.1: Asking for Clarification',
-      2: 'Lesson 4.2: Providing Solutions',
+      1: 'Review: Go through key concepts',
+      2: 'Final Test: A combination of grammar, vocabulary, and practical speaking exercises',
     };
-    String lessonIdForLogging = lessonTitles[currentLesson] ?? "Module 4 Lesson $currentLesson";
+    String lessonIdForLogging = lessonTitles[currentLesson] ?? "Module 5 Lesson $currentLesson";
 
     List<Map<String, dynamic>> detailedResponses = questionsData.asMap().entries.map((e) {
       int idx = e.key;
@@ -260,7 +172,7 @@ class _Module4PageState extends State<Module4Page> {
       };
     }).toList();
 
-    await _firebaseService.logLessonActivity('module4', lessonIdForLogging, attemptNumberFromLesson, score, totalScore, timeSpentFromLesson, detailedResponses);
+    await _firebaseService.logLessonActivity('module5', lessonIdForLogging, attemptNumberFromLesson, score, totalScore, timeSpentFromLesson, detailedResponses);
 
     bool success = await _saveLessonProgress(currentLesson);
     if (success) {
@@ -269,21 +181,10 @@ class _Module4PageState extends State<Module4Page> {
   }
 
   @override
-  void dispose() {
-    _stopwatch.stop();
-    if (_isContentLoaded && mounted) {
-      _youtubeController?.pause();
-      _youtubeController?.removeListener(() {});
-      _youtubeController?.dispose();
-    }
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     if (!_isContentLoaded) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Module 4')),
+        appBar: AppBar(title: const Text('Module 5')),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
@@ -293,7 +194,7 @@ class _Module4PageState extends State<Module4Page> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Module 4: Practical Grammar & Customer Service Scenarios'),
+        title: const Text('Module 5: Review and Assessment'),
         backgroundColor: Colors.transparent,
         foregroundColor: const Color(0xFF00568D),
         elevation: 0,
@@ -319,14 +220,8 @@ class _Module4PageState extends State<Module4Page> {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  if (_youtubeError != null)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8.0),
-                      child: Text(_youtubeError!, style: const TextStyle(color: Colors.red, fontSize: 16), textAlign: TextAlign.center),
-                    ),
-                  if (_youtubeError == null) _buildLessonContent(),
-
-                  if (showActivity && currentLessonLocallyCompleted && currentLesson < 2 && _youtubeError == null) ...[
+                  _buildLessonContent(),
+                  if (showActivity && currentLessonLocallyCompleted && currentLesson < 2) ...[
                     const SizedBox(height: 16),
                     SizedBox(
                       width: double.infinity,
@@ -343,7 +238,6 @@ class _Module4PageState extends State<Module4Page> {
                                     _currentSlide = 0;
                                     _carouselController.jumpToPage(0);
                                     _initializeStateLists();
-                                    _updateYoutubeVideoId(); // <-- recreate controller for new lesson
                                     _stopwatch.reset();
                                     _stopwatch.start();
                                     _isLoading = false;
@@ -355,7 +249,7 @@ class _Module4PageState extends State<Module4Page> {
                             ),
                     ),
                   ],
-                  if (showActivity && currentLessonLocallyCompleted && currentLesson == 2 && isModuleCompleted && _youtubeError == null) ...[
+                  if (showActivity && currentLessonLocallyCompleted && currentLesson == 2 && isModuleCompleted) ...[
                     const SizedBox(height: 16),
                     SizedBox(
                       width: double.infinity,
@@ -375,7 +269,7 @@ class _Module4PageState extends State<Module4Page> {
                             ),
                     ),
                   ],
-                  if (showActivity && currentLessonLocallyCompleted && currentLesson == 2 && !isModuleCompleted && _youtubeError == null) ...[
+                  if (showActivity && currentLessonLocallyCompleted && currentLesson == 2 && !isModuleCompleted) ...[
                     const SizedBox(height: 16),
                     SizedBox(
                       width: double.infinity,
@@ -417,11 +311,9 @@ class _Module4PageState extends State<Module4Page> {
 
     switch (currentLesson) {
       case 1:
-        return buildLesson4_1(
-          context: context,
+        return Lesson5_1(
           currentSlide: _currentSlide,
           carouselController: _carouselController,
-          youtubeController: _youtubeController!,
           showActivity: showActivity,
           onShowActivity: () {
             if (mounted) setState(() => showActivity = true);
@@ -452,11 +344,9 @@ class _Module4PageState extends State<Module4Page> {
           initialAttemptNumber: nextAttemptNumber,
         );
       case 2:
-        return buildLesson4_2(
-          context: context,
+        return Lesson5_2(
           currentSlide: _currentSlide,
           carouselController: _carouselController,
-          youtubeController: _youtubeController!,
           showActivity: showActivity,
           onShowActivity: () {
             if (mounted) setState(() => showActivity = true);

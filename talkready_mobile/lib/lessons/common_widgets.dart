@@ -92,6 +92,33 @@ Widget buildInteractiveQuestion({
   );
 }
 
+Widget buildMCQQuestion({
+  required String question,
+  required List<String> options,
+  required String correctAnswer,
+  required String explanation,
+  required int questionIndex,
+  required List<String> selectedAnswers,
+  required bool? isCorrect,
+  required String? errorMessage,
+  required ValueChanged<List<String>> onSelectionChanged,
+  required ValueChanged<bool> onAnswerChanged,
+}) {
+  return buildInteractiveQuestion(
+    question: question,
+    type: 'mcq',
+    words: options,
+    correctAnswer: [correctAnswer],
+    explanation: explanation,
+    questionIndex: questionIndex,
+    selectedAnswers: selectedAnswers,
+    isCorrect: isCorrect,
+    errorMessage: errorMessage,
+    onSelectionChanged: onSelectionChanged,
+    onAnswerChanged: onAnswerChanged,
+  );
+}
+
 class _InteractiveQuestionWidget extends StatefulWidget {
   final String question;
   final String type;
@@ -314,18 +341,20 @@ class _InteractiveQuestionWidgetState extends State<_InteractiveQuestionWidget> 
                                     : Icon(Icons.circle_outlined, color: Colors.grey[400], size: 20, key: ValueKey(false)),
                               ),
                               const SizedBox(width: 8),
-                              Text(
-                                option,
-                                style: TextStyle(
-                                  color: displayAsCorrect
-                                      ? Colors.green[900]
-                                      : displayAsIncorrect
-                                          ? Colors.red[900]
-                                          : isSelected
-                                              ? Colors.blue[900]
-                                              : Colors.black87,
-                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                                  fontSize: 15,
+                              Expanded(
+                                child: Text(
+                                  option,
+                                  style: TextStyle(
+                                    color: displayAsCorrect
+                                        ? Colors.green[900]
+                                        : displayAsIncorrect
+                                            ? Colors.red[900]
+                                            : isSelected
+                                                ? Colors.blue[900]
+                                                : Colors.black87,
+                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                    fontSize: 15,
+                                  ),
                                 ),
                               ),
                             ],
