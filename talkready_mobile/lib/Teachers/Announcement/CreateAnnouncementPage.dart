@@ -66,7 +66,6 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
 
   List<Map<String, dynamic>> _trainerClasses = [];
   String? _selectedClassId;
-  // String? _selectedClassName; // Not strictly needed if only ID is used for posting
 
   final _titleController = TextEditingController();
   final _contentController = TextEditingController();
@@ -77,6 +76,8 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
 
   bool _loadingClasses = true;
   String? _classesError;
+
+  // ThemeData? _theme;
 
   @override
   void initState() {
@@ -90,6 +91,12 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
       });
     }
   }
+
+  // @override
+  // void didChangeDependencies() {
+  //   super.didChangeDependencies();
+  //   _theme = Theme.of(context);
+  // }
 
   Future<void> _fetchTrainerClasses() async {
     if (_currentUser == null) return;
@@ -189,12 +196,24 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
+      backgroundColor: theme.colorScheme.background,
       appBar: AppBar(
         title: const Text("Create Announcement"),
+        backgroundColor: theme.colorScheme.surfaceVariant,
+        foregroundColor: theme.colorScheme.onSurfaceVariant,
         leading: IconButton(
           icon: const Icon(FontAwesomeIcons.arrowLeft),
           onPressed: () => Navigator.of(context).pop(),
+        ),
+        elevation: 0,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1.0),
+          child: Container(
+            color: theme.dividerColor,
+            height: 1.0,
+          ),
         ),
       ),
       body: _currentUser == null
@@ -208,24 +227,25 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
   }
 
   Widget _buildAuthError() {
+    final theme = Theme.of(context);
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(24.0),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(FontAwesomeIcons.userLock, size: 48, color: Colors.redAccent),
-            const SizedBox(height: 16),
-            const Text(
+            Icon(FontAwesomeIcons.userLock, size: 54, color: theme.colorScheme.error),
+            const SizedBox(height: 20),
+            Text(
               "Authentication Required",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              style: theme.textTheme.headlineSmall?.copyWith(color: theme.colorScheme.onBackground),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             Text(
               _classesError ?? "You must be logged in to create announcements.",
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey[700]),
+              style: theme.textTheme.bodyLarge?.copyWith(color: theme.colorScheme.onSurfaceVariant),
             ),
             // Optionally add a login button if you have a way to trigger login
           ],
@@ -235,38 +255,45 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
   }
 
   Widget _buildLoadingIndicator(String message) {
+    final theme = Theme.of(context);
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const CircularProgressIndicator(),
-          const SizedBox(height: 16),
-          Text(message),
+          CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary)),
+          const SizedBox(height: 20),
+          Text(message, style: theme.textTheme.titleMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
         ],
       ),
     );
   }
 
   Widget _buildErrorDisplay(String error, IconData icon, {VoidCallback? onRetry}) {
+    final theme = Theme.of(context);
      return Center(
       child: Padding(
-        padding: const EdgeInsets.all(20.0),
+        padding: const EdgeInsets.all(24.0),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 48, color: Colors.orangeAccent),
-            const SizedBox(height: 16),
+            Icon(icon, size: 54, color: theme.colorScheme.error.withOpacity(0.8)),
+            const SizedBox(height: 20),
             Text(
               error,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 16, color: Colors.red),
+              style: theme.textTheme.titleMedium?.copyWith(color: theme.colorScheme.error),
             ),
             if (onRetry != null) ...[
-              const SizedBox(height: 20),
+              const SizedBox(height: 24),
               ElevatedButton.icon(
-                icon: const Icon(FontAwesomeIcons.rotateRight),
+                icon: const Icon(FontAwesomeIcons.rotateRight, size: 16),
                 label: const Text("Retry"),
                 onPressed: onRetry,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: theme.colorScheme.secondary,
+                  foregroundColor: theme.colorScheme.onSecondary,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                ),
               )
             ]
           ],
@@ -276,8 +303,9 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
   }
 
   Widget _buildForm() {
+    final theme = Theme.of(context);
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
+      padding: const EdgeInsets.all(20.0),
       child: Form(
         key: _formKey,
         child: Column(
@@ -290,11 +318,13 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
             DropdownButtonFormField<String>(
               decoration: InputDecoration(
                 labelText: "Select Class",
-                prefixIcon: const Icon(FontAwesomeIcons.chalkboardUser),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                prefixIcon: Icon(FontAwesomeIcons.chalkboardUser, color: theme.colorScheme.onSurfaceVariant),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                filled: true,
+                fillColor: theme.colorScheme.surfaceVariant.withOpacity(0.3),
               ),
               value: _selectedClassId,
-              hint: const Text("-- Choose a Class --"),
+              hint: Text("-- Choose a Class --", style: TextStyle(color: theme.colorScheme.onSurfaceVariant)),
               isExpanded: true,
               items: _trainerClasses.map((Map<String, dynamic> cls) {
                 return DropdownMenuItem<String>(
@@ -315,8 +345,10 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
               controller: _titleController,
               decoration: InputDecoration(
                 labelText: "Announcement Title",
-                prefixIcon: const Icon(FontAwesomeIcons.heading),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                prefixIcon: Icon(FontAwesomeIcons.heading, color: theme.colorScheme.onSurfaceVariant),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                filled: true,
+                fillColor: theme.colorScheme.surfaceVariant.withOpacity(0.3),
               ),
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {
@@ -330,9 +362,11 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
               controller: _contentController,
               decoration: InputDecoration(
                 labelText: "Announcement Content",
-                prefixIcon: const Icon(FontAwesomeIcons.alignLeft),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                prefixIcon: Icon(FontAwesomeIcons.alignLeft, color: theme.colorScheme.onSurfaceVariant),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                 alignLabelWithHint: true,
+                filled: true,
+                fillColor: theme.colorScheme.surfaceVariant.withOpacity(0.3),
               ),
               maxLines: 5,
               minLines: 3,
@@ -346,24 +380,38 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
             const SizedBox(height: 24),
             if (_postError != null)
               Padding(
-                padding: const EdgeInsets.only(bottom: 10.0),
-                child: Row(
-                  children: [
-                    const Icon(FontAwesomeIcons.exclamationTriangle, color: Colors.red, size: 18),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(_postError!, style: const TextStyle(color: Colors.red, fontSize: 14))),
-                  ],
+                padding: const EdgeInsets.only(bottom: 12.0, top: 8.0),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(FontAwesomeIcons.exclamationTriangle, color: theme.colorScheme.error, size: 18),
+                      const SizedBox(width: 10),
+                      Expanded(child: Text(_postError!, style: TextStyle(color: theme.colorScheme.onErrorContainer, fontSize: 14))),
+                    ],
+                  ),
                 ),
               ),
             if (_postSuccess != null)
               Padding(
-                padding: const EdgeInsets.only(bottom: 10.0),
-                 child: Row(
-                  children: [
-                    const Icon(FontAwesomeIcons.checkCircle, color: Colors.green, size: 18),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(_postSuccess!, style: const TextStyle(color: Colors.green, fontSize: 14))),
-                  ],
+                padding: const EdgeInsets.only(bottom: 12.0, top: 8.0),
+                 child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade100, // Consider a theme color
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(FontAwesomeIcons.checkCircle, color: Colors.green.shade700, size: 18),
+                      const SizedBox(width: 10),
+                      Expanded(child: Text(_postSuccess!, style: TextStyle(color: Colors.green.shade800, fontSize: 14))),
+                    ],
+                  ),
                 ),
               ),
             ElevatedButton.icon(
@@ -372,15 +420,17 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
                       width: 20,
                       height: 20,
                       padding: const EdgeInsets.all(2.0),
-                      child: const CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      child: CircularProgressIndicator(strokeWidth: 2, color: theme.colorScheme.onPrimary),
                     )
                   : const Icon(FontAwesomeIcons.paperPlane, size: 16),
               label: Text(_isPosting ? 'Posting...' : 'Post Announcement'),
               onPressed: _isPosting || _trainerClasses.isEmpty ? null : _handlePostAnnouncement,
               style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                backgroundColor: theme.colorScheme.primary,
+                foregroundColor: theme.colorScheme.onPrimary,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                textStyle: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold, fontSize: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
             ),
           ],

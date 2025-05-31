@@ -37,19 +37,28 @@ class _MyClassesPageState extends State<MyClassesPage> {
   List<Map<String, dynamic>> _filteredClasses = [];
   bool _loading = true;
   String? _error;
-  String _searchTerm = '';
+  // ThemeData? _theme; // Store theme
 
   @override
   void initState() {
     super.initState();
-    _fetchClasses();
-    _searchController.addListener(() {
+    // _theme = Theme.of(context); // Initialize theme in didChangeDependencies or build
+    if (_currentUser != null) {
+      _fetchClasses();
+    } else {
       setState(() {
-        _searchTerm = _searchController.text;
-        _filterClasses();
+        _loading = false;
+        _error = "Please log in to view your classes.";
       });
-    });
+    }
+    _searchController.addListener(_filterClasses);
   }
+
+  // @override
+  // void didChangeDependencies() {
+  //   super.didChangeDependencies();
+  //   _theme ??= Theme.of(context); // Initialize theme here if not already
+  // }
 
   Future<void> _fetchClasses() async {
     if (_currentUser == null) {
@@ -83,17 +92,27 @@ class _MyClassesPageState extends State<MyClassesPage> {
   }
 
   void _filterClasses() {
-    if (_searchTerm.isEmpty) {
-      _filteredClasses = List.from(_classes);
-    } else {
-      _filteredClasses = _classes.where((classData) {
-        final className = classData['className']?.toString().toLowerCase() ?? '';
-        final subject = classData['subject']?.toString().toLowerCase() ?? '';
-        final description = classData['description']?.toString().toLowerCase() ?? '';
-        return className.contains(_searchTerm.toLowerCase()) ||
-               subject.contains(_searchTerm.toLowerCase()) ||
-               description.contains(_searchTerm.toLowerCase());
-      }).toList();
+    final query = _searchController.text.toLowerCase();
+    setState(() {
+      if (query.isEmpty) {
+        _filteredClasses = List.from(_classes);
+      } else {
+        _filteredClasses = _classes.where((classItem) {
+          final className = classItem['className']?.toString().toLowerCase() ?? '';
+          final subject = classItem['subject']?.toString().toLowerCase() ?? '';
+          // Add other searchable fields if necessary
+          return className.contains(query) || subject.contains(query);
+        }).toList();
+      }
+    });
+  }
+
+  // New method to clear the search field
+  void _clearSearchField() {
+    _searchController.clear(); // This will trigger the listener which calls _filterClasses
+    // Call setState to rebuild the UI and update the suffixIcon
+    if (mounted) {
+      setState(() {});
     }
   }
 
@@ -142,13 +161,26 @@ class _MyClassesPageState extends State<MyClassesPage> {
 
   @override
   void dispose() {
+    _searchController.removeListener(_filterClasses);
     _searchController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context); // Get theme here for build method access
+
+    if (_loading) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text("My Classes"),
+        ),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return Scaffold(
+      backgroundColor: theme.colorScheme.background,
       appBar: AppBar(
         title: const Text("My Classes"),
         actions: [
@@ -161,35 +193,54 @@ class _MyClassesPageState extends State<MyClassesPage> {
       ),
       body: Column(
         children: [
+          // Search Bar
           Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
-                labelText: 'Search Classes',
-                hintText: 'Enter class name, subject, or description...',
-                prefixIcon: const Icon(FontAwesomeIcons.magnifyingGlass),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8.0),
-                ),
-                suffixIcon: _searchTerm.isNotEmpty
+                hintText: "Search classes by name or subject...",
+                prefixIcon: Icon(FontAwesomeIcons.magnifyingGlass, color: theme.colorScheme.onSurfaceVariant),
+                // Add the clear button as a suffixIcon
+                suffixIcon: _searchController.text.isNotEmpty
                     ? IconButton(
-                        icon: const Icon(FontAwesomeIcons.timesCircle),
-                        onPressed: () {
-                          _searchController.clear();
-                        },
+                        icon: const Icon(Icons.clear),
+                        onPressed: _clearSearchField,
+                        tooltip: "Clear Search",
                       )
                     : null,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12.0),
+                  borderSide: BorderSide(color: theme.dividerColor),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12.0),
+                  borderSide: BorderSide(color: theme.dividerColor.withOpacity(0.5)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12.0),
+                  borderSide: BorderSide(color: theme.colorScheme.primary, width: 1.5),
+                ),
+                filled: true,
+                fillColor: theme.colorScheme.surface,
+                contentPadding: const EdgeInsets.symmetric(vertical: 14.0, horizontal: 16.0),
               ),
+              style: TextStyle(color: theme.colorScheme.onSurface),
+              onChanged: (_) {
+                // _filterClasses(); // Listener already handles this.
+                // Call setState if only to update the suffix icon visibility immediately on text change.
+                // The listener will handle filtering, this setState is for the icon.
+                if (mounted) {
+                  setState(() {});
+                }
+              }
             ),
           ),
-          if (_loading && _classes.isEmpty)
-            const Expanded(child: Center(child: CircularProgressIndicator()))
-          else if (_error != null)
+          if (_error != null)
             Expanded(child: Center(child: Padding(padding: const EdgeInsets.all(16.0), child: Text("Error: $_error", style: TextStyle(color: Theme.of(context).colorScheme.error)))))
           else if (_classes.isEmpty)
              _buildEmptyState()
-          else if (_filteredClasses.isEmpty && _searchTerm.isNotEmpty)
+          else if (_filteredClasses.isEmpty && _searchController.text.isNotEmpty)
             _buildNoResultsState()
           else
             Expanded(
@@ -265,7 +316,7 @@ class _MyClassesPageState extends State<MyClassesPage> {
     );
   }
 
-   Widget _buildNoResultsState() {
+  Widget _buildNoResultsState() {
     return Expanded(
       child: Center(
         child: Padding(
@@ -294,6 +345,44 @@ class _MyClassesPageState extends State<MyClassesPage> {
                    _searchController.clear();
                 },
               )
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorWidget(String message) {
+    return Expanded(
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const FaIcon(FontAwesomeIcons.triangleExclamation, size: 60, color: Colors.red),
+              const SizedBox(height: 20),
+              Text(
+                'Something Went Wrong',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: Colors.red),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 10),
+              Text(
+                message,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.red),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton.icon(
+                icon: const Icon(FontAwesomeIcons.refresh),
+                label: const Text('Retry'),
+                onPressed: _fetchClasses,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  foregroundColor: Colors.white,
+                ),
+              ),
             ],
           ),
         ),

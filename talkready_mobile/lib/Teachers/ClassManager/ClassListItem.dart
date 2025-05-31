@@ -36,25 +36,30 @@ class ClassListItemWidget extends StatelessWidget {
     final String subject = classData['subject'] as String? ?? "General";
     final String classId = classData['id'] as String? ?? '';
     final String createdAtDisplay = _formatDate(classData['createdAt']);
+    final theme = Theme.of(context);
 
     if (classId.isEmpty) {
-      return const Card(
+      return Card(
+        color: theme.colorScheme.errorContainer,
         child: ListTile(
-          title: Text("Error: Class data incomplete"),
+          leading: Icon(Icons.error_outline, color: theme.colorScheme.error),
+          title: Text("Error: Class data incomplete", style: TextStyle(color: theme.colorScheme.onErrorContainer)),
         ),
       );
     }
 
     return Card(
-      elevation: 3,
+      elevation: 2.5,
       margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      color: theme.colorScheme.surface,
       child: InkWell(
         onTap: () {
-          // Navigate to class dashboard
           Navigator.pushNamed(context, '/trainer/class/$classId/dashboard');
         },
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
+        splashColor: theme.primaryColor.withOpacity(0.1),
+        highlightColor: theme.primaryColor.withOpacity(0.05),
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
@@ -62,93 +67,92 @@ class ClassListItemWidget extends StatelessWidget {
             children: [
               Text(
                 className,
-                style: TextStyle(
-                  fontSize: 20,
+                style: theme.textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.bold,
-                  color: Theme.of(context).primaryColor,
+                  color: theme.colorScheme.primary,
                 ),
               ),
               const SizedBox(height: 4),
               if (subject.isNotEmpty)
                 Text(
                   "Subject: $subject",
-                  style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Colors.grey[600]),
+                  style: theme.textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic, color: theme.colorScheme.onSurfaceVariant),
                 ),
               const SizedBox(height: 8),
               Text(
                 description,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 14, color: Colors.grey[800]),
+                style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurface.withOpacity(0.85)),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
               Row(
                 children: [
-                  Icon(FontAwesomeIcons.users, size: 14, color: Colors.grey[600]),
+                  Icon(FontAwesomeIcons.users, size: 14, color: theme.colorScheme.onSurfaceVariant),
                   const SizedBox(width: 8),
                   Text(
                     "$studentCount Student${studentCount != 1 ? 's' : ''}",
-                    style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+                    style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                   ),
                 ],
               ),
               const SizedBox(height: 4),
               Text(
                 "Created: $createdAtDisplay",
-                style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant.withOpacity(0.6)),
               ),
               const SizedBox(height: 16),
-              const Divider(),
+              Divider(color: theme.dividerColor.withOpacity(0.5), height: 1),
               Padding(
-                padding: const EdgeInsets.only(top: 8.0),
+                padding: const EdgeInsets.only(top: 12.0),
                 child: Wrap(
                   spacing: 8.0,
-                  runSpacing: 8.0,
+                  runSpacing: 4.0,
                   alignment: WrapAlignment.end,
                   children: [
                     TextButton.icon(
-                      icon: const Icon(FontAwesomeIcons.bookOpen, size: 14),
+                      icon: const Icon(FontAwesomeIcons.bookOpenReader, size: 14),
                       label: const Text("Content"),
                       style: TextButton.styleFrom(
-                        foregroundColor: Colors.blue[700],
+                        foregroundColor: theme.colorScheme.secondary,
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                        textStyle: const TextStyle(fontSize: 12),
+                        textStyle: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w500),
                       ),
                       onPressed: () {
                         Navigator.pushNamed(context, '/trainer/class/$classId/content');
                       },
                     ),
                     TextButton.icon(
-                      icon: const Icon(FontAwesomeIcons.usersCog, size: 14),
+                      icon: const Icon(FontAwesomeIcons.usersGear, size: 14),
                       label: const Text("Students"),
                        style: TextButton.styleFrom(
-                        foregroundColor: Colors.green[700],
+                        foregroundColor: Colors.green.shade700, // Or theme.colorScheme.tertiary
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                        textStyle: const TextStyle(fontSize: 12),
+                        textStyle: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w500),
                       ),
                       onPressed: () {
                         Navigator.pushNamed(context, '/trainer/class/$classId/students');
                       },
                     ),
                     TextButton.icon(
-                      icon: const Icon(FontAwesomeIcons.edit, size: 14),
+                      icon: const Icon(FontAwesomeIcons.penToSquare, size: 14),
                       label: const Text("Edit"),
                       style: TextButton.styleFrom(
-                        foregroundColor: Colors.orange[700],
+                        foregroundColor: Colors.orange.shade700, // Or theme.colorScheme.tertiary
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                        textStyle: const TextStyle(fontSize: 12),
+                        textStyle: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w500),
                       ),
                       onPressed: () {
                         Navigator.pushNamed(context, '/trainer/class/$classId/edit');
                       },
                     ),
                     TextButton.icon(
-                      icon: const Icon(FontAwesomeIcons.trashAlt, size: 14),
+                      icon: const Icon(FontAwesomeIcons.trashCan, size: 14),
                       label: const Text("Delete"),
                       style: TextButton.styleFrom(
-                        foregroundColor: Colors.red[700],
+                        foregroundColor: theme.colorScheme.error,
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                        textStyle: const TextStyle(fontSize: 12),
+                        textStyle: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w500),
                       ),
                       onPressed: () => onDeleteClass(classId, className),
                     ),

@@ -18,6 +18,13 @@ class _CreateClassFormState extends State<CreateClassForm> {
   bool loading = false;
   String? error;
   String? success;
+  // ThemeData? _theme;
+
+  // @override
+  // void didChangeDependencies() {
+  //   super.didChangeDependencies();
+  //   _theme = Theme.of(context);
+  // }
 
   Future<void> _handleSubmit() async {
     setState(() {
@@ -68,12 +75,24 @@ class _CreateClassFormState extends State<CreateClassForm> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
+      backgroundColor: theme.colorScheme.background,
       appBar: AppBar(
         title: const Text('Create New Class'),
+        backgroundColor: theme.colorScheme.surfaceVariant,
+        foregroundColor: theme.colorScheme.onSurfaceVariant,
+        elevation: 0,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1.0),
+          child: Container(
+            color: theme.dividerColor,
+            height: 1.0,
+          ),
+        ),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(20),
         child: Form(
           key: _formKey,
           child: Column(
@@ -81,30 +100,44 @@ class _CreateClassFormState extends State<CreateClassForm> {
             children: [
               if (error != null)
                 Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   decoration: BoxDecoration(
-                    color: Colors.red[100],
+                    color: theme.colorScheme.errorContainer,
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Text(error!, style: const TextStyle(color: Colors.red)),
+                  child: Row(
+                    children: [
+                      Icon(Icons.error_outline, color: theme.colorScheme.error, size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(child: Text(error!, style: TextStyle(color: theme.colorScheme.onErrorContainer, fontSize: 14))),
+                    ],
+                  ),
                 ),
               if (success != null)
                 Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   decoration: BoxDecoration(
-                    color: Colors.green[100],
+                    color: Colors.green.shade100, // Consider theme.colorScheme.primaryContainer or secondaryContainer
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Text(success!, style: const TextStyle(color: Colors.green)),
+                  child: Row(
+                    children: [
+                      Icon(Icons.check_circle_outline, color: Colors.green.shade700, size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(child: Text(success!, style: TextStyle(color: Colors.green.shade800, fontSize: 14))),
+                    ],
+                  ),
                 ),
               TextFormField(
                 controller: _classNameController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Class Name *',
-                  prefixIcon: Icon(Icons.class_),
-                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.class_, color: theme.colorScheme.onSurfaceVariant),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  filled: true,
+                  fillColor: theme.colorScheme.surfaceVariant.withOpacity(0.3),
                 ),
                 validator: (value) =>
                     value == null || value.trim().isEmpty ? 'Class Name is required.' : null,
@@ -113,10 +146,12 @@ class _CreateClassFormState extends State<CreateClassForm> {
               const SizedBox(height: 18),
               TextFormField(
                 controller: _descriptionController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Class Description (Optional)',
-                  prefixIcon: Icon(Icons.description),
-                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.description, color: theme.colorScheme.onSurfaceVariant),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  filled: true,
+                  fillColor: theme.colorScheme.surfaceVariant.withOpacity(0.3),
                 ),
                 maxLines: 3,
                 enabled: !loading,
@@ -124,29 +159,34 @@ class _CreateClassFormState extends State<CreateClassForm> {
               const SizedBox(height: 18),
               TextFormField(
                 controller: _subjectController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Subject / Focus (Optional)',
-                  prefixIcon: Icon(Icons.label),
-                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.label_outline, color: theme.colorScheme.onSurfaceVariant),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  filled: true,
+                  fillColor: theme.colorScheme.surfaceVariant.withOpacity(0.3),
                 ),
                 enabled: !loading,
               ),
-              const SizedBox(height: 28),
+              const SizedBox(height: 32),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
                   icon: loading
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      ? SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: theme.colorScheme.onPrimary),
                         )
-                      : const Icon(Icons.add_circle_outline),
+                      : const Icon(Icons.add_circle_outline, size: 20),
                   label: Text(loading ? 'Creating Class...' : 'Create Class'),
                   onPressed: loading ? null : _handleSubmit,
                   style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    backgroundColor: theme.colorScheme.primary,
+                    foregroundColor: theme.colorScheme.onPrimary,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    textStyle: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold, fontSize: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
                 ),
               ),

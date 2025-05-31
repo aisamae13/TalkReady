@@ -58,11 +58,19 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> {
   String? _error;
   String? _assessmentError;
 
+  // ThemeData? _theme; // Store theme
+
   @override
   void initState() {
     super.initState();
     _checkAuthState();
   }
+
+  // @override
+  // void didChangeDependencies() {
+  //   super.didChangeDependencies();
+  //   _theme = Theme.of(context); // Initialize theme here
+  // }
 
   void _checkAuthState() {
     FirebaseAuth.instance.authStateChanges().listen((User? user) {
@@ -199,36 +207,53 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const CircularProgressIndicator(),
+          CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).colorScheme.primary),
+          ),
           const SizedBox(height: 20),
-          Text(message, style: const TextStyle(fontSize: 16, color: Colors.grey)),
+          Text(message, style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7))),
         ],
       ),
     );
   }
 
   Widget _buildErrorWidget(String title, String message, {bool isAssessmentError = false}) {
+    final Color errorColor = isAssessmentError ? Colors.orange.shade700 : Theme.of(context).colorScheme.error;
+    final Color backgroundColor = isAssessmentError ? Colors.orange.shade50 : Theme.of(context).colorScheme.errorContainer;
+    final Color borderColor = isAssessmentError ? Colors.orange.shade500 : Theme.of(context).colorScheme.error;
+    final Color titleColor = isAssessmentError ? Colors.orange.shade800 : Theme.of(context).colorScheme.onErrorContainer;
+    final Color messageColor = isAssessmentError ? Colors.orange.shade700 : Theme.of(context).colorScheme.onErrorContainer.withOpacity(0.8);
+
+
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: isAssessmentError ? Colors.orange[50] : Colors.red[50],
+        color: backgroundColor,
         border: Border(
           left: BorderSide(
-            color: isAssessmentError ? Colors.orange.shade500 : Colors.red.shade500,
-            width: 4,
+            color: borderColor,
+            width: 5,
           ),
         ),
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(8),
+         boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.15),
+            spreadRadius: 1,
+            blurRadius: 3,
+            offset: const Offset(0, 2),
+          )
+        ],
       ),
       child: Row(
         children: [
           Icon(
             FontAwesomeIcons.triangleExclamation,
-            color: isAssessmentError ? Colors.orange.shade700 : Colors.red.shade700,
-            size: 24,
+            color: errorColor,
+            size: 28,
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -237,10 +262,12 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> {
                   title,
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
-                    color: isAssessmentError ? Colors.orange.shade800 : Colors.red.shade800,
+                    color: titleColor,
+                    fontSize: 16,
                   ),
                 ),
-                Text(message, style: TextStyle(color: isAssessmentError ? Colors.orange.shade700 : Colors.red.shade700)),
+                const SizedBox(height: 4),
+                Text(message, style: TextStyle(color: messageColor, fontSize: 14)),
               ],
             ),
           ),
@@ -251,17 +278,25 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context); // Get theme here
+
     if (_authLoading || (_loadingClasses && _currentUser != null)) {
       return Scaffold(
-        appBar: AppBar(title: const Text("Student Reports")),
+        appBar: AppBar(
+          title: const Text("Student Reports"),
+          backgroundColor: theme.colorScheme.surfaceVariant,
+          foregroundColor: theme.colorScheme.onSurfaceVariant,
+        ),
         body: _buildLoadingScreen("Loading report data..."),
       );
     }
 
     return Scaffold(
-      backgroundColor: Colors.grey[100],
+      backgroundColor: theme.colorScheme.background,
       appBar: AppBar(
         title: const Text("Student Reports"),
+        backgroundColor: theme.colorScheme.surfaceVariant,
+        foregroundColor: theme.colorScheme.onSurfaceVariant,
         leading: IconButton(
           icon: const Icon(FontAwesomeIcons.arrowLeft),
           onPressed: () {
@@ -275,7 +310,7 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> {
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1.0),
           child: Container(
-            color: Colors.grey[300],
+            color: theme.dividerColor,
             height: 1.0,
           ),
         ),
@@ -290,7 +325,7 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> {
                 padding: const EdgeInsets.only(bottom: 16.0),
                 child: Text(
                   "Reports for: $_selectedClassName",
-                  style: TextStyle(fontSize: 16, color: Colors.grey[700]),
+                  style: theme.textTheme.titleMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                 ),
               ),
 
@@ -301,11 +336,11 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> {
                 margin: const EdgeInsets.only(bottom: 20),
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: theme.colorScheme.surface,
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.grey.withOpacity(0.2),
+                      color: theme.shadowColor.withOpacity(0.1),
                       spreadRadius: 1,
                       blurRadius: 5,
                       offset: const Offset(0, 3),
@@ -317,17 +352,30 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> {
                   children: [
                     Text(
                       "Select a Class to View Reports:",
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.grey[800]),
+                      style: theme.textTheme.titleLarge?.copyWith(color: theme.colorScheme.onSurface),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
                       decoration: InputDecoration(
-                        prefixIcon: Icon(FontAwesomeIcons.chalkboardUser, color: Colors.grey[600]),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        prefixIcon: Icon(FontAwesomeIcons.chalkboardUser, color: theme.colorScheme.onSurfaceVariant),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(color: theme.colorScheme.outline),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(color: theme.colorScheme.outline.withOpacity(0.5)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(color: theme.colorScheme.primary, width: 2),
+                        ),
+                        filled: true,
+                        fillColor: theme.colorScheme.surfaceVariant.withOpacity(0.3),
                         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 15),
                       ),
                       isExpanded: true,
-                      hint: const Text("-- Choose a Class --"),
+                      hint: Text("-- Choose a Class --", style: TextStyle(color: theme.colorScheme.onSurfaceVariant)),
                       value: _selectedClassId,
                       items: _trainerClasses.map((cls) {
                         final studentCount = cls['studentCount'] ?? 0;
@@ -373,7 +421,7 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> {
                   padding: const EdgeInsets.only(top: 10.0, bottom: 10.0),
                   child: Text(
                     "Assessment Overview",
-                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Theme.of(context).primaryColorDark),
+                    style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold, color: theme.colorScheme.primary),
                   ),
                 ),
                 ListView.builder(
@@ -399,7 +447,8 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> {
                     return Card(
                       elevation: 3,
                       margin: const EdgeInsets.symmetric(vertical: 8),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      color: theme.colorScheme.surface,
                       child: Padding(
                         padding: const EdgeInsets.all(16.0),
                         child: Column(
@@ -407,32 +456,32 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> {
                           children: [
                             Text(
                               assessment['title'] as String? ?? 'Untitled Assessment',
-                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Theme.of(context).primaryColor),
+                              style: theme.textTheme.titleLarge?.copyWith(color: theme.colorScheme.primary),
                             ),
                             const SizedBox(height: 8),
                             Row(
                               children: [
-                                Icon(FontAwesomeIcons.circleQuestion, size: 14, color: Colors.grey[600]),
+                                Icon(FontAwesomeIcons.circleQuestion, size: 14, color: theme.colorScheme.onSurfaceVariant),
                                 const SizedBox(width: 6),
-                                Text("$totalQuestions Question${totalQuestions != 1 ? 's' : ''}", style: TextStyle(color: Colors.grey[700])),
-                                const Text("  |  ", style: TextStyle(color: Colors.grey)),
-                                Text("Points: ${stats['totalPossiblePoints']}", style: TextStyle(color: Colors.grey[700])),
+                                Text("$totalQuestions Question${totalQuestions != 1 ? 's' : ''}", style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                                Text("  |  ", style: TextStyle(color: theme.dividerColor)),
+                                Text("Points: ${stats['totalPossiblePoints']}", style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
                               ],
                             ),
                             const SizedBox(height: 10),
                             Row(
                               children: [
-                                Icon(FontAwesomeIcons.users, size: 14, color: Theme.of(context).primaryColorLight),
+                                Icon(FontAwesomeIcons.users, size: 14, color: theme.colorScheme.secondary),
                                 const SizedBox(width: 6),
-                                Text("Submissions: ${stats['submissionCount']}", style: TextStyle(color: Colors.grey[800])),
+                                Text("Submissions: ${stats['submissionCount']}", style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurface)),
                               ],
                             ),
                             const SizedBox(height: 4),
                              Row(
                               children: [
-                                Icon(FontAwesomeIcons.percentage, size: 14, color: Colors.green[600]),
+                                Icon(FontAwesomeIcons.percentage, size: 14, color: Colors.green.shade600),
                                 const SizedBox(width: 6),
-                                Text("Average Score: $averageScoreDisplay", style: TextStyle(color: Colors.grey[800])),
+                                Text("Average Score: $averageScoreDisplay", style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurface)),
                               ],
                             ),
                             const SizedBox(height: 16),
@@ -445,10 +494,11 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> {
                                   Navigator.pushNamed(context, '/trainer/assessment/${assessment['id']}/results');
                                 },
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: Theme.of(context).primaryColor,
-                                  foregroundColor: Colors.white,
+                                  backgroundColor: theme.colorScheme.primary,
+                                  foregroundColor: theme.colorScheme.onPrimary,
                                   padding: const EdgeInsets.symmetric(vertical: 12),
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  textStyle: theme.textTheme.labelLarge,
                                 ),
                               ),
                             ),
@@ -471,8 +521,9 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> {
                       Navigator.pushNamed(context, '/create-assessment', arguments: {'initialClassId': _selectedClassId});
                     },
                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Theme.of(context).colorScheme.secondary,
-                        foregroundColor: Colors.white,
+                        backgroundColor: theme.colorScheme.secondary,
+                        foregroundColor: theme.colorScheme.onSecondary,
+                        textStyle: theme.textTheme.labelLarge,
                      ),
                   ),
                 ),
@@ -491,16 +542,17 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> {
   }
 
   Widget _buildEmptyStateCard({required IconData icon, required String title, required String message, Widget? actionButton}) {
+    final theme = Theme.of(context);
     return Container(
       margin: const EdgeInsets.only(top: 20),
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 30),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[300]!, style: BorderStyle.solid, width: 1.5),
+        border: Border.all(color: theme.dividerColor, style: BorderStyle.solid, width: 1),
          boxShadow: [
             BoxShadow(
-              color: Colors.grey.withOpacity(0.1),
+              color: theme.shadowColor.withOpacity(0.05),
               spreadRadius: 1,
               blurRadius: 3,
             )
@@ -510,21 +562,21 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
-            FaIcon(icon, size: 50, color: Colors.grey[400]),
+            FaIcon(icon, size: 50, color: theme.colorScheme.onSurfaceVariant.withOpacity(0.5)),
             const SizedBox(height: 20),
             Text(
               title,
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: Colors.grey[700]),
+              style: theme.textTheme.headlineSmall?.copyWith(color: theme.colorScheme.onSurface),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 10),
             Text(
               message,
-              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+              style: theme.textTheme.bodyLarge?.copyWith(color: theme.colorScheme.onSurfaceVariant),
               textAlign: TextAlign.center,
             ),
             if (actionButton != null) ...[
-              const SizedBox(height: 20),
+              const SizedBox(height: 25),
               actionButton,
             ]
           ],

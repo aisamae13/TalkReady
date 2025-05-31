@@ -144,8 +144,11 @@ class _EditAssessmentPageState extends State<EditAssessmentPage> {
   final User? _currentUser = FirebaseAuth.instance.currentUser;
 
   // --- State Variables (similar to CreateAssessmentPage) ---
-  String _title = '';
-  String _description = '';
+  final TextEditingController _titleController = TextEditingController(); // Use controllers
+  final TextEditingController _descriptionController = TextEditingController();
+
+  // String _title = ''; // Replaced by controller
+  // String _description = ''; // Replaced by controller
   String? _selectedClassId;
   String? _originalClassId; // To track if class assignment changes
   List<TrainerClass> _trainerClasses = [];
@@ -177,6 +180,12 @@ class _EditAssessmentPageState extends State<EditAssessmentPage> {
     _loadInitialData();
   }
 
+  // @override
+  // void didChangeDependencies() {
+  //   super.didChangeDependencies();
+  //   // _theme = Theme.of(context); // If you plan to use theme extensively
+  // }
+
   Future<void> _loadInitialData() async {
     if (_currentUser == null) {
       setState(() { _error = "Authentication required."; _pageLoading = false; });
@@ -198,8 +207,10 @@ class _EditAssessmentPageState extends State<EditAssessmentPage> {
       }
 
       setState(() {
-        _title = assessmentData['title'] ?? '';
-        _description = assessmentData['description'] ?? '';
+        // _title = assessmentData['title'] ?? '';
+        // _description = assessmentData['description'] ?? '';
+        _titleController.text = assessmentData['title'] ?? '';
+        _descriptionController.text = assessmentData['description'] ?? '';
         _selectedClassId = assessmentData['classId'];
         _originalClassId = assessmentData['classId'];
         if (assessmentData['deadline'] != null) {
@@ -237,7 +248,7 @@ class _EditAssessmentPageState extends State<EditAssessmentPage> {
       return;
     }
     if (!_formKey.currentState!.validate()) return;
-    _formKey.currentState!.save();
+    // _formKey.currentState!.save(); // Not needed if using controllers
 
     if (_selectedClassId == null || _selectedClassId!.isEmpty) {
         setState(() => _error = "Please select a class for this assessment.");
@@ -284,17 +295,17 @@ class _EditAssessmentPageState extends State<EditAssessmentPage> {
       final assessmentData = {
         'trainerId': _currentUser!.uid,
         'classId': _selectedClassId,
-        'title': _title,
-        'description': _description,
+        'title': _titleController.text, // Use controller text
+        'description': _descriptionController.text, // Use controller text
         'deadline': _deadline?.toIso8601String(),
-        'questions': _questions.map((q) => q.toJson()).toList(), // Assuming toJson in AssessmentQuestion
+        'questions': _questions.map((q) => q.toJson()).toList(), 
         'assessmentHeaderImageUrl': finalHeaderImageUrl,
         'assessmentHeaderImagePath': finalHeaderImagePath,
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
       await updateTrainerAssessmentInService(widget.assessmentId, assessmentData);
-      setState(() { _success = 'Assessment "$_title" updated successfully!'; });
+      setState(() { _success = 'Assessment "${_titleController.text}" updated successfully!'; });
       Future.delayed(const Duration(seconds: 2), () {
         if (mounted) Navigator.pop(context, true); // Pop with success
       });
@@ -311,7 +322,7 @@ class _EditAssessmentPageState extends State<EditAssessmentPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Confirm Delete Assessment'),
-        content: Text('Are you sure you want to permanently delete the assessment "$_title"? This action cannot be undone and will remove all associated data.'),
+        content: Text('Are you sure you want to permanently delete the assessment "${_titleController.text}"? This action cannot be undone and will remove all associated data.'),
         actions: <Widget>[
           TextButton(child: const Text('Cancel'), onPressed: () => Navigator.of(ctx).pop(false)),
           TextButton(child: const Text('DELETE PERMANENTLY', style: TextStyle(color: Colors.red)), onPressed: () => Navigator.of(ctx).pop(true)),
@@ -327,7 +338,7 @@ class _EditAssessmentPageState extends State<EditAssessmentPage> {
       // for (var q in _questions) { if (q.imagePath != null) await deleteAssessmentMediaFile(q.imagePath!); }
 
       await deleteTrainerAssessmentFromService(widget.assessmentId); // From ClassAssessmentsListPage
-      setState(() { _success = 'Assessment "$_title" deleted successfully.'; });
+      setState(() { _success = 'Assessment "${_titleController.text}" deleted successfully.'; });
       Future.delayed(const Duration(seconds: 2), () {
         if (mounted) {
           // Navigate back to a relevant page, e.g., class assessments list or trainer dashboard
@@ -343,35 +354,45 @@ class _EditAssessmentPageState extends State<EditAssessmentPage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     if (_pageLoading) {
       return Scaffold(
-        appBar: AppBar(title: const Text("Edit Assessment")),
-        body: const Center(child: CircularProgressIndicator()),
+        appBar: AppBar(
+          title: const Text("Edit Assessment"),
+          backgroundColor: theme.colorScheme.surfaceVariant,
+          foregroundColor: theme.colorScheme.onSurfaceVariant,
+        ),
+        body: Center(child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary))),
       );
     }
 
-    // The UI structure will be very similar to CreateAssessmentPage.
-    // Key differences:
-    // - AppBar title: "Edit Assessment: $_title"
-    // - Initial values for TextFormFields, Dropdown, Deadline picker.
-    // - Display existing header image, allow removal/replacement.
-    // - Display existing questions, allow editing/removal/reordering.
-    // - "Update Assessment" button instead of "Create".
-    // - Add a "Delete Assessment" button.
-
-    // For brevity, I'm providing a simplified scaffold.
-    // You should adapt the UI from CreateAssessmentPage.dart, populating fields
-    // with _title, _description, _selectedClassId, _deadline, _assessmentHeaderImageUrl, _questions.
     return Scaffold(
+      backgroundColor: theme.colorScheme.background,
       appBar: AppBar(
-        title: Text(_title.isNotEmpty ? "Edit: $_title" : "Edit Assessment"),
+        title: Text(_titleController.text.isNotEmpty ? "Edit: ${_titleController.text}" : "Edit Assessment", overflow: TextOverflow.ellipsis),
+        backgroundColor: theme.colorScheme.surfaceVariant,
+        foregroundColor: theme.colorScheme.onSurfaceVariant,
+        elevation: 0,
         actions: [
           IconButton(
-            icon: const Icon(FontAwesomeIcons.trashAlt, color: Colors.red),
+            icon: Icon(FontAwesomeIcons.floppyDisk, color: theme.colorScheme.primary),
+            onPressed: _isUpdating ? null : _handleUpdateAssessment,
+            tooltip: "Update Assessment",
+          ),
+          IconButton(
+            icon: Icon(FontAwesomeIcons.trashCan, color: theme.colorScheme.error),
             onPressed: _isUpdating ? null : _handleDeleteAssessment,
             tooltip: "Delete Assessment",
-          )
+          ),
         ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1.0),
+          child: Container(
+            color: theme.dividerColor,
+            height: 1.0,
+          ),
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
@@ -381,115 +402,198 @@ class _EditAssessmentPageState extends State<EditAssessmentPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               if (_error != null)
-                Padding(padding: const EdgeInsets.only(bottom:10.0), child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error))),
+                Padding(
+                  padding: const EdgeInsets.only(bottom:12.0), 
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(color: theme.colorScheme.errorContainer, borderRadius: BorderRadius.circular(8)),
+                    child: Row(children: [
+                      Icon(Icons.error_outline, color: theme.colorScheme.error),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text(_error!, style: TextStyle(color: theme.colorScheme.onErrorContainer))),
+                    ]),
+                  )
+                ),
               if (_success != null)
-                Padding(padding: const EdgeInsets.only(bottom:10.0), child: Text(_success!, style: TextStyle(color: Colors.green[700]))),
+                 Padding(
+                  padding: const EdgeInsets.only(bottom:12.0), 
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(color: Colors.green.shade100, borderRadius: BorderRadius.circular(8)),
+                    child: Row(children: [
+                      Icon(Icons.check_circle_outline, color: Colors.green.shade700),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text(_success!, style: TextStyle(color: Colors.green.shade800))),
+                    ]),
+                  )
+                ),
               
-              // --- Assessment Title ---
               TextFormField(
-                initialValue: _title,
-                decoration: const InputDecoration(labelText: 'Assessment Title', border: OutlineInputBorder()),
-                validator: (value) => value == null || value.trim().isEmpty ? 'Please enter a title.' : null,
-                onSaved: (value) => _title = value!,
+                controller: _titleController,
+                decoration: InputDecoration(
+                  labelText: "Assessment Title",
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  prefixIcon: Icon(FontAwesomeIcons.fileSignature, color: theme.colorScheme.onSurfaceVariant),
+                  filled: true,
+                  fillColor: theme.colorScheme.surfaceVariant.withOpacity(0.3),
+                ),
+                validator: (v) => v == null || v.isEmpty ? 'Title is required' : null,
                 enabled: !_isUpdating,
               ),
               const SizedBox(height: 16),
 
-              // --- Description ---
               TextFormField(
-                initialValue: _description,
-                decoration: const InputDecoration(labelText: 'Description (Optional)', border: OutlineInputBorder()),
+                controller: _descriptionController,
+                decoration: InputDecoration(
+                  labelText: "Description",
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  prefixIcon: Icon(FontAwesomeIcons.alignLeft, color: theme.colorScheme.onSurfaceVariant),
+                  filled: true,
+                  fillColor: theme.colorScheme.surfaceVariant.withOpacity(0.3),
+                ),
                 maxLines: 3,
-                onSaved: (value) => _description = value ?? '',
                 enabled: !_isUpdating,
               ),
               const SizedBox(height: 16),
 
-              // --- Select Class ---
-              if (_trainerClasses.isNotEmpty)
+              if (_trainerClasses.isNotEmpty) // Assuming _trainerClasses is populated
                 DropdownButtonFormField<String>(
-                  decoration: const InputDecoration(labelText: 'Select Class', border: OutlineInputBorder()),
-                  value: _selectedClassId, // Ensure this value exists in items
-                  items: _trainerClasses.map((TrainerClass cls) {
-                    return DropdownMenuItem<String>(value: cls.id, child: Text(cls.className));
+                  decoration: InputDecoration(
+                    labelText: 'Select Class',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    prefixIcon: Icon(FontAwesomeIcons.chalkboardUser, color: theme.colorScheme.onSurfaceVariant),
+                    filled: true,
+                    fillColor: theme.colorScheme.surfaceVariant.withOpacity(0.3),
+                  ),
+                  value: _selectedClassId,
+                  items: _trainerClasses.map((cls) {
+                    return DropdownMenuItem<String>(
+                      value: cls.id, // Assuming TrainerClass has id and className
+                      child: Text(cls.className),
+                    );
                   }).toList(),
-                  onChanged: _isUpdating ? null : (value) => setState(() => _selectedClassId = value),
-                  validator: (value) => value == null || value.isEmpty ? 'Please select a class.' : null,
+                  onChanged: _isUpdating ? null : (value) {
+                    setState(() {
+                      _selectedClassId = value;
+                    });
+                  },
+                  validator: (value) => value == null ? 'Please select a class' : null,
                 ),
               const SizedBox(height: 16),
 
-              // --- Deadline Picker ---
-              ElevatedButton.icon(
-                icon: const Icon(FontAwesomeIcons.calendarCheck),
-                label: Text(_deadline == null ? 'Set Deadline (Optional)' : 'Deadline: ${DateFormat.yMd().add_jm().format(_deadline!)}'),
-                onPressed: _isUpdating ? null : () async {
-                  final DateTime? picked = await showDatePicker(
-                    context: context,
-                    initialDate: _deadline ?? DateTime.now(),
-                    firstDate: DateTime.now().subtract(const Duration(days: 30)), // Allow past for editing
-                    lastDate: DateTime.now().add(const Duration(days: 365)),
-                  );
-                  if (picked != null) {
-                    final TimeOfDay? pickedTime = await showTimePicker(
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _deadline == null ? 'No Deadline Set' : 'Deadline: ${DateFormat.yMd().add_jm().format(_deadline!)}',
+                      style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  ),
+                  TextButton.icon(
+                    icon: Icon(FontAwesomeIcons.calendarCheck, size: 16, color: theme.colorScheme.secondary),
+                    label: Text(_deadline == null ? 'Set Deadline' : 'Change', style: TextStyle(color: theme.colorScheme.secondary)),
+                    onPressed: _isUpdating ? null : () async {
+                      final DateTime? picked = await showDatePicker(
                         context: context,
-                        initialTime: TimeOfDay.fromDateTime(_deadline ?? DateTime.now()),
-                    );
-                    if (pickedTime != null) {
-                         setState(() => _deadline = DateTime(picked.year, picked.month, picked.day, pickedTime.hour, pickedTime.minute));
-                    }
-                  }
-                },
+                        initialDate: _deadline ?? DateTime.now(),
+                        firstDate: DateTime.now(),
+                        lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
+                      );
+                      if (picked != null) {
+                        final TimeOfDay? timePicked = await showTimePicker(
+                          context: context,
+                          initialTime: TimeOfDay.fromDateTime(_deadline ?? DateTime.now()),
+                        );
+                        if (timePicked != null) {
+                          setState(() {
+                            _deadline = DateTime(picked.year, picked.month, picked.day, timePicked.hour, timePicked.minute);
+                          });
+                        }
+                      }
+                    },
+                  ),
+                ],
               ),
               const SizedBox(height: 24),
+              Divider(color: theme.dividerColor.withOpacity(0.5)),
+              const SizedBox(height: 12),
 
-              // --- Assessment Header Image Section (Adapt from CreateAssessmentPage) ---
-              // Needs to show _assessmentHeaderImageUrl if present, allow removal/replacement.
-              // Text("Assessment Header Image... (Implement UI similar to Create Page)"),
+              // --- Assessment Header Image Section ---
+              // This part needs full implementation similar to CreateAssessmentPage
+              // For now, a placeholder:
+              Text("Assessment Header Image (UI to be implemented)", style: theme.textTheme.labelLarge),
               const SizedBox(height: 24),
+              Divider(color: theme.dividerColor.withOpacity(0.5)),
+              const SizedBox(height: 12),
 
 
-              // --- Questions Section (Adapt from CreateAssessmentPage) ---
-              // Needs to list _questions, allow editing, adding, removing.
-              // Text("Questions... (${_questions.length}) (Implement UI similar to Create Page)"),
-              // Example:
-              Text("Questions (${_questions.length})", style: Theme.of(context).textTheme.titleLarge),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text("Questions (${_questions.length})", style: theme.textTheme.titleLarge?.copyWith(color: theme.colorScheme.onBackground)),
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.add_circle_outline, size: 18),
+                    label: const Text('Add Question'),
+                    onPressed: _isUpdating ? null : () { /* _addOrEditQuestion(); */ }, // Adapt from CreateAssessmentPage
+                     style: ElevatedButton.styleFrom(
+                      backgroundColor: theme.colorScheme.secondary,
+                      foregroundColor: theme.colorScheme.onSecondary,
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: 8),
-              if (_questions.isEmpty) const Center(child: Text("No questions added yet.")),
+              if (_questions.isEmpty) Center(child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16.0),
+                child: Text("No questions added yet.", style: TextStyle(color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7))),
+              )),
               ListView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 itemCount: _questions.length,
                 itemBuilder: (context, index) {
-                  final q = _questions[index];
+                  final question = _questions[index];
                   return Card(
-                    margin: const EdgeInsets.symmetric(vertical: 4),
+                    elevation: 1.5,
+                    margin: const EdgeInsets.symmetric(vertical: 6),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     child: ListTile(
-                      title: Text(q.questionText.isNotEmpty ? q.questionText : "Question ${index + 1}"),
-                      subtitle: Text("${q.type.toString().split('.').last} - ${q.points} pts"),
-                      // Add edit/delete buttons for each question
+                      leading: CircleAvatar(
+                        backgroundColor: theme.colorScheme.primaryContainer,
+                        child: Text("${index + 1}", style: TextStyle(color: theme.colorScheme.onPrimaryContainer, fontWeight: FontWeight.bold)),
+                      ),
+                      title: Text(question.questionText, overflow: TextOverflow.ellipsis),
+                      subtitle: Text('${question.type.toString().split('.').last} - ${question.points} pts'),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: Icon(FontAwesomeIcons.penToSquare, size: 16, color: theme.colorScheme.secondary),
+                            onPressed: _isUpdating ? null : () { /* _addOrEditQuestion(existingQuestion: question, index: index); */ },
+                          ),
+                          IconButton(
+                            icon: Icon(FontAwesomeIcons.trashCan, size: 16, color: theme.colorScheme.error),
+                            onPressed: _isUpdating ? null : () { /* _deleteQuestion(index); */ },
+                          ),
+                        ],
+                      ),
                     ),
                   );
                 },
               ),
+              const SizedBox(height: 30),
               ElevatedButton.icon(
-                icon: const Icon(FontAwesomeIcons.plusCircle),
-                label: const Text("Add/Manage Questions"),
-                onPressed: _isUpdating ? null : () {
-                  // Navigate to a question management UI or show dialog
-                  // This part is complex and needs its own UI flow.
-                },
+                icon: _isUpdating ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: theme.colorScheme.onPrimary)) : const Icon(FontAwesomeIcons.floppyDisk, size: 16),
+                label: Text(_isUpdating ? 'Updating...' : 'Update Assessment'),
+                onPressed: _isUpdating ? null : _handleUpdateAssessment,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: theme.colorScheme.primary,
+                  foregroundColor: theme.colorScheme.onPrimary,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  textStyle: theme.textTheme.labelLarge?.copyWith(fontSize: 16, fontWeight: FontWeight.bold),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
               ),
-              const SizedBox(height: 32),
-
-
-              _isUpdating
-                  ? const Center(child: CircularProgressIndicator())
-                  : ElevatedButton.icon(
-                      icon: const Icon(FontAwesomeIcons.save),
-                      label: const Text('Update Assessment'),
-                      onPressed: _handleUpdateAssessment,
-                      style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 12.0)),
-                    ),
             ],
           ),
         ),

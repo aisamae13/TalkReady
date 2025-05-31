@@ -340,10 +340,93 @@ class _QuickUploadMaterialPageState extends State<QuickUploadMaterialPage> {
     }
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
-      child: _uploadSuccessMessage != null
-          ? _buildSuccessView()
-          : _buildUploadForm(),
+      padding: const EdgeInsets.all(24),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: 500),
+          child: Card(
+            elevation: 5,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  children: [
+                    DropdownButtonFormField<String>(
+                      decoration: InputDecoration(
+                        labelText: "Select Class *",
+                        filled: true,
+                        fillColor: Colors.grey[100],
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        prefixIcon: Icon(FontAwesomeIcons.chalkboardUser),
+                      ),
+                      value: _selectedClassId,
+                      hint: const Text("-- Choose a class --"),
+                      isExpanded: true,
+                      items: _trainerClasses.map((Map<String, dynamic> cls) {
+                        return DropdownMenuItem<String>(
+                          value: cls['id'] as String,
+                          child: Text(cls['className'] as String? ?? 'Unnamed Class'),
+                        );
+                      }).toList(),
+                      onChanged: _isUploading ? null : (String? newValue) {
+                        setState(() {
+                          _selectedClassId = newValue;
+                          _uploadError = null;
+                          _uploadSuccessMessage = null;
+                        });
+                      },
+                      validator: (value) => value == null ? 'Please select a class' : null,
+                    ),
+                    SizedBox(height: 20),
+                    TextFormField(
+                      decoration: InputDecoration(
+                        labelText: "Material Title *",
+                        filled: true,
+                        fillColor: Colors.grey[100],
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        prefixIcon: Icon(FontAwesomeIcons.book),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return 'Please enter a title';
+                        }
+                        return null;
+                      },
+                      enabled: !_isUploading,
+                    ),
+                    SizedBox(height: 20),
+                    TextFormField(
+                      decoration: InputDecoration(
+                        labelText: "Description (Optional)",
+                        filled: true,
+                        fillColor: Colors.grey[100],
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        prefixIcon: Icon(FontAwesomeIcons.solidFileLines), // Changed icon
+                      ),
+                      maxLines: 3,
+                      enabled: !_isUploading,
+                    ),
+                    SizedBox(height: 24),
+                    ElevatedButton.icon(
+                      icon: Icon(FontAwesomeIcons.save),
+                      label: Text("Upload & Save Material"),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Theme.of(context).colorScheme.primary,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      ),
+                      onPressed: _isUploading ? null : _handleSubmitUpload,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 

@@ -152,6 +152,10 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> {
   void initState() {
     super.initState();
     _fetchClassAndStudentData();
+    // Add listener to rebuild suffix icon if text changes (optional, direct check in build is also fine)
+    // _searchController.addListener(() {
+    //   if (mounted) setState(() {});
+    // });
   }
 
   Future<void> _fetchClassAndStudentData({bool showLoading = true}) async {
@@ -295,6 +299,15 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> {
     return DateFormat.yMMMd().add_jm().format(timestamp.toDate());
   }
 
+  // New method to clear search field and results
+  void _clearSearchFieldAndResults() {
+    _searchController.clear();
+    setState(() {
+      _searchResults = [];
+      _actionError = null; // Clear previous search errors
+      _isSearching = false; // Ensure searching state is reset
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -341,7 +354,7 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> {
           children: [
             Text("Add New Student", style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 16),
-            if (_actionError != null && !_actionError!.toLowerCase().contains("removal failed")) // Show search/enroll errors here
+            if (_actionError != null && !_actionError!.toLowerCase().contains("removal failed"))
               Padding(
                 padding: const EdgeInsets.only(bottom: 8.0),
                 child: Text(_actionError!, style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12)),
@@ -351,13 +364,24 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> {
                 Expanded(
                   child: TextField(
                     controller: _searchController,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: "Student Email",
-                      prefixIcon: Icon(FontAwesomeIcons.envelope),
-                      border: OutlineInputBorder(),
+                      prefixIcon: const Icon(FontAwesomeIcons.envelope),
+                      border: const OutlineInputBorder(),
+                      suffixIcon: _searchController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear),
+                              onPressed: _clearSearchFieldAndResults,
+                              tooltip: "Clear Search",
+                            )
+                          : null,
                     ),
                     keyboardType: TextInputType.emailAddress,
                     enabled: !_isSearching,
+                    onChanged: (_) {
+                      // Trigger rebuild to show/hide clear button if not using a listener
+                      if (mounted) setState(() {});
+                    },
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -369,7 +393,7 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> {
               ],
             ),
             if (_isSearching) const Padding(padding: EdgeInsets.all(8.0), child: Center(child: Text("Searching..."))),
-            if (_searchResults.isNotEmpty)
+            if (!_isSearching && _searchResults.isNotEmpty)
               _buildSearchResultsList(),
           ],
         ),

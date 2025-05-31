@@ -119,7 +119,7 @@ class _ManageClassContentPageState extends State<ManageClassContentPage> {
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
 
-  ClassDetails? _classDetails; // Assuming ClassDetails model from manage_class_students_page.dart
+  ClassDetails? _classDetails; 
   List<ClassMaterial> _materials = [];
 
   bool _isLoading = true;
@@ -129,12 +129,19 @@ class _ManageClassContentPageState extends State<ManageClassContentPage> {
   bool _isUploading = false;
   double _uploadProgress = 0.0;
   String? _uploadError;
+  // ThemeData? _theme;
 
   @override
   void initState() {
     super.initState();
     _fetchClassData();
   }
+
+  // @override
+  // void didChangeDependencies() {
+  //   super.didChangeDependencies();
+  //   _theme = Theme.of(context);
+  // }
 
   Future<void> _fetchClassData({bool showLoading = true}) async {
     if (_currentUser == null) {
@@ -298,9 +305,14 @@ class _ManageClassContentPageState extends State<ManageClassContentPage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
+      backgroundColor: theme.colorScheme.background,
       appBar: AppBar(
-        title: Text(_classDetails?.className ?? "Manage Content"),
+        title: Text(_classDetails?.className ?? "Manage Content", style: TextStyle(fontWeight: FontWeight.w500)),
+        backgroundColor: theme.colorScheme.surfaceVariant,
+        foregroundColor: theme.colorScheme.onSurfaceVariant,
+        elevation: 0,
          actions: [
           IconButton(
             icon: const Icon(FontAwesomeIcons.arrowsRotate),
@@ -308,15 +320,23 @@ class _ManageClassContentPageState extends State<ManageClassContentPage> {
             tooltip: "Refresh Content",
           )
         ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1.0),
+          child: Container(
+            color: theme.dividerColor,
+            height: 1.0,
+          ),
+        ),
       ),
-      body: _isLoading && _materials.isEmpty // Show full page loader only on initial load
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null && !_error!.toLowerCase().contains("deletion failed") // Show general errors not related to delete action
-              ? Center(child: Padding(padding: const EdgeInsets.all(16.0), child: Text("Error: $_error", style: TextStyle(color: Theme.of(context).colorScheme.error))))
+      body: _isLoading && _materials.isEmpty 
+          ? Center(child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary)))
+          : _error != null && !_error!.toLowerCase().contains("deletion failed") && !_error!.toLowerCase().contains("upload failed")
+              ? Center(child: Padding(padding: const EdgeInsets.all(16.0), child: Text("Error: $_error", style: TextStyle(color: theme.colorScheme.error))))
               : _classDetails == null
                   ? const Center(child: Text("Class details not available."))
                   : RefreshIndicator(
                       onRefresh: () => _fetchClassData(showLoading: false),
+                      color: theme.colorScheme.primary,
                       child: ListView(
                         padding: const EdgeInsets.all(16.0),
                         children: [
@@ -330,54 +350,103 @@ class _ManageClassContentPageState extends State<ManageClassContentPage> {
   }
 
   Widget _buildUploadSection() {
+    final theme = Theme.of(context);
     return Card(
       elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      color: theme.colorScheme.surface,
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text("Upload New Material", style: Theme.of(context).textTheme.titleLarge),
+            Text("Upload New Material", style: theme.textTheme.headlineSmall?.copyWith(color: theme.colorScheme.onSurface)),
             const SizedBox(height: 16),
             if (_uploadError != null)
               Padding(
-                padding: const EdgeInsets.only(bottom: 8.0),
-                child: Text(_uploadError!, style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12)),
+                padding: const EdgeInsets.only(bottom: 10.0),
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: theme.colorScheme.errorContainer, borderRadius: BorderRadius.circular(8)),
+                  child: Row(children: [
+                    Icon(Icons.error_outline, color: theme.colorScheme.error, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(_uploadError!, style: TextStyle(color: theme.colorScheme.onErrorContainer, fontSize: 13))),
+                  ]),
+                )
               ),
             TextField(
               controller: _titleController,
-              decoration: const InputDecoration(labelText: "Title*", border: OutlineInputBorder()),
+              decoration: InputDecoration(
+                labelText: "Title*", 
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                prefixIcon: Icon(FontAwesomeIcons.heading, color: theme.colorScheme.onSurfaceVariant, size: 18),
+                filled: true,
+                fillColor: theme.colorScheme.surfaceVariant.withOpacity(0.3),
+              ),
               enabled: !_isUploading,
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _descriptionController,
-              decoration: const InputDecoration(labelText: "Description (Optional)", border: OutlineInputBorder()),
+              decoration: InputDecoration(
+                labelText: "Description (Optional)", 
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                prefixIcon: Icon(FontAwesomeIcons.alignLeft, color: theme.colorScheme.onSurfaceVariant, size: 18),
+                filled: true,
+                fillColor: theme.colorScheme.surfaceVariant.withOpacity(0.3),
+              ),
               maxLines: 2,
               enabled: !_isUploading,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             Row(
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    icon: const Icon(FontAwesomeIcons.paperclip),
-                    label: Text(_selectedFileName ?? "Select File*"),
+                    icon: Icon(FontAwesomeIcons.paperclip, size: 16, color: _isUploading ? theme.disabledColor : theme.colorScheme.primary),
+                    label: Text(
+                      _selectedFileName ?? "Select File*", 
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: _isUploading ? theme.disabledColor : theme.colorScheme.primary),
+                    ),
                     onPressed: _isUploading ? null : _pickFile,
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                      side: BorderSide(color: _isUploading ? theme.disabledColor : theme.colorScheme.primary.withOpacity(0.7)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 10),
                 ElevatedButton.icon(
-                  icon: _isUploading ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(FontAwesomeIcons.upload),
+                  icon: _isUploading ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: theme.colorScheme.onPrimary)) : const Icon(FontAwesomeIcons.upload, size: 16),
                   label: const Text("Upload"),
                   onPressed: (_isUploading || _selectedFile == null || _titleController.text.trim().isEmpty) ? null : _handleUpload,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: theme.colorScheme.primary,
+                    foregroundColor: theme.colorScheme.onPrimary,
+                    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
                 ),
               ],
             ),
             if (_isUploading)
               Padding(
-                padding: const EdgeInsets.only(top: 8.0),
-                child: LinearProgressIndicator(value: _uploadProgress),
+                padding: const EdgeInsets.only(top: 12.0),
+                child: Column(
+                  children: [
+                    LinearProgressIndicator(
+                      value: _uploadProgress, 
+                      backgroundColor: theme.colorScheme.surfaceVariant, 
+                      valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.secondary),
+                      minHeight: 6,
+                    ),
+                    const SizedBox(height: 4),
+                    Text("${(_uploadProgress * 100).toStringAsFixed(0)}%", style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.secondary)),
+                  ],
+                ),
               ),
           ],
         ),
@@ -386,20 +455,32 @@ class _ManageClassContentPageState extends State<ManageClassContentPage> {
   }
 
   Widget _buildMaterialsList() {
+    final theme = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text("Uploaded Materials (${_materials.length})", style: Theme.of(context).textTheme.titleLarge),
+        Text("Uploaded Materials (${_materials.length})", style: theme.textTheme.headlineSmall?.copyWith(color: theme.colorScheme.onSurface)),
         const SizedBox(height: 8),
-        if (_error != null && _error!.toLowerCase().contains("deletion failed")) // Show delete-specific errors here
+        if (_error != null && (_error!.toLowerCase().contains("deletion failed") || _error!.toLowerCase().contains("upload failed")))
               Padding(
                 padding: const EdgeInsets.only(bottom: 8.0),
-                child: Text("Error: $_error", style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12)),
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: theme.colorScheme.errorContainer, borderRadius: BorderRadius.circular(8)),
+                  child: Row(children: [
+                    Icon(Icons.error_outline, color: theme.colorScheme.error, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text("Error: $_error", style: TextStyle(color: theme.colorScheme.onErrorContainer, fontSize: 13))),
+                  ]),
+                )
               ),
-        _isLoading && _materials.isNotEmpty // Show small loader when refreshing list
-            ? const Center(child: Padding(padding: EdgeInsets.all(8.0), child: CircularProgressIndicator(strokeWidth: 2)))
+        _isLoading && _materials.isNotEmpty 
+            ? Center(child: Padding(padding: const EdgeInsets.all(16.0), child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary))))
             : _materials.isEmpty
-                ? const Center(child: Padding(padding: EdgeInsets.all(16.0), child: Text("No materials uploaded yet.")))
+                ? Center(child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 24.0), 
+                    child: Text("No materials uploaded yet.", style: theme.textTheme.titleMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant))
+                  ))
                 : ListView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
@@ -407,35 +488,40 @@ class _ManageClassContentPageState extends State<ManageClassContentPage> {
                     itemBuilder: (context, index) {
                       final material = _materials[index];
                       return Card(
-                        margin: const EdgeInsets.symmetric(vertical: 4),
+                        elevation: 1.5,
+                        margin: const EdgeInsets.symmetric(vertical: 6),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        color: theme.colorScheme.surface,
                         child: ListTile(
-                          leading: FaIcon(_getFileIcon(material.fileName), size: 30, color: Theme.of(context).primaryColor),
-                          title: Text(material.title, style: const TextStyle(fontWeight: FontWeight.bold)),
+                          contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+                          leading: FaIcon(_getFileIcon(material.fileName), size: 30, color: theme.colorScheme.primary),
+                          title: Text(material.title, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface)),
                           subtitle: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              const SizedBox(height: 2),
                               if (material.description != null && material.description!.isNotEmpty)
-                                Text(material.description!, maxLines: 1, overflow: TextOverflow.ellipsis),
-                              Text(material.fileName, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                              Text("Uploaded: ${_formatTimestamp(material.createdAt)}", style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                                Text(material.description!, maxLines: 1, overflow: TextOverflow.ellipsis, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                              Text(material.fileName, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant.withOpacity(0.8))),
+                              Text("Uploaded: ${_formatTimestamp(material.createdAt)}", style: theme.textTheme.bodySmall?.copyWith(fontSize: 10, color: theme.colorScheme.onSurfaceVariant.withOpacity(0.6))),
                             ],
                           ),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              // IconButton(
-                              //   icon: const Icon(FontAwesomeIcons.download, color: Colors.blue),
-                              //   onPressed: () => _launchURL(material.downloadURL),
-                              //   tooltip: "Download/View",
-                              // ),
                               IconButton(
-                                icon: const Icon(FontAwesomeIcons.trashAlt, color: Colors.red),
+                                icon: Icon(FontAwesomeIcons.circleDown, color: theme.colorScheme.secondary, size: 20),
+                                onPressed: () { /* _launchURL(material.downloadURL); */ }, // Ensure url_launcher is setup
+                                tooltip: "Download/View",
+                              ),
+                              IconButton(
+                                icon: Icon(FontAwesomeIcons.trashCan, color: theme.colorScheme.error, size: 20),
                                 onPressed: () => _handleDeleteMaterial(material),
                                 tooltip: "Delete",
                               ),
                             ],
                           ),
-                          onTap: () { /* _launchURL(material.downloadURL); */ }, // Make list item tappable to view/download
+                          onTap: () { /* _launchURL(material.downloadURL); */ }, 
                         ),
                       );
                     },

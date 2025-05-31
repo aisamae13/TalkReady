@@ -47,14 +47,14 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> {
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
 
-  String? _selectedClassId; // If classId is not passed, user might select one
-  List<Map<String, dynamic>> _trainerClasses = []; // For dropdown if classId is null
+  String? _selectedClassId; 
+  List<Map<String, dynamic>> _trainerClasses = []; 
 
   List<Question> _questions = [];
   bool _isLoading = false;
   String? _error;
   final User? currentUser = FirebaseAuth.instance.currentUser;
-
+  // ThemeData? _theme;
 
   @override
   void initState() {
@@ -64,6 +64,12 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> {
       _fetchTrainerClasses();
     }
   }
+
+  // @override
+  // void didChangeDependencies() {
+  //   super.didChangeDependencies();
+  //   _theme = Theme.of(context);
+  // }
 
   Future<void> _fetchTrainerClasses() async {
     // TODO: Implement if you need a dropdown to select a class
@@ -156,15 +162,28 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
+      backgroundColor: theme.colorScheme.background,
       appBar: AppBar(
         title: const Text('Create New Assessment'),
+        backgroundColor: theme.colorScheme.surfaceVariant,
+        foregroundColor: theme.colorScheme.onSurfaceVariant,
+        elevation: 0,
         actions: [
           IconButton(
-            icon: const Icon(Icons.save),
+            icon: const Icon(Icons.save_alt_outlined),
             onPressed: _isLoading ? null : _saveAssessment,
+            tooltip: "Save Assessment",
           )
         ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1.0),
+          child: Container(
+            color: theme.dividerColor,
+            height: 1.0,
+          ),
+        ),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -174,37 +193,55 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> {
             children: [
               if (_error != null)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 10.0),
-                  child: Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 14)),
+                  padding: const EdgeInsets.only(bottom: 12.0),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.errorContainer,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(FontAwesomeIcons.triangleExclamation, color: theme.colorScheme.error, size: 18),
+                        const SizedBox(width: 10),
+                        Expanded(child: Text(_error!, style: TextStyle(color: theme.colorScheme.onErrorContainer))),
+                      ],
+                    ),
+                  ),
                 ),
               TextFormField(
                 controller: _titleController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Assessment Title',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(FontAwesomeIcons.fileSignature),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  prefixIcon: Icon(FontAwesomeIcons.fileSignature, color: theme.colorScheme.onSurfaceVariant),
+                  filled: true,
+                  fillColor: theme.colorScheme.surfaceVariant.withOpacity(0.3),
                 ),
                 validator: (v) => v == null || v.isEmpty ? 'Title is required' : null,
               ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _descriptionController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Description (Optional)',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(FontAwesomeIcons.alignLeft)
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  prefixIcon: Icon(FontAwesomeIcons.alignLeft, color: theme.colorScheme.onSurfaceVariant),
+                  filled: true,
+                  fillColor: theme.colorScheme.surfaceVariant.withOpacity(0.3),
                 ),
                 maxLines: 3,
               ),
               const SizedBox(height: 16),
 
-              // Class Selector (if classId not provided via widget)
               if (widget.classId == null) ...[
                 DropdownButtonFormField<String>(
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Select Class',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(FontAwesomeIcons.chalkboardUser),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    prefixIcon: Icon(FontAwesomeIcons.chalkboardUser, color: theme.colorScheme.onSurfaceVariant),
+                    filled: true,
+                    fillColor: theme.colorScheme.surfaceVariant.withOpacity(0.3),
                   ),
                   value: _selectedClassId,
                   items: _trainerClasses.map((cls) {
@@ -224,23 +261,28 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> {
               ],
 
 
-              const Divider(height: 32),
+              const Divider(height: 32, thickness: 1, color: Colors.grey),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Questions', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  Text('Questions', style: theme.textTheme.titleLarge?.copyWith(color: theme.colorScheme.onBackground)),
                   ElevatedButton.icon(
-                    icon: const Icon(Icons.add_circle_outline),
+                    icon: const Icon(Icons.add_circle_outline, size: 18),
                     label: const Text('Add Question'),
                     onPressed: _addQuestion,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: theme.colorScheme.secondary,
+                      foregroundColor: theme.colorScheme.onSecondary,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    ),
                   ),
                 ],
               ),
               const SizedBox(height: 10),
               if (_questions.isEmpty)
-                const Center(child: Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: Text("No questions added yet.", style: TextStyle(color: Colors.grey)),
+                Center(child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Text("No questions added yet.", style: TextStyle(color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7))),
                 )),
               ListView.builder(
                 shrinkWrap: true,
@@ -249,14 +291,21 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> {
                 itemBuilder: (context, index) {
                   final question = _questions[index];
                   return Card(
+                    elevation: 1.5,
                     margin: const EdgeInsets.symmetric(vertical: 6),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    color: theme.colorScheme.surface,
                     child: ListTile(
-                      leading: CircleAvatar(child: Text("${index + 1}")),
-                      title: Text(question.text, overflow: TextOverflow.ellipsis),
-                      subtitle: Text('${question.type} - ${question.points} pts'),
+                      leading: CircleAvatar(
+                        backgroundColor: theme.colorScheme.primaryContainer,
+                        child: Text("${index + 1}", style: TextStyle(color: theme.colorScheme.onPrimaryContainer, fontWeight: FontWeight.bold)),
+                      ),
+                      title: Text(question.text, overflow: TextOverflow.ellipsis, style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.onSurface)),
+                      subtitle: Text('${question.type} - ${question.points} pts', style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
                       trailing: IconButton(
-                        icon: Icon(Icons.delete_outline, color: Colors.red[400]),
+                        icon: Icon(Icons.delete_outline, color: theme.colorScheme.error.withOpacity(0.8)),
                         onPressed: () => _removeQuestion(index),
+                        tooltip: "Remove question",
                       ),
                       // TODO: Add onTap to edit question
                     ),
@@ -265,14 +314,15 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> {
               ),
               const SizedBox(height: 30),
               ElevatedButton.icon(
-                icon: _isLoading ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.save_alt_outlined),
+                icon: _isLoading ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: theme.colorScheme.onPrimary)) : const Icon(Icons.save_alt_outlined),
                 label: Text(_isLoading ? 'Saving...' : 'Save Assessment'),
                 onPressed: _isLoading ? null : _saveAssessment,
                 style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  textStyle: const TextStyle(fontSize: 16),
-                  backgroundColor: Colors.indigo,
-                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  textStyle: theme.textTheme.labelLarge?.copyWith(fontSize: 16, fontWeight: FontWeight.bold),
+                  backgroundColor: theme.colorScheme.primary,
+                  foregroundColor: theme.colorScheme.onPrimary,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
               ),
             ],
