@@ -1,41 +1,64 @@
+// In lesson1_2.dart
+
 import 'package:flutter/material.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:logger/logger.dart';
-import '../lessons/common_widgets.dart';
-import 'dart:async'; // Import for Timer
+import '../lessons/common_widgets.dart'; // For buildSlide
 
 class buildLesson1_2 extends StatefulWidget {
-  final BuildContext context;
+  // Props for study material part
   final int currentSlide;
   final CarouselSliderController carouselController;
   final YoutubePlayerController youtubeController;
   final bool showActivity;
   final VoidCallback onShowActivity;
-  final List<List<String>> selectedAnswers;
-  final List<bool?> isCorrectStates;
-  final List<String?> errorMessages;
-  final Function(int, bool) onAnswerChanged;
   final Function(int) onSlideChanged;
-  final Function(List<Map<String, dynamic>> questionsData, int timeSpent, int attemptNumber) onSubmitAnswers;
-  final Function(int questionIndex, List<String> selectedWords) onWordsSelected;
+
+  // Props for MCQ activity part
+  final Map<String, dynamic>? currentQuestionData;
+  final String? selectedAnswerForCurrentQuestion;
+  final bool isFlagged;
+  final bool? showResultsForCurrentQuestion;
+  final String? errorMessageForCurrentQuestion;
+  final int questionIndex;
+  final int totalQuestions;
+  final Function(String questionId, String selectedOption) onOptionSelected;
+  final Function(String questionId) onToggleFlag;
+  final VoidCallback onPreviousQuestion;
+  final VoidCallback onNextQuestion;
+  final VoidCallback onSubmitAnswersFromLesson;
+  final bool isSubmitting;
+  final bool isFirstQuestion;
+  final bool isLastQuestion;
+  final int secondsElapsed;
   final int initialAttemptNumber;
 
   const buildLesson1_2({
     super.key,
-    required this.context,
     required this.currentSlide,
     required this.carouselController,
     required this.youtubeController,
     required this.showActivity,
     required this.onShowActivity,
-    required this.selectedAnswers,
-    required this.isCorrectStates,
-    required this.errorMessages,
-    required this.onAnswerChanged,
     required this.onSlideChanged,
-    required this.onSubmitAnswers,
-    required this.onWordsSelected,
+    // Activity Props
+    this.currentQuestionData,
+    this.selectedAnswerForCurrentQuestion,
+    required this.isFlagged,
+    this.showResultsForCurrentQuestion,
+    this.errorMessageForCurrentQuestion,
+    required this.questionIndex,
+    required this.totalQuestions,
+    required this.onOptionSelected,
+    required this.onToggleFlag,
+    required this.onPreviousQuestion,
+    required this.onNextQuestion,
+    required this.onSubmitAnswersFromLesson,
+    required this.isSubmitting,
+    required this.isFirstQuestion,
+    required this.isLastQuestion,
+    required this.secondsElapsed,
     required this.initialAttemptNumber,
   });
 
@@ -46,23 +69,22 @@ class buildLesson1_2 extends StatefulWidget {
 class _Lesson1_2State extends State<buildLesson1_2> {
   final Logger _logger = Logger();
   bool _videoFinished = false;
-  bool _isSubmitting = false; // Added
 
-  Timer? _timer;
-  int _secondsElapsed = 0;
-  late int _currentAttempt;
-
-  final List<Map<String, dynamic>> slides = [
+  // Hardcoded study slides for Lesson 1.2 (as per your original lesson1_2.dart)
+  // Ideally, this also comes from _currentLessonData in module1.dart if structure allows
+  final List<Map<String, String>> _studySlides = [
     {
       'title': 'Objective: Mastering Simple Sentences',
-      'content': 'By the end of this lesson, you will be able to form simple sentences correctly and identify sentence types in call center scenarios.',
+      'content':
+          'By the end of this lesson, you will be able to form simple sentences correctly and identify sentence types in call center scenarios.',
     },
     {
       'title': 'Introduction to Simple Sentences',
-      'content': 'Simple sentences contain one independent clause (a subject and a verb). They are fundamental for clear communication in call centers.\n'
-          'Structure: Subject + Verb + (Object/Complement)\n'
-          'Example: "I help." (Subject: I, Verb: help)\n'
-          'Example: "The customer needs assistance." (Subject: The customer, Verb: needs, Object: assistance)',
+      'content':
+          'Simple sentences contain one independent clause (a subject and a verb). They are fundamental for clear communication in call centers.\n'
+              'Structure: Subject + Verb + (Object/Complement)\n'
+              'Example: "I help." (Subject: I, Verb: help)\n'
+              'Example: "The customer needs assistance." (Subject: The customer, Verb: needs, Object: assistance)',
     },
     {
       'title': 'Types of Simple Sentences',
@@ -85,86 +107,15 @@ class _Lesson1_2State extends State<buildLesson1_2> {
     },
     {
       'title': 'Conclusion',
-      'content': 'You learned to form simple sentences and identify their types. This skill is crucial for effective and professional communication in call centers. Practice using these sentence structures in your interactions.',
+      'content':
+          'You learned to form simple sentences and identify their types. This skill is crucial for effective and professional communication in call centers. Practice using these sentence structures in your interactions.',
     },
   ];
 
-    final List<Map<String, dynamic>> questions = [
-    {
-      'id': 1,
-      'question': 'Identify the subject. I will help you today.',
-      'type': 'subject',
-      'words': ['I', 'will', 'help', 'you', 'today.'],
-      'correctAnswer': 'I',
-      'explanation': 'I: The subject (the agent who is performing the action).',
-    },
-    {
-      'id': 2,
-      'question': 'Identify the subject. The customer called yesterday.',
-      'type': 'subject',
-      'words': ['The', 'customer', 'called', 'yesterday.'],
-      'correctAnswer': 'The customer',
-      'explanation': 'The customer: The subject (who performed the action of calling).',
-    },
-    {
-      'id': 3,
-      'question': 'Identify the subject. Your order ships tomorrow.',
-      'type': 'subject',
-      'words': ['Your', 'order', 'ships', 'tomorrow.'],
-      'correctAnswer': 'Your order',
-      'explanation': 'Your order: The subject (what is performing the action of shipping).',
-    },
-    {
-      'id': 4,
-      'question': 'Identify the subject. We process your request now.',
-      'type': 'subject',
-      'words': ['We', 'process', 'your', 'request', 'now.'],
-      'correctAnswer': 'We',
-      'explanation': 'We: The subject (the team or company processing the request).',
-    },
-    {
-      'id': 5,
-      'question': 'Identify the verb. The agent assists you.',
-      'type': 'verb',
-      'words': ['The', 'agent', 'assists', 'you.'],
-      'correctAnswer': 'assists',
-      'explanation': 'Assists: The verb (the action the agent is performing).',
-    },
-    {
-      'id': 6,
-      'question': 'Identify the verb. Your refund arrives soon.',
-      'type': 'verb',
-      'words': ['Your', 'refund', 'arrives', 'soon.'],
-      'correctAnswer': 'arrives',
-      'explanation': 'Arrives: The verb (the action describing the refund).',
-    },
-    {
-      'id': 7,
-      'question': 'Identify the verb. I check the system.',
-      'type': 'verb',
-      'words': ['I', 'check', 'the', 'system.'],
-      'correctAnswer': 'check',
-      'explanation': 'Check: The verb (the action the agent is performing).',
-    },
-    {
-      'id': 8,
-      'question': 'Identify the verb. The team resolves the issue.',
-      'type': 'verb',
-      'words': ['The', 'team', 'resolves', 'the', 'issue.'],
-      'correctAnswer': 'resolves',
-      'explanation': 'Resolves: The verb (the action the team is performing).',
-    },
-  ];
-
- @override
+  @override
   void initState() {
-
     super.initState();
-    _currentAttempt = widget.initialAttemptNumber;
     widget.youtubeController.addListener(_videoListener);
-    if (widget.showActivity) {
-      _startTimer();
-    }
   }
 
   @override
@@ -174,61 +125,25 @@ class _Lesson1_2State extends State<buildLesson1_2> {
       oldWidget.youtubeController.removeListener(_videoListener);
       widget.youtubeController.addListener(_videoListener);
     }
-     if (widget.showActivity && !oldWidget.showActivity) {
-      _resetTimer();
-      _startTimer();
-      _currentAttempt = widget.initialAttemptNumber;
-    } else if (!widget.showActivity && oldWidget.showActivity) {
-      _stopTimer();
-    }
-    if (widget.initialAttemptNumber != oldWidget.initialAttemptNumber) {
-        _currentAttempt = widget.initialAttemptNumber;
+    if (widget.showActivity && !oldWidget.showActivity) {
+      _videoFinished = false;
     }
   }
 
   @override
   void dispose() {
-    widget.youtubeController.removeListener(_videoListener);
-    _stopTimer();
+    // Parent (module1.dart) now manages the main YouTube controller's listener lifecycle
     super.dispose();
   }
 
   void _videoListener() {
-    if (widget.youtubeController.value.playerState == PlayerState.ended && !_videoFinished) {
-      if (mounted) {
-        setState(() {
-          _videoFinished = true;
-        });
-      }
-      _logger.i('Video finished in Lesson 1.2');
-    }
-  }
-
-  void _startTimer() {
-    _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (mounted) {
-        setState(() {
-          _secondsElapsed++;
-        });
-      } else {
-        timer.cancel();
-      }
-    });
-    _logger.i('Stopwatch started for Lesson 1.2. Attempt: $_currentAttempt. Time: $_secondsElapsed');
-  }
-
-  void _stopTimer() {
-    _timer?.cancel();
-    _logger.i('Stopwatch stopped for Lesson 1.2. Attempt: $_currentAttempt. Time elapsed: $_secondsElapsed seconds.');
-  }
-
-  void _resetTimer() {
-    _stopTimer();
-     if (mounted) {
+    if (!mounted) return;
+    if (widget.youtubeController.value.playerState == PlayerState.ended &&
+        !_videoFinished) {
       setState(() {
-        _secondsElapsed = 0;
+        _videoFinished = true;
       });
+      _logger.i('Video finished in Lesson 1.2 (Refactored)');
     }
   }
 
@@ -239,208 +154,340 @@ class _Lesson1_2State extends State<buildLesson1_2> {
     return '$minutes:$seconds';
   }
 
+  Widget _buildMCQOption(String optionText, String questionId) {
+    bool isSelected = widget.selectedAnswerForCurrentQuestion == optionText;
+    Color? tileColor;
+    Color borderColor = Colors.grey.shade300;
+    Widget? trailingIcon;
+    FontWeight titleFontWeight = FontWeight.normal;
+
+    if (widget.showResultsForCurrentQuestion != null) {
+      // Results are active
+      bool isCorrectAnswerFromData =
+          widget.currentQuestionData!['correctAnswer'] == optionText;
+
+      if (isSelected) {
+        // User selected this option
+        if (widget.showResultsForCurrentQuestion == true) {
+          // And it was correct
+          tileColor = Colors.green.shade50;
+          borderColor = Colors.green.shade400;
+          trailingIcon = const Icon(Icons.check_circle, color: Colors.green);
+          titleFontWeight = FontWeight.bold;
+        } else {
+          // And it was incorrect
+          tileColor = Colors.red.shade50;
+          borderColor = Colors.red.shade400;
+          trailingIcon = const Icon(Icons.cancel, color: Colors.red);
+          titleFontWeight = FontWeight.normal;
+        }
+      } else if (isCorrectAnswerFromData) {
+        // This option was correct, but user didn't select it
+        borderColor = Colors.green.shade300;
+        titleFontWeight = FontWeight.bold;
+      }
+    }
+
+    return Card(
+      elevation:
+          isSelected && widget.showResultsForCurrentQuestion == null ? 3 : 1.5,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(
+            color: borderColor,
+            width: isSelected && widget.showResultsForCurrentQuestion == null
+                ? 2
+                : 1.5),
+      ),
+      margin: const EdgeInsets.symmetric(vertical: 5.0),
+      child: RadioListTile<String>(
+        title: Text(optionText,
+            style: TextStyle(fontWeight: titleFontWeight, fontSize: 16)),
+        value: optionText,
+        groupValue: widget.selectedAnswerForCurrentQuestion,
+        onChanged: (widget.showResultsForCurrentQuestion != null ||
+                widget.isSubmitting)
+            ? null
+            : (String? value) {
+                if (value != null) {
+                  widget.onOptionSelected(questionId, value);
+                }
+              },
+        activeColor: Theme.of(context).primaryColor,
+        tileColor: tileColor,
+        controlAffinity: ListTileControlAffinity.trailing,
+        secondary: trailingIcon,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final List<Map<String, String>> slidesToShow = _studySlides;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Lesson 1.2: Simple Sentences',
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF00568D),
+        // --- Study Material Section ---
+        if (!widget.showActivity) ...[
+          Text(
+            (widget.currentQuestionData?['parentLessonTitle'] as String?) ??
+                'Lesson 1.2: Simple Sentences',
+            style: const TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF00568D)),
           ),
-        ),
-        const SizedBox(height: 16),
-        CarouselSlider(
-          carouselController: widget.carouselController,
-          items: slides.asMap().entries.map((entry) {
-            return buildSlide(
-              title: entry.value['title'],
-              content: entry.value['content'],
-              slideIndex: entry.key,
-            );
-          }).toList(),
-          options: CarouselOptions(
-            height: 300.0,
-            enlargeCenterPage: true,
-            enableInfiniteScroll: false,
-            onPageChanged: (index, reason) {
-              widget.onSlideChanged(index);
-              _logger.d('Slide changed to $index in Lesson 1.2');
-            },
-          ),
-        ),
-        const SizedBox(height: 16),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: slides.asMap().entries.map((entry) {
-            return GestureDetector(
-              onTap: () => widget.carouselController.jumpToPage(entry.key),
-              child: Container(
-                width: 8.0,
-                height: 8.0,
-                margin: const EdgeInsets.symmetric(vertical: 10.0, horizontal: 2.0),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: widget.currentSlide == entry.key
-                      ? const Color(0xFF00568D)
-                      : Colors.grey,
-                ),
-              ),
-            );
-          }).toList(),
-        ),
-        const SizedBox(height: 16),
-        if (widget.currentSlide == slides.length - 1) ...[
-          const Text(
-            'Watch the Video',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF00568D),
-            ),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 200,
-            child: Builder(
-              builder: (context) {
-                return YoutubePlayer(
-                  controller: widget.youtubeController,
-                  showVideoProgressIndicator: true,
-                  progressIndicatorColor: Colors.amber,
-                  progressColors: const ProgressBarColors(
-                    playedColor: Colors.amber,
-                    handleColor: Colors.amberAccent,
-                  ),
-                  onReady: () => _logger.d('Player is ready in Lesson 1.2.'),
-                   onEnded: (_) {
-                    _logger.i('Video ended callback received in Lesson 1.2.');
-                    if (!_videoFinished && mounted) {
-                       setState(() {
-                        _videoFinished = true;
-                      });
-                    }
-                  },
+          const SizedBox(height: 16),
+          if (slidesToShow.isNotEmpty) ...[
+            CarouselSlider(
+              items: slidesToShow.asMap().entries.map((entry) {
+                return buildSlide(
+                  title: entry.value['title']!,
+                  content: entry.value['content']!,
+                  slideIndex: entry.key,
                 );
-              },
+              }).toList(),
+              carouselController: widget.carouselController,
+              options: CarouselOptions(
+                height: 300.0,
+                enlargeCenterPage: true,
+                enableInfiniteScroll: false,
+                initialPage: widget.currentSlide,
+                onPageChanged: (index, reason) => widget.onSlideChanged(index),
+              ),
             ),
-          ),
-          if (!widget.showActivity) ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: slidesToShow.asMap().entries.map((entry) {
+                return GestureDetector(
+                  onTap: () =>
+                      widget.carouselController.animateToPage(entry.key),
+                  child: Container(
+                    width: 8.0,
+                    height: 8.0,
+                    margin: const EdgeInsets.symmetric(
+                        vertical: 10.0, horizontal: 2.0),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: (Theme.of(context).brightness == Brightness.dark
+                              ? Colors.white
+                              : const Color(0xFF00568D))
+                          .withOpacity(
+                              widget.currentSlide == entry.key ? 0.9 : 0.4),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+          const SizedBox(height: 16),
+          if (widget.youtubeController.initialVideoId.isNotEmpty) ...[
+            const Text('Watch the Video',
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF00568D))),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 200,
+              child: YoutubePlayer(
+                  controller: widget.youtubeController,
+                  showVideoProgressIndicator: true),
+            ),
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: _videoFinished ? widget.onShowActivity : null,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF00568D),
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  textStyle: const TextStyle(fontSize: 16, color: Colors.white),
-                  disabledBackgroundColor: Colors.grey[400],
-                ),
-                child: const Text('Proceed to Activity', style: TextStyle(color: Colors.white)),
+                    backgroundColor: const Color(0xFF00568D),
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: Colors.grey[400]),
+                child: const Text('Proceed to Activity'),
               ),
             ),
-             if (!_videoFinished)
+            if (!_videoFinished)
               const Padding(
                 padding: EdgeInsets.only(top: 8.0),
-                child: Text(
-                  'Please watch the video to the end to proceed.',
-                  style: TextStyle(color: Colors.red, fontSize: 14),
-                  textAlign: TextAlign.center,
-                ),
+                child: Text('Please watch the video to the end to proceed.',
+                    style: TextStyle(color: Colors.red, fontSize: 14),
+                    textAlign: TextAlign.center),
               ),
           ],
         ],
-        if (widget.showActivity) ...[
-          const SizedBox(height: 16),
-           Padding(
+
+        // --- MCQ Activity Section ---
+        if (widget.showActivity && widget.currentQuestionData != null) ...[
+          Padding(
             padding: const EdgeInsets.symmetric(vertical: 8.0),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Time: ${_formatDuration(_secondsElapsed)}',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.black54),
-                ),
+                Text('Attempt: ${widget.initialAttemptNumber + 1}',
+                    style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w500)),
+                Text('Time: ${_formatDuration(widget.secondsElapsed)}',
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        color: widget.secondsElapsed < 60
+                            ? Colors.red.shade700
+                            : Colors.black54)),
               ],
             ),
           ),
-          const Text(
-            'Interactive Activity: Identify Sentence Types',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Colors.orange,
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Objective: Choose the correct sentence type for each example.',
-            style: TextStyle(fontSize: 16, color: Colors.black87),
-          ),
-          const SizedBox(height: 16),
-          ...questions.asMap().entries.map((entry) {
-            int questionIndex = entry.key;
-            Map<String, dynamic> questionData = entry.value;
-            
-            List<String> wordsList = (questionData['words'] as List<dynamic>?)?.cast<String>() ?? [];
-            List<String> correctAnswerList = [(questionData['correctAnswer'] as String?) ?? ''];
-
-
-            return buildInteractiveQuestion(
-              question: 'Q${questionData['id']}: ${questionData['question'] as String? ?? ''}',
-              type: questionData['type'] as String? ?? '',
-              words: wordsList,
-              correctAnswer: correctAnswerList, 
-              explanation: questionData['explanation'] as String? ?? '',
-              questionIndex: questionIndex,
-              selectedAnswers: widget.selectedAnswers[questionIndex],
-              isCorrect: widget.isCorrectStates[questionIndex],
-              errorMessage: widget.errorMessages[questionIndex],
-              onSelectionChanged: (List<String> newSelectedWords) {
-                widget.onWordsSelected(questionIndex, newSelectedWords);
-              },
-              onAnswerChanged: (bool isCorrect) {
-                widget.onAnswerChanged(questionIndex, isCorrect);
-              },
-            );
-          }),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: !_isSubmitting ? () async {
-  setState(() { _isSubmitting = true; });
-  _stopTimer();
-  await widget.onSubmitAnswers(questions, _secondsElapsed, _currentAttempt);
-  if (mounted) {
-    setState(() {
-      _isSubmitting = false;
-      _currentAttempt++; // <-- increment attempt after submit
-    });
-  }
-} : null,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF00568D),
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                textStyle: const TextStyle(fontSize: 16, color: Colors.white),
-              ),
-              child: _isSubmitting 
-                  ? const SizedBox( 
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 3,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+          Card(
+            elevation: 2,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            margin: const EdgeInsets.symmetric(vertical: 10.0),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Question ${widget.questionIndex + 1} of ${widget.totalQuestions}',
+                          style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).primaryColorDark),
+                        ),
                       ),
-                    )
-                  : const Text('Submit Answers', style: TextStyle(color: Colors.white)), 
+                      IconButton(
+                        icon: Icon(
+                            widget.isFlagged ? Icons.flag : Icons.flag_outlined,
+                            color: widget.isFlagged
+                                ? Colors.amber.shade700
+                                : Colors.grey.shade600,
+                            size: 26),
+                        tooltip: widget.isFlagged
+                            ? "Unflag Question"
+                            : "Flag Question for Review",
+                        onPressed: (widget.showResultsForCurrentQuestion !=
+                                    null ||
+                                widget.isSubmitting)
+                            ? null
+                            : () => widget.onToggleFlag(
+                                widget.currentQuestionData!['id'].toString()),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 20),
+                  Text(
+                    widget.currentQuestionData!['promptText'] ??
+                        'Question text not available.',
+                    style: const TextStyle(
+                        fontSize: 18,
+                        height: 1.4,
+                        fontWeight: FontWeight.normal),
+                  ),
+                  const SizedBox(height: 20),
+                  if (widget.currentQuestionData!['options'] is List)
+                    ...(widget.currentQuestionData!['options'] as List<dynamic>)
+                        .map((option) {
+                      final optionText = option.toString();
+                      return _buildMCQOption(optionText,
+                          widget.currentQuestionData!['id'].toString());
+                    }).toList(),
+                  if (widget.showResultsForCurrentQuestion != null &&
+                      widget.errorMessageForCurrentQuestion != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 16.0),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                            color: widget.showResultsForCurrentQuestion == true
+                                ? Colors.green.shade50
+                                : Colors.red.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                                color:
+                                    widget.showResultsForCurrentQuestion == true
+                                        ? Colors.green.shade300
+                                        : Colors.red.shade300)),
+                        child: Text(
+                          widget.errorMessageForCurrentQuestion!,
+                          style: TextStyle(
+                            color: widget.showResultsForCurrentQuestion == true
+                                ? Colors.green.shade800
+                                : Colors.red.shade800,
+                            fontSize: 14.5,
+                            fontWeight:
+                                widget.showResultsForCurrentQuestion == true
+                                    ? FontWeight.w600
+                                    : FontWeight.normal,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
+          ),
+          const SizedBox(height: 24),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              ElevatedButton.icon(
+                icon: const Icon(Icons.arrow_back_ios, size: 16),
+                label: const Text('Previous'),
+                onPressed: widget.isFirstQuestion || widget.isSubmitting
+                    ? null
+                    : widget.onPreviousQuestion,
+              ),
+              if (widget.isLastQuestion &&
+                  widget.showResultsForCurrentQuestion == null)
+                ElevatedButton.icon(
+                  icon: widget.isSubmitting
+                      ? const SizedBox.shrink()
+                      : const Icon(Icons.check_circle_outline),
+                  label: widget.isSubmitting
+                      ? const SizedBox(
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor:
+                                  AlwaysStoppedAnimation<Color>(Colors.white)))
+                      : const Text('Submit All'),
+                  onPressed: widget.isSubmitting
+                      ? null
+                      : widget.onSubmitAnswersFromLesson,
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white),
+                )
+              else if (!widget.isLastQuestion &&
+                  widget.showResultsForCurrentQuestion == null)
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.arrow_forward_ios, size: 16),
+                  label: const Text('Next'),
+                  onPressed: widget.isSubmitting ? null : widget.onNextQuestion,
+                ),
+            ],
           ),
         ],
+        if (widget.showActivity &&
+            widget.currentQuestionData == null &&
+            widget.totalQuestions > 0)
+          const Center(
+              child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text("Loading question..."))),
+        if (widget.showActivity &&
+            widget.totalQuestions == 0 &&
+            widget.currentQuestionData == null)
+          const Center(
+              child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text("No questions available for this activity.",
+                      style: TextStyle(fontSize: 16, color: Colors.orange)))),
       ],
     );
   }
