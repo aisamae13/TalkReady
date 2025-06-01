@@ -7,6 +7,7 @@ import 'dart:async';
 import '../lessons/common_widgets.dart'; // For buildSlide, HtmlFormattedText, buildScenarioPromptWithInput
 // For icons, you might need font_awesome_flutter or similar if not using MaterialIcons directly
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import '../firebase_service.dart';
 
 // Data structure for AI feedback for a single solution
 class SolutionFeedback {
@@ -245,6 +246,7 @@ class buildLesson4_2 extends StatefulWidget {
 }
 
 class _Lesson4_2State extends State<buildLesson4_2> {
+  final FirebaseService _firebaseService = FirebaseService();
   final Logger _logger = Logger();
   bool _isStudied = false;
   bool _showActivityArea = false;
@@ -430,16 +432,52 @@ class _Lesson4_2State extends State<buildLesson4_2> {
       return;
     }
 
-    setState(() {
-      _isLoadingAI = true;
-      _submittedSolutionResponsesForDisplay =
-          Map.from(currentSolutionResponses);
-    });
+    // >>> START OF NEW LOGIC TO DETERMINE CORRECT ATTEMPT NUMBER <<<
+    String? userId = _firebaseService.userId;
+    if (userId == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('User not authenticated.')));
+      }
+      return;
+    }
+
+    setState(() => _isLoadingAI = true); // Set loading early
+
+    List<dynamic> pastDetailedAttempts = [];
+    try {
+      // Fetch detailed attempts specifically for "Lesson 4.2"
+      pastDetailedAttempts =
+          await _firebaseService.getDetailedLessonAttempts("Lesson 4.2");
+    } catch (e) {
+      _logger.e("Error fetching past detailed attempts for Lesson 4.2: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content:
+                Text('Could not verify past attempts. Please try again.')));
+        setState(() => _isLoadingAI = false);
+      }
+      return;
+    }
+
+    final int actualNextAttemptNumber = pastDetailedAttempts.length + 1;
+    // >>> END OF NEW LOGIC <<<
+
+    if (mounted) {
+      setState(() {
+        // _isLoadingAI = true; // Moved up
+        _submittedSolutionResponsesForDisplay =
+            Map.from(currentSolutionResponses);
+      });
+    }
     _stopTimer();
 
     try {
       final result = await widget.onEvaluateSolutions(
-          solutionResponses: currentSolutionResponses);
+        solutionResponses: currentSolutionResponses,
+        // lessonId might not be needed if onEvaluateSolutions is specific to L4.2
+      );
+
       if (!mounted) return;
 
       if (result != null &&
@@ -451,11 +489,11 @@ class _Lesson4_2State extends State<buildLesson4_2> {
 
         (result['aiSolutionFeedback'] as Map).forEach((key, value) {
           if (value is Map) {
-            final feedback =
+            final feedbackEntry =
                 SolutionFeedback.fromJson(value.cast<String, dynamic>());
-            parsedFeedback[key] = feedback;
-            if (feedback.score != null) {
-              totalRawScore += feedback.score!;
+            parsedFeedback[key] = feedbackEntry;
+            if (feedbackEntry.score != null) {
+              totalRawScore += feedbackEntry.score!;
               evaluatedCount++;
             }
           }
@@ -463,40 +501,55 @@ class _Lesson4_2State extends State<buildLesson4_2> {
 
         double scaledOverallScore = 0;
         if (evaluatedCount > 0) {
-          // Max possible raw score is evaluatedCount * _maxScorePerSolution
+          // Max possible raw score = evaluatedCount * _maxScorePerSolution (which is 5.0)
+          // Scale to overallDisplayMaxScore (which is 10.0)
           scaledOverallScore =
               (totalRawScore / (evaluatedCount * _maxScorePerSolution)) *
                   _overallDisplayMaxScore;
         }
 
-        setState(() {
-          _aiSolutionFeedback = parsedFeedback;
-          _overallAIScore = double.parse(scaledOverallScore.toStringAsFixed(1));
-          _showResultsView = true;
-          _showReflectionForm = true;
-        });
+        if (mounted) {
+          setState(() {
+            _aiSolutionFeedback = parsedFeedback;
+            _overallAIScore =
+                double.parse(scaledOverallScore.toStringAsFixed(1));
+            _showResultsView = true;
+            _showReflectionForm = true;
+          });
+        }
 
+        // VVV IMPORTANT CHANGE HERE VVV
         await widget.onSaveAttempt(
           lessonIdFirestoreKey: "Lesson 4.2",
-          attemptNumber: _currentAttemptNumberForUI,
+          attemptNumber:
+              actualNextAttemptNumber, // Use the correctly calculated number
           timeSpent: _secondsElapsed,
           solutionResponses: currentSolutionResponses,
           aiSolutionFeedback: result['aiSolutionFeedback'] ?? {},
           overallAIScore: _overallAIScore ?? 0.0,
-          reflectionResponses: {},
+          reflectionResponses: {}, // Reflections are empty initially
           isUpdate: false,
         );
+
+        if (mounted) {
+          setState(() {
+            _currentAttemptNumberForUI = actualNextAttemptNumber;
+          });
+        }
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(
-                'Error evaluating solutions: ${result?['error'] ?? 'Unknown error'}')));
-        setState(() => _submittedSolutionResponsesForDisplay = null);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(
+                  'Error evaluating solutions: ${result?['error'] ?? 'Unknown error'}')));
+          setState(() => _submittedSolutionResponsesForDisplay = null);
+        }
       }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Exception evaluating solutions: $e')));
-      setState(() => _submittedSolutionResponsesForDisplay = null);
+        setState(() => _submittedSolutionResponsesForDisplay = null);
+      }
     } finally {
       if (mounted) setState(() => _isLoadingAI = false);
     }

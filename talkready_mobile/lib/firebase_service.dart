@@ -411,6 +411,57 @@ class FirebaseService {
     }
   }
 
+  Future<List<Map<String, dynamic>>> getDetailedLessonAttempts(
+      String lessonIdKey) async {
+    final uId =
+        userId; // Uses the existing 'userId' getter in your FirebaseService
+    if (uId == null) {
+      _logger.e(
+          'User not authenticated for getDetailedLessonAttempts for $lessonIdKey.');
+      return []; // Return empty list if not authenticated
+    }
+
+    _logger
+        .i('Fetching detailed attempts for Lesson: $lessonIdKey, User: $uId');
+
+    try {
+      final userProgressDocRef = _firestore.collection('userProgress').doc(uId);
+      final docSnapshot = await userProgressDocRef.get();
+
+      if (docSnapshot.exists) {
+        final data = docSnapshot.data() as Map<String, dynamic>?;
+        // Check if 'lessonAttempts' map and the specific 'lessonIdKey' exist
+        if (data != null && data.containsKey('lessonAttempts')) {
+          final lessonAttemptsMap =
+              data['lessonAttempts'] as Map<String, dynamic>?;
+          if (lessonAttemptsMap != null &&
+              lessonAttemptsMap.containsKey(lessonIdKey)) {
+            final attemptsList =
+                lessonAttemptsMap[lessonIdKey] as List<dynamic>?;
+            if (attemptsList != null) {
+              // Convert List<dynamic> to List<Map<String, dynamic>>
+              return attemptsList.map((attempt) {
+                if (attempt is Map) {
+                  return Map<String, dynamic>.from(attempt);
+                }
+                _logger.w(
+                    'Found non-map item in attemptsList for $lessonIdKey: $attempt');
+                return <String, dynamic>{}; // Or handle error more gracefully
+              }).toList();
+            }
+          }
+        }
+      }
+      _logger.i(
+          'No detailed attempts found for $lessonIdKey for user $uId, or path does not exist.');
+      return []; // Return empty list if no data, path doesn't exist, or data is malformed
+    } catch (e, s) {
+      _logger.e(
+          'Error fetching detailed lesson attempts for $lessonIdKey, User $uId: $e\n$s');
+      return []; // Return empty list on error to prevent crashes
+    }
+  }
+
   Future<Map<String, dynamic>?> getFullLessonContent(
       String lessonDocumentId) async {
     if (lessonDocumentId.isEmpty) {

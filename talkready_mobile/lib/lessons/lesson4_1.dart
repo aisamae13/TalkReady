@@ -4,6 +4,7 @@ import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:logger/logger.dart';
 import '../lessons/common_widgets.dart'; // Assuming buildSlide and HtmlFormattedText are here
 import 'dart:async';
+import '../firebase_service.dart';
 
 // Data structure for AI feedback for a single scenario
 class ScenarioFeedback {
@@ -88,6 +89,7 @@ class buildLesson4_1 extends StatefulWidget {
 }
 
 class _Lesson4_1State extends State<buildLesson4_1> {
+  final FirebaseService _firebaseService = FirebaseService();
   final Logger _logger = Logger();
   bool _isStudied = false; // Tracks if user has gone through study material
   bool _showActivityArea = false; // True when activity or results are shown
@@ -294,17 +296,52 @@ class _Lesson4_1State extends State<buildLesson4_1> {
       return;
     }
 
-    setState(() {
-      _isLoadingAI = true;
-      _submittedScenarioResponsesForDisplay =
-          Map.from(currentScenarioResponses);
-    });
-    _stopTimer();
+    // >>> START OF NEW LOGIC TO DETERMINE CORRECT ATTEMPT NUMBER <<<
+    String? userId = _firebaseService.userId;
+    if (userId == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('User not authenticated.')));
+      }
+      return;
+    }
+
+    setState(() => _isLoadingAI = true); // Set loading early
+
+    List<dynamic> pastDetailedAttempts = [];
+    try {
+      // Fetch detailed attempts specifically for "Lesson 4.1"
+      pastDetailedAttempts =
+          await _firebaseService.getDetailedLessonAttempts("Lesson 4.1");
+    } catch (e) {
+      _logger.e("Error fetching past detailed attempts for Lesson 4.1: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content:
+                Text('Could not verify past attempts. Please try again.')));
+        setState(() => _isLoadingAI = false);
+      }
+      return;
+    }
+
+    final int actualNextAttemptNumber = pastDetailedAttempts.length + 1;
+    // >>> END OF NEW LOGIC <<<
+
+    // Keep _submittedScenarioResponsesForDisplay if you use it for UI recap before reflections
+    if (mounted) {
+      setState(() {
+        // _isLoadingAI = true; // Moved up
+        _submittedScenarioResponsesForDisplay =
+            Map.from(currentScenarioResponses);
+      });
+    }
+    _stopTimer(); // Stop timer before async AI call
 
     try {
       final result = await widget.onEvaluateScenarios(
         scenarioAnswers: currentScenarioResponses,
-        lessonId: '4.1',
+        lessonId:
+            '4.1', // As per your onEvaluateScenarios signature in module4.dart
       );
 
       if (!mounted) return;
@@ -320,34 +357,65 @@ class _Lesson4_1State extends State<buildLesson4_1> {
           });
         }
 
-        setState(() {
-          _aiFeedbackForScenarios = parsedFeedback;
-          _overallAIScore = (result['overallAIScore'] as num?)?.toDouble();
-          _showResultsView = true;
-          _showReflectionForm = true; // Show reflection form after results
+        // Calculate overallAIScore based on parsedFeedback from AI
+        double tempOverallAIScore = 0;
+        int evaluatedCount = 0;
+        parsedFeedback.forEach((key, feedbackEntry) {
+          if (feedbackEntry.score != null) {
+            tempOverallAIScore += feedbackEntry.score!;
+            evaluatedCount++;
+          }
         });
+        double finalOverallAIScore = 0;
+        if (evaluatedCount > 0) {
+          // Assuming each scenario score from AI (e.g., out of 2.5) sums up to a total (e.g., out of 10)
+          // If result['overallAIScore'] is provided by the backend, use that directly.
+          // Otherwise, if result['overallAIScore'] is the sum (e.g., 0-10), use it:
+          finalOverallAIScore =
+              (result['overallAIScore'] as num?)?.toDouble() ??
+                  tempOverallAIScore;
+        }
 
-        // Save attempt
+        if (mounted) {
+          setState(() {
+            _aiFeedbackForScenarios = parsedFeedback;
+            _overallAIScore = finalOverallAIScore;
+            _showResultsView = true;
+            _showReflectionForm = true;
+          });
+        }
+
+        // VVV USE actualNextAttemptNumber FOR SAVING VVV
         await widget.onSaveAttempt(
           lessonIdFirestoreKey: "Lesson 4.1",
-          attemptNumber: _currentAttemptNumberForUI,
+          attemptNumber:
+              actualNextAttemptNumber, // Use the correctly calculated number
           timeSpent: _secondsElapsed,
           scenarioResponses: currentScenarioResponses,
-          aiFeedbackForScenarios: result['aiFeedbackForScenarios'] ?? {},
+          aiFeedbackForScenarios:
+              result['aiFeedbackForScenarios'] ?? {}, // Raw feedback from API
           overallAIScore: _overallAIScore ?? 0.0,
-          reflectionResponses: {}, // Reflections are initially empty
+          reflectionResponses: {}, // Reflections are empty at this stage
           isUpdate: false,
         );
+
+        // Update UI attempt number state after successful save
+        if (mounted) {
+          setState(() {
+            _currentAttemptNumberForUI = actualNextAttemptNumber;
+          });
+        }
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(
-                  'Error evaluating scenarios: ${result?['error'] ?? 'Unknown error'}')),
-        );
-        setState(() {
-          _submittedScenarioResponsesForDisplay =
-              null; // Clear if submission failed
-        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text(
+                    'Error evaluating scenarios: ${result?['error'] ?? 'Unknown error'}')),
+          );
+          setState(() {
+            _submittedScenarioResponsesForDisplay = null;
+          });
+        }
       }
     } catch (e) {
       if (mounted) {

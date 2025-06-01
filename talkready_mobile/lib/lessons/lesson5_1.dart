@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'dart:async';
 import '../lessons/common_widgets.dart'; // For buildSlide
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import '../firebase_service.dart';
 
 // TurnDataL5 Class (same as before)
 class TurnDataL5 {
@@ -108,6 +109,7 @@ class Lesson5_1 extends StatefulWidget {
 }
 
 class _Lesson5_1State extends State<Lesson5_1> {
+  final FirebaseService _firebaseService = FirebaseService();
   // Logger, TTS, AudioRecorder, AudioPlayer (same as before)
   final Logger _logger = Logger(
       printer: PrettyPrinter(
@@ -503,19 +505,64 @@ class _Lesson5_1State extends State<Lesson5_1> {
         'openAiDetailedFeedback': data?.openAiDetailedFeedback
       };
     }).toList();
-    final attemptNumberToSave =
-        _completedAttemptNumberForSummary ?? _currentAttemptNumberForUI;
+
+    // >>> START OF NEW LOGIC TO DETERMINE CORRECT ATTEMPT NUMBER <<<
+    String? userId = _firebaseService.userId;
+    if (userId == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('User not authenticated.')));
+        setState(() => _isLoadingAI = false);
+      }
+      return;
+    }
+
+    final String lessonIdFirestoreKey = "Lesson 5.1"; // Specific for this file
+    List<Map<String, dynamic>> pastDetailedAttempts = [];
+    try {
+      pastDetailedAttempts = await _firebaseService
+          .getDetailedLessonAttempts(lessonIdFirestoreKey);
+    } catch (e) {
+      _logger.e(
+          "Error fetching past detailed attempts for $lessonIdFirestoreKey: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content:
+                Text('Could not verify past attempts. Please try again.')));
+        setState(() => _isLoadingAI = false);
+      }
+      return;
+    }
+
+    final int actualNextAttemptNumber = pastDetailedAttempts.length + 1;
+    // >>> END OF NEW LOGIC <<<
+
+    // Determine the attempt number to save. Use the newly calculated one.
+    final attemptNumberToSave = actualNextAttemptNumber;
+
     try {
       await widget.onSaveLessonAttempt(
-          lessonIdFirestoreKey: "Lesson 5.1",
-          attemptNumber: attemptNumberToSave,
+          lessonIdFirestoreKey: lessonIdFirestoreKey, // e.g., "Lesson 5.1"
+          attemptNumber: attemptNumberToSave, // <<< USE THE CORRECTED NUMBER
           timeSpent: _secondsElapsed,
           overallLessonScore: _overallLessonScore ?? 0.0,
           turnDetails: turnDetailsForFirebase);
+
+      // Update UI state for the current attempt number display
+      if (mounted) {
+        setState(() {
+          _currentAttemptNumberForUI = attemptNumberToSave;
+          _completedAttemptNumberForSummary =
+              attemptNumberToSave; // If you use this for summary display
+        });
+      }
+      _logger.i("L5.1: Attempt #$attemptNumberToSave saved successfully.");
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text("Error saving progress: $e")));
+      }
+      _logger.e("L5.1: Error in onSaveLessonAttempt: $e");
     } finally {
       if (mounted) setState(() => _isLoadingAI = false);
     }
