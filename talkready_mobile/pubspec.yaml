@@ -68,7 +68,7 @@ dependencies:
   flutter_staggered_animations: ^1.1.1
   flutter_quill_extensions: ^11.0.0
   cloudinary_public: ^0.23.1
-   
+
 
   # Optional: For advanced audio processing (if needed for Azure Speech API)
   # Note: Azure Speech API may require a custom package or platform-specific integration
@@ -110,7 +110,7 @@ flutter:
 
 
   assets:
-     
+
      - images/ai_robot.gif
      - images/TR Logo.png
      - images/TR Text.png
@@ -123,7 +123,7 @@ flutter:
      - images/AI_Human_Hand.jpg
      - images/talkready_bot.png
      - images/robot_hi.gif
-     
+
 
 
   # An image asset can refer to one or more resolution-specific "variants", see
