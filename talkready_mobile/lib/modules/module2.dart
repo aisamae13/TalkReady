@@ -121,15 +121,17 @@ class _Module2PageState extends State<Module2Page> {
             break;
           default:
             _logger.w("Module 2: Unknown targetLessonKey: ${widget.targetLessonKey}. Defaulting to first incomplete or last lesson.");
-            if (!(_lessonCompletion['lesson1'] ?? false)) currentLesson = 1;
-            else if (!(_lessonCompletion['lesson2'] ?? false)) currentLesson = 2;
+            if (!(_lessonCompletion['lesson1'] ?? false)) {
+              currentLesson = 1;
+            } else if (!(_lessonCompletion['lesson2'] ?? false)) currentLesson = 2;
             else if (!(_lessonCompletion['lesson3'] ?? false)) currentLesson = 3;
             else currentLesson = 3;
         }
       } else {
         _logger.i("Module 2: No target lesson key. Determining current lesson by progress.");
-        if (!(_lessonCompletion['lesson1'] ?? false)) currentLesson = 1;
-        else if (!(_lessonCompletion['lesson2'] ?? false)) currentLesson = 2;
+        if (!(_lessonCompletion['lesson1'] ?? false)) {
+          currentLesson = 1;
+        } else if (!(_lessonCompletion['lesson2'] ?? false)) currentLesson = 2;
         else if (!(_lessonCompletion['lesson3'] ?? false)) currentLesson = 3;
         else currentLesson = 3;
       }
@@ -541,7 +543,7 @@ class _Module2PageState extends State<Module2Page> {
     int nextAttemptNumber = (_lessonAttemptCounts['lesson$currentLesson'] ?? 0) + 1;
     _logger.i('Module 2, Lesson $currentLesson: Initializing with attempt number: $nextAttemptNumber');
 
-    Function(int, List<String>) onWordsSelectedCallback = (int questionIndex, List<String> selectedWords) {
+    onWordsSelectedCallback(int questionIndex, List<String> selectedWords) {
       if (mounted) {
         setState(() {
           if (questionIndex < _selectedAnswers.length) {
@@ -554,7 +556,7 @@ class _Module2PageState extends State<Module2Page> {
           }
         });
       }
-    };
+    }
 
     _logger.d("Module 2: Building lesson content for Lesson $currentLesson");
     switch (currentLesson) {

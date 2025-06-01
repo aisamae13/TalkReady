@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart'; // For date formatting
 
@@ -133,7 +132,7 @@ class TrainerClass { // From CreateAssessmentPage
 class EditAssessmentPage extends StatefulWidget {
   final String assessmentId;
 
-  const EditAssessmentPage({Key? key, required this.assessmentId}) : super(key: key);
+  const EditAssessmentPage({super.key, required this.assessmentId});
 
   @override
   _EditAssessmentPageState createState() => _EditAssessmentPageState();
@@ -159,7 +158,7 @@ class _EditAssessmentPageState extends State<EditAssessmentPage> {
   File? _assessmentHeaderImageFile; // New local file
   String? _assessmentHeaderImageUrl; // Existing or new URL
   String? _assessmentHeaderImagePath; // Existing or new storage path
-  bool _isUploadingHeaderImage = false;
+  final bool _isUploadingHeaderImage = false;
   String? _headerImageUploadError;
 
   // Question Form (Simplified for brevity - this would be complex)
@@ -201,7 +200,7 @@ class _EditAssessmentPageState extends State<EditAssessmentPage> {
 
 
       final assessmentData = await getAssessmentDetailsFromService(widget.assessmentId);
-      if (assessmentData['trainerId'] != _currentUser!.uid) {
+      if (assessmentData['trainerId'] != _currentUser.uid) {
          setState(() { _error = "You are not authorized to edit this assessment."; _pageLoading = false; });
          return;
       }
@@ -293,7 +292,7 @@ class _EditAssessmentPageState extends State<EditAssessmentPage> {
 
 
       final assessmentData = {
-        'trainerId': _currentUser!.uid,
+        'trainerId': _currentUser.uid,
         'classId': _selectedClassId,
         'title': _titleController.text, // Use controller text
         'description': _descriptionController.text, // Use controller text
@@ -360,7 +359,7 @@ class _EditAssessmentPageState extends State<EditAssessmentPage> {
       return Scaffold(
         appBar: AppBar(
           title: const Text("Edit Assessment"),
-          backgroundColor: theme.colorScheme.surfaceVariant,
+          backgroundColor: theme.colorScheme.surfaceContainerHighest,
           foregroundColor: theme.colorScheme.onSurfaceVariant,
         ),
         body: Center(child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary))),
@@ -368,10 +367,10 @@ class _EditAssessmentPageState extends State<EditAssessmentPage> {
     }
 
     return Scaffold(
-      backgroundColor: theme.colorScheme.background,
+      backgroundColor: theme.colorScheme.surface,
       appBar: AppBar(
         title: Text(_titleController.text.isNotEmpty ? "Edit: ${_titleController.text}" : "Edit Assessment", overflow: TextOverflow.ellipsis),
-        backgroundColor: theme.colorScheme.surfaceVariant,
+        backgroundColor: theme.colorScheme.surfaceContainerHighest,
         foregroundColor: theme.colorScheme.onSurfaceVariant,
         elevation: 0,
         actions: [
@@ -435,7 +434,7 @@ class _EditAssessmentPageState extends State<EditAssessmentPage> {
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                   prefixIcon: Icon(FontAwesomeIcons.fileSignature, color: theme.colorScheme.onSurfaceVariant),
                   filled: true,
-                  fillColor: theme.colorScheme.surfaceVariant.withOpacity(0.3),
+                  fillColor: theme.colorScheme.surfaceContainerHighest.withOpacity(0.3),
                 ),
                 validator: (v) => v == null || v.isEmpty ? 'Title is required' : null,
                 enabled: !_isUpdating,
@@ -449,7 +448,7 @@ class _EditAssessmentPageState extends State<EditAssessmentPage> {
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                   prefixIcon: Icon(FontAwesomeIcons.alignLeft, color: theme.colorScheme.onSurfaceVariant),
                   filled: true,
-                  fillColor: theme.colorScheme.surfaceVariant.withOpacity(0.3),
+                  fillColor: theme.colorScheme.surfaceContainerHighest.withOpacity(0.3),
                 ),
                 maxLines: 3,
                 enabled: !_isUpdating,
@@ -463,7 +462,7 @@ class _EditAssessmentPageState extends State<EditAssessmentPage> {
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                     prefixIcon: Icon(FontAwesomeIcons.chalkboardUser, color: theme.colorScheme.onSurfaceVariant),
                     filled: true,
-                    fillColor: theme.colorScheme.surfaceVariant.withOpacity(0.3),
+                    fillColor: theme.colorScheme.surfaceContainerHighest.withOpacity(0.3),
                   ),
                   value: _selectedClassId,
                   items: _trainerClasses.map((cls) {
@@ -530,7 +529,7 @@ class _EditAssessmentPageState extends State<EditAssessmentPage> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text("Questions (${_questions.length})", style: theme.textTheme.titleLarge?.copyWith(color: theme.colorScheme.onBackground)),
+                  Text("Questions (${_questions.length})", style: theme.textTheme.titleLarge?.copyWith(color: theme.colorScheme.onSurface)),
                   ElevatedButton.icon(
                     icon: const Icon(Icons.add_circle_outline, size: 18),
                     label: const Text('Add Question'),

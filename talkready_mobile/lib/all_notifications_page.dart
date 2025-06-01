@@ -3,7 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class AllNotificationsPage extends StatefulWidget {
-  const AllNotificationsPage({Key? key}) : super(key: key);
+  const AllNotificationsPage({super.key});
 
   @override
   State<AllNotificationsPage> createState() => _AllNotificationsPageState();

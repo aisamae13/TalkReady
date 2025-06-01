@@ -11,8 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:talkready_mobile/next_screen.dart';
 import 'package:talkready_mobile/Teachers/TrainerDashboard.dart';
-import 'package:talkready_mobile/homepage.dart';
-import 'package:flutter_animate/flutter_animate.dart'; // Add this to pubspec.yaml
+// Add this to pubspec.yaml
 
 void main() {
   runApp(const MyApp());
@@ -527,11 +526,11 @@ class OnboardingScreenState extends State<OnboardingScreen> {
                   });
                   await _saveToFirestoreAndNavigate();
                 },
-                child: Text('Skip', style: TextStyle(fontSize: 16, color: primaryColor)),
                 style: OutlinedButton.styleFrom(
                   side: BorderSide(color: primaryColor),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
+                child: Text('Skip', style: TextStyle(fontSize: 16, color: primaryColor)),
               ),
             ],
           ),

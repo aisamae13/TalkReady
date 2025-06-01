@@ -11,7 +11,7 @@ Future<List<Map<String, dynamic>>> getTrainerClasses(String trainerId) async {
         .where('trainerId', isEqualTo: trainerId)
         .orderBy('createdAt', descending: true) // Changed to createdAt, descending
         .get();
-    return snapshot.docs.map((doc) => {'id': doc.id, ...doc.data() as Map<String, dynamic>}).toList();
+    return snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
   } catch (e) {
     // print("Error fetching trainer classes: $e");
     // Consider logging the error to a proper logging service
@@ -21,7 +21,7 @@ Future<List<Map<String, dynamic>>> getTrainerClasses(String trainerId) async {
 
 
 class SelectClassForContentPage extends StatefulWidget {
-  const SelectClassForContentPage({Key? key}) : super(key: key);
+  const SelectClassForContentPage({super.key});
 
   @override
   _SelectClassForContentPageState createState() =>
@@ -55,7 +55,7 @@ class _SelectClassForContentPageState extends State<SelectClassForContentPage> {
     });
     try {
       // Assuming getTrainerClasses is accessible here
-      final classes = await getTrainerClasses(_currentUser!.uid);
+      final classes = await getTrainerClasses(_currentUser.uid);
       if (mounted) {
         // Sort classes by name
         classes.sort((a, b) =>
@@ -93,19 +93,43 @@ class _SelectClassForContentPageState extends State<SelectClassForContentPage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: const Text("Manage Content"),
         leading: IconButton(
           icon: const Icon(FontAwesomeIcons.arrowLeft),
           onPressed: () => Navigator.of(context).pop(),
         ),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF6D5DF6), Color(0xFF46C2CB)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+        ),
       ),
-      body: _buildBody(),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFFF8FAFF), Color(0xFFE3F0FF)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: _buildBody(),
+      ),
     );
   }
 
   Widget _buildBody() {
+    final theme = Theme.of(context);
+
     if (_currentUser == null) {
       return _buildErrorWidget(_error ?? "Authentication required.", FontAwesomeIcons.userLock);
     }
@@ -129,26 +153,57 @@ class _SelectClassForContentPageState extends State<SelectClassForContentPage> {
     }
 
     return ListView.separated(
-      padding: const EdgeInsets.all(16.0),
+      padding: const EdgeInsets.all(24.0),
       itemCount: _trainerClasses.length,
-      separatorBuilder: (context, index) => const SizedBox(height: 10),
+      separatorBuilder: (context, index) => const SizedBox(height: 16),
       itemBuilder: (context, index) {
         final cls = _trainerClasses[index];
         final className = cls['className'] as String? ?? 'Unnamed Class';
         final studentCount = cls['studentCount'] ?? 0;
 
         return Card(
-          elevation: 2,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: Theme.of(context).primaryColorLight,
-              child: FaIcon(FontAwesomeIcons.chalkboardTeacher, color: Theme.of(context).primaryColorDark),
-            ),
-            title: Text(className, style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text("$studentCount student${studentCount != 1 ? 's' : ''}"),
-            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+          elevation: 8,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          color: Colors.white.withOpacity(0.90),
+          shadowColor: theme.colorScheme.primary.withOpacity(0.10),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(20),
             onTap: () => _handleClassSelect(cls['id'] as String, className),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 18),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 28,
+                    backgroundColor: theme.colorScheme.primary.withOpacity(0.13),
+                    child: FaIcon(FontAwesomeIcons.chalkboardUser, color: theme.colorScheme.primary, size: 26),
+                  ),
+                  const SizedBox(width: 18),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          className,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: theme.colorScheme.primary,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          "$studentCount student${studentCount != 1 ? 's' : ''}",
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.arrow_forward_ios, size: 20, color: Colors.grey),
+                ],
+              ),
+            ),
           ),
         );
       },

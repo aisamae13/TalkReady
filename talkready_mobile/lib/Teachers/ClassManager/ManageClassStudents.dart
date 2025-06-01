@@ -55,7 +55,6 @@ class UserSearchResult {
   final String uid;
   final String? displayName;
   final String? email;
-  // Add other fields like firstName, lastName if available and needed
 
   UserSearchResult({required this.uid, this.displayName, this.email});
 
@@ -63,14 +62,13 @@ class UserSearchResult {
     Map data = doc.data() as Map<String, dynamic>;
     return UserSearchResult(
       uid: doc.id,
-      displayName: data['displayName'] ?? data['firstName'] ?? 'Unnamed User', // Adapt as per your user structure
+      displayName: data['displayName'] ?? data['firstName'] ?? 'Unnamed User',
       email: data['email'] ?? '',
     );
   }
 }
 
-
-// --- Assumed Firebase Service Functions (Implement these) ---
+// --- Firebase Service Functions ---
 Future<ClassDetails> fetchClassDetailsFromService(String classId) async {
   final doc = await FirebaseFirestore.instance.collection('classes').doc(classId).get();
   if (!doc.exists) throw Exception("Class not found");
@@ -79,26 +77,22 @@ Future<ClassDetails> fetchClassDetailsFromService(String classId) async {
 
 Future<List<EnrolledStudent>> fetchEnrolledStudentsFromService(String classId) async {
   final snapshot = await FirebaseFirestore.instance
-      .collection('enrollments') // Assuming 'enrollments' collection
+      .collection('enrollments')
       .where('classId', isEqualTo: classId)
       .get();
   return snapshot.docs.map((doc) => EnrolledStudent.fromFirestore(doc)).toList();
 }
 
 Future<List<UserSearchResult>> searchUsersByEmailFromService(String email) async {
-  // This is a simplified search. Firestore doesn't support partial string matches directly for security reasons.
-  // You might need a more sophisticated backend search (e.g., Algolia, or a Cloud Function).
-  // For direct client-side, exact match is more feasible or searching by a known field.
   final snapshot = await FirebaseFirestore.instance
       .collection('users')
       .where('email', isEqualTo: email.trim())
-      .where('userType', isEqualTo: 'student') // Assuming userType field
+      .where('userType', isEqualTo: 'student')
       .get();
   return snapshot.docs.map((doc) => UserSearchResult.fromFirestore(doc)).toList();
 }
 
 Future<DocumentReference> enrollStudentInClassService(String classId, String studentId, String studentName, String studentEmail, String trainerId) async {
-  // This should also update the studentCount in the 'classes' collection, ideally via a transaction or Cloud Function.
   final enrollmentRef = await FirebaseFirestore.instance.collection('enrollments').add({
     'classId': classId,
     'studentId': studentId,
@@ -107,7 +101,6 @@ Future<DocumentReference> enrollStudentInClassService(String classId, String stu
     'trainerId': trainerId,
     'enrolledAt': FieldValue.serverTimestamp(),
   });
-  // Increment student count
   await FirebaseFirestore.instance.collection('classes').doc(classId).update({
     'studentCount': FieldValue.increment(1),
   });
@@ -115,25 +108,22 @@ Future<DocumentReference> enrollStudentInClassService(String classId, String stu
 }
 
 Future<void> removeStudentFromClassService(String enrollmentId, String classId) async {
-  // This should also decrement the studentCount in the 'classes' collection.
   await FirebaseFirestore.instance.collection('enrollments').doc(enrollmentId).delete();
-  // Decrement student count
   await FirebaseFirestore.instance.collection('classes').doc(classId).update({
     'studentCount': FieldValue.increment(-1),
   });
 }
 
-
 class ManageClassStudentsPage extends StatefulWidget {
   final String classId;
 
-  const ManageClassStudentsPage({Key? key, required this.classId}) : super(key: key);
+  const ManageClassStudentsPage({super.key, required this.classId});
 
   @override
   _ManageClassStudentsPageState createState() => _ManageClassStudentsPageState();
 }
 
-class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> {
+class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> with TickerProviderStateMixin {
   final User? _currentUser = FirebaseAuth.instance.currentUser;
   final _searchController = TextEditingController();
 
@@ -143,19 +133,38 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> {
 
   bool _isLoading = true;
   String? _error;
-  String? _actionError; // For add/remove/search actions
+  String? _actionError;
   bool _isSearching = false;
   String? _enrollingStudentId;
   String? _removingEnrollmentId;
 
+  late AnimationController _fadeController;
+  late AnimationController _slideController;
+  late Animation<double> _fadeAnimation;
+  late Animation<Offset> _slideAnimation;
+
   @override
   void initState() {
     super.initState();
+    _fadeController = AnimationController(duration: const Duration(milliseconds: 800), vsync: this);
+    _slideController = AnimationController(duration: const Duration(milliseconds: 600), vsync: this);
+    
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut)
+    );
+    _slideAnimation = Tween<Offset>(begin: const Offset(0, 0.3), end: Offset.zero).animate(
+      CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic)
+    );
+
     _fetchClassAndStudentData();
-    // Add listener to rebuild suffix icon if text changes (optional, direct check in build is also fine)
-    // _searchController.addListener(() {
-    //   if (mounted) setState(() {});
-    // });
+  }
+
+  @override
+  void dispose() {
+    _fadeController.dispose();
+    _slideController.dispose();
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _fetchClassAndStudentData({bool showLoading = true}) async {
@@ -188,6 +197,9 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> {
         _classDetails = details;
         _enrolledStudents = students;
       });
+
+      _fadeController.forward();
+      _slideController.forward();
     } catch (e) {
       setState(() => _error = "Failed to load data: ${e.toString()}");
     } finally {
@@ -212,7 +224,6 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> {
     try {
       final users = await searchUsersByEmailFromService(searchTerm);
       final enrolledStudentUids = _enrolledStudents.map((s) => s.studentId).toSet();
-      // Assuming UserSearchResult has a userType field or similar to filter only students
       final filteredResults = users.where((user) => !enrolledStudentUids.contains(user.uid)).toList();
 
       setState(() {
@@ -242,7 +253,7 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> {
     _actionError = null;
 
     try {
-      final newEnrollmentRef = await enrollStudentInClassService(
+      await enrollStudentInClassService(
         widget.classId,
         studentToEnroll.uid,
         studentToEnroll.displayName ?? "Student",
@@ -250,14 +261,22 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> {
         _currentUser!.uid,
       );
 
-      // Optimistically update UI or re-fetch
-      // For simplicity, re-fetching all data to ensure consistency
       await _fetchClassAndStudentData(showLoading: false);
       setState(() {
          _searchResults.removeWhere((s) => s.uid == studentToEnroll.uid);
-         _searchController.clear(); // Optionally clear search
+         _searchController.clear();
       });
 
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${studentToEnroll.displayName} enrolled successfully!'),
+            backgroundColor: const Color(0xFF10B981),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
     } catch (e) {
       setState(() => _actionError = "Enrollment failed: ${e.toString()}");
     } finally {
@@ -266,17 +285,12 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> {
   }
 
   Future<void> _handleRemoveStudent(EnrolledStudent enrollment) async {
-    bool confirm = await showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Confirm Removal'),
-        content: Text('Are you sure you want to remove ${enrollment.studentName} from the class?'),
-        actions: <Widget>[
-          TextButton(child: const Text('Cancel'), onPressed: () => Navigator.of(ctx).pop(false)),
-          TextButton(child: const Text('Remove'), onPressed: () => Navigator.of(ctx).pop(true)),
-        ],
-      ),
-    ) ?? false;
+    bool confirm = await _showModernConfirmDialog(
+      title: 'Remove Student',
+      content: 'Are you sure you want to remove ${enrollment.studentName} from the class?',
+      confirmText: 'Remove',
+      isDestructive: true,
+    );
 
     if (!confirm) return;
     if (_removingEnrollmentId == enrollment.id) return;
@@ -286,113 +300,614 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> {
 
     try {
       await removeStudentFromClassService(enrollment.id, widget.classId);
-      // Optimistically update UI or re-fetch
       await _fetchClassAndStudentData(showLoading: false);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${enrollment.studentName} removed successfully!'),
+            backgroundColor: const Color(0xFFEF4444),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
     } catch (e) {
       setState(() => _actionError = "Removal failed: ${e.toString()}");
     } finally {
       if (mounted) setState(() => _removingEnrollmentId = null);
     }
   }
+
+  Future<bool> _showModernConfirmDialog({
+    required String title,
+    required String content,
+    required String confirmText,
+    bool isDestructive = false,
+  }) async {
+    return await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.15),
+                blurRadius: 25,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: (isDestructive ? const Color(0xFFEF4444) : const Color(0xFF8B5CF6)).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Icon(
+                    isDestructive ? FontAwesomeIcons.triangleExclamation : FontAwesomeIcons.circleQuestion,
+                    color: isDestructive ? const Color(0xFFEF4444) : const Color(0xFF8B5CF6),
+                    size: 32,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF1E293B),
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  content,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    color: Color(0xFF64748B),
+                    height: 1.5,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFE2E8F0), width: 1.5),
+                        ),
+                        child: TextButton(
+                          onPressed: () => Navigator.of(ctx).pop(false),
+                          style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFF64748B),
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: const Text(
+                            'Cancel',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          gradient: LinearGradient(
+                            colors: isDestructive
+                                ? [const Color(0xFFEF4444), const Color(0xFFDC2626)]
+                                : [const Color(0xFF8B5CF6), const Color(0xFF6366F1)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: (isDestructive ? const Color(0xFFEF4444) : const Color(0xFF8B5CF6)).withOpacity(0.3),
+                              blurRadius: 15,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
+                        ),
+                        child: TextButton(
+                          onPressed: () => Navigator.of(ctx).pop(true),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: Text(
+                            confirmText,
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ) ?? false;
+  }
   
   String _formatTimestamp(Timestamp timestamp) {
     return DateFormat.yMMMd().add_jm().format(timestamp.toDate());
   }
 
-  // New method to clear search field and results
   void _clearSearchFieldAndResults() {
     _searchController.clear();
     setState(() {
       _searchResults = [];
-      _actionError = null; // Clear previous search errors
-      _isSearching = false; // Ensure searching state is reset
+      _actionError = null;
+      _isSearching = false;
     });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(_classDetails?.className ?? "Manage Students"),
-        actions: [
-          IconButton(
-            icon: const Icon(FontAwesomeIcons.arrowsRotate),
+      extendBodyBehindAppBar: true,
+      appBar: _buildModernAppBar(),
+      body: Container(
+        decoration: _buildBackgroundGradient(),
+        child: SafeArea(
+          child: _isLoading
+              ? _buildLoadingScreen()
+              : _error != null
+                  ? _buildErrorWidget()
+                  : _classDetails == null
+                      ? _buildNoDataWidget()
+                      : RefreshIndicator(
+                          onRefresh: () => _fetchClassAndStudentData(showLoading: false),
+                          color: const Color(0xFF8B5CF6),
+                          child: FadeTransition(
+                            opacity: _fadeAnimation,
+                            child: SlideTransition(
+                              position: _slideAnimation,
+                              child: SingleChildScrollView(
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                padding: const EdgeInsets.all(20),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const SizedBox(height: 20),
+                                    _buildAddStudentSection(),
+                                    const SizedBox(height: 24),
+                                    _buildEnrolledStudentsSection(),
+                                    const SizedBox(height: 100),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+        ),
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildModernAppBar() {
+    return AppBar(
+      title: Text(
+        _classDetails?.className ?? "Manage Students",
+        style: const TextStyle(
+          fontWeight: FontWeight.w600,
+          fontSize: 20,
+          letterSpacing: 0.5,
+        ),
+      ),
+      centerTitle: true,
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      foregroundColor: Colors.white,
+      leading: IconButton(
+        icon: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.2),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Icon(FontAwesomeIcons.arrowLeft, size: 16),
+        ),
+        onPressed: () => Navigator.pop(context),
+      ),
+      actions: [
+        Padding(
+          padding: const EdgeInsets.only(right: 16),
+          child: IconButton(
+            icon: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(FontAwesomeIcons.arrowsRotate, size: 16),
+            ),
             onPressed: _isLoading ? null : () => _fetchClassAndStudentData(),
             tooltip: "Refresh Data",
-          )
-        ],
+          ),
+        ),
+      ],
+      flexibleSpace: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF8B5CF6), Color(0xFF6366F1)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(child: Padding(padding: const EdgeInsets.all(16.0), child: Text("Error: $_error", style: TextStyle(color: Theme.of(context).colorScheme.error))))
-              : _classDetails == null
-                  ? const Center(child: Text("Class details not available."))
-                  : RefreshIndicator(
-                      onRefresh: () => _fetchClassAndStudentData(showLoading: false),
-                      child: ListView(
-                        padding: const EdgeInsets.all(16.0),
-                        children: [
-                          // Add Students Section
-                          _buildAddStudentSection(),
-                          const SizedBox(height: 24),
-                          // Enrolled Students Section
-                          _buildEnrolledStudentsSection(),
-                        ],
-                      ),
-                    ),
+    );
+  }
+
+  BoxDecoration _buildBackgroundGradient() {
+    return const BoxDecoration(
+      gradient: LinearGradient(
+        colors: [Color(0xFFF8FAFC), Color(0xFFE3F0FF)],
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+      ),
+    );
+  }
+
+  Widget _buildLoadingScreen() {
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    const Color(0xFF8B5CF6).withOpacity(0.1),
+                    const Color(0xFF6366F1).withOpacity(0.05),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF8B5CF6).withOpacity(0.1),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: const CircularProgressIndicator(
+                strokeWidth: 3,
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF8B5CF6)),
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              "Loading class data...",
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF64748B),
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorWidget() {
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              const Color(0xFFFF6B6B).withOpacity(0.1),
+              const Color(0xFFFF8E8E).withOpacity(0.05),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: const Color(0xFFFF6B6B).withOpacity(0.3),
+            width: 1.5,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFFFF6B6B).withOpacity(0.1),
+              blurRadius: 20,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFF6B6B).withOpacity(0.15),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Icon(
+                FontAwesomeIcons.triangleExclamation,
+                color: Color(0xFFFF6B6B),
+                size: 32,
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              "Error Loading Data",
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF1E293B),
+                fontSize: 18,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              _error!,
+              style: const TextStyle(
+                color: Color(0xFF64748B),
+                fontSize: 15,
+                height: 1.5,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNoDataWidget() {
+    return const Center(
+      child: Text(
+        "Class details not available.",
+        style: TextStyle(
+          fontSize: 16,
+          color: Color(0xFF64748B),
+        ),
+      ),
     );
   }
 
   Widget _buildAddStudentSection() {
-    return Card(
-      elevation: 2,
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+            spreadRadius: 0,
+          ),
+          BoxShadow(
+            color: const Color(0xFF8B5CF6).withOpacity(0.08),
+            blurRadius: 40,
+            offset: const Offset(0, 0),
+            spreadRadius: -10,
+          ),
+        ],
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text("Add New Student", style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 16),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF8B5CF6), Color(0xFF6366F1)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    FontAwesomeIcons.userPlus,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Add New Student",
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1E293B),
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        "Search by email to add students to your class",
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Color(0xFF64748B),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
             if (_actionError != null && !_actionError!.toLowerCase().contains("removal failed"))
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8.0),
-                child: Text(_actionError!, style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12)),
+              Container(
+                margin: const EdgeInsets.only(bottom: 16),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFF6B6B).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: const Color(0xFFFF6B6B).withOpacity(0.3),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      FontAwesomeIcons.circleExclamation,
+                      color: Color(0xFFFF6B6B),
+                      size: 16,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        _actionError!,
+                        style: const TextStyle(
+                          color: Color(0xFFFF6B6B),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             Row(
               children: [
                 Expanded(
-                  child: TextField(
-                    controller: _searchController,
-                    decoration: InputDecoration(
-                      labelText: "Student Email",
-                      prefixIcon: const Icon(FontAwesomeIcons.envelope),
-                      border: const OutlineInputBorder(),
-                      suffixIcon: _searchController.text.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.clear),
-                              onPressed: _clearSearchFieldAndResults,
-                              tooltip: "Clear Search",
-                            )
-                          : null,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: const Color(0xFFE2E8F0),
+                        width: 1.5,
+                      ),
                     ),
-                    keyboardType: TextInputType.emailAddress,
-                    enabled: !_isSearching,
-                    onChanged: (_) {
-                      // Trigger rebuild to show/hide clear button if not using a listener
-                      if (mounted) setState(() {});
-                    },
+                    child: TextField(
+                      controller: _searchController,
+                      decoration: InputDecoration(
+                        labelText: "Student Email",
+                        prefixIcon: Container(
+                          margin: const EdgeInsets.all(12),
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF8B5CF6).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(
+                            FontAwesomeIcons.envelope,
+                            color: Color(0xFF8B5CF6),
+                            size: 16,
+                          ),
+                        ),
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+                        suffixIcon: _searchController.text.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear, color: Color(0xFF64748B)),
+                                onPressed: _clearSearchFieldAndResults,
+                                tooltip: "Clear Search",
+                              )
+                            : null,
+                      ),
+                      keyboardType: TextInputType.emailAddress,
+                      enabled: !_isSearching,
+                      onChanged: (_) {
+                        if (mounted) setState(() {});
+                      },
+                    ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                ElevatedButton.icon(
-                  icon: _isSearching ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(FontAwesomeIcons.magnifyingGlass),
-                  label: const Text("Search"),
-                  onPressed: _isSearching ? null : _handleSearchStudents,
+                const SizedBox(width: 16),
+                Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF8B5CF6), Color(0xFF6366F1)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF8B5CF6).withOpacity(0.3),
+                        blurRadius: 15,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: ElevatedButton.icon(
+                    icon: _isSearching 
+                        ? const SizedBox(
+                            width: 18, 
+                            height: 18, 
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2, 
+                              color: Colors.white,
+                            ),
+                          ) 
+                        : const Icon(FontAwesomeIcons.magnifyingGlass, size: 16),
+                    label: const Text(
+                      "Search",
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                      ),
+                    ),
+                    onPressed: _isSearching ? null : _handleSearchStudents,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.transparent,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
                 ),
               ],
             ),
-            if (_isSearching) const Padding(padding: EdgeInsets.all(8.0), child: Center(child: Text("Searching..."))),
+            if (_isSearching)
+              const Padding(
+                padding: EdgeInsets.all(16.0),
+                child: Center(
+                  child: Text(
+                    "Searching...",
+                    style: TextStyle(
+                      color: Color(0xFF64748B),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ),
             if (!_isSearching && _searchResults.isNotEmpty)
               _buildSearchResultsList(),
           ],
@@ -405,9 +920,16 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SizedBox(height: 16),
-        Text("Search Results:", style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
+        const SizedBox(height: 20),
+        const Text(
+          "Search Results:",
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF1E293B),
+          ),
+        ),
+        const SizedBox(height: 12),
         ListView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -415,15 +937,90 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> {
           itemBuilder: (context, index) {
             final user = _searchResults[index];
             final bool isCurrentlyEnrolling = _enrollingStudentId == user.uid;
-            return ListTile(
-              leading: const Icon(FontAwesomeIcons.userGraduate),
-              title: Text(user.displayName ?? "N/A"),
-              subtitle: Text(user.email ?? "N/A"),
-              trailing: ElevatedButton.icon(
-                icon: isCurrentlyEnrolling ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(FontAwesomeIcons.userPlus, size: 16),
-                label: const Text("Enroll"),
-                onPressed: isCurrentlyEnrolling ? null : () => _handleEnrollStudent(user),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+            
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: const Color(0xFFE2E8F0),
+                  width: 1,
+                ),
+              ),
+              child: ListTile(
+                contentPadding: const EdgeInsets.all(16),
+                leading: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF8B5CF6).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    FontAwesomeIcons.userGraduate,
+                    color: Color(0xFF8B5CF6),
+                    size: 20,
+                  ),
+                ),
+                title: Text(
+                  user.displayName ?? "N/A",
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1E293B),
+                  ),
+                ),
+                subtitle: Text(
+                  user.email ?? "N/A",
+                  style: const TextStyle(
+                    color: Color(0xFF64748B),
+                  ),
+                ),
+                trailing: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF10B981), Color(0xFF059669)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF10B981).withOpacity(0.3),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: ElevatedButton.icon(
+                    icon: isCurrentlyEnrolling 
+                        ? const SizedBox(
+                            width: 16, 
+                            height: 16, 
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          ) 
+                        : const Icon(FontAwesomeIcons.userPlus, size: 14),
+                    label: const Text(
+                      "Enroll",
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                    onPressed: isCurrentlyEnrolling ? null : () => _handleEnrollStudent(user),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.transparent,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
               ),
             );
           },
@@ -436,15 +1033,86 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text("Enrolled Students (${_classDetails?.studentCount ?? _enrolledStudents.length})", style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 8),
-         if (_actionError != null && _actionError!.toLowerCase().contains("removal failed")) // Show removal errors here
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8.0),
-                child: Text(_actionError!, style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12)),
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF8B5CF6), Color(0xFF6366F1)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(12),
               ),
+              child: const Icon(
+                FontAwesomeIcons.users,
+                color: Colors.white,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "Enrolled Students (${_classDetails?.studentCount ?? _enrolledStudents.length})",
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1E293B),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    "Manage your current students",
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Color(0xFF64748B),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 20),
+        if (_actionError != null && _actionError!.toLowerCase().contains("removal failed"))
+          Container(
+            margin: const EdgeInsets.only(bottom: 16),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFF6B6B).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: const Color(0xFFFF6B6B).withOpacity(0.3),
+                width: 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  FontAwesomeIcons.circleExclamation,
+                  color: Color(0xFFFF6B6B),
+                  size: 16,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    _actionError!,
+                    style: const TextStyle(
+                      color: Color(0xFFFF6B6B),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         _enrolledStudents.isEmpty
-            ? const Center(child: Padding(padding: EdgeInsets.all(16.0), child: Text("No students enrolled yet.")))
+            ? _buildEmptyStudentsWidget()
             : ListView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
@@ -452,22 +1120,89 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> {
                 itemBuilder: (context, index) {
                   final student = _enrolledStudents[index];
                   final bool isCurrentlyRemoving = _removingEnrollmentId == student.id;
-                  return Card(
-                    margin: const EdgeInsets.symmetric(vertical: 4),
+                  
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.06),
+                          blurRadius: 15,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
                     child: ListTile(
-                      leading: CircleAvatar(child: Text(student.studentName.isNotEmpty ? student.studentName[0].toUpperCase() : "?")),
-                      title: Text(student.studentName),
+                      contentPadding: const EdgeInsets.all(16),
+                      leading: CircleAvatar(
+                        radius: 24,
+                        backgroundColor: const Color(0xFF8B5CF6).withOpacity(0.1),
+                        child: Text(
+                          student.studentName.isNotEmpty ? student.studentName[0].toUpperCase() : "?",
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF8B5CF6),
+                            fontSize: 18,
+                          ),
+                        ),
+                      ),
+                      title: Text(
+                        student.studentName,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1E293B),
+                          fontSize: 16,
+                        ),
+                      ),
                       subtitle: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                           Text(student.studentEmail),
-                           Text("Enrolled: ${_formatTimestamp(student.enrolledAt)}", style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                          const SizedBox(height: 4),
+                          Text(
+                            student.studentEmail,
+                            style: const TextStyle(
+                              color: Color(0xFF64748B),
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            "Enrolled: ${_formatTimestamp(student.enrolledAt)}",
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF94A3B8),
+                            ),
+                          ),
                         ],
                       ),
-                      trailing: IconButton(
-                        icon: isCurrentlyRemoving ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(FontAwesomeIcons.userMinus, color: Colors.red, size: 20),
-                        onPressed: isCurrentlyRemoving ? null : () => _handleRemoveStudent(student),
-                        tooltip: "Remove Student",
+                      trailing: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: const Color(0xFFEF4444).withOpacity(0.3),
+                            width: 1,
+                          ),
+                        ),
+                        child: IconButton(
+                          icon: isCurrentlyRemoving 
+                              ? const SizedBox(
+                                  width: 18, 
+                                  height: 18, 
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Color(0xFFEF4444),
+                                  ),
+                                ) 
+                              : const Icon(
+                                  FontAwesomeIcons.userMinus, 
+                                  color: Color(0xFFEF4444), 
+                                  size: 18,
+                                ),
+                          onPressed: isCurrentlyRemoving ? null : () => _handleRemoveStudent(student),
+                          tooltip: "Remove Student",
+                        ),
                       ),
                     ),
                   );
@@ -477,9 +1212,62 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> {
     );
   }
 
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
+  Widget _buildEmptyStudentsWidget() {
+    return Container(
+      padding: const EdgeInsets.all(32),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 15,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  const Color(0xFF8B5CF6).withOpacity(0.1),
+                  const Color(0xFF6366F1).withOpacity(0.05),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Icon(
+              FontAwesomeIcons.userGroup,
+              size: 40,
+              color: Color(0xFF8B5CF6),
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            "No Students Enrolled",
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF1E293B),
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            "Start building your class by adding students using the search feature above.",
+            style: TextStyle(
+              fontSize: 14,
+              color: Color(0xFF64748B),
+              height: 1.5,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
   }
 }

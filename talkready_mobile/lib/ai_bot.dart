@@ -1234,12 +1234,8 @@ class _AIBotScreenState extends State<AIBotScreen> {
 // ...existing code...
     logger.d("Attempting to stop audio. Current _audioPlayer state: ${_audioPlayer.state}");
     try {
-      if (_audioPlayer.state != null) {
-        logger.d("_audioPlayer.state is of type: ${_audioPlayer.state.runtimeType}");
-      } else {
-        logger.d("_audioPlayer.state is null, which is unexpected if player was used.");
-      }
-
+      logger.d("_audioPlayer.state is of type: ${_audioPlayer.state.runtimeType}");
+    
       if (_audioPlayer.state == ap.PlayerState.playing) {
         logger.d("AudioPlayer is in 'playing' state, calling stop().");
         await _audioPlayer.stop();

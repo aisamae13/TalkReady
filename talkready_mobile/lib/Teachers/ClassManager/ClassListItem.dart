@@ -1,19 +1,59 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:intl/intl.dart'; // For date formatting
-import 'package:cloud_firestore/cloud_firestore.dart'; // For Timestamp
+import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:ui';
+import 'ManageClassContent.dart';
 
-class ClassListItemWidget extends StatelessWidget {
+class ClassListItemWidget extends StatefulWidget {
   final Map<String, dynamic> classData;
   final Function(String classId, String className) onDeleteClass;
-  // final Function(String classId) onNavigateToDashboard; // Or handle navigation directly
 
   const ClassListItemWidget({
-    Key? key,
+    super.key,
     required this.classData,
     required this.onDeleteClass,
-    // required this.onNavigateToDashboard,
-  }) : super(key: key);
+  });
+
+  @override
+  State<ClassListItemWidget> createState() => _ClassListItemWidgetState();
+}
+
+class _ClassListItemWidgetState extends State<ClassListItemWidget>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _animationController;
+  late Animation<double> _scaleAnimation;
+  late Animation<double> _fadeAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 400),
+      vsync: this,
+    );
+    _scaleAnimation = Tween<double>(
+      begin: 0.8,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeOutBack,
+    ));
+    _fadeAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeOut,
+    ));
+    _animationController.forward();
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
 
   String _formatDate(dynamic timestamp) {
     if (timestamp is Timestamp) {
@@ -22,7 +62,7 @@ class ClassListItemWidget extends StatelessWidget {
       try {
         return DateFormat.yMd().format(DateTime.parse(timestamp));
       } catch (e) {
-        //
+        // Handle error silently
       }
     }
     return "Date not set";
@@ -30,136 +70,427 @@ class ClassListItemWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String className = classData['className'] as String? ?? "Unnamed Class";
-    final String description = classData['description'] as String? ?? "No description available.";
-    final int studentCount = classData['studentCount'] as int? ?? 0;
-    final String subject = classData['subject'] as String? ?? "General";
-    final String classId = classData['id'] as String? ?? '';
-    final String createdAtDisplay = _formatDate(classData['createdAt']);
-    final theme = Theme.of(context);
+    final String className = widget.classData['className'] as String? ?? "Unnamed Class";
+    final String description = widget.classData['description'] as String? ?? "No description available.";
+    final int studentCount = widget.classData['studentCount'] as int? ?? 0;
+    final String subject = widget.classData['subject'] as String? ?? "General";
+    final String classId = widget.classData['id'] as String? ?? '';
+    final String createdAtDisplay = _formatDate(widget.classData['createdAt']);
 
     if (classId.isEmpty) {
-      return Card(
-        color: theme.colorScheme.errorContainer,
-        child: ListTile(
-          leading: Icon(Icons.error_outline, color: theme.colorScheme.error),
-          title: Text("Error: Class data incomplete", style: TextStyle(color: theme.colorScheme.onErrorContainer)),
+      return Container(
+        margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
+        child: Card(
+          elevation: 4,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              gradient: LinearGradient(
+                colors: [Colors.red.shade50, Colors.red.shade100],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+            child: ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade100,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.error_outline, color: Colors.red.shade700),
+              ),
+              title: Text(
+                "Error: Class data incomplete",
+                style: TextStyle(
+                  color: Colors.red.shade700,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
         ),
       );
     }
 
-    return Card(
-      elevation: 2.5,
-      margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      color: theme.colorScheme.surface,
-      child: InkWell(
-        onTap: () {
-          Navigator.pushNamed(context, '/trainer/class/$classId/dashboard');
-        },
-        borderRadius: BorderRadius.circular(12),
-        splashColor: theme.primaryColor.withOpacity(0.1),
-        highlightColor: theme.primaryColor.withOpacity(0.05),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                className,
-                style: theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: theme.colorScheme.primary,
-                ),
-              ),
-              const SizedBox(height: 4),
-              if (subject.isNotEmpty)
-                Text(
-                  "Subject: $subject",
-                  style: theme.textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic, color: theme.colorScheme.onSurfaceVariant),
-                ),
-              const SizedBox(height: 8),
-              Text(
-                description,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurface.withOpacity(0.85)),
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Icon(FontAwesomeIcons.users, size: 14, color: theme.colorScheme.onSurfaceVariant),
-                  const SizedBox(width: 8),
-                  Text(
-                    "$studentCount Student${studentCount != 1 ? 's' : ''}",
-                    style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+    return AnimatedBuilder(
+      animation: _animationController,
+      builder: (context, child) {
+        return Transform.scale(
+          scale: _scaleAnimation.value,
+          child: Opacity(
+            opacity: _fadeAnimation.value,
+            child: Container(
+              margin: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 16.0),
+              child: Card(
+                elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(24),
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.white,
+                        Colors.blue.shade50.withOpacity(0.3),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.blue.shade200.withOpacity(0.3),
+                        blurRadius: 20,
+                        offset: const Offset(0, 10),
+                        spreadRadius: 0,
+                      ),
+                      BoxShadow(
+                        color: Colors.white.withOpacity(0.8),
+                        blurRadius: 10,
+                        offset: const Offset(-5, -5),
+                        spreadRadius: 0,
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                "Created: $createdAtDisplay",
-                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant.withOpacity(0.6)),
-              ),
-              const SizedBox(height: 16),
-              Divider(color: theme.dividerColor.withOpacity(0.5), height: 1),
-              Padding(
-                padding: const EdgeInsets.only(top: 12.0),
-                child: Wrap(
-                  spacing: 8.0,
-                  runSpacing: 4.0,
-                  alignment: WrapAlignment.end,
-                  children: [
-                    TextButton.icon(
-                      icon: const Icon(FontAwesomeIcons.bookOpenReader, size: 14),
-                      label: const Text("Content"),
-                      style: TextButton.styleFrom(
-                        foregroundColor: theme.colorScheme.secondary,
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                        textStyle: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w500),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(24),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () {
+                            Navigator.pushNamed(context, '/trainer/classes/$classId/dashboard');
+                          },
+                          borderRadius: BorderRadius.circular(24),
+                          splashColor: Colors.blue.shade100.withOpacity(0.3),
+                          highlightColor: Colors.blue.shade50.withOpacity(0.2),
+                          child: Padding(
+                            padding: const EdgeInsets.all(24.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildHeader(className, context),
+                                if (subject.isNotEmpty) ...[
+                                  const SizedBox(height: 8),
+                                  _buildSubject(subject),
+                                ],
+                                const SizedBox(height: 16),
+                                _buildDescription(description),
+                                const SizedBox(height: 16),
+                                _buildStats(studentCount, createdAtDisplay),
+                                const SizedBox(height: 20),
+                                _buildDivider(),
+                                const SizedBox(height: 16),
+                                _buildActionButtons(classId, className),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
-                      onPressed: () {
-                        Navigator.pushNamed(context, '/trainer/class/$classId/content');
-                      },
                     ),
-                    TextButton.icon(
-                      icon: const Icon(FontAwesomeIcons.usersGear, size: 14),
-                      label: const Text("Students"),
-                       style: TextButton.styleFrom(
-                        foregroundColor: Colors.green.shade700, // Or theme.colorScheme.tertiary
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                        textStyle: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w500),
-                      ),
-                      onPressed: () {
-                        Navigator.pushNamed(context, '/trainer/class/$classId/students');
-                      },
-                    ),
-                    TextButton.icon(
-                      icon: const Icon(FontAwesomeIcons.penToSquare, size: 14),
-                      label: const Text("Edit"),
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.orange.shade700, // Or theme.colorScheme.tertiary
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                        textStyle: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w500),
-                      ),
-                      onPressed: () {
-                        Navigator.pushNamed(context, '/trainer/class/$classId/edit');
-                      },
-                    ),
-                    TextButton.icon(
-                      icon: const Icon(FontAwesomeIcons.trashCan, size: 14),
-                      label: const Text("Delete"),
-                      style: TextButton.styleFrom(
-                        foregroundColor: theme.colorScheme.error,
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                        textStyle: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w500),
-                      ),
-                      onPressed: () => onDeleteClass(classId, className),
-                    ),
-                  ],
+                  ),
                 ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildHeader(String className, BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Colors.blue.shade400, Colors.purple.shade400],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.blue.shade200.withOpacity(0.4),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
               ),
             ],
+          ),
+          child: const FaIcon(
+            FontAwesomeIcons.chalkboardUser,
+            color: Colors.white,
+            size: 24,
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Text(
+            className,
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF1E293B),
+              letterSpacing: 0.5,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSubject(String subject) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.purple.shade100, Colors.blue.shade100],
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Colors.purple.shade200,
+          width: 1,
+        ),
+      ),
+      child: Text(
+        "Subject: $subject",
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: Colors.purple.shade700,
+          fontStyle: FontStyle.italic,
+        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+
+  Widget _buildDescription(String description) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50.withOpacity(0.8),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.grey.shade200,
+          width: 1,
+        ),
+      ),
+      child: Text(
+        description,
+        style: const TextStyle(
+          fontSize: 14,
+          color: Color(0xFF64748B),
+          height: 1.4,
+        ),
+        maxLines: 3,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+
+  Widget _buildStats(int studentCount, String createdAtDisplay) {
+    return Row(
+      children: [
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Colors.green.shade100, Colors.green.shade50],
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+              ),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: Colors.green.shade200,
+                width: 1,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  FontAwesomeIcons.users,
+                  size: 14,
+                  color: Colors.green.shade700,
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    "$studentCount Student${studentCount != 1 ? 's' : ''}",
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.green.shade700,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Flexible(
+          child: Text(
+            "Created: $createdAtDisplay",
+            style: const TextStyle(
+              fontSize: 12,
+              color: Color(0xFF94A3B8),
+              fontWeight: FontWeight.w500,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDivider() {
+    return Container(
+      height: 1,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Colors.transparent,
+            Colors.grey.shade300,
+            Colors.transparent,
+          ],
+          stops: const [0.0, 0.5, 1.0],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButtons(String classId, String className) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Determine if we should use a single column layout for narrow screens
+        final bool useColumnLayout = constraints.maxWidth < 500;
+        
+        final List<Widget> buttons = [
+          _buildActionButton(
+            icon: FontAwesomeIcons.fileLines,
+            label: "Content",
+            colors: [Colors.teal.shade400, Colors.teal.shade600],
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => ManageClassContentPage(classId: widget.classData['id']),
+                ),
+              );
+            },
+          ),
+          _buildActionButton(
+            icon: FontAwesomeIcons.usersGear,
+            label: "Students",
+            colors: [Colors.green.shade400, Colors.green.shade600],
+            onPressed: () {
+              Navigator.pushNamed(context, '/trainer/classes/$classId/students');
+            },
+          ),
+          _buildActionButton(
+            icon: FontAwesomeIcons.penToSquare,
+            label: "Edit",
+            colors: [Colors.orange.shade400, Colors.orange.shade600],
+            onPressed: () {
+              Navigator.pushNamed(context, '/trainer/classes/$classId/edit');
+            },
+          ),
+          _buildActionButton(
+            icon: FontAwesomeIcons.trashCan,
+            label: "Delete",
+            colors: [Colors.red.shade400, Colors.red.shade600],
+            onPressed: () => widget.onDeleteClass(classId, className),
+          ),
+        ];
+
+        if (useColumnLayout) {
+          // Stack buttons vertically for narrow screens
+          return Column(
+            children: buttons.map((button) => 
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 8),
+                child: button,
+              )
+            ).toList(),
+          );
+        } else {
+          // Use wrap for wider screens
+          return Wrap(
+            spacing: 8.0,
+            runSpacing: 8.0,
+            alignment: WrapAlignment.end,
+            children: buttons,
+          );
+        }
+      },
+    );
+  }
+
+  Widget _buildActionButton({
+    required IconData icon,
+    required String label,
+    required List<Color> colors,
+    required VoidCallback onPressed,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: LinearGradient(
+          colors: colors,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: colors.first.withOpacity(0.3),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            constraints: const BoxConstraints(minWidth: 100),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                FaIcon(
+                  icon,
+                  size: 14,
+                  color: Colors.white,
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

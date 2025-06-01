@@ -9,7 +9,6 @@ import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:logger/logger.dart';
 import 'package:animations/animations.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import '../settings/about_us.dart';
 import '../settings/comm_guide.dart';
@@ -913,20 +912,55 @@ class _TrainerProfileState extends State<TrainerProfile> {
                                                                         elevation: 0,
                                                                       ),
                                                                       onPressed: () async {
-                                                                        final user = FirebaseAuth.instance.currentUser;
-                                                                        if (user != null) {
-                                                                          await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
-                                                                            'firstName': firstNameController.text.trim(),
-                                                                            'lastName': lastNameController.text.trim(),
-                                                                            'age': int.tryParse(ageController.text.trim()),
-                                                                            'gender': genderController.text.trim(),
-                                                                            'birthdate': birthdateController.text.trim(),
-                                                                            'province': provinceController.text.trim(),
-                                                                            'municipality': municipalityController.text.trim(),
-                                                                            'barangay': barangayController.text.trim(),
-                                                                          });
+                                                                        // Show loading indicator
+                                                                        showDialog(
+                                                                          context: context,
+                                                                          barrierDismissible: false,
+                                                                          builder: (context) => const Center(
+                                                                            child: CircularProgressIndicator(),
+                                                                          ),
+                                                                        );
+
+                                                                        try {
+                                                                          final user = FirebaseAuth.instance.currentUser;
+                                                                          if (user != null) {
+                                                                            // Update Firestore with proper error handling
+                                                                            await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
+                                                                              'firstName': firstNameController.text.trim(),
+                                                                              'lastName': lastNameController.text.trim(),
+                                                                              'age': int.tryParse(ageController.text.trim()),
+                                                                              'gender': genderController.text.trim(),
+                                                                              'birthdate': birthdateController.text.trim(),
+                                                                              'province': provinceController.text.trim(),
+                                                                              'municipality': municipalityController.text.trim(),
+                                                                              'barangay': barangayController.text.trim(),
+                                                                              'updatedAt': FieldValue.serverTimestamp(), // Add timestamp
+                                                                            });
+
+                                                                            // Show success message
+                                                                            if (context.mounted) {
+                                                                              Navigator.pop(context); // Close loading dialog
+                                                                              Navigator.pop(context); // Close edit dialog
+                                                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                                                const SnackBar(
+                                                                                  content: Text('Information updated successfully!'),
+                                                                                  backgroundColor: Color(0xFF00568D),
+                                                                                ),
+                                                                              );
+                                                                            }
+                                                                          }
+                                                                        } catch (e) {
+                                                                          // Handle errors
+                                                                          if (context.mounted) {
+                                                                            Navigator.pop(context); // Close loading dialog
+                                                                            ScaffoldMessenger.of(context).showSnackBar(
+                                                                              SnackBar(
+                                                                                content: Text('Error updating information: $e'),
+                                                                                backgroundColor: Colors.red,
+                                                                              ),
+                                                                            );
+                                                                          }
                                                                         }
-                                                                        if (context.mounted) Navigator.pop(context);
                                                                       },
                                                                       child: const Text('Save'),
                                                                     ),

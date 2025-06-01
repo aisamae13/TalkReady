@@ -472,12 +472,14 @@ class _Module1PageState extends State<Module1Page> {
           if (isCorrect) {
             calculatedScore++;
           }
-          if (i < _isCorrectStates.length)
+          if (i < _isCorrectStates.length) {
             _isCorrectStates[i] = isCorrect; // Update UI feedback state
-          if (i < _errorMessages.length)
+          }
+          if (i < _errorMessages.length) {
             _errorMessages[i] = isCorrect
                 ? null
                 : (questionsData[i]['explanation'] ?? 'Incorrect');
+          }
         }
       }
     } else if (currentLesson == 3) {
@@ -789,10 +791,12 @@ class _Module1PageState extends State<Module1Page> {
             _selectedAnswers[questionIndex] = selectedWords;
             _logger.d(
                 'Module 1, Lesson $currentLesson, Q$questionIndex selection updated: $selectedWords');
-            if (questionIndex < _isCorrectStates.length)
+            if (questionIndex < _isCorrectStates.length) {
               _isCorrectStates[questionIndex] = null;
-            if (questionIndex < _errorMessages.length)
+            }
+            if (questionIndex < _errorMessages.length) {
               _errorMessages[questionIndex] = null;
+            }
           }
         });
       }
@@ -806,10 +810,12 @@ class _Module1PageState extends State<Module1Page> {
             _fillInBlankAnswers[questionIndex] = answer;
             _logger.d(
                 'Module 1, Lesson 1.3, Q$questionIndex answer updated: $answer');
-            if (questionIndex < _isCorrectStates.length)
+            if (questionIndex < _isCorrectStates.length) {
               _isCorrectStates[questionIndex] = null;
-            if (questionIndex < _errorMessages.length)
+            }
+            if (questionIndex < _errorMessages.length) {
               _errorMessages[questionIndex] = null;
+            }
           }
         });
       }

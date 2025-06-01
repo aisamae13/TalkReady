@@ -7,7 +7,6 @@ import 'profile.dart';
 import 'package:logger/logger.dart';
 import 'courses_page.dart';
 import 'journal/journal_page.dart';
-import 'package:flutter/animation.dart';
 import 'package:talkready_mobile/all_notifications_page.dart';
 import 'progress_page.dart';
 import 'package:talkready_mobile/custom_animated_bottom_bar.dart';

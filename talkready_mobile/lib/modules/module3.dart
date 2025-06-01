@@ -113,14 +113,16 @@ class _Module3PageState extends State<Module3Page> {
             break;
           default:
             _logger.w("Module 3: Unknown targetLessonKey: ${widget.targetLessonKey}. Defaulting.");
-            if (!(_lessonCompletion['lesson1'] ?? false)) currentLesson = 1;
-            else if (!(_lessonCompletion['lesson2'] ?? false)) currentLesson = 2;
+            if (!(_lessonCompletion['lesson1'] ?? false)) {
+              currentLesson = 1;
+            } else if (!(_lessonCompletion['lesson2'] ?? false)) currentLesson = 2;
             else currentLesson = 2; // All complete, default to last
         }
       } else {
         _logger.i("Module 3: No target lesson key. Determining current lesson by progress.");
-        if (!(_lessonCompletion['lesson1'] ?? false)) currentLesson = 1;
-        else if (!(_lessonCompletion['lesson2'] ?? false)) currentLesson = 2;
+        if (!(_lessonCompletion['lesson1'] ?? false)) {
+          currentLesson = 1;
+        } else if (!(_lessonCompletion['lesson2'] ?? false)) currentLesson = 2;
         else currentLesson = 2; // All complete, default to last
       }
       _logger.i('Module 3: Loaded lesson progress: currentLesson=$currentLesson, completion=$_lessonCompletion, attempts=$_lessonAttemptCounts');

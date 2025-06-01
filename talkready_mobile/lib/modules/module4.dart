@@ -107,13 +107,15 @@ class _Module4PageState extends State<Module4Page> {
             currentLesson = 2;
             break;
           default:
-            if (!(_lessonCompletion['lesson1'] ?? false)) currentLesson = 1;
-            else if (!(_lessonCompletion['lesson2'] ?? false)) currentLesson = 2;
+            if (!(_lessonCompletion['lesson1'] ?? false)) {
+              currentLesson = 1;
+            } else if (!(_lessonCompletion['lesson2'] ?? false)) currentLesson = 2;
             else currentLesson = 2;
         }
       } else {
-        if (!(_lessonCompletion['lesson1'] ?? false)) currentLesson = 1;
-        else if (!(_lessonCompletion['lesson2'] ?? false)) currentLesson = 2;
+        if (!(_lessonCompletion['lesson1'] ?? false)) {
+          currentLesson = 1;
+        } else if (!(_lessonCompletion['lesson2'] ?? false)) currentLesson = 2;
         else currentLesson = 2;
       }
     } catch (e) {

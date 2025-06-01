@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'dart:ui';
 
-// Assumed Firebase Service functions (implement these)
+// Firebase Service functions
 Future<Map<String, dynamic>> getClassDetails(String classId) async {
   final doc = await FirebaseFirestore.instance.collection('classes').doc(classId).get();
   if (!doc.exists) throw Exception("Class not found");
@@ -17,42 +18,77 @@ Future<void> updateTrainerClass(String classId, Map<String, dynamic> data) async
 class EditClassPage extends StatefulWidget {
   final String classId;
 
-  const EditClassPage({Key? key, required this.classId}) : super(key: key);
+  const EditClassPage({super.key, required this.classId});
 
   @override
-  _EditClassPageState createState() => _EditClassPageState();
+  State<EditClassPage> createState() => _EditClassPageState();
 }
 
-class _EditClassPageState extends State<EditClassPage> {
+class _EditClassPageState extends State<EditClassPage> 
+    with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final User? _currentUser = FirebaseAuth.instance.currentUser;
 
-  // Use TextEditingControllers for better control and to set initial values
+  // Controllers
   final _classNameController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _subjectController = TextEditingController();
 
-  // String _className = ''; // Replaced by controller
-  // String _description = ''; // Replaced by controller
-  // String _subject = ''; // Replaced by controller
-
+  // State variables
   bool _initialLoading = true;
   bool _isUpdating = false;
   String? _error;
   String? _success;
-  // ThemeData? _theme;
+
+  // Animation controllers
+  late AnimationController _slideController;
+  late AnimationController _fadeController;
+  late Animation<Offset> _slideAnimation;
+  late Animation<double> _fadeAnimation;
 
   @override
   void initState() {
     super.initState();
+    _initializeAnimations();
     _fetchClassData();
   }
 
-  // @override
-  // void didChangeDependencies() {
-  //   super.didChangeDependencies();
-  //   _theme = Theme.of(context);
-  // }
+  void _initializeAnimations() {
+    _slideController = AnimationController(
+      duration: const Duration(milliseconds: 600),
+      vsync: this,
+    );
+    _fadeController = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    );
+
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0.3),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _slideController,
+      curve: Curves.easeOutCubic,
+    ));
+
+    _fadeAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _fadeController,
+      curve: Curves.easeOut,
+    ));
+  }
+
+  @override
+  void dispose() {
+    _slideController.dispose();
+    _fadeController.dispose();
+    _classNameController.dispose();
+    _descriptionController.dispose();
+    _subjectController.dispose();
+    super.dispose();
+  }
 
   Future<void> _fetchClassData() async {
     if (_currentUser == null) {
@@ -62,11 +98,13 @@ class _EditClassPageState extends State<EditClassPage> {
       });
       return;
     }
+
     setState(() {
       _initialLoading = true;
       _error = null;
       _success = null;
     });
+
     try {
       final details = await getClassDetails(widget.classId);
       if (details['trainerId'] != _currentUser!.uid) {
@@ -74,21 +112,19 @@ class _EditClassPageState extends State<EditClassPage> {
           _error = "You are not authorized to edit this class.";
           _initialLoading = false;
         });
-        // Optionally navigate away
-        // Future.delayed(const Duration(seconds: 3), () {
-        //   if (mounted) Navigator.pop(context);
-        // });
         return;
       }
+
       setState(() {
-        // _className = details['className'] as String? ?? '';
-        // _description = details['description'] as String? ?? '';
-        // _subject = details['subject'] as String? ?? '';
         _classNameController.text = details['className'] as String? ?? '';
         _descriptionController.text = details['description'] as String? ?? '';
         _subjectController.text = details['subject'] as String? ?? '';
         _initialLoading = false;
       });
+
+      // Start animations after data is loaded
+      _fadeController.forward();
+      _slideController.forward();
     } catch (e) {
       setState(() {
         _error = "Failed to load class details: ${e.toString()}";
@@ -102,9 +138,8 @@ class _EditClassPageState extends State<EditClassPage> {
       setState(() => _error = "Authentication error. Please log in again.");
       return;
     }
-    if (_formKey.currentState!.validate()) {
-      // _formKey.currentState!.save(); // Not needed when using controllers
 
+    if (_formKey.currentState!.validate()) {
       setState(() {
         _isUpdating = true;
         _error = null;
@@ -123,10 +158,10 @@ class _EditClassPageState extends State<EditClassPage> {
         setState(() {
           _success = 'Class "${_classNameController.text}" updated successfully!';
         });
+        
         Future.delayed(const Duration(seconds: 2), () {
           if (mounted) {
-            // Navigate back or to class dashboard
-            Navigator.pop(context, true); // Pop with a result to indicate success
+            Navigator.pop(context, true);
           }
         });
       } catch (e) {
@@ -143,138 +178,470 @@ class _EditClassPageState extends State<EditClassPage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final screenSize = MediaQuery.of(context).size;
+    final isSmallScreen = screenSize.width < 600;
 
     if (_initialLoading) {
       return Scaffold(
-        appBar: AppBar(
-          title: const Text("Edit Class"),
-          backgroundColor: theme.colorScheme.surfaceVariant,
-          foregroundColor: theme.colorScheme.onSurfaceVariant,
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                Color(0xFF667eea),
+                Color(0xFF764ba2),
+                Color(0xFFf093fb),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+          child: const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  strokeWidth: 3,
+                ),
+                SizedBox(height: 24),
+                Text(
+                  "Loading class details...",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
-        body: Center(child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary))),
       );
     }
 
     return Scaffold(
-      backgroundColor: theme.colorScheme.background,
-      appBar: AppBar(
-        title: Text(_classNameController.text.isNotEmpty ? "Edit: ${_classNameController.text}" : "Edit Class", overflow: TextOverflow.ellipsis),
-        backgroundColor: theme.colorScheme.surfaceVariant,
-        foregroundColor: theme.colorScheme.onSurfaceVariant,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(FontAwesomeIcons.arrowLeft),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1.0),
-          child: Container(
-            color: theme.dividerColor,
-            height: 1.0,
+      extendBodyBehindAppBar: true,
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              Color(0xFF667eea),
+              Color(0xFF764ba2),
+              Color(0xFFf093fb),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
           ),
         ),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20.0),
-        child: Form(
-          key: _formKey,
+        child: SafeArea(
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              if (_error != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12.0),
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(color: theme.colorScheme.errorContainer, borderRadius: BorderRadius.circular(8)),
-                    child: Row(children: [
-                      Icon(Icons.error_outline, color: theme.colorScheme.error),
-                      const SizedBox(width: 8),
-                      Expanded(child: Text(_error!, style: TextStyle(color: theme.colorScheme.onErrorContainer))),
-                    ]),
-                  )
-                ),
-              if (_success != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12.0),
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(color: Colors.green.shade100, borderRadius: BorderRadius.circular(8)),
-                    child: Row(children: [
-                      Icon(Icons.check_circle_outline, color: Colors.green.shade700),
-                      const SizedBox(width: 8),
-                      Expanded(child: Text(_success!, style: TextStyle(color: Colors.green.shade800))),
-                    ]),
-                  )
-                ),
-              TextFormField(
-                // initialValue: _className, // Controller handles initial value
-                controller: _classNameController,
-                decoration: InputDecoration(
-                  labelText: 'Class Name',
-                  prefixIcon: Icon(FontAwesomeIcons.chalkboardUser, color: theme.colorScheme.onSurfaceVariant),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                  filled: true,
-                  fillColor: theme.colorScheme.surfaceVariant.withOpacity(0.3),
-                ),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Please enter a class name.';
-                  }
-                  return null;
-                },
-                // onSaved: (value) => _className = value!, // Not needed with controller
-                enabled: !_isUpdating,
+            children: [
+              _buildModernAppBar(isSmallScreen),
+              Expanded(
+                child: _buildFormContent(isSmallScreen),
               ),
-              const SizedBox(height: 16.0),
-              TextFormField(
-                // initialValue: _description, // Controller handles initial value
-                controller: _descriptionController,
-                decoration: InputDecoration(
-                  labelText: 'Description (Optional)',
-                  prefixIcon: Icon(FontAwesomeIcons.alignLeft, color: theme.colorScheme.onSurfaceVariant),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                  filled: true,
-                  fillColor: theme.colorScheme.surfaceVariant.withOpacity(0.3),
-                ),
-                maxLines: 3,
-                // onSaved: (value) => _description = value ?? '', // Not needed with controller
-                enabled: !_isUpdating,
-              ),
-              const SizedBox(height: 16.0),
-              TextFormField(
-                // initialValue: _subject, // Controller handles initial value
-                controller: _subjectController,
-                decoration: InputDecoration(
-                  labelText: 'Subject/Category (Optional)',
-                  prefixIcon: Icon(FontAwesomeIcons.tag, color: theme.colorScheme.onSurfaceVariant),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                  filled: true,
-                  fillColor: theme.colorScheme.surfaceVariant.withOpacity(0.3),
-                ),
-                // onSaved: (value) => _subject = value ?? '', // Not needed with controller
-                enabled: !_isUpdating,
-              ),
-              const SizedBox(height: 28.0),
-              _isUpdating
-                  ? Center(child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary)))
-                  : ElevatedButton.icon(
-                      icon: const Icon(FontAwesomeIcons.save, size: 16),
-                      label: const Text('Save Changes'),
-                      onPressed: _handleUpdateClass,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: theme.colorScheme.primary,
-                        foregroundColor: theme.colorScheme.onPrimary,
-                        padding: const EdgeInsets.symmetric(vertical: 14.0),
-                        textStyle: theme.textTheme.labelLarge?.copyWith(fontSize: 16, fontWeight: FontWeight.bold),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                    ),
             ],
           ),
         ),
       ),
     );
+  }
+
+  Widget _buildModernAppBar(bool isSmallScreen) {
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+        16,
+        MediaQuery.of(context).padding.top + 8,
+        16,
+        16,
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.25),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.2),
+                width: 1,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 20,
+                  offset: const Offset(0, 5),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: IconButton(
+                    icon: const FaIcon(
+                      FontAwesomeIcons.arrowLeft,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        "Edit Class",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: isSmallScreen ? 18 : 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (_classNameController.text.isNotEmpty)
+                        Text(
+                          _classNameController.text,
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.8),
+                            fontSize: isSmallScreen ? 12 : 14,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFormContent(bool isSmallScreen) {
+    return FadeTransition(
+      opacity: _fadeAnimation,
+      child: SlideTransition(
+        position: _slideAnimation,
+        child: Container(
+          margin: const EdgeInsets.all(16),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.25),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: Colors.white.withOpacity(0.2),
+                    width: 1,
+                  ),
+                ),
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.all(isSmallScreen ? 20 : 32),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (_error != null) _buildErrorMessage(),
+                        if (_success != null) _buildSuccessMessage(),
+                        _buildFormField(
+                          controller: _classNameController,
+                          label: 'Class Name',
+                          icon: FontAwesomeIcons.chalkboardUser,
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'Please enter a class name.';
+                            }
+                            return null;
+                          },
+                          isSmallScreen: isSmallScreen,
+                        ),
+                        SizedBox(height: isSmallScreen ? 20 : 24),
+                        _buildFormField(
+                          controller: _descriptionController,
+                          label: 'Description (Optional)',
+                          icon: FontAwesomeIcons.alignLeft,
+                          maxLines: 3,
+                          isSmallScreen: isSmallScreen,
+                        ),
+                        SizedBox(height: isSmallScreen ? 20 : 24),
+                        _buildFormField(
+                          controller: _subjectController,
+                          label: 'Subject/Category (Optional)',
+                          icon: FontAwesomeIcons.tag,
+                          isSmallScreen: isSmallScreen,
+                        ),
+                        SizedBox(height: isSmallScreen ? 32 : 40),
+                        _buildUpdateButton(isSmallScreen),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorMessage() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.red.shade100, Colors.red.shade50],
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.red.shade200),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.red.shade200,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: FaIcon(
+              FontAwesomeIcons.triangleExclamation,
+              color: Colors.red.shade700,
+              size: 16,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              _error!,
+              style: TextStyle(
+                color: Colors.red.shade800,
+                fontWeight: FontWeight.w500,
+              ),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSuccessMessage() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.green.shade100, Colors.green.shade50],
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.green.shade200),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.green.shade200,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: FaIcon(
+              FontAwesomeIcons.circleCheck,
+              color: Colors.green.shade700,
+              size: 16,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              _success!,
+              style: TextStyle(
+                color: Colors.green.shade800,
+                fontWeight: FontWeight.w500,
+              ),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFormField({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    String? Function(String?)? validator,
+    int maxLines = 1,
+    required bool isSmallScreen,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: LinearGradient(
+          colors: [
+            Colors.white.withOpacity(0.2),
+            Colors.white.withOpacity(0.1),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.3),
+          width: 1,
+        ),
+      ),
+      child: TextFormField(
+        controller: controller,
+        validator: validator,
+        maxLines: maxLines,
+        enabled: !_isUpdating,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w500,
+        ),
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle: TextStyle(
+            color: Colors.white.withOpacity(0.8),
+            fontSize: isSmallScreen ? 14 : 16,
+          ),
+          prefixIcon: Container(
+            margin: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: FaIcon(
+              icon,
+              color: Colors.white,
+              size: 16,
+            ),
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide(
+              color: Colors.white.withOpacity(0.5),
+              width: 2,
+            ),
+          ),
+          errorBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide(
+              color: Colors.red.shade300,
+              width: 2,
+            ),
+          ),
+          contentPadding: EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: isSmallScreen ? 16 : 20,
+          ),
+          errorStyle: TextStyle(
+            color: Colors.red.shade200,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUpdateButton(bool isSmallScreen) {
+    return _isUpdating
+        ? Container(
+            height: isSmallScreen ? 50 : 56,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              gradient: LinearGradient(
+                colors: [
+                  Colors.white.withOpacity(0.2),
+                  Colors.white.withOpacity(0.1),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+            child: const Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                strokeWidth: 3,
+              ),
+            ),
+          )
+        : Container(
+            height: isSmallScreen ? 50 : 56,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              gradient: const LinearGradient(
+                colors: [
+                  Color(0xFF4facfe),
+                  Color(0xFF00f2fe),
+                ],
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF4facfe).withOpacity(0.4),
+                  blurRadius: 15,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: _handleUpdateClass,
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const FaIcon(
+                        FontAwesomeIcons.floppyDisk,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        'Save Changes',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: isSmallScreen ? 16 : 18,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
   }
 }

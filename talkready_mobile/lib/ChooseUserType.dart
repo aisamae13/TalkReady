@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'welcome_page.dart';
-import 'package:talkready_mobile/next_screen.dart'; // For student flow
+// For student flow
 
 class ChooseUserTypePage extends StatelessWidget {
   const ChooseUserTypePage({super.key});

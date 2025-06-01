@@ -38,7 +38,7 @@ class Lesson5_1 extends StatefulWidget {
 
 class _Lesson5_1State extends State<Lesson5_1> {
   late int _currentAttempt;
-  int _secondsElapsed = 0;
+  final int _secondsElapsed = 0;
   bool _isSubmitting = false;
 
   final List<Map<String, dynamic>> slides = [

@@ -305,7 +305,7 @@ class _Lesson3_1State extends State<Lesson3_1> {
                 },
               ),
             );
-          }).toList(),
+          }),
           const SizedBox(height: 12),
           if (widget.isCorrectStates.isNotEmpty && widget.isCorrectStates[0] != null)
             Padding(

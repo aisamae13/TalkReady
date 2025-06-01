@@ -1,7 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:talkready_mobile/welcome_page.dart';
 import 'dart:async';
 
 class SignUpPage extends StatefulWidget {
