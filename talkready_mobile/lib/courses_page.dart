@@ -47,9 +47,21 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
       'color': Colors.red,
       'icon': Icons.book,
       'lessons': <Map<String, dynamic>>[
-        {'title': 'Lesson 1.1: Nouns and Pronouns', 'completed': false, 'firebaseKey': 'lesson1'},
-        {'title': 'Lesson 1.2: Simple Sentences', 'completed': false, 'firebaseKey': 'lesson2'},
-        {'title': 'Lesson 1.3: Verb and Tenses (Present Simple)', 'completed': false, 'firebaseKey': 'lesson3'},
+        {
+          'title': 'Lesson 1.1: Nouns and Pronouns',
+          'completed': false,
+          'firebaseKey': 'lesson1'
+        },
+        {
+          'title': 'Lesson 1.2: Simple Sentences',
+          'completed': false,
+          'firebaseKey': 'lesson2'
+        },
+        {
+          'title': 'Lesson 1.3: Verb and Tenses (Present Simple)',
+          'completed': false,
+          'firebaseKey': 'lesson3'
+        },
       ],
       'isLocked': false,
       'isCompleted': false,
@@ -59,9 +71,21 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
       'color': Colors.orange,
       'icon': Icons.chat,
       'lessons': <Map<String, dynamic>>[
-        {'title': 'Lesson 2.1: Greetings and Introductions', 'completed': false, 'firebaseKey': 'lesson1'},
-        {'title': 'Lesson 2.2: Asking for Information', 'completed': false, 'firebaseKey': 'lesson2'},
-        {'title': 'Lesson 2.3: Numbers and Dates', 'completed': false, 'firebaseKey': 'lesson3'},
+        {
+          'title': 'Lesson 2.1: Greetings and Introductions',
+          'completed': false,
+          'firebaseKey': 'lesson1'
+        },
+        {
+          'title': 'Lesson 2.2: Asking for Information',
+          'completed': false,
+          'firebaseKey': 'lesson2'
+        },
+        {
+          'title': 'Lesson 2.3: Numbers and Dates',
+          'completed': false,
+          'firebaseKey': 'lesson3'
+        },
       ],
       'isLocked': true,
       'isCompleted': false,
@@ -71,8 +95,16 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
       'color': Colors.green,
       'icon': Icons.mic,
       'lessons': <Map<String, dynamic>>[
-        {'title': 'Lesson 3.1: Listening Comprehension', 'completed': false, 'firebaseKey': 'lesson1'},
-        {'title': 'Lesson 3.2: Speaking Practice', 'completed': false, 'firebaseKey': 'lesson2'},
+        {
+          'title': 'Lesson 3.1: Listening Comprehension',
+          'completed': false,
+          'firebaseKey': 'lesson1'
+        },
+        {
+          'title': 'Lesson 3.2: Speaking Practice',
+          'completed': false,
+          'firebaseKey': 'lesson2'
+        },
       ],
       'isLocked': true,
       'isCompleted': false,
@@ -82,27 +114,46 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
       'color': Colors.purple,
       'icon': Icons.support_agent,
       'lessons': <Map<String, dynamic>>[
-        {'title': 'Lesson 4.1: Asking for Clarification', 'completed': false, 'firebaseKey': 'lesson1'},
-        {'title': 'Lesson 4.2: Providing Solutions', 'completed': false, 'firebaseKey': 'lesson2'},
+        {
+          'title': 'Lesson 4.1: Asking for Clarification',
+          'completed': false,
+          'firebaseKey': 'lesson1'
+        },
+        {
+          'title': 'Lesson 4.2: Providing Solutions',
+          'completed': false,
+          'firebaseKey': 'lesson2'
+        },
       ],
       'isLocked': true,
       'isCompleted': false,
     },
+    // Module 5 was here, now moved to intermediateModules
+  ];
+
+  // Module 5 is now in intermediateModules
+  final List<Map<String, dynamic>> intermediateModules = [
     {
-      'module': 'Module 5: Review and Assessment',
+      'module': 'Module 5: Basic Call Simulation Practice',
       'color': Colors.pink,
       'icon': Icons.edit,
       'lessons': <Map<String, dynamic>>[
-        {'title': 'Review: Go through key concepts', 'completed': false, 'firebaseKey': 'lesson1'},
-        {'title': 'Final Test: A combination of grammar, vocabulary, and practical speaking exercises', 'completed': false, 'firebaseKey': 'lesson2'},
+        {
+          'title': 'Lesson 5.1: Basic Simulation - Info Request',
+          'completed': false,
+          'firebaseKey': 'lesson1'
+        },
+        {
+          'title':
+              'Final Test: Lesson 5.2 Basic Simulation - Action Confirmations',
+          'completed': false,
+          'firebaseKey': 'lesson2'
+        },
       ],
-      'isLocked': true,
+      'isLocked': true, // This will be unlocked based on Module 4 completion
       'isCompleted': false,
     },
   ];
-
-  // Remove modules 6-15
-  final List<Map<String, dynamic>> intermediateModules = [];
   final List<Map<String, dynamic>> advancedModules = [];
 
   int _selectedIndex = 1; // Courses is index 1
@@ -159,45 +210,61 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
     logger.i('Starting _checkModuleStatus for user ${user.uid}');
 
     try {
-      final List<Map<String, dynamic>> allModuleConfigurations = _getAllModuleEntries();
+      final List<Map<String, dynamic>> allModuleConfigurations =
+          _getAllModuleEntries();
       bool previousModuleWasCompletedAndUnlocked = true;
-      logger.d('Initial previousModuleWasCompletedAndUnlocked: $previousModuleWasCompletedAndUnlocked');
+      logger.d(
+          'Initial previousModuleWasCompletedAndUnlocked: $previousModuleWasCompletedAndUnlocked');
 
       for (var moduleEntry in allModuleConfigurations) {
         final moduleConfig = moduleEntry['config'] as Map<String, dynamic>;
         final moduleId = moduleEntry['id'] as String;
-        final List<Map<String, dynamic>> moduleListRef = moduleEntry['listRef'] as List<Map<String, dynamic>>;
+        final List<Map<String, dynamic>> moduleListRef =
+            moduleEntry['listRef'] as List<Map<String, dynamic>>;
         final int originalIndexInList = moduleEntry['originalIndex'] as int;
 
         logger.i('Processing $moduleId...');
         final progress = await firebaseService.getModuleProgress(moduleId);
-        final lessonsFromFirestore = (progress['lessons'] as Map<dynamic, dynamic>?)?.cast<String, bool>() ?? {};
-        final isCompletedFromFirestore = progress['isCompleted'] as bool? ?? false;
-        bool isUnlockedFromFirestore = progress['isUnlocked'] as bool? ?? (moduleId == 'module1');
+        final lessonsFromFirestore =
+            (progress['lessons'] as Map<dynamic, dynamic>?)
+                    ?.cast<String, bool>() ??
+                {};
+        final isCompletedFromFirestore =
+            progress['isCompleted'] as bool? ?? false;
+        bool isUnlockedFromFirestore =
+            progress['isUnlocked'] as bool? ?? (moduleId == 'module1');
 
-        logger.d('$moduleId - Firestore Data: isCompleted=$isCompletedFromFirestore, isUnlocked=$isUnlockedFromFirestore, lessons=${lessonsFromFirestore.entries.where((e)=> e.value == true).length}/${lessonsFromFirestore.length}');
-        logger.d('$moduleId - Before lock check: previousModuleWasCompletedAndUnlocked=$previousModuleWasCompletedAndUnlocked');
+        logger.d(
+            '$moduleId - Firestore Data: isCompleted=$isCompletedFromFirestore, isUnlocked=$isUnlockedFromFirestore, lessons=${lessonsFromFirestore.entries.where((e) => e.value == true).length}/${lessonsFromFirestore.length}');
+        logger.d(
+            '$moduleId - Before lock check: previousModuleWasCompletedAndUnlocked=$previousModuleWasCompletedAndUnlocked');
 
         bool currentModuleShouldBeLocked;
         if (moduleId == 'module1') {
           currentModuleShouldBeLocked = !isUnlockedFromFirestore;
-          logger.d('$moduleId (module1) - currentModuleShouldBeLocked based on its own isUnlocked: $currentModuleShouldBeLocked');
+          logger.d(
+              '$moduleId (module1) - currentModuleShouldBeLocked based on its own isUnlocked: $currentModuleShouldBeLocked');
         } else {
           currentModuleShouldBeLocked = !previousModuleWasCompletedAndUnlocked;
-          logger.d('$moduleId - currentModuleShouldBeLocked based on previous: $currentModuleShouldBeLocked');
+          logger.d(
+              '$moduleId - currentModuleShouldBeLocked based on previous: $currentModuleShouldBeLocked');
         }
 
         if (!currentModuleShouldBeLocked && !isUnlockedFromFirestore) {
-          logger.i('Condition MET to unlock $moduleId: currentModuleShouldBeLocked=false, isUnlockedFromFirestore=false. Calling unlockModule...');
+          logger.i(
+              'Condition MET to unlock $moduleId: currentModuleShouldBeLocked=false, isUnlockedFromFirestore=false. Calling unlockModule...');
           await firebaseService.unlockModule(moduleId);
           isUnlockedFromFirestore = true;
-          logger.i('$moduleId has been unlocked. isUnlockedFromFirestore is now true for this iteration.');
+          logger.i(
+              '$moduleId has been unlocked. isUnlockedFromFirestore is now true for this iteration.');
         } else {
-            if (currentModuleShouldBeLocked) {
-                 logger.d('Condition NOT MET to unlock $moduleId because currentModuleShouldBeLocked is true.');
-            } else if (isUnlockedFromFirestore) {
-                 logger.d('Condition NOT MET to unlock $moduleId because isUnlockedFromFirestore is already true.');
-            }
+          if (currentModuleShouldBeLocked) {
+            logger.d(
+                'Condition NOT MET to unlock $moduleId because currentModuleShouldBeLocked is true.');
+          } else if (isUnlockedFromFirestore) {
+            logger.d(
+                'Condition NOT MET to unlock $moduleId because isUnlockedFromFirestore is already true.');
+          }
         }
 
         if (mounted) {
@@ -205,17 +272,23 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
             final moduleToUpdate = moduleListRef[originalIndexInList];
             moduleToUpdate['isLocked'] = currentModuleShouldBeLocked;
             moduleToUpdate['isCompleted'] = isCompletedFromFirestore;
-            logger.d('$moduleId - UI Update: isLocked=${moduleToUpdate['isLocked']}, isCompleted (Firestore)=${moduleToUpdate['isCompleted']}');
+            logger.d(
+                '$moduleId - UI Update: isLocked=${moduleToUpdate['isLocked']}, isCompleted (Firestore)=${moduleToUpdate['isCompleted']}');
 
-            final uiLessons = moduleToUpdate['lessons'] as List<Map<String, dynamic>>;
+            final uiLessons =
+                moduleToUpdate['lessons'] as List<Map<String, dynamic>>;
             for (int i = 0; i < uiLessons.length; i++) {
-              String firestoreLessonKey = uiLessons[i]['firebaseKey'] as String? ?? 'lesson${i + 1}';
-              uiLessons[i]['completed'] = lessonsFromFirestore[firestoreLessonKey] ?? false;
+              String firestoreLessonKey =
+                  uiLessons[i]['firebaseKey'] as String? ?? 'lesson${i + 1}';
+              uiLessons[i]['completed'] =
+                  lessonsFromFirestore[firestoreLessonKey] ?? false;
             }
           });
         }
-        previousModuleWasCompletedAndUnlocked = isCompletedFromFirestore && isUnlockedFromFirestore;
-        logger.i('$moduleId - At end of its processing, setting previousModuleWasCompletedAndUnlocked for NEXT module to: $previousModuleWasCompletedAndUnlocked (isCompletedFromFirestore=$isCompletedFromFirestore && isUnlockedFromFirestore=$isUnlockedFromFirestore)');
+        previousModuleWasCompletedAndUnlocked =
+            isCompletedFromFirestore && isUnlockedFromFirestore;
+        logger.i(
+            '$moduleId - At end of its processing, setting previousModuleWasCompletedAndUnlocked for NEXT module to: $previousModuleWasCompletedAndUnlocked (isCompletedFromFirestore=$isCompletedFromFirestore && isUnlockedFromFirestore=$isUnlockedFromFirestore)');
       }
 
       logger.i('Module status and unlock check complete.');
@@ -223,7 +296,8 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
         setState(() {});
       }
     } catch (e, stacktrace) {
-      logger.e('Error checking module status: $e', error: e, stackTrace: stacktrace);
+      logger.e('Error checking module status: $e',
+          error: e, stackTrace: stacktrace);
     }
   }
 
@@ -231,11 +305,17 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
     int totalLessons = 0;
     int completedLessons = 0;
 
-    for (var moduleList in [beginnerModules, intermediateModules, advancedModules]) {
+    for (var moduleList in [
+      beginnerModules,
+      intermediateModules,
+      advancedModules
+    ]) {
       for (var module in moduleList) {
         final lessons = module['lessons'] as List<Map<String, dynamic>>;
         totalLessons += lessons.length;
-        completedLessons += lessons.where((lesson) => lesson['completed'] as bool? ?? false).length;
+        completedLessons += lessons
+            .where((lesson) => lesson['completed'] as bool? ?? false)
+            .length;
       }
     }
     return totalLessons > 0 ? completedLessons / totalLessons : 0.0;
@@ -245,11 +325,15 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
     return lessonId.replaceAll(': ', ':\n').replaceAll(' - ', '\n');
   }
 
-  Future<void> _showActivityLog(String moduleId, String lessonTitleForLog, Color moduleColor) async {
+  Future<void> _showActivityLog(
+      String moduleId, String lessonTitleForLog, Color moduleColor) async {
     try {
-      logger.i('Fetching activity logs for moduleId: $moduleId, lessonTitleForLog: $lessonTitleForLog');
-      final List<Map<String, dynamic>> activityLogs = await firebaseService.getActivityLogs(moduleId, lessonTitleForLog);
-      logger.i('Found ${activityLogs.length} activity logs for $lessonTitleForLog');
+      logger.i(
+          'Fetching activity logs for moduleId: $moduleId, lessonTitleForLog: $lessonTitleForLog');
+      final List<Map<String, dynamic>> activityLogs =
+          await firebaseService.getActivityLogs(moduleId, lessonTitleForLog);
+      logger.i(
+          'Found ${activityLogs.length} activity logs for $lessonTitleForLog');
 
       showDialog(
         context: context,
@@ -290,7 +374,8 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                   decoration: BoxDecoration(
                     color: moduleColor.withOpacity(0.9),
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                    borderRadius:
+                        const BorderRadius.vertical(top: Radius.circular(16)),
                   ),
                   child: Row(
                     children: [
@@ -319,7 +404,7 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
                   child: activityLogs.isEmpty
                       ? Container(
                           padding: const EdgeInsets.all(16),
-                           margin: const EdgeInsets.all(16),
+                          margin: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
                             color: Colors.black.withOpacity(0.05),
                             borderRadius: BorderRadius.circular(8),
@@ -341,21 +426,25 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
                             children: activityLogs.map((logData) {
                               final data = logData;
                               final score = data['score'] as int? ?? 0;
-                              final totalScore = data['totalScore'] as int? ?? 8;
-                              final attemptNumber = data['attemptNumber'] as int? ?? 0;
+                              final totalScore =
+                                  data['totalScore'] as int? ?? 8;
+                              final attemptNumber =
+                                  data['attemptNumber'] as int? ?? 0;
                               final timeSpent = data['timeSpent'] as int? ?? 0;
                               final timestampValue = data['attemptTimestamp'];
                               DateTime timestamp;
                               if (timestampValue is Timestamp) {
                                 timestamp = timestampValue.toDate();
                               } else if (timestampValue is String) {
-                                timestamp = DateTime.tryParse(timestampValue) ?? DateTime.now();
+                                timestamp = DateTime.tryParse(timestampValue) ??
+                                    DateTime.now();
                               } else {
                                 timestamp = DateTime.now();
                               }
 
                               return Container(
-                                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                margin: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 8),
                                 padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
                                   color: Colors.white,
@@ -372,7 +461,8 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
                                   children: [
                                     CircleAvatar(
                                       radius: 20,
-                                      backgroundColor: moduleColor.withOpacity(0.1),
+                                      backgroundColor:
+                                          moduleColor.withOpacity(0.1),
                                       child: Text(
                                         '#$attemptNumber', // <-- This already shows the attempt number
                                         style: TextStyle(
@@ -383,12 +473,20 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
                                     const SizedBox(width: 12),
                                     Expanded(
                                       child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
-                                          Text('Attempt: $attemptNumber', style: const TextStyle(fontWeight: FontWeight.bold)), // <-- Add this line for clarity
-                                          Text('Score: $score / $totalScore', style: const TextStyle(fontWeight: FontWeight.bold)),
-                                          Text('Time Spent: $timeSpent seconds'),
-                                          Text('Date: ${timestamp.toLocal().toString().substring(0, 16)}'),
+                                          Text('Attempt: $attemptNumber',
+                                              style: const TextStyle(
+                                                  fontWeight: FontWeight
+                                                      .bold)), // <-- Add this line for clarity
+                                          Text('Score: $score / $totalScore',
+                                              style: const TextStyle(
+                                                  fontWeight: FontWeight.bold)),
+                                          Text(
+                                              'Time Spent: $timeSpent seconds'),
+                                          Text(
+                                              'Date: ${timestamp.toLocal().toString().substring(0, 16)}'),
                                         ],
                                       ),
                                     ),
@@ -402,7 +500,8 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: const BoxDecoration(
-                    borderRadius: BorderRadius.vertical(bottom: Radius.circular(16)),
+                    borderRadius:
+                        BorderRadius.vertical(bottom: Radius.circular(16)),
                   ),
                   child: Center(
                     child: ElevatedButton(
@@ -413,7 +512,8 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 24, vertical: 12),
                         elevation: 2,
                       ),
                       child: const Text(
@@ -432,8 +532,11 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
         ),
       );
     } catch (e, stacktrace) {
-      logger.e('Error showing activity logs for $moduleId/$lessonTitleForLog: $e', error: e, stackTrace: stacktrace);
-      if(mounted) {
+      logger.e(
+          'Error showing activity logs for $moduleId/$lessonTitleForLog: $e',
+          error: e,
+          stackTrace: stacktrace);
+      if (mounted) {
         showDialog(
           context: context,
           builder: (context) => Dialog(
@@ -491,7 +594,8 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 24, vertical: 12),
                       elevation: 2,
                     ),
                     child: const Text(
@@ -526,7 +630,8 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
         break;
       case 1:
         // Already on CoursesPage
-        nextPage = const CoursesPage(); // Should not happen if check above is active
+        nextPage =
+            const CoursesPage(); // Should not happen if check above is active
         break;
       case 2:
         nextPage = const JournalPage();
@@ -547,7 +652,8 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
         page: nextPage,
         newIndex: index,
         oldIndex: oldNavIndex,
-        duration: const Duration(milliseconds: 300), // This duration is now ignored
+        duration:
+            const Duration(milliseconds: 300), // This duration is now ignored
       ),
     );
   }
@@ -558,7 +664,8 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Courses', style: TextStyle(color: Color(0xFF00568D))),
+        title:
+            const Text('Courses', style: TextStyle(color: Color(0xFF00568D))),
         backgroundColor: Colors.white,
         foregroundColor: const Color(0xFF00568D),
         elevation: 0,
@@ -573,8 +680,9 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8.0, vertical: 8.0),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(10),
                       child: LinearProgressIndicator(
@@ -603,8 +711,58 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  _buildModuleSection('Beginner', beginnerModules),
-                  // Removed Intermediate and Advanced sections
+                  _buildModuleSection('Beginner', beginnerModules, 1),
+
+                  // Conditionally display Intermediate section if there are modules
+                  if (intermediateModules.isNotEmpty) ...[
+                    const SizedBox(height: 24),
+                    const Text(
+                      'Intermediate',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF00568D),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Challenge yourself with comprehensive reviews and assessments.',
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Colors.black54,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildModuleSection('Intermediate', intermediateModules,
+                        beginnerModules.length + 1),
+                  ],
+                  // Advanced section (if any in the future)
+                  if (advancedModules.isNotEmpty) ...[
+                    const SizedBox(height: 24),
+                    const Text(
+                      'Advanced',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF00568D),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Master advanced concepts and refine your skills.',
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Colors.black54,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildModuleSection(
+                        'Advanced',
+                        advancedModules,
+                        beginnerModules.length +
+                            intermediateModules.length +
+                            1),
+                  ],
                 ],
               ),
             ),
@@ -630,24 +788,26 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
         barHeight: 55,
         selectedIconPadding: 10,
         animationDuration: const Duration(milliseconds: 300),
-        customNotchWidthFactor: 1.8, // <-- Added this line
+        customNotchWidthFactor: 1.8,
       ),
     );
   }
 
-  Widget _buildModuleSection(String level, List<Map<String, dynamic>> modulesInLevel) {
-    // Only handle Beginner modules
-    int globalStartIndex = 1;
-
+  Widget _buildModuleSection(String level,
+      List<Map<String, dynamic>> modulesInLevel, int globalStartIndexOffset) {
     return Column(
       children: modulesInLevel.asMap().entries.map((entry) {
         final localIndex = entry.key;
         final moduleData = entry.value;
         final bool isLocked = moduleData['isLocked'] as bool? ?? true;
         final lessons = moduleData['lessons'] as List<Map<String, dynamic>>;
-        final bool allLessonsLocallyCompleted = lessons.every((lesson) => lesson['completed'] as bool? ?? false);
-        final bool isInProgress = !isLocked && !allLessonsLocallyCompleted && lessons.any((lesson) => lesson['completed'] as bool? ?? false);
-        final moduleId = 'module${globalStartIndex + localIndex}';
+        final bool allLessonsLocallyCompleted =
+            lessons.every((lesson) => lesson['completed'] as bool? ?? false);
+        final bool isInProgress = !isLocked &&
+            !allLessonsLocallyCompleted &&
+            lessons.any((lesson) => lesson['completed'] as bool? ?? false);
+
+        final moduleId = 'module${globalStartIndexOffset + localIndex}';
 
         return Padding(
           padding: const EdgeInsets.only(bottom: 16.0),
@@ -714,17 +874,24 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
                       ...lessons.asMap().entries.map<Widget>((lessonEntry) {
                         final lesson = lessonEntry.value;
                         final lessonTitle = lesson['title'] as String;
-                        final lessonFirebaseKey = lesson['firebaseKey'] as String? ?? 'lesson${lessonEntry.key + 1}';
+                        final lessonFirebaseKey =
+                            lesson['firebaseKey'] as String? ??
+                                'lesson${lessonEntry.key + 1}';
                         String lessonTitleForLog = lessonTitle;
 
                         return Padding(
-                          padding: const EdgeInsets.only(bottom: 8.0, left: 8.0),
+                          padding:
+                              const EdgeInsets.only(bottom: 8.0, left: 8.0),
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
                               Icon(
-                                (lesson['completed'] as bool? ?? false) ? Icons.check_box_outlined : Icons.check_box_outline_blank,
-                                color: (lesson['completed'] as bool? ?? false) ? Colors.green : Colors.grey,
+                                (lesson['completed'] as bool? ?? false)
+                                    ? Icons.check_box_outlined
+                                    : Icons.check_box_outline_blank,
+                                color: (lesson['completed'] as bool? ?? false)
+                                    ? Colors.green
+                                    : Colors.grey,
                                 size: 20,
                               ),
                               const SizedBox(width: 8),
@@ -737,17 +904,30 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
                                       MaterialPageRoute(
                                         builder: (context) {
                                           if (moduleId == 'module1') {
-                                            return Module1Page(targetLessonKey: lessonFirebaseKey);
+                                            return Module1Page(
+                                                targetLessonKey:
+                                                    lessonFirebaseKey);
                                           } else if (moduleId == 'module2') {
-                                            return Module2Page(targetLessonKey: lessonFirebaseKey);
+                                            return Module2Page(
+                                                targetLessonKey:
+                                                    lessonFirebaseKey);
                                           } else if (moduleId == 'module3') {
-                                            return Module3Page(targetLessonKey: lessonFirebaseKey);
+                                            return Module3Page(
+                                                targetLessonKey:
+                                                    lessonFirebaseKey);
                                           } else if (moduleId == 'module4') {
-                                            return Module4Page(targetLessonKey: lessonFirebaseKey);
+                                            return Module4Page(
+                                                targetLessonKey:
+                                                    lessonFirebaseKey);
                                           } else if (moduleId == 'module5') {
-                                            return Module5Page(targetLessonKey: lessonFirebaseKey);
+                                            return Module5Page(
+                                                targetLessonKey:
+                                                    lessonFirebaseKey);
                                           } else {
-                                            return Scaffold(body: Center(child: Text('Module $moduleId not implemented')));
+                                            return Scaffold(
+                                                body: Center(
+                                                    child: Text(
+                                                        'Module $moduleId not implemented')));
                                           }
                                         },
                                       ),
@@ -758,18 +938,24 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
                                     style: TextStyle(
                                       fontSize: 15,
                                       color: Colors.black87,
-                                      decoration: (lesson['completed'] as bool? ?? false)
-                                          ? TextDecoration.lineThrough
-                                          : TextDecoration.none,
+                                      decoration:
+                                          (lesson['completed'] as bool? ??
+                                                  false)
+                                              ? TextDecoration.lineThrough
+                                              : TextDecoration.none,
                                     ),
                                   ),
                                 ),
                               ),
                               IconButton(
-                                icon: Icon(Icons.history_edu_outlined, size: 20),
+                                icon:
+                                    Icon(Icons.history_edu_outlined, size: 20),
                                 color: const Color(0xFF00568D).withOpacity(0.8),
                                 onPressed: () async {
-                                  await _showActivityLog(moduleId, lessonTitleForLog, moduleData['color'] as Color);
+                                  await _showActivityLog(
+                                      moduleId,
+                                      lessonTitleForLog,
+                                      moduleData['color'] as Color);
                                 },
                                 tooltip: 'View Activity Log',
                                 padding: EdgeInsets.zero,
@@ -793,84 +979,89 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
                       ),
                     ],
                     const SizedBox(height: 16),
-                 
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          icon: Icon(isLocked
-                              ? Icons.lock_outline
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        icon: Icon(isLocked
+                            ? Icons.lock_outline
+                            : allLessonsLocallyCompleted
+                                ? Icons.check_circle_outline
+                                : isInProgress
+                                    ? Icons.play_circle_outline
+                                    : Icons.play_arrow_outlined),
+                        label: Text(
+                          isLocked
+                              ? 'Module Locked'
                               : allLessonsLocallyCompleted
-                                  ? Icons.check_circle_outline
+                                  ? 'Module Completed'
                                   : isInProgress
-                                      ? Icons.play_circle_outline
-                                      : Icons.play_arrow_outlined),
-                          label: Text(
-                            isLocked
-                                ? 'Module Locked'
-                                : allLessonsLocallyCompleted
-                                    ? 'Module Completed'
-                                    : isInProgress
-                                        ? 'Continue Module'
-                                        : 'Start Module',
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                                      ? 'Continue Module'
+                                      : 'Start Module',
+                          style: const TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.w600),
+                        ),
+                        // Disable the button if the module is completed
+                        onPressed: isLocked || allLessonsLocallyCompleted
+                            ? null
+                            : () async {
+                                logger.i(
+                                    'Navigating to ${moduleData['module']} (ID: $moduleId) - Go to Module button');
+                                Widget destination;
+                                switch (moduleId) {
+                                  case 'module1':
+                                    destination = const Module1Page();
+                                    break;
+                                  case 'module2':
+                                    destination = const Module2Page();
+                                    break;
+                                  case 'module3':
+                                    destination = const Module3Page();
+                                    break;
+                                  case 'module4':
+                                    destination = const Module4Page();
+                                    break;
+                                  case 'module5':
+                                    destination = const Module5Page();
+                                    break;
+                                  default:
+                                    destination = Scaffold(
+                                      appBar: AppBar(
+                                        title: Text(
+                                            moduleData['module'] as String),
+                                      ),
+                                      body: Center(
+                                        child: Text(
+                                            '$moduleId: ${moduleData['module']} is unlocked but the page is not implemented yet.'),
+                                      ),
+                                    );
+                                }
+                                await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (context) => destination),
+                                );
+                                logger.i(
+                                    "Returned from $moduleId (Go to Module button), re-checking module status.");
+                                await _checkModuleStatus();
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: isLocked
+                              ? Colors.grey[350]
+                              : allLessonsLocallyCompleted
+                                  ? Colors.green[600]
+                                  : isInProgress
+                                      ? Colors.orange[600]
+                                      : const Color(0xFF00568D),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                          // Disable the button if the module is completed
-                          onPressed: isLocked || allLessonsLocallyCompleted
-                              ? null
-                              : () async {
-                                  logger.i('Navigating to ${moduleData['module']} (ID: $moduleId) - Go to Module button');
-                                  Widget destination;
-                                  switch (moduleId) {
-                                    case 'module1':
-                                      destination = const Module1Page();
-                                      break;
-                                    case 'module2':
-                                      destination = const Module2Page();
-                                      break;
-                                    case 'module3':
-                                      destination = const Module3Page();
-                                      break;
-                                    case 'module4':
-                                      destination = const Module4Page();
-                                      break;
-                                    case 'module5':
-                                      destination = const Module5Page();
-                                      break;
-                                    default:
-                                      destination = Scaffold(
-                                        appBar: AppBar(
-                                          title: Text(moduleData['module'] as String),
-                                        ),
-                                        body: Center(
-                                          child: Text('$moduleId: ${moduleData['module']} is unlocked but the page is not implemented yet.'),
-                                        ),
-                                      );
-                                  }
-                                  await Navigator.push(
-                                    context,
-                                    MaterialPageRoute(builder: (context) => destination),
-                                  );
-                                  logger.i("Returned from $moduleId (Go to Module button), re-checking module status.");
-                                  await _checkModuleStatus();
-                                },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: isLocked
-                                ? Colors.grey[350]
-                                : allLessonsLocallyCompleted
-                                    ? Colors.green[600]
-                                    : isInProgress
-                                        ? Colors.orange[600]
-                                        : const Color(0xFF00568D),
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            elevation: isLocked || allLessonsLocallyCompleted ? 1 : 3,
-                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          elevation:
+                              isLocked || allLessonsLocallyCompleted ? 1 : 3,
                         ),
                       ),
-
+                    ),
                   ],
                 ),
               ),
