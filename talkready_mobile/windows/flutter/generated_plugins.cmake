@@ -11,10 +11,8 @@ list(APPEND FLUTTER_PLUGIN_LIST
   firebase_storage
   flutter_inappwebview_windows
   flutter_tts
-  gal
-  irondash_engine_context
   permission_handler_windows
-  super_native_extensions
+  record_windows
   url_launcher_windows
 )
 

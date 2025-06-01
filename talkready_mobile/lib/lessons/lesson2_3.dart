@@ -1,42 +1,55 @@
+// lesson2_3.dart
+
 import 'package:flutter/material.dart';
 import 'package:carousel_slider/carousel_slider.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:logger/logger.dart';
-import '../lessons/common_widgets.dart';
+import '../lessons/common_widgets.dart'; // For buildSlide and HtmlFormattedText
 import 'dart:async';
+import '../widgets//parsed_feedback_card.dart';
+
+// import '../firebase_service.dart'; // Not strictly needed for fully hardcoded content
 
 class buildLesson2_3 extends StatefulWidget {
-  final BuildContext context;
+  final BuildContext parentContext;
   final int currentSlide;
   final CarouselSliderController carouselController;
   final YoutubePlayerController youtubeController;
-  final bool showActivity;
-  final VoidCallback onShowActivity;
-  final List<List<String>> selectedAnswers;
-  final List<bool?> isCorrectStates;
-  final List<String?> errorMessages;
-  final Function(int, bool) onAnswerChanged;
+  final Key? youtubePlayerKey;
+  final bool showActivitySection;
+  final VoidCallback onShowActivitySection;
+
+  final Function(
+    Map<String, String> userScenarioAnswers,
+    int timeSpent,
+    int attemptNumberForSubmission,
+  ) onSubmitAnswers;
+
   final Function(int) onSlideChanged;
-  final Function(List<Map<String, dynamic>> questionsData, int timeSpent, int attemptNumber) onSubmitAnswers;
-  final Function(int questionIndex, List<String> selectedWords) onWordsSelected;
   final int initialAttemptNumber;
+
+  final bool displayFeedback;
+  final Map<String, dynamic>? aiFeedbackData;
+  final int? overallAIScoreForDisplay;
+  final int? maxPossibleAIScoreForDisplay;
 
   const buildLesson2_3({
     super.key,
-    required this.context,
+    required this.parentContext,
     required this.currentSlide,
     required this.carouselController,
     required this.youtubeController,
-    required this.showActivity,
-    required this.onShowActivity,
-    required this.selectedAnswers,
-    required this.isCorrectStates,
-    required this.errorMessages,
-    required this.onAnswerChanged,
-    required this.onSlideChanged,
+    required this.showActivitySection,
+    required this.onShowActivitySection,
     required this.onSubmitAnswers,
-    required this.onWordsSelected,
+    required this.onSlideChanged,
     required this.initialAttemptNumber,
+    required this.displayFeedback,
+    this.youtubePlayerKey,
+    this.aiFeedbackData,
+    this.overallAIScoreForDisplay,
+    this.maxPossibleAIScoreForDisplay,
   });
 
   @override
@@ -45,133 +58,160 @@ class buildLesson2_3 extends StatefulWidget {
 
 class _Lesson2_3State extends State<buildLesson2_3> {
   final Logger _logger = Logger();
+
   bool _videoFinished = false;
+  bool _isSubmitting = false;
   Timer? _timer;
-  bool _isSubmitting = false; // Added
   int _secondsElapsed = 0;
-  late int _currentAttempt;
+  late int _currentAttemptForDisplay;
 
-  final List<Map<String, dynamic>> slides = [
-    {
-      'title': 'Objective: Understanding Numbers and Dates',
-      'content': 'Learn to correctly say and understand numbers (cardinal, ordinal) and dates, crucial for scheduling and transactions in a call center.',
-    },
-    {
-      'title': 'Cardinal and Ordinal Numbers',
-      'content': '• Cardinal Numbers: Indicate quantity (one, two, three).\n'
-          '  Example: "There are three items in your order."\n'
-          '• Ordinal Numbers: Indicate position or rank (first, second, third).\n'
-          '  Example: "This is your first call to us."',
-    },
-    {
-      'title': 'Saying Dates',
-      'content': '• Common formats: Month Day, Year (e.g., "July fourth, twenty twenty-three") or Day Month, Year (e.g., "the fourth of July, twenty twenty-three").\n'
-          '• Be clear and consistent.\n'
-          '  Example: "Your appointment is scheduled for August 15th, 2024."',
-    },
-    {
-      'title': 'Understanding Time and Prices',
-      'content': '• Time: Use AM/PM or 24-hour format clearly.\n'
-          '  Example: "The store closes at 9 PM." or "The meeting is at 14:00."\n'
-          '• Prices: State currency and amounts clearly.\n'
-          '  Example: "The total is twenty-five dollars and fifty cents (25.50)."',
-    },
-    {
-      'title': 'Conclusion',
-      'content': 'Accurate use of numbers, dates, and times prevents errors and misunderstandings. Practice these to ensure clarity in customer interactions.',
-    },
-  ];
+  bool _isLoadingLessonContent = true;
+  Map<String, dynamic>? _lessonData;
+  List<dynamic> _activityPrompts = [];
+  late Map<String, TextEditingController> _textControllers;
 
-  final List<Map<String, dynamic>> questions = [
+  // Fallback static slides if main hardcoded data fails (less likely now but good practice)
+  final List<Map<String, dynamic>> _staticSlidesDataFallback = [
     {
-      'id': 1,
-      'question': 'Select the number. The price is twenty dollars.',
-      'type': 'word_selection',
-      'words': ['The', 'price', 'is', 'twenty', 'dollars.'],
-      'correctAnswer': 'twenty',
-      'explanation': 'Twenty is the cardinal number for 20.',
+      'title': 'Objective: Numbers and Dates (Fallback)',
+      'content':
+          'Learn to correctly say and understand numbers, dates, and prices.',
     },
     {
-      'id': 2,
-      'question': 'Select the number. This is my first call.',
-      'type': 'word_selection',
-      'words': ['This', 'is', 'my', 'first', 'call.'],
-      'correctAnswer': 'first',
-      'explanation': 'First is the ordinal number for 1st.',
-    },
-    {
-      'id': 3,
-      'question': 'Select the date word. My birthday is on January first.',
-      'type': 'word_selection',
-      'words': ['My', 'birthday', 'is', 'on', 'January', 'first.'],
-      'correctAnswer': 'January',
-      'explanation': 'January is a month used in dates.',
-    },
-    {
-      'id': 4,
-      'question': 'Select the date word. The order was placed on the second of March.',
-      'type': 'word_selection',
-      'words': ['The', 'order', 'was', 'placed', 'on', 'the', 'second', 'of', 'March.'],
-      'correctAnswer': 'second',
-      'explanation': 'Second is the ordinal number for 2nd.',
-    },
-    {
-      'id': 5,
-      'question': 'Select the number. The price is thirty-five dollars.',
-      'type': 'word_selection',
-      'words': ['The', 'price', 'is', 'thirty-five', 'dollars.'],
-      'correctAnswer': 'thirty-five',
-      'explanation': 'Thirty-five is the cardinal number for 35.',
-    },
-    {
-      'id': 6,
-      'question': 'Select the date word. Your appointment is on April tenth.',
-      'type': 'word_selection',
-      'words': ['Your', 'appointment', 'is', 'on', 'April', 'tenth.'],
-      'correctAnswer': 'April',
-      'explanation': 'April is a month used in dates.',
-    },
-    {
-      'id': 7,
-      'question': 'Select the number. This is the third call today.',
-      'type': 'word_selection',
-      'words': ['This', 'is', 'the', 'third', 'call', 'today.'],
-      'correctAnswer': 'third',
-      'explanation': 'Third is the ordinal number for 3rd.',
-    },
-    {
-      'id': 8,
-      'question': 'Select the date word. The event is on December twenty-fifth.',
-      'type': 'word_selection',
-      'words': ['The', 'event', 'is', 'on', 'December', 'twenty-fifth.'],
-      'correctAnswer': 'December',
-      'explanation': 'December is a month used in dates.',
-    },
-    {
-      'id': 9,
-      'question': 'Select the number. The total is fifty dollars.',
-      'type': 'word_selection',
-      'words': ['The', 'total', 'is', 'fifty', 'dollars.'],
-      'correctAnswer': 'fifty',
-      'explanation': 'Fifty is the cardinal number for 50.',
-    },
-    {
-      'id': 10,
-      'question': 'Select the date word. The deadline is the fifteenth of June.',
-      'type': 'word_selection',
-      'words': ['The', 'deadline', 'is', 'the', 'fifteenth', 'of', 'June.'],
-      'correctAnswer': 'fifteenth',
-      'explanation': 'Fifteenth is the ordinal number for 15th.',
+      'title': 'Conclusion (Fallback)',
+      'content':
+          'Accurate use of numbers, dates, and times prevents errors. Practice them.',
     },
   ];
 
   @override
   void initState() {
     super.initState();
-    _currentAttempt = widget.initialAttemptNumber;
+    _currentAttemptForDisplay = widget.initialAttemptNumber + 1;
+    _textControllers = {};
+    _fetchLessonContentAndInitialize();
     widget.youtubeController.addListener(_videoListener);
-    if (widget.showActivity) {
+
+    if (widget.showActivitySection && !widget.displayFeedback) {
       _startTimer();
+    }
+  }
+
+  Future<void> _fetchLessonContentAndInitialize() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoadingLessonContent = true;
+    });
+
+    // ---- START HARDCODED LESSON 2.3 DATA ----
+    final Map<String, dynamic> hardcodedLesson2_3Data = {
+      'lessonTitle': 'Lesson 2.3: Numbers and Dates (HC)',
+      'slides': [
+        {
+          'title': 'Objective',
+          'content':
+              'To help learners use numbers and talk about time, dates, and prices accurately and confidently in real-world customer service interactions.',
+        },
+        {
+          'title': 'Part 1: Using Numbers in Customer Service',
+          'content':
+              'In a call center setting, numbers are often used to:\n• Share prices – e.g., “It’s \$25.50”\n• Confirm orders – e.g., “Your order number is 135728.”\n• Provide dates/schedules – e.g., “It will arrive on March 15th.”\n• Give time – e.g., “Your appointment is at 3:30 p.m.”\n\n<strong>Vocabulary:</strong>\n• Cardinal numbers – one, two, three\n• Ordinal numbers – first, second, third (used in dates)\n\n<strong>Examples:</strong>\n• "Your total is twenty-nine dollars."\n• "You are speaking with Agent Number 5."\n• "Please hold for two minutes."\n• "Your refund will be processed in 3 to 5 business days."\n\n<strong>Important Pronunciation & ID Tips:</strong>\n• <em>"Teen" vs. "Ty":</em> Clearly distinguish numbers like thir<strong>TEEN</strong> (stress on TEEN) from <strong>THIR</strong>ty (stress on THIR). Mispronouncing these can lead to significant errors.\n• <em>Zero:</em> Can be pronounced as "zero" or "oh" (especially in phone numbers or sequences).\n• <em>Alphanumeric IDs (Order/Account Numbers):</em>\n  • Speak clearly and pace yourself. Pause slightly between groups.\n  • Group numbers (e.g., "123-456-7890" as "one two three, four five six, seven eight nine zero").\n  • Clarify letters if needed (e.g., "B as in Bravo").\n  • Offer to repeat: "Would you like me to repeat that for you?"',
+        },
+        {
+          'title': 'Part 2: Talking About Prices',
+          'content':
+              '• "It’s \$10." (spoken: "ten dollars")\n• "The shipping fee is \$7.99."\n• "That item costs \$249."\n\n<strong>Tips:</strong>\n• Always say “dollars.”\n• For decimals: “four dollars and seventy-five cents.”\n\n<em>(Content on "How to Talk About Prices" will be covered in the main lesson video or a dedicated segment.)</em>',
+        },
+        {
+          'title': 'Part 3 & 4: Time & Dates',
+          'content':
+              '<strong>Asking & Telling the Time</strong>\nCommon Questions:\n• "What time is it?"\n• "What time does the shift start?"\n• "When is my appointment?"\n\nCommon Answers:\n• "It’s 8:15 a.m."\n• "The meeting is at 2 o’clock."\n• "Support hours are from 9 a.m. to 6 p.m."\n\n<em>Call Center Format:</em> Use 12-hour format with a.m./p.m. and always confirm time zones if applicable.\n\n<strong>Talking About Dates</strong>\nCall center agents often confirm delivery or appointment dates.\n<em>Format:</em> Month + Day (ordinal) + Year (e.g., April 15th, 2025)\nCommon Questions:\n• "What’s today’s date?"\n• "When will my package arrive?"\n• "Can I schedule it for next Tuesday?"\n\nResponses:\n• "It’s April 15th."\n• "Your order will arrive on June 3rd."\n• "The system was updated on March 28, 2025."\n\n<em>(Content on "Telling Time and Dates in English" will be covered in the main lesson video or a dedicated segment.)</em>',
+        },
+        {
+          'title': 'Watch: Numbers, Dates, and Prices in Action',
+          'content':
+              'The following video summarizes key concepts for using numbers, dates, and prices effectively in customer service scenarios. Watch it carefully before proceeding to the activity.',
+        }
+      ],
+      'video': {
+        // This ID MUST match the 11-character ID you set for lesson 2.3
+        // in module2.dart's _hardcodedVideoIdsM2 map.
+        'url': 'VIDEO_ID_FOR_2_3_HERE'
+      },
+      'activity': {
+        'title': 'Simulation Activity: Price, Time, and Date',
+        'objective':
+            'Practice using numbers, time, dates, and prices in call center scenarios.',
+        'instructions': {
+          'introParagraph':
+              'For each prompt, provide a clear, complete answer using appropriate formats:<br/>• <strong>Prices:</strong> Include a dollar sign and say “dollars” (e.g., <em>\$29.99</em> or <em>twenty-nine dollars</em>).<br/>• <strong>Times:</strong> Use the 12-hour format with <em>a.m.</em> or <em>p.m.</em> (e.g., <em>3:30 p.m.</em>).<br/>• <strong>Dates:</strong> Use the format <em>Month Day, Year</em> (e.g., <em>April 15, 2025</em>).<br/>• <strong>Account Numbers:</strong> Use a full number (e.g., <em>135728</em>).<br/><br/><em>Avoid short or incomplete answers — respond as you would in a real call center.</em>'
+        },
+        'prompts': [
+          {
+            'name': 'price',
+            'label': 'Prompt 1 – Price Confirmation',
+            'customerText': 'Customer: “How much is the total for my order?”',
+            'agentPrompt': 'Agent: “Your total is (fill in below).”',
+            'placeholder': 'e.g., twenty-nine dollars and fifty cents',
+          },
+          {
+            'name': 'delivery',
+            'label': 'Prompt 2 – Delivery Date',
+            'customerText': 'Customer: “When can I expect my package?”',
+            'agentPrompt': 'Agent: “It will arrive on (fill in below).”',
+            'placeholder': 'e.g., June 3rd, 2025',
+          },
+          {
+            'name': 'appointment',
+            'label': 'Prompt 3 – Time Appointment',
+            'customerText': 'Customer: “What time is my appointment?”',
+            'agentPrompt': 'Agent: “It’s scheduled for (fill in below).”',
+            'placeholder': 'e.g., 3:30 p.m.',
+          },
+          {
+            'name': 'account',
+            'label': 'Prompt 4 – Account Number',
+            'customerText': 'Customer: “Can you check my account?”',
+            'agentPrompt': 'Agent: “Yes, I see it’s (fill in below).”',
+            'placeholder': 'e.g., 135728',
+          },
+          {
+            'name': 'billing',
+            'label': 'Prompt 5 – Billing Issue',
+            'customerText': 'Customer: “I was charged twice!”',
+            'agentPrompt':
+                'Agent: “I see a charge of (fill in amount and date below).”',
+            'placeholder': 'e.g., \$50.00 on May 12, 2025',
+          },
+        ],
+        'maxPossibleAIScore': 25, // 5 prompts * 5 points each
+      },
+    };
+    // ---- END HARDCODED LESSON 2.3 DATA ----
+
+    _lessonData = hardcodedLesson2_3Data;
+
+    if (_lessonData != null) {
+      _activityPrompts =
+          _lessonData!['activity']?['prompts'] as List<dynamic>? ?? [];
+      _textControllers.forEach((_, controller) => controller.dispose());
+      _textControllers.clear();
+      for (var promptData in _activityPrompts) {
+        if (promptData is Map && promptData['name'] is String) {
+          _textControllers[promptData['name']] = TextEditingController();
+        }
+      }
+      _logger.i(
+          "L2.3 HARDCODED content loaded. Prompts: ${_activityPrompts.length}");
+    } else {
+      _logger.w("L2.3 hardcoded content is null. Defaulting.");
+      _activityPrompts = [];
+    }
+
+    if (mounted) {
+      setState(() {
+        _isLoadingLessonContent = false;
+      });
     }
   }
 
@@ -182,62 +222,67 @@ class _Lesson2_3State extends State<buildLesson2_3> {
       oldWidget.youtubeController.removeListener(_videoListener);
       widget.youtubeController.addListener(_videoListener);
     }
-    if (widget.showActivity && !oldWidget.showActivity) {
+
+    bool shouldResetForNewAttempt = (widget.showActivitySection &&
+            !widget.displayFeedback) &&
+        ((widget.showActivitySection != oldWidget.showActivitySection &&
+                !oldWidget.displayFeedback) ||
+            (widget.initialAttemptNumber != oldWidget.initialAttemptNumber));
+
+    if (shouldResetForNewAttempt) {
+      _currentAttemptForDisplay = widget.initialAttemptNumber + 1;
+      _logger.i("L2.3: Resetting for new attempt $_currentAttemptForDisplay.");
+      _textControllers.forEach((_, controller) => controller.clear());
       _resetTimer();
       _startTimer();
-      _currentAttempt = widget.initialAttemptNumber;
-    } else if (!widget.showActivity && oldWidget.showActivity) {
+    }
+
+    if (!widget.showActivitySection && oldWidget.showActivitySection) {
       _stopTimer();
     }
-    if (widget.initialAttemptNumber != oldWidget.initialAttemptNumber) {
-        _currentAttempt = widget.initialAttemptNumber;
+    if (widget.displayFeedback &&
+        !oldWidget.displayFeedback &&
+        _timer?.isActive == true) {
+      _stopTimer();
     }
   }
 
   @override
   void dispose() {
     widget.youtubeController.removeListener(_videoListener);
+    _textControllers.forEach((_, controller) => controller.dispose());
     _stopTimer();
     super.dispose();
   }
 
   void _videoListener() {
-    if (widget.youtubeController.value.playerState == PlayerState.ended && !_videoFinished) {
-      if (mounted) {
-        setState(() {
-          _videoFinished = true;
-        });
-      }
+    if (widget.youtubeController.value.playerState == PlayerState.ended &&
+        !_videoFinished) {
+      if (mounted) setState(() => _videoFinished = true);
       _logger.i('Video finished in Lesson 2.3');
     }
   }
 
   void _startTimer() {
-    _timer?.cancel();
+    _stopTimer();
+    _secondsElapsed = 0; // Reset timer for new attempt
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (mounted) {
-        setState(() {
-          _secondsElapsed++;
-        });
-      } else {
+      if (!mounted) {
         timer.cancel();
+        return;
       }
+      setState(() => _secondsElapsed++);
     });
-    _logger.i('Stopwatch started for Lesson 2.3. Attempt: $_currentAttempt. Time: $_secondsElapsed');
+    _logger.i('Timer started for L2.3. Attempt: $_currentAttemptForDisplay.');
   }
 
   void _stopTimer() {
     _timer?.cancel();
-    _logger.i('Stopwatch stopped for Lesson 2.3. Attempt: $_currentAttempt. Time elapsed: $_secondsElapsed seconds.');
+    _logger.i('Timer stopped for L2.3. Elapsed: $_secondsElapsed s.');
   }
 
   void _resetTimer() {
-    _stopTimer();
-    if (mounted) {
-      setState(() {
-        _secondsElapsed = 0;
-      });
-    }
+    if (mounted) setState(() => _secondsElapsed = 0);
   }
 
   String _formatDuration(int totalSeconds) {
@@ -247,195 +292,405 @@ class _Lesson2_3State extends State<buildLesson2_3> {
     return '$minutes:$seconds';
   }
 
+  void _handleSubmit() async {
+    if (!mounted) return;
+
+    bool allAnswered = _activityPrompts.every((prompt) {
+      final promptName = prompt['name'] as String?;
+      return promptName != null &&
+          _textControllers[promptName]?.text.trim().isNotEmpty == true;
+    });
+
+    if (!allAnswered) {
+      if (mounted) {
+        ScaffoldMessenger.of(widget.parentContext).showSnackBar(const SnackBar(
+            content: Text('Please answer all scenarios before submitting.')));
+      }
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+    _stopTimer();
+
+    Map<String, String> currentAnswers = {};
+    _textControllers.forEach((key, controller) {
+      currentAnswers[key] = controller.text.trim();
+    });
+
+    try {
+      await widget.onSubmitAnswers(
+          currentAnswers, _secondsElapsed, widget.initialAttemptNumber);
+    } catch (e) {
+      _logger.e("Error in onSubmitAnswers callback for Lesson 2.3: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(widget.parentContext).showSnackBar(
+            SnackBar(content: Text('Submission error: $e. Please try again.')));
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
   @override
- Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Lesson 2.3: Numbers and Dates',
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF00568D),
-          ),
-        ),
-        const SizedBox(height: 16),
-        CarouselSlider(
-          carouselController: widget.carouselController,
-          items: slides.asMap().entries.map((entry) {
-            return buildSlide(
-              title: entry.value['title'],
-              content: entry.value['content'],
-              slideIndex: entry.key,
-            );
-          }).toList(),
-          options: CarouselOptions(
-            height: 300.0,
-            enlargeCenterPage: true,
-            enableInfiniteScroll: false,
-            onPageChanged: (index, reason) {
-              widget.onSlideChanged(index);
-            },
-          ),
-        ),
-        const SizedBox(height: 16),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: slides.asMap().entries.map((entry) {
-            return GestureDetector(
-              onTap: () => widget.carouselController.jumpToPage(entry.key),
-              child: Container(
-                width: 8.0,
-                height: 8.0,
-                margin: const EdgeInsets.symmetric(vertical: 10.0, horizontal: 2.0),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: widget.currentSlide == entry.key
-                      ? const Color(0xFF00568D)
-                      : Colors.grey,
-                ),
+  Widget build(BuildContext context) {
+    if (_isLoadingLessonContent || _lessonData == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final String lessonTitle =
+        _lessonData!['lessonTitle'] as String? ?? 'Lesson 2.3 (Error)';
+    List<dynamic> fetchedSlidesData =
+        _lessonData!['slides'] as List<dynamic>? ?? _staticSlidesDataFallback;
+    if (fetchedSlidesData.isEmpty)
+      fetchedSlidesData = _staticSlidesDataFallback;
+
+    final String activityTitle =
+        _lessonData!['activity']?['title'] as String? ??
+            'Interactive Scenarios (Error)';
+    String activityInstructions = _lessonData!['activity']?['instructions']
+            ?['introParagraph'] as String? ??
+        _lessonData!['activity']?['objective'] as String? ??
+        'Type your responses to the following scenarios.';
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(lessonTitle,
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  color: const Color(0xFF00568D), fontWeight: FontWeight.bold)),
+          const SizedBox(height: 16),
+          if (fetchedSlidesData.isNotEmpty) ...[
+            CarouselSlider(
+              key: ValueKey('carousel_l2_3_${fetchedSlidesData.hashCode}'),
+              carouselController: widget.carouselController,
+              items: fetchedSlidesData.map((slide) {
+                return buildSlide(
+                  title: slide['title'] as String? ?? 'Slide Title',
+                  content: slide['content'] as String? ?? 'Slide Content',
+                  slideIndex: fetchedSlidesData.indexOf(slide),
+                );
+              }).toList(),
+              options: CarouselOptions(
+                height: 280.0, // Adjusted height for potentially longer content
+                viewportFraction: 0.9,
+                enlargeCenterPage: false,
+                enableInfiniteScroll: false,
+                initialPage: widget.currentSlide,
+                onPageChanged: (index, reason) {
+                  if (mounted) widget.onSlideChanged(index);
+                },
               ),
-            );
-          }).toList(),
-        ),
-        const SizedBox(height: 16),
-        if (widget.currentSlide == slides.length - 1) ...[
-          const Text(
-            'Watch the Video',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF00568D)),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 200,
-            child: YoutubePlayer(
-              controller: widget.youtubeController,
-              showVideoProgressIndicator: true,
-              onReady: () => _logger.d('Player is ready in Lesson 2.3.'),
-              onEnded: (_) {
-                if (mounted) {
-                  setState(() {
-                    _videoFinished = true;
-                  });
-                }
-                _logger.i('Video ended in Lesson 2.3');
-              },
             ),
-          ),
-          if (!widget.showActivity) ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: fetchedSlidesData.asMap().entries.map((entry) {
+                return GestureDetector(
+                  onTap: () =>
+                      widget.carouselController.animateToPage(entry.key),
+                  child: Container(
+                    width: 8.0,
+                    height: 8.0,
+                    margin: const EdgeInsets.symmetric(
+                        vertical: 10.0, horizontal: 2.0),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: widget.currentSlide == entry.key
+                          ? const Color(0xFF00568D)
+                          : Colors.grey,
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ] else
+            Text("No slides available for this lesson."),
+          const SizedBox(height: 16),
+          if (widget.currentSlide >=
+              (fetchedSlidesData.isNotEmpty
+                  ? fetchedSlidesData.length - 1
+                  : 0)) ...[
+            Text('Watch the Video',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(color: const Color(0xFF00568D))),
+            const SizedBox(height: 8),
+            AspectRatio(
+              aspectRatio: 16 / 9,
+              child: YoutubePlayer(
+                key: widget.youtubePlayerKey,
+                controller: widget.youtubeController,
+                showVideoProgressIndicator: true,
+                onReady: () => _logger.i("L2.3 Player Ready"),
+                onEnded: (_) => _videoListener(),
+              ),
+            ),
+            if (!widget.showActivitySection) ...[
+              const SizedBox(height: 16),
+              SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                      onPressed:
+                          _videoFinished ? widget.onShowActivitySection : null,
+                      style: ElevatedButton.styleFrom(
+                          disabledBackgroundColor: Colors.grey[300]),
+                      child: const Text('Proceed to Activity'))),
+              if (!_videoFinished)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8.0),
+                  child: Text('Please watch the video to the end to proceed.',
+                      style: TextStyle(color: Colors.red, fontSize: 14),
+                      textAlign: TextAlign.center),
+                ),
+            ],
+          ],
+          if (widget.showActivitySection) ...[
+            const SizedBox(height: 24),
+            Text(activityTitle,
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(color: Colors.orange)),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Attempt: $_currentAttemptForDisplay',
+                      style: Theme.of(context).textTheme.titleMedium),
+                  if (!widget.displayFeedback)
+                    Text('Time: ${_formatDuration(_secondsElapsed)}',
+                        style: Theme.of(context).textTheme.titleMedium),
+                ],
+              ),
+            ),
+            HtmlFormattedText(htmlString: activityInstructions),
             const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _videoFinished ? widget.onShowActivity : null,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF00568D),
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  textStyle: const TextStyle(fontSize: 16, color: Colors.white),
-                  disabledBackgroundColor: Colors.grey[400],
+            if (!widget.displayFeedback) ...[
+              // Input Mode
+              if (_activityPrompts.isEmpty && !_isLoadingLessonContent)
+                const Center(
+                    child: Padding(
+                        padding: EdgeInsets.all(16.0),
+                        child: Text("No activity prompts defined."))),
+
+              ..._activityPrompts.map((promptData) {
+                final String promptName = promptData['name'] as String? ??
+                    'unknown_prompt_l23_${_activityPrompts.indexOf(promptData)}';
+                final String promptLabel =
+                    promptData['label'] as String? ?? 'Scenario';
+                final String customerText =
+                    promptData['customerText'] as String? ?? '';
+                final String agentTask =
+                    promptData['agentPrompt'] as String? ?? 'Your response:';
+                final TextEditingController? controller =
+                    _textControllers[promptName];
+
+                if (controller == null) {
+                  _logger.w(
+                      "No TextEditingController for L2.3 prompt name: $promptName");
+                  return const SizedBox.shrink();
+                }
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 10.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(promptLabel,
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleMedium
+                              ?.copyWith(fontWeight: FontWeight.bold)),
+                      if (customerText.isNotEmpty)
+                        Padding(
+                            padding:
+                                const EdgeInsets.only(top: 4.0, bottom: 2.0),
+                            child: Text(customerText,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodyMedium
+                                    ?.copyWith(
+                                        fontStyle: FontStyle.italic,
+                                        color: Colors.grey[700]))),
+                      Padding(
+                          padding: const EdgeInsets.only(top: 4.0),
+                          child: Text(agentTask,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.copyWith(color: Colors.blueAccent))),
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: controller,
+                        decoration: InputDecoration(
+                          border: const OutlineInputBorder(),
+                          hintText: promptData['placeholder'] as String? ??
+                              'Type your response for $promptLabel...',
+                          filled: true,
+                          fillColor: Colors.grey[50],
+                        ),
+                        keyboardType: TextInputType
+                            .text, // Changed from multiline for single line inputs
+                        maxLines: 1, // For price, date, time, account number
+                        minLines: 1,
+                        textInputAction: TextInputAction
+                            .next, // Or TextInputAction.done for the last one
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: _isSubmitting ? null : _handleSubmit,
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF00568D),
+                      disabledBackgroundColor: Colors.grey),
+                  child: _isSubmitting
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                              valueColor:
+                                  AlwaysStoppedAnimation<Color>(Colors.white)))
+                      : const Text('Submit for AI Feedback',
+                          style: TextStyle(color: Colors.white, fontSize: 16)),
                 ),
-                child: const Text('Proceed to Activity', style: TextStyle(color: Colors.white)),
               ),
-            ),
-            if (!_videoFinished)
-              const Padding(
-                padding: EdgeInsets.only(top: 8.0),
-                child: Text(
-                  'Please watch the video to the end to proceed.',
-                  style: TextStyle(color: Colors.red, fontSize: 14),
-                  textAlign: TextAlign.center,
+            ],
+            if (widget.displayFeedback && widget.aiFeedbackData != null) ...[
+              // Feedback Display Mode
+              if (widget.overallAIScoreForDisplay != null &&
+                  widget.maxPossibleAIScoreForDisplay != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16.0),
+                  child: Center(
+                    child: Text(
+                      'Overall AI Score: ${widget.overallAIScoreForDisplay}',
+                      style: Theme.of(context)
+                          .textTheme
+                          .headlineSmall
+                          ?.copyWith(
+                              color: Colors.purple,
+                              fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+
+              if (_activityPrompts.isEmpty && !_isLoadingLessonContent)
+                const Center(
+                    child: Padding(
+                        padding: EdgeInsets.all(16.0),
+                        child: Text("No prompts to display feedback for."))),
+
+              ..._activityPrompts.map((promptData) {
+                final String promptName = promptData['name'] as String? ??
+                    'unknown_prompt_l23_${_activityPrompts.indexOf(promptData)}';
+                final String promptLabel =
+                    promptData['label'] as String? ?? 'Scenario';
+                final IconData? promptIcon = promptData['icon'] as IconData?;
+                // Accessing feedback using 'answers' and 'feedbackForEachAnswer' keys
+                final Map<String, dynamic>? allAnswersFromParent =
+                    widget.aiFeedbackData!['answers'] as Map<String, dynamic>?;
+                final String userAnswer =
+                    _textControllers[promptName]?.text.trim() ??
+                        (widget.aiFeedbackData?['answers']?[promptName]
+                            as String?) ?? // Fallback for re-display from log
+                        'Not available';
+
+                final Map<String, dynamic>? allFeedbackFromParent =
+                    widget.aiFeedbackData!['feedbackForEachAnswer']
+                        as Map<String, dynamic>?;
+                final feedbackForThisPrompt =
+                    widget.aiFeedbackData?[promptName] as Map<String, dynamic>?;
+
+                return Card(
+                  // This is the outer card for EACH prompt+feedback set
+                  // ... your existing Card styling ...
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Display prompt label and user's answer as before
+                        Row(
+                          children: [
+                            if (promptIcon != null)
+                              FaIcon(promptIcon,
+                                  size: 18, color: const Color(0xFF00568D)),
+                            if (promptIcon != null) const SizedBox(width: 8),
+                            Expanded(
+                                child: Text(promptLabel,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(
+                                            fontWeight: FontWeight.bold,
+                                            color: const Color(0xFF00568D)))),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text("Your Answer:",
+                            style: Theme.of(context).textTheme.labelLarge),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2.0, bottom: 8.0),
+                          child: Text(
+                              userAnswer.isNotEmpty
+                                  ? userAnswer
+                                  : '(No answer provided)',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyMedium
+                                  ?.copyWith(
+                                      fontStyle: FontStyle.italic,
+                                      color: Colors.grey[700])),
+                        ),
+
+                        // Use the new ParsedFeedbackCard
+                        if (feedbackForThisPrompt != null)
+                          ParsedFeedbackCard(
+                            feedbackData: feedbackForThisPrompt,
+                            // scenarioLabel: promptLabel, // The card can be self-contained without repeating label
+                          )
+                        else
+                          const Padding(
+                            padding: EdgeInsets.only(top: 8.0),
+                            child: Text('AI Feedback: Not available.',
+                                style: TextStyle(
+                                    color: Colors.grey,
+                                    fontStyle: FontStyle.italic)),
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: () => widget
+                      .onShowActivitySection(), // This triggers reset in module2 via callback
+                  style:
+                      ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                  child: const Text('Try Again',
+                      style: TextStyle(color: Colors.white, fontSize: 16)),
                 ),
               ),
+            ],
           ],
         ],
-        if (widget.showActivity) ...[
-          const SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Time: ${_formatDuration(_secondsElapsed)}',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.black54),
-                ),
-              ],
-            ),
-          ),
-          const Text(
-            'Interactive Activity: Numbers and Dates',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.orange),
-          ),
-          const SizedBox(height: 8),
-          ...questions.asMap().entries.map((entry) {
-            int questionIndex = entry.key;
-            Map<String, dynamic> questionData = entry.value;
-
-            List<String> wordsList = (questionData['words'] as List<dynamic>?)?.cast<String>() ??
-                                     (questionData['question'] as String?)?.split(' ') ?? [];
-
-            List<String> correctAnswerList;
-            final correctAnswerValue = questionData['correctAnswer'];
-            if (correctAnswerValue is String) {
-              correctAnswerList = correctAnswerValue.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
-            } else if (correctAnswerValue is List) {
-              correctAnswerList = correctAnswerValue.cast<String>();
-            } else {
-              correctAnswerList = [];
-            }
-
-            return buildInteractiveQuestion(
-              question: 'Q${questionData['id']}: ${questionData['question'] as String? ?? ''}',
-              type: questionData['type'] as String? ?? '',
-              words: wordsList,
-              correctAnswer: correctAnswerList,
-              explanation: questionData['explanation'] as String? ?? '',
-              questionIndex: questionIndex,
-              selectedAnswers: widget.selectedAnswers[questionIndex],
-              isCorrect: widget.isCorrectStates[questionIndex],
-              errorMessage: widget.errorMessages[questionIndex],
-              onSelectionChanged: (List<String> newSelectedWords) {
-                widget.onWordsSelected(questionIndex, newSelectedWords);
-              },
-              onAnswerChanged: (bool isCorrect) {
-                widget.onAnswerChanged(questionIndex, isCorrect);
-              },
-            );
-          }),
-          const SizedBox(height: 16),
-         SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: !_isSubmitting ? () async {
-  setState(() { _isSubmitting = true; });
-  _stopTimer();
-  await widget.onSubmitAnswers(questions, _secondsElapsed, _currentAttempt);
-  if (mounted) {
-    setState(() {
-      _isSubmitting = false;
-      _currentAttempt++; // <-- increment attempt after submit
-    });
-  }
-} : null,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF00568D),
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                textStyle: const TextStyle(fontSize: 16, color: Colors.white),
-              ),
-              child: _isSubmitting 
-                  ? const SizedBox( 
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 3,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                      ),
-                    )
-                  : const Text('Submit Answers', style: TextStyle(color: Colors.white)), 
-            ),
-          ),
-        ],
-      ],
+      ),
     );
   }
 }
+
+// Ensure HtmlFormattedText is available, either from common_widgets.dart or defined locally if needed.
+// If it's in common_widgets.dart, this local definition can be removed.
+// class HtmlFormattedText extends StatelessWidget { ... } // Assuming it's imported

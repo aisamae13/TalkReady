@@ -36,17 +36,19 @@ dependencies:
   cloud_functions: ^5.3.3
   cloud_firestore: ^5.2.1
   font_awesome_flutter: ^10.8.0
-  country_flags: ^2.1.0
+  country_flags: ^3.3.0
   speech_to_text: ^7.0.0
   flutter_tts: ^4.2.2  # For text-to-speech
   http: ^1.1.2  # For API calls (optional, for evaluation)
   path_provider: ^2.1.1
   flutter_dotenv: ^5.2.1
   flutter_sound: ^9.2.13
-  permission_handler: ^11.3.1
+  permission_handler: ^12.0.0+1
   logger: ^2.0.2+1
   provider: ^6.0.5
-  audioplayers: ^5.2.1
+  record: ^6.0.0
+  audioplayers: ^6.4.0
+  flutter_html: ^3.0.0
   shared_preferences: ^2.2.2
   image_picker: ^1.1.2
   firebase_storage: ^12.4.3
@@ -64,7 +66,9 @@ dependencies:
   youtube_player_flutter: ^9.1.1
   flutter_inappwebview: ^6.1.1+1
   flutter_staggered_animations: ^1.1.1
-  flutter_quill_extensions: ^9.6.0
+  flutter_quill_extensions: ^11.0.0
+  cloudinary_public: ^0.23.1
+   
 
   # Optional: For advanced audio processing (if needed for Azure Speech API)
   # Note: Azure Speech API may require a custom package or platform-specific integration
@@ -72,8 +76,8 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
-  fl_chart: ^0.70.2
-  intl: ^0.19.0
+  fl_chart: ^1.0.0
+  intl: ^0.20.2
   google_fonts: ^6.2.1
   custom_paint: ^0.0.1
   curved_navigation_bar: ^1.0.6
@@ -84,7 +88,7 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^5.0.0
+  flutter_lints: ^6.0.0
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
