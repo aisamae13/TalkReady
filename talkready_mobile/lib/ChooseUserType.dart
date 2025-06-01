@@ -34,11 +34,10 @@ class ChooseUserTypePage extends StatelessWidget {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Choose User Type'),
+        title: const Text(''),
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
-        foregroundColor: Colors.white,
       ),
       body: Container(
         width: double.infinity,

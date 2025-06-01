@@ -6,6 +6,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'loading_screen.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:carousel_slider/carousel_slider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 Future<UserCredential?> signInWithGoogle() async {
   try {
@@ -53,100 +54,113 @@ class LandingPage extends StatefulWidget {
 }
 
 class _LandingPageState extends State<LandingPage> {
-  Future<void> _handleGoogleSignIn() async {
-    if (kDebugMode) {
-      debugPrint('Button pressed, showing loading screen');
-    }
-    showLoadingScreen(context);
-    UserCredential? userCredential = await signInWithGoogle();
+Future<void> _handleGoogleSignIn() async {
+  if (kDebugMode) {
+    debugPrint('Button pressed, showing loading screen');
+  }
+  showLoadingScreen(context);
+  UserCredential? userCredential = await signInWithGoogle();
 
-    if (!context.mounted) {
+  if (!context.mounted) {
+    hideLoadingScreen(context);
+    return;
+  }
+
+  if (userCredential != null) {
+    try {
       hideLoadingScreen(context);
-      return;
-    }
+      if (!context.mounted) return;
 
-    if (userCredential != null) {
-      try {
-        bool isNewUser = userCredential.additionalUserInfo?.isNewUser ?? true;
-        hideLoadingScreen(context);
+      // Check Firestore for user document
+      final userDoc = FirebaseFirestore.instance
+          .collection('users')
+          .doc(userCredential.user!.uid);
+      final docSnapshot = await userDoc.get();
 
-        if (!context.mounted) return;
-
-        if (isNewUser) {
-          Navigator.pushNamed(context, '/chooseUserType');
-        } else {
-          showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (context) => AlertDialog(
-              backgroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(15.0),
+      if (!docSnapshot.exists || docSnapshot.data()?['userType'] == null) {
+        // User is not fully registered, direct to choose user type
+        if (kDebugMode) {
+          debugPrint('User ${userCredential.user!.uid} not fully registered, redirecting to chooseUserType');
+        }
+        Navigator.pushNamed(context, '/chooseUserType');
+      } else {
+        // User is fully registered, show dialog or redirect to login
+        if (kDebugMode) {
+          debugPrint('User ${userCredential.user!.uid} already registered');
+        }
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(15.0),
+            ),
+            title: const Text(
+              'Account Already Registered',
+              style: TextStyle(
+                color: Color(0xFF00568D),
+                fontWeight: FontWeight.bold,
+                fontSize: 20,
               ),
-              title: const Text(
-                'Account Already Registered',
-                style: TextStyle(
-                  color: Color(0xFF00568D),
-                  fontWeight: FontWeight.bold,
-                  fontSize: 20,
-                ),
+            ),
+            content: Text(
+              'Your Google account has already been used to login. Please sign in to continue.',
+              style: TextStyle(
+                color: Color(0xFF00568D).withOpacity(0.8),
+                fontSize: 16,
               ),
-              content: Text(
-                'Your Google account has already been used to login.',
-                style: TextStyle(
-                  color: Color(0xFF00568D).withOpacity(0.8),
-                  fontSize: 16,
-                ),
-              ),
-              actionsAlignment: MainAxisAlignment.center,
-              actions: [
-                Padding(
-                  padding: const EdgeInsets.only(top: 20.0),
-                  child: TextButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-                    },
-                    style: TextButton.styleFrom(
-                      backgroundColor: const Color(0xFF00568D),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(5),
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 30,
-                        vertical: 8,
-                      ),
+            ),
+            actionsAlignment: MainAxisAlignment.center,
+            actions: [
+              Padding(
+                padding: const EdgeInsets.only(top: 20.0),
+                child: TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    Navigator.pushNamed(context, '/login');
+                  },
+                  style: TextButton.styleFrom(
+                    backgroundColor: const Color(0xFF00568D),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(5),
                     ),
-                    child: const Text(
-                      'OK',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                      ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 30,
+                      vertical: 8,
+                    ),
+                  ),
+                  child: const Text(
+                    'Go to Sign In',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ),
-              ],
-              contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 10),
-              titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
-            ),
-          );
-        }
-      } catch (e) {
-        if (!context.mounted) return;
-        hideLoadingScreen(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error during sign-in: $e'),
-            duration: const Duration(seconds: 3),
-            backgroundColor: Colors.red,
+              ),
+            ],
+            contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 10),
+            titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
           ),
         );
       }
-    } else {
-      if (context.mounted) hideLoadingScreen(context);
+    } catch (e) {
+      if (!context.mounted) return;
+      hideLoadingScreen(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error during sign-in: $e'),
+          duration: const Duration(seconds: 3),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
+  } else {
+    if (context.mounted) hideLoadingScreen(context);
   }
+}
 
   // List of background images for the carousel
   final List<String> backgroundImages = [

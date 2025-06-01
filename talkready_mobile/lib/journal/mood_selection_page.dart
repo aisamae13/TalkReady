@@ -277,7 +277,7 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
                               // If data is null or empty, _fetchUserName should have returned 'User'
                             }
                             // While waiting, it will use the default 'User'
-                            
+
                             return Text(
                               'Hi, $greetingName! How are you feeling today?',
                               style: const TextStyle(
@@ -375,7 +375,7 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Icon(
-                                      IconData(codePoint, fontFamily: 'MaterialIcons'),
+                                     IconData(codePoint, fontFamily: 'MaterialIcons'),
                                       size: 20,
                                       color: isSelected ? const Color(0xFF00568D) : Colors.grey,
                                     ),
@@ -414,8 +414,8 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
                                 showDialog(
                                   context: context,
                                   builder: (context) {
-                                    String? customTagName; // Renamed to avoid conflict
-                                    IconData selectedIcon = Icons.tag;
+                                   String? customTagName; // Renamed to avoid conflict
+                                   IconData selectedIcon = Icons.tag;
                                     return Dialog(
                                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                                       child: Container(

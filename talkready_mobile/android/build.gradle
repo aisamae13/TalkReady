@@ -3,6 +3,7 @@ buildscript {
     repositories {
         google()
         mavenCentral()
+        maven { url 'https://csspeechstorage.blob.core.windows.net/maven/' }
     }
     dependencies {
         classpath 'com.android.tools.build:gradle:8.7.2'

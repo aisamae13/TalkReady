@@ -7,8 +7,7 @@ import 'forgotpass.dart';
 import 'loading_screen.dart';
 import 'homepage.dart';
 import 'welcome_page.dart';
-import 'package:talkready_mobile/Teachers/TrainerDashboard.dart'; // <-- Add this import
-
+import 'package:talkready_mobile/Teachers/TrainerDashboard.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -115,6 +114,11 @@ class _LoginPageState extends State<LoginPage> {
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
       if (googleUser == null) return;
 
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const LoadingScreen()),
+      );
+
       final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
       final OAuthCredential credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
@@ -123,19 +127,51 @@ class _LoginPageState extends State<LoginPage> {
 
       final UserCredential userCredential = await _auth.signInWithCredential(credential);
 
-      // Ensure user document exists in Firestore for Google users
+      if (!mounted) {
+        Navigator.pop(context);
+        return;
+      }
+
       if (userCredential.user != null) {
+        // Check if this is a new user
+        if (userCredential.additionalUserInfo?.isNewUser ?? false) {
+          // New user: Sign out and redirect to sign-up
+          await _auth.signOut();
+          await _googleSignIn.signOut();
+          Navigator.pop(context);
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No account found. Please sign up first!'),
+              duration: Duration(seconds: 3),
+              backgroundColor: Colors.orange,
+            ),
+          );
+          Navigator.pushNamed(context, '/', arguments: {'fromLogin': true});
+          return;
+        }
+
+        // Existing user: Check Firestore document
         final userDoc = _firestore.collection('users').doc(userCredential.user!.uid);
         final docSnapshot = await userDoc.get();
         if (!docSnapshot.exists) {
-          await userDoc.set({
-            'email': userCredential.user!.email,
-            'firstName': userCredential.user!.displayName?.split(' ').first ?? '',
-            'lastName': userCredential.user!.displayName?.split(' ').skip(1).join(' ') ?? '',
-            'onboardingCompleted': false,
-            'createdAt': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
+          // Rare case: Firebase user exists but no Firestore doc
+          await _auth.signOut();
+          await _googleSignIn.signOut();
+          Navigator.pop(context);
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Account not found. Please sign up first!'),
+              duration: Duration(seconds: 3),
+              backgroundColor: Colors.orange,
+            ),
+          );
+          Navigator.pushNamed(context, '/', arguments: {'fromLogin': true});
+          return;
         }
+
+        Navigator.pop(context);
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Login successful!')),
@@ -144,6 +180,7 @@ class _LoginPageState extends State<LoginPage> {
       }
     } catch (e) {
       if (!mounted) return;
+      Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: $e')),
       );

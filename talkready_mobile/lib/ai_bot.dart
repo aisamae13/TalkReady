@@ -1,11 +1,9 @@
-// ...existing code...
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
-import 'package:audioplayers/audioplayers.dart' as ap; // Added alias
+import 'package:audioplayers/audioplayers.dart' as ap;
 import 'package:path_provider/path_provider.dart';
-import 'package:flutter_tts/flutter_tts.dart';
 import 'package:flutter_sound/flutter_sound.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
@@ -18,14 +16,13 @@ import 'package:showcaseview/showcaseview.dart';
 import 'package:intl/intl.dart';
 import 'tutorial_service.dart';
 
-// Define PromptCategory and Prompt class
 enum PromptCategory { vocabulary, pronunciation, grammar }
 
 class Prompt {
   final String title;
-  final String promptText; // This is the system message for OpenAI
+  final String promptText;
   final PromptCategory category;
-  final String? initialBotMessage; // Optional message for bot to say
+  final String? initialBotMessage;
 
   Prompt({
     required this.title,
@@ -35,55 +32,55 @@ class Prompt {
   });
 }
 
-// Predefined learning prompts
 final List<Prompt> _englishLearningPrompts = [
-  // Vocabulary Prompts
   Prompt(
-      title: "Expand My Vocabulary",
-      promptText:
-          "You are a vocabulary coach. The user wants to expand their vocabulary. When they provide a topic or a word, suggest related new words, explain them, and use them in example sentences. Encourage the user to try using the new words.",
-      category: PromptCategory.vocabulary,
-      initialBotMessage:
-          "Okay, let's work on vocabulary! Tell me a topic you're interested in, or a word you'd like to explore."),
+    title: "Expand My Vocabulary",
+    promptText:
+        "You are a vocabulary coach. The user wants to expand their vocabulary. When they provide a topic or a word, suggest related new words, explain them, and use them in example sentences. Encourage the user to try using the new words.",
+    category: PromptCategory.vocabulary,
+    initialBotMessage:
+        "Okay, let's work on vocabulary! Tell me a topic you're interested in, or a word you'd like to explore.",
+  ),
   Prompt(
-      title: "Word Meanings & Usage",
-      promptText:
-          "You are an English language expert. The user will ask about specific words. Explain their meaning, provide synonyms/antonyms if relevant, and show examples of how to use them in sentences.",
-      category: PromptCategory.vocabulary,
-      initialBotMessage:
-          "I can help with word meanings and usage. Which word are you curious about?"),
-
-  // Pronunciation Prompts
+    title: "Word Meanings & Usage",
+    promptText:
+        "You are an English language expert. The user will ask about specific words. Explain their meaning, provide synonyms/antonyms if relevant, and show examples of how to use them in sentences.",
+    category: PromptCategory.vocabulary,
+    initialBotMessage:
+        "I can help with word meanings and usage. Which word are you curious about?",
+  ),
   Prompt(
-      title: "Pronunciation Practice",
-      promptText:
-          "You are a pronunciation coach. The user wants to practice their English pronunciation. Provide them with sentences, tongue twisters, or minimal pairs focusing on common difficult sounds for non-native speakers. Listen to their attempts (simulated, as you get text) and offer constructive feedback. Focus on clarity and intelligibility.",
-      category: PromptCategory.pronunciation,
-      initialBotMessage:
-          "Let's practice pronunciation! Would you like to try some tricky sounds, a tongue twister, or minimal pairs?"),
+    title: "Call-Center Pronunciation Practice",
+    promptText:
+        "You are a pronunciation coach for call-center English. Generate a unique, professional call-center phrase (e.g., 'Thank you for calling, how may I assist you?') for the user to practice. Ask them to say it aloud and type it. The typed text and audio will be analyzed using Azure's pronunciation assessment for feedback on fluency and accuracy, provided in a conversational paragraph with percentage scores. Suggest a new call-center phrase after feedback.",
+    category: PromptCategory.pronunciation,
+    initialBotMessage:
+        "Let’s practice call-center phrases! I’ll suggest one soon—please wait a sec!",
+  ),
   Prompt(
-      title: "Phonetic Feedback (Simulated)",
-      promptText:
-          "You are a pronunciation expert. The user will provide text they have spoken. Analyze it for potential pronunciation challenges based on common English learner patterns (e.g., confusing 'l' and 'r', 'th' sounds, vowel sounds). Offer gentle, actionable advice. You cannot hear them, so base your feedback on the text provided and common issues.",
-      category: PromptCategory.pronunciation,
-      initialBotMessage:
-          "I'll do my best to give feedback on your pronunciation based on the text you provide. What would you like to say?"),
-
-  // Grammar Prompts
+    title: "Phonetic Feedback (Simulated)",
+    promptText:
+        "You are a pronunciation expert. The user will provide text they have spoken (or typed). Analyze it for potential pronunciation challenges based on common English learner patterns (e.g., confusing 'l' and 'r', 'th' sounds, vowel sounds). Offer gentle, actionable advice. If the input is text, you cannot hear them, so base your feedback on the text provided and common issues. If audio was provided, more specific feedback can be given.",
+    category: PromptCategory.pronunciation,
+    initialBotMessage:
+        "I'll do my best to give feedback on your pronunciation. What would you like to say or type?",
+  ),
   Prompt(
-      title: "Grammar Check & Correction",
-      promptText:
-          "You are a grammar expert. The user will provide sentences, and you should check them for grammatical errors. Explain any mistakes clearly and provide corrected versions. Be encouraging.",
-      category: PromptCategory.grammar,
-      initialBotMessage:
-          "Let's work on grammar! Type a sentence, and I'll help you check it."),
+    title: "Grammar Check & Correction",
+    promptText:
+        "You are a grammar expert. The user will provide sentences, and you should check them for grammatical errors. Explain any mistakes clearly and provide corrected versions. Be encouraging.",
+    category: PromptCategory.grammar,
+    initialBotMessage:
+        "Let's work on grammar! Type a sentence, and I'll help you check it.",
+  ),
   Prompt(
-      title: "Explain Grammar Concepts",
-      promptText:
-          "You are an English grammar teacher. The user will ask questions about grammar rules or concepts (e.g., tenses, prepositions, articles). Explain these concepts in a simple and understandable way, providing examples.",
-      category: PromptCategory.grammar,
-      initialBotMessage:
-          "Do you have any grammar questions? I can help explain concepts like tenses, prepositions, and more."),
+    title: "Explain Grammar Concepts",
+    promptText:
+        "You are an English grammar teacher. The user will ask questions about grammar rules or concepts (e.g., tenses, prepositions, articles). Explain these concepts in a simple and understandable way, providing examples.",
+    category: PromptCategory.grammar,
+    initialBotMessage:
+        "Do you have any grammar questions? I can help explain concepts like tenses, prepositions, and more.",
+  ),
 ];
 
 class AIBotScreen extends StatefulWidget {
@@ -107,8 +104,7 @@ final logger = Logger(
 );
 
 class _AIBotScreenState extends State<AIBotScreen> {
-  final FlutterTts _flutterTts = FlutterTts();
-  final ap.AudioPlayer _audioPlayer = ap.AudioPlayer(); // Used alias for clarity
+  final ap.AudioPlayer _audioPlayer = ap.AudioPlayer();
   late FlutterSoundPlayer _player;
   late FlutterSoundRecorder _recorder;
   bool _isListening = false;
@@ -118,35 +114,30 @@ class _AIBotScreenState extends State<AIBotScreen> {
   String? _userProfilePictureBase64;
   ImageProvider? _userProfileImage;
   final List<Map<String, dynamic>> _messages = [];
-  // String? _accentLocale; // Removed
   bool _hasStartedListening = false;
   bool _isTyping = false;
-  final bool _hasTriggeredTutorial = false;
   bool _hasSeenTutorial = false;
-  static const String _ttsServerUrl =
-      'https://c360-175-176-32-217.ngrok-free.app/tts'; // Replace with your actual TTS server URL
   bool _isRecorderInitialized = false;
   bool _isPlayerInitialized = false;
   final TextEditingController _textController = TextEditingController();
-  final Map<String, double> _sessionProgress = {
-    'Fluency': 0.0,
-    'Grammar': 0.0,
-    'Pronunciation': 0.0,
-    'Vocabulary': 0.0,
-    'Interaction': 0.0,
-  };
-  int _responseCount = 0;
   final Random _random = Random();
   String? _userName;
+  bool _hasTriggeredTutorial = false;
+  final GlobalKey _promptIconKey = GlobalKey();
   final GlobalKey _chatAreaKey = GlobalKey();
   final GlobalKey _micKey = GlobalKey();
   final GlobalKey _keyboardKey = GlobalKey();
   final ScrollController _scrollController = ScrollController();
-
   Prompt? _currentLearningPrompt;
-
   String? _currentChatSessionId;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  String? _currentPracticePhrase; // Tracks the current call-center phrase
+  bool _isPlayingUserAudio = false; // Tracks if user audio is playing
+
+  @override
+  Widget build(BuildContext context) {
+    return buildMainScreen(context); // This renders your actual UI
+  }
 
   @override
   void initState() {
@@ -157,6 +148,11 @@ class _AIBotScreenState extends State<AIBotScreen> {
       _initRecorder();
       _initPlayer();
       _requestPermissions();
+      if (!dotenv.isInitialized) {
+        logger.w('.env file not loaded. API keys might be missing.');
+      } else {
+        logger.i('.env file loaded. API keys should be available.');
+      }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           String greetingMessage;
@@ -167,10 +163,6 @@ class _AIBotScreenState extends State<AIBotScreen> {
             greetingMessage = "Hello${_userName != null && _userName!.isNotEmpty ? ", $_userName" : ""}! How can I help you practice today?";
             _showSnackBar('Could not display a personalized greeting at this time.');
           }
-
-          logger.i(
-              'Adding new session greeting to _messages: {"text": "$greetingMessage", "isUser": false, "timestamp": "${DateTime.now().toIso8601String()}"}');
-
           final initialBotMessageData = {
             'text': greetingMessage,
             'isUser': false,
@@ -183,6 +175,14 @@ class _AIBotScreenState extends State<AIBotScreen> {
           _speakText(greetingMessage, isUser: false);
           _scrollToBottom();
           _initializeNewChatSession(initialBotMessageData);
+          if (_currentLearningPrompt?.title == "Call-Center Pronunciation Practice") {
+            _generateCallCenterPhrase().then((phrase) {
+              if (mounted) {
+                setState(() => _currentPracticePhrase = phrase);
+                _addBotMessage("Let’s practice call-center phrases! Try saying this clearly: '$phrase' Speak it, then type what you said.");
+              }
+            });
+          }
         }
       });
     });
@@ -195,7 +195,6 @@ class _AIBotScreenState extends State<AIBotScreen> {
       _showSnackBar("Error: You're not logged in. Cannot save chat session.");
       return;
     }
-
     try {
       Map<String, dynamic> firestoreInitialMessage = {
         'text': initialLocalMessage['text'],
@@ -203,10 +202,8 @@ class _AIBotScreenState extends State<AIBotScreen> {
         'timestamp': Timestamp.fromDate(DateTime.parse(initialLocalMessage['timestamp'])),
         'audioUrl': null,
       };
-
       DocumentReference sessionRef = _firestore.collection('chatSessions').doc();
       _currentChatSessionId = sessionRef.id;
-
       await sessionRef.set({
         'userId': user.uid,
         'startTime': FieldValue.serverTimestamp(),
@@ -214,7 +211,6 @@ class _AIBotScreenState extends State<AIBotScreen> {
         'messages': [firestoreInitialMessage],
       });
       logger.i('New chat session created with ID: $_currentChatSessionId and initial message.');
-
     } catch (e) {
       logger.e('Error initializing new chat session: $e');
       _showSnackBar('Could not start a new chat session: $e');
@@ -231,7 +227,6 @@ class _AIBotScreenState extends State<AIBotScreen> {
       logger.e("Cannot add message to session: user not logged in.");
       return;
     }
-
     try {
       final firestoreMessage = {
         'text': localMessage['text'],
@@ -239,11 +234,11 @@ class _AIBotScreenState extends State<AIBotScreen> {
         'timestamp': Timestamp.fromDate(DateTime.parse(localMessage['timestamp'])),
         'audioUrl': localMessage['isUser'] ? audioUrl : null,
       };
-
-      await _firestore.collection('chatSessions').doc(_currentChatSessionId).update({
+      Map<String, dynamic> updateData = {
         'messages': FieldValue.arrayUnion([firestoreMessage]),
         'lastActivity': FieldValue.serverTimestamp(),
-      });
+      };
+      await _firestore.collection('chatSessions').doc(_currentChatSessionId).update(updateData);
       logger.i('Message added to chat session: $_currentChatSessionId');
     } catch (e) {
       logger.e('Error adding message to chat session $_currentChatSessionId: $e');
@@ -251,59 +246,60 @@ class _AIBotScreenState extends State<AIBotScreen> {
     }
   }
 
-  Future<void> _triggerTutorial(BuildContext showcaseContext) async {
+  Future<void> _triggerTutorial(BuildContext context) async {
     if (!mounted) {
       logger.i('Tutorial not triggered: widget not mounted');
       return;
     }
-
-    bool shouldShow =
-        await TutorialService.shouldShowTutorial(Future.value(_hasSeenTutorial));
+    bool shouldShow = await TutorialService.shouldShowTutorial(Future.value(_hasSeenTutorial));
     if (!shouldShow) {
       logger.i('Tutorial skipped: user has already seen it');
       return;
     }
-
+    if (_hasTriggeredTutorial) {
+      logger.i('Tutorial already triggered in this session');
+      return;
+    }
+    setState(() {
+      _hasTriggeredTutorial = true;
+    });
     logger.i('Showing welcome dialog for tutorial');
     bool? startTour = await TutorialService.showTutorialWithSkipOption(
       context: context,
-      showcaseKeys: [_chatAreaKey, _micKey, _keyboardKey],
+      showcaseKeys: [_chatAreaKey, _micKey, _keyboardKey, _promptIconKey],
       skipText: 'Skip Tutorial',
       onComplete: () {
-        setState(() {
-          _hasSeenTutorial = true;
-        });
-        _saveTutorialStatus();
+        if (mounted) {
+          setState(() {
+            _hasSeenTutorial = true;
+          });
+          _saveTutorialStatus();
+        }
       },
       title: 'Welcome to TalkReady Bot!',
-      content:
-          'Get ready to explore the app with a quick tour! Would you like to start?',
+      content: 'Get ready to explore the app with a quick tour! Would you like to start?',
       confirmText: 'Start Tour',
       showDontAskAgain: false,
     );
-
-    if (!mounted || !showcaseContext.mounted) {
+    if (!mounted || !context.mounted) {
       logger.w('Cannot proceed with tutorial: widget or context not mounted');
       _showSnackBar('Cannot start tutorial at this time.');
       return;
     }
-
-    if (startTour == false) {
+    if (startTour == true) {
       logger.i('User chose to start tutorial walkthrough');
       try {
         await Future.delayed(const Duration(milliseconds: 600));
-        logger.i('Dialog should be dismissed, starting showcase now');
-
-        if (mounted && showcaseContext.mounted) {
-          TutorialService.startShowCase(showcaseContext, [
+        if (mounted && context.mounted) {
+          TutorialService.startShowCase(context, [
             _chatAreaKey,
             _micKey,
             _keyboardKey,
+            _promptIconKey,
           ]);
           logger.i('Showcase started successfully');
         } else {
-          logger.w(
-              'Cannot start showcase: widget not mounted or context unavailable');
+          logger.w('Cannot start showcase: widget or context not mounted');
           _showSnackBar('Cannot start tutorial at this time.');
         }
       } catch (e) {
@@ -312,10 +308,13 @@ class _AIBotScreenState extends State<AIBotScreen> {
       }
     } else {
       logger.i('User skipped tutorial or dismissed dialog');
-      setState(() {
-        _hasSeenTutorial = true;
-      });
-      await _saveTutorialStatus();
+      if (mounted) {
+        setState(() {
+          _hasSeenTutorial = true;
+        });
+        _saveTutorialStatus();
+        _showSnackBar('Tutorial skipped. You can access it later if needed.');
+      }
     }
   }
 
@@ -327,28 +326,24 @@ class _AIBotScreenState extends State<AIBotScreen> {
         : now.hour < 17
             ? "Good afternoon"
             : "Good evening";
-
     if (_userName == null || _userName!.isEmpty) {
-      logger.e(
-          'userName is null or empty for greeting generation, this should have been handled by _fetchOnboardingData.');
-      throw Exception(
-          'User name is missing. Please complete onboarding or contact support.');
+      logger.e('userName is null or empty for greeting generation, this should have been handled by _fetchOnboardingData.');
+      throw Exception('User name is missing. Please complete onboarding or contact support.');
     }
     final List<String> baseGreetings = [
-        "$timePrefix, $_userName! How’s your day been? Spill something fun!",
-        "$timePrefix, $_userName! What’s new with you today?",
-        "$timePrefix, $_userName! Got any exciting plans?",
-        "$timePrefix, $_userName! How’s your day going? Tell me a smashing story!",
-        "$timePrefix, $_userName! What’s on your mind today?",
-        "$timePrefix, $_userName! Fancy sharing a brilliant tale?",
-        "$timePrefix, $_userName! How’s your day? Got any ripper tales?",
-        "$timePrefix, $_userName! What’s cooking, mate?",
-        "$timePrefix, $_userName! Got any yarns to spin?",
+      "$timePrefix, $_userName! How’s your day been? Spill something fun!",
+      "$timePrefix, $_userName! What’s new with you today?",
+      "$timePrefix, $_userName! Got any exciting plans?",
+      "$timePrefix, $_userName! How’s your day going? Tell me a smashing story!",
+      "$timePrefix, $_userName! What’s on your mind today?",
+      "$timePrefix, $_userName! Fancy sharing a brilliant tale?",
+      "$timePrefix, $_userName! What’s cooking, buddy?",
+      "$timePrefix, $_userName! Got any yarns to spin?",
     ];
     String greeting = baseGreetings.isNotEmpty
         ? baseGreetings[_random.nextInt(baseGreetings.length)]
         : "$timePrefix, $_userName! Ready to practice your English?";
-    logger.i('Generated greeting: "$greeting"');
+    logger.i('Generated greeting: $greeting');
     return greeting;
   }
 
@@ -372,36 +367,17 @@ class _AIBotScreenState extends State<AIBotScreen> {
     }
   }
 
-  Future<void> _initializeTts() async {
-    logger.i('Initializing TTS with locale: en_US');
-    try {
-      await _flutterTts.setLanguage('en_US'); // Default to en_US
-      await _flutterTts.setPitch(0.7);
-      await _flutterTts.setSpeechRate(0.6);
-      logger.i('TTS initialized successfully');
-    } catch (e) {
-      logger.e('Error initializing TTS: $e');
-      _showSnackBar('Failed to initialize text-to-speech');
-    }
-  }
-
   Future<void> _initRecorder() async {
     try {
       await _recorder.openRecorder();
       final tempDir = await getTemporaryDirectory();
-      _audioFilePath = '${tempDir.path}/audio.wav';
+      _audioFilePath = '${tempDir.path}/audio_${DateTime.now().millisecondsSinceEpoch}.wav';
       if (mounted) {
-        setState(() {
-          _isRecorderInitialized = true;
-        });
+        setState(() => _isRecorderInitialized = true);
       }
       logger.i('Recorder initialized successfully');
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isRecorderInitialized = false;
-        });
-      }
+      if (mounted) setState(() => _isRecorderInitialized = false);
       logger.e('Error initializing recorder: $e');
       _showSnackBar('Error initializing recorder: $e');
     }
@@ -411,10 +387,9 @@ class _AIBotScreenState extends State<AIBotScreen> {
     Map<Permission, PermissionStatus> statuses = await [
       Permission.microphone,
     ].request();
-
     if (statuses[Permission.microphone]!.isDenied ||
         statuses[Permission.microphone]!.isPermanentlyDenied) {
-      logger.w('Microphone permission denied');
+      logger.w('Microphone permission denied.');
       _showSnackBar('Microphone permission is required for voice input');
       if (statuses[Permission.microphone]!.isPermanentlyDenied && mounted) {
         _showPermissionDialog('Microphone', 'voice recording');
@@ -425,7 +400,7 @@ class _AIBotScreenState extends State<AIBotScreen> {
   void _showPermissionDialog(String permissionName, String feature) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (BuildContext context) => AlertDialog(
         title: Text('$permissionName Permission Required'),
         content: Text(
           '$permissionName permission is permanently denied. Please enable it in your device settings to use $feature.',
@@ -433,14 +408,14 @@ class _AIBotScreenState extends State<AIBotScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text('Cancel'),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
               openAppSettings();
             },
-            child: const Text('Open Settings'),
+            child: Text('Open Settings'),
           ),
         ],
       ),
@@ -451,15 +426,15 @@ class _AIBotScreenState extends State<AIBotScreen> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       _userName = 'User';
+      _userProfilePictureBase64 = null;
       _userProfileImage = null;
+      _hasSeenTutorial = false;
       logger.w("User is null in _fetchOnboardingData, using defaults.");
       return;
     }
-
     try {
       DocumentSnapshot doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
       Map<String, dynamic>? userData = doc.data() as Map<String, dynamic>?;
-
       if (userData != null) {
         _userName = userData['firstName']?.toString();
         if ((_userName == null || _userName!.isEmpty) && userData.containsKey('onboarding')) {
@@ -472,7 +447,7 @@ class _AIBotScreenState extends State<AIBotScreen> {
           if (user.displayName != null && user.displayName!.isNotEmpty) {
             _userName = user.displayName!.split(' ').first;
             if (_userName!.isEmpty && user.displayName!.isNotEmpty) {
-                _userName = user.displayName;
+              _userName = user.displayName;
             }
           }
           if (_userName == null || _userName!.isEmpty) {
@@ -481,15 +456,11 @@ class _AIBotScreenState extends State<AIBotScreen> {
           logger.w('Using fallback for userName: $_userName');
         }
         logger.i('Set userName to: $_userName');
-
-        // Removed desiredAccent logic
-
         _userProfilePictureBase64 = userData['profilePicBase64']?.toString();
         if ((_userProfilePictureBase64 == null || _userProfilePictureBase64!.isEmpty) && userData.containsKey('onboarding')) {
           final onboardingMap = userData['onboarding'] as Map<String, dynamic>?;
           _userProfilePictureBase64 = onboardingMap?['profilePicBase64']?.toString();
         }
-
         if (_userProfilePictureBase64 != null && _userProfilePictureBase64!.isNotEmpty) {
           try {
             String tempBase64 = _userProfilePictureBase64!;
@@ -507,64 +478,53 @@ class _AIBotScreenState extends State<AIBotScreen> {
           logger.w('No profilePicBase64 found in user data');
           _userProfileImage = null;
         }
-
-        _sessionProgress.forEach((key, value) {
-          _sessionProgress[key] = (userData['sessionProgress']?[key] as double?) ?? 0.0;
-        });
-        _responseCount = (userData['responseCount'] as int?) ?? 0;
         _hasSeenTutorial = (userData['hasSeenTutorial'] as bool?) ?? false;
-        logger.i('Loaded progress: sessionProgress=$_sessionProgress, responseCount=$_responseCount, hasSeenTutorial=$_hasSeenTutorial');
-
+        logger.i('Loaded from Firestore: hasSeenTutorial=$_hasSeenTutorial');
       } else {
         logger.e('User data is null for user ${user.uid}. Using defaults.');
         if (user.displayName != null && user.displayName!.isNotEmpty) {
-            _userName = user.displayName!.split(' ').first;
-             if (_userName!.isEmpty && user.displayName!.isNotEmpty) {
-                _userName = user.displayName;
-            }
+          _userName = user.displayName!.split(' ').first;
+          if (_userName!.isEmpty && user.displayName!.isNotEmpty) {
+            _userName = user.displayName;
+          }
         }
         if (_userName == null || _userName!.isEmpty) {
-            _userName = 'User';
+          _userName = 'User';
         }
         _userProfileImage = null;
+        _hasSeenTutorial = false;
         if (mounted) _showSnackBar('No user data found. Using defaults.');
       }
     } catch (e) {
       logger.e('Error fetching user data: $e. Using defaults.');
-       if (user.displayName != null && user.displayName!.isNotEmpty) {
-            _userName = user.displayName!.split(' ').first;
-            if (_userName!.isEmpty && user.displayName!.isNotEmpty) {
-                _userName = user.displayName;
-            }
+      if (user.displayName != null && user.displayName!.isNotEmpty) {
+        _userName = user.displayName!.split(' ').first;
+        if (_userName!.isEmpty && user.displayName!.isNotEmpty) {
+          _userName = user.displayName;
         }
-        if (_userName == null || _userName!.isEmpty) {
-            _userName = 'User';
-        }
-      _userProfileImage = null;
-      if (mounted) _showSnackBar('Error fetching preferences: $e. Using defaults.');
-    } finally {
-      if (mounted) {
-        setState(() {});
       }
-      _initializeTts();
+      if (_userName == null || _userName!.isEmpty) {
+        _userName = 'User';
+      }
+      _userProfileImage = null;
+      _hasSeenTutorial = false;
+      if (mounted) _showSnackBar('Error fetching preferences: $e');
+    } finally {
+      if (mounted) setState(() {});
     }
   }
 
   Future<void> _startListening() async {
-// ...existing code...
     if (!_isRecorderInitialized) {
       _showSnackBar('Cannot record audio. Recorder initialization failed.');
       return;
     }
-
     if (!_isListening && !_isTyping) {
       if (!_hasStartedListening) {
-        _hasStartedListening = true;
+        setState(() {
+          _hasStartedListening = true;
+        });
       }
-
-      logger.d(
-          'Starting to listen. IsListening: $_isListening, IsTyping: $_isTyping');
-
       try {
         if (_recorder.isRecording) {
           await _recorder.stopRecorder();
@@ -572,84 +532,100 @@ class _AIBotScreenState extends State<AIBotScreen> {
         await _recorder.startRecorder(
           toFile: _audioFilePath!,
           codec: Codec.pcm16WAV,
+          sampleRate: 16000,
         );
-        if (mounted) {
-          setState(() => _isListening = true);
-        }
-        logger.d('Recording started for AssemblyAI');
+        setState(() => _isListening = true);
+        logger.d('Recording started (path: $_audioFilePath, sampleRate: 16000 Hz)');
         _showSnackBar('Recording started. Speak now!');
       } catch (e) {
         logger.e('Error starting recording: $e');
         _showSnackBar('Error starting recording: $e');
-        if (mounted) {
-          setState(() => _isListening = false);
-        }
+        setState(() => _isListening = false);
       }
     } else {
-      logger.w('Cannot start listening. Conditions not met.');
-      _showSnackBar('Cannot start recording while typing.');
+      logger.w('Cannot start listening. Conditions not met (isListening: $_isListening, isTyping: $_isTyping).');
+      if (_isTyping) _showSnackBar('Cannot start recording while typing.');
     }
   }
 
   Future<void> _stopListening() async {
-// ...existing code...
     if (_isListening) {
       try {
         if (!_recorder.isRecording) {
           _showSnackBar('No active recording to stop.');
-          if (mounted) {
-            setState(() => _isListening = false);
-          }
+          setState(() => _isListening = false);
           return;
         }
         String? path = await _recorder.stopRecorder();
-        if (mounted) {
-          setState(() {
-            _isListening = false;
-            _audioFilePath = path;
-          });
-        }
-        logger.d('Recording stopped, path: $_audioFilePath');
+        setState(() {
+          _isListening = false;
+          _audioFilePath = path;
+        });
+        logger.d('Recording stopped, audio path: $path');
         _showSnackBar('Recording stopped.');
-
-        if (_audioFilePath != null) {
+        if (_audioFilePath != null && await File(_audioFilePath!).exists()) {
           await _processAudioRecording();
+        } else {
+          logger.w('Audio file path is null or file does not exist after stopping recorder: $_audioFilePath');
+          _showSnackBar('Could not find the recorded audio file.');
         }
       } catch (e) {
         logger.e('Error stopping recording: $e');
         _showSnackBar('Error stopping recording: $e');
-        if (mounted) {
-          setState(() => _isListening = false);
-        }
+        setState(() => _isListening = false);
       }
+    }
+  }
+
+  Future<void> _playUserAudio() async {
+    if (!_isPlayerInitialized || _audioFilePath == null) {
+      _showSnackBar('Audio system not ready or no recording available.');
+      return;
+    }
+    final file = File(_audioFilePath!);
+    if (!await file.exists() || await file.length() == 0) {
+      _showSnackBar('No valid recording to play.');
+      return;
+    }
+    try {
+      setState(() => _isPlayingUserAudio = true);
+      await _audioPlayer.stop(); // Stop any ongoing playback
+      await _audioPlayer.play(ap.DeviceFileSource(_audioFilePath!));
+      _audioPlayer.onPlayerComplete.listen((_) {
+        if (mounted) {
+          setState(() => _isPlayingUserAudio = false);
+        }
+      });
+      logger.i('Playing user recording: $_audioFilePath');
+    } catch (e) {
+      logger.e('Error playing user audio: $e');
+      _showSnackBar('Error playing your recording: $e');
+      setState(() => _isPlayingUserAudio = false);
     }
   }
 
   void _toggleTyping() {
-// ...existing code...
     if (!_isListening) {
-      if (mounted) {
-        setState(() {
-          logger.d('Toggling typing state to: $_isTyping');
-          _isTyping = !_isTyping;
-          if (!_isTyping) {
-            _textController.clear();
-            logger.d('Cleared text input');
-          }
-          if (!_hasStartedListening && _isTyping) {
+      setState(() {
+        _isTyping = !_isTyping;
+        logger.d('Toggled typing state to: $_isTyping');
+        if (!_isTyping) {
+          _textController.clear();
+          logger.d('Cleared text input as typing was toggled off.');
+        } else {
+          if (!_hasStartedListening) {
             _hasStartedListening = true;
-            logger.i('Started typing session');
+            logger.i('Session marked as started via typing.');
           }
-        });
-      }
+        }
+      });
     } else {
       _showSnackBar('Please stop listening before typing.');
-      logger.w('Attempted to toggle typing while listening');
+      logger.w('Attempted to toggle typing while listening.');
     }
   }
 
   void _submitTypedText() {
-// ...existing code...
     if (_textController.text.isNotEmpty) {
       String processedText = _processText(_textController.text);
       final userMessageData = {
@@ -657,229 +633,426 @@ class _AIBotScreenState extends State<AIBotScreen> {
         'isUser': true,
         'timestamp': DateTime.now().toIso8601String(),
       };
-      if (mounted) {
+      setState(() {
+        _messages.add(userMessageData);
+        _pruneMessages();
+      });
+      _addMessageToActiveChatSession(userMessageData);
+      _scrollToBottom();
+      _generateAIResponse(processedText);
+      _textController.clear();
+      setState(() => _isTyping = false);
+    }
+  }
+
+ Future<String?> _transcribeWithAzure(String audioUrl) async {
+  final apiKey = dotenv.env['AZURE_SPEECH_API_KEY'];
+  final region = dotenv.env['AZURE_SPEECH_REGION'];
+  if (apiKey == null || apiKey.isEmpty || region == null || region.isEmpty) {
+    logger.e('Azure Speech API key or region missing.');
+    _showSnackBar('Azure Speech API key or region missing. Cannot transcribe.');
+    return null;
+  }
+
+  try {
+    logger.i('Transcribing with Azure using audio URL: $audioUrl (Region: $region)');
+    final audioResponse = await http.get(Uri.parse(audioUrl));
+    if (audioResponse.statusCode != 200) {
+      logger.e('Failed to download audio from Cloudinary: ${audioResponse.statusCode}');
+      _showSnackBar('Failed to retrieve audio for transcription.');
+      return null;
+    }
+    final audioBytes = audioResponse.bodyBytes;
+    final endpoint = 'https://$region.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1';
+    final queryParams = {
+      'language': 'en-US',
+      'format': 'detailed',
+    };
+    final uri = Uri.parse(endpoint).replace(queryParameters: queryParams);
+    final headers = {
+      'Ocp-Apim-Subscription-Key': apiKey,
+      'Content-Type': 'audio/wav; codecs=audio/pcm; samplerate=16000',
+      'Accept': 'application/json',
+    };
+    // Remove pronunciation assessment headers to get raw transcription
+    final response = await http.post(
+      uri,
+      headers: headers,
+      body: audioBytes,
+    );
+    logger.i('Azure STT response status: ${response.statusCode}, body: ${response.body}');
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      final transcript = data['DisplayText'] as String?;
+      if (transcript == null || transcript.isEmpty) {
+        logger.w('Azure STT returned empty or invalid transcript.');
+        _showSnackBar('No transcription result from Azure.');
+        return null;
+      }
+      logger.i('Azure STT successful: $transcript');
+      return transcript;
+    } else {
+      logger.e('Azure STT failed: Status ${response.statusCode}, body: ${response.body}');
+      _showSnackBar('Error transcribing with Azure: Status ${response.statusCode}');
+      return null;
+    }
+  } catch (e) {
+    logger.e('Error during Azure transcription: $e');
+    _showSnackBar('Error transcribing with Azure: $e');
+    return null;
+  }
+}
+
+  Future<Map<String, String>> _generatePronunciationFeedback(String audioUrl, String recognizedText) async {
+  final apiKey = dotenv.env['AZURE_SPEECH_API_KEY'] ?? '';
+  final region = dotenv.env['AZURE_SPEECH_REGION'] ?? '';
+  if (apiKey.isEmpty || region.isEmpty) {
+    logger.e('Azure keys missing');
+    return {
+      'feedback': "Hi! I couldn't check your pronunciation due to a setup issue. Try again later!",
+      'recognizedText': recognizedText,
+    };
+  }
+
+  try {
+    if (_currentPracticePhrase == null || _currentPracticePhrase!.isEmpty) {
+      return {
+        'feedback': "Oops! I don't have a phrase to check. Try saying 'Thank you for calling, how may I assist you?'",
+        'recognizedText': recognizedText,
+      };
+    }
+
+    final response = await http.post(
+      Uri.parse('https://$region.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=en-US'),
+      headers: {
+        'Ocp-Apim-Subscription-Key': apiKey,
+        'Content-Type': 'audio/wav; codecs=audio/pcm; samplerate=16000',
+        'Pronunciation-Assessment': base64Encode(utf8.encode(jsonEncode({
+          'referenceText': _currentPracticePhrase,
+          'gradingSystem': 'HundredMark',
+          'granularity': 'Phoneme',
+          'dimension': 'Comprehensive',
+        }))),
+      },
+      body: (await http.get(Uri.parse(audioUrl))).bodyBytes,
+    ).timeout(const Duration(seconds: 30));
+
+    logger.i('Azure response: ${response.statusCode}, ${response.body}');
+
+    if (response.statusCode != 200) {
+      return {
+        'feedback': "Oops! The pronunciation service is unavailable right now. Please try again later.",
+        'recognizedText': recognizedText,
+      };
+    }
+
+    final result = jsonDecode(response.body);
+    if (result == null || result['RecognitionStatus'] != 'Success') {
+      return {
+        'feedback': "I couldn't understand that clearly. Please try saying it again!",
+        'recognizedText': recognizedText,
+      };
+    }
+
+    final nBest = result['NBest'] as List?;
+    if (nBest == null || nBest.isEmpty) {
+      logger.w('Azure NBest is null or empty: $result');
+      return {
+        'feedback': "Hmm, I couldn't analyze your pronunciation. Let's try again!",
+        'recognizedText': recognizedText,
+      };
+    }
+
+    final assessment = nBest.first;
+    String feedback = "Here's your pronunciation analysis:\n\n";
+    feedback += "🗣 You said: \"$recognizedText\"\n\n";
+    feedback += "🎯 Target phrase: \"$_currentPracticePhrase\"\n\n";
+    feedback += "📊 Scores:\n";
+    feedback += "• Accuracy: ${assessment['AccuracyScore']?.toStringAsFixed(1) ?? 'N/A'}% (sounds correct)\n";
+    feedback += "• Fluency: ${assessment['FluencyScore']?.toStringAsFixed(1) ?? 'N/A'}% (smoothness)\n";
+    feedback += "• Completeness: ${assessment['CompletenessScore']?.toStringAsFixed(1) ?? 'N/A'}% (whole phrase)\n\n";
+
+    final words = assessment['Words'] as List?;
+    if (words != null && words.isNotEmpty) {
+      feedback += "🔍 Detailed feedback:\n";
+      for (var word in words.cast<Map>()) {
+        final wordText = word['Word'] as String? ?? '';
+        final errorType = word['ErrorType'] as String?;
+        final score = (word['PronunciationAssessment']?['AccuracyScore'] as num?)?.toDouble() ?? 0.0;
+        if (errorType != null && errorType != 'None') {
+          feedback += "- \"$wordText\": ";
+          if (errorType == 'Mispronunciation') {
+            feedback += "Needs better pronunciation (${score.toStringAsFixed(1)}%)\n";
+          } else if (errorType == 'Omission') {
+            feedback += "Missing this word\n";
+          } else if (errorType == 'Insertion') {
+            feedback += "Extra word added\n";
+          }
+        }
+      }
+    }
+
+    final accuracy = (assessment['AccuracyScore'] as num?)?.toDouble() ?? 0.0;
+    final fluency = (assessment['FluencyScore'] as num?)?.toDouble() ?? 0.0;
+    final completeness = (assessment['CompletenessScore'] as num?)?.toDouble() ?? 0.0;
+    if (accuracy < 60 || fluency < 60 || completeness < 60) {
+      feedback += "\nKeep practicing! Focus on each sound.\n";
+    } else if (accuracy < 80 || fluency < 80 || completeness < 80) {
+      feedback += "\nGood effort! A little more practice will help.\n";
+    } else {
+      feedback += "\nExcellent pronunciation!\n";
+    }
+
+    return {
+      'feedback': feedback,
+      'recognizedText': recognizedText,
+    };
+  } catch (e) {
+    logger.e('Pronunciation analysis error: $e');
+    return {
+      'feedback': "Sorry, I couldn't analyze your pronunciation. Please try again!",
+      'recognizedText': recognizedText,
+    };
+  }
+}
+  Future<void> _processAudioRecording() async {
+  if (!_isPlayerInitialized || _audioFilePath == null) {
+    _showSnackBar('Audio system not ready');
+    return;
+  }
+  final file = File(_audioFilePath!);
+  if (!await file.exists() || await file.length() == 0) {
+    _showSnackBar('Invalid audio file');
+    return;
+  }
+
+  try {
+    _showSnackBar('Processing...');
+    final audioUrl = await _uploadToCloudinary(_audioFilePath!);
+
+    if (_currentLearningPrompt?.category == PromptCategory.pronunciation) {
+      final transcript = await _transcribeWithAzure(audioUrl);
+      if (transcript != null) {
+        final userMessageData = {
+          'text': transcript,
+          'isUser': true,
+          'timestamp': DateTime.now().toIso8601String(),
+          'audioPath': _audioFilePath, // Store path for playback
+        };
         setState(() {
           _messages.add(userMessageData);
           _pruneMessages();
         });
+        _addMessageToActiveChatSession(userMessageData, audioUrl: audioUrl);
+        _scrollToBottom();
+
+        final feedback = await _generatePronunciationFeedback(audioUrl, transcript);
+        _addBotMessage(feedback['feedback'] ?? '', skipTTS: true);
+
+        final newPhrase = await _generateCallCenterPhrase();
+        setState(() => _currentPracticePhrase = newPhrase);
+        _addBotMessage("Would you like to practice another phrase? Try saying: '$newPhrase'");
+      } else {
+        _showSnackBar('Could not transcribe your speech.');
       }
-      _addMessageToActiveChatSession(userMessageData);
-      _scrollToBottom();
-      // _speakText(processedText, isUser: true);
-      _generateAIResponse(processedText);
-      _evaluateUserInput(processedText);
-      _textController.clear();
-      if (mounted) {
-        setState(() => _isTyping = false);
-      }
-    }
-  }
-
-  Future<void> _processAudioRecording() async {
-// ...existing code...
-    if (!_isPlayerInitialized) {
-      _showSnackBar('Audio player is not ready. Please try again.');
-      logger.w('Player not initialized, cannot process audio recording.');
-      return;
-    }
-
-    if (_audioFilePath != null) {
-      try {
-        final file = File(_audioFilePath!);
-        if (!await file.exists() || await file.length() == 0) {
-          _showSnackBar('Audio file is missing or empty.');
-          logger.w(
-              'Audio file check failed: exists=${await file.exists()}, length=${await file.length()}');
-          return;
-        }
-
-        _showSnackBar('Playing your voice...');
-        logger.i('Playing recorded audio...');
-
-        Completer<void> playbackCompleter = Completer<void>();
-
-        if (_player.isPlaying) {
-          await _player.stopPlayer();
-          logger.i('Stopped previous playback before starting new one.');
-        }
-
-        await _player
-            .startPlayer(
-          fromURI: _audioFilePath!,
-          codec: Codec.pcm16WAV,
-          whenFinished: () {
-            logger.i('Audio playback finished.');
-            if (!playbackCompleter.isCompleted) {
-              playbackCompleter.complete();
-            }
-          },
-        )
-            .catchError((error) {
-          logger.e('Error playing audio: $error');
-          _showSnackBar('Error playing your voice: $error');
-          if (!playbackCompleter.isCompleted) {
-            playbackCompleter.completeError(error);
-          }
-          return null;
+    } else {
+      final transcript = await _transcribeWithAssemblyAI(audioUrl);
+      if (transcript != null) {
+        final userMessageData = {
+          'text': transcript,
+          'isUser': true,
+          'timestamp': DateTime.now().toIso8601String(),
+          'audioPath': _audioFilePath, // Store path for playback
+        };
+        setState(() {
+          _messages.add(userMessageData);
+          _pruneMessages();
         });
-
-        await playbackCompleter.future;
-
-        _showSnackBar('Uploading audio...');
-        String audioUrl = await _uploadToCloudinary(_audioFilePath!);
-
-        _showSnackBar('Transcribing audio...');
-        String? transcript = await _transcribeWithAssemblyAI(audioUrl);
-        if (transcript != null && transcript.isNotEmpty) {
-          String processedText = _processText(transcript);
-          final userMessageData = {
-            'text': processedText,
-            'isUser': true,
-            'timestamp': DateTime.now().toIso8601String(),
-          };
-          if (mounted) {
-            setState(() {
-              _messages.add(userMessageData);
-              _lastRecognizedText = processedText;
-              _pruneMessages();
-            });
-          }
-          _addMessageToActiveChatSession(userMessageData, audioUrl: audioUrl);
-          _scrollToBottom();
-          logger.i('Transcribed text: $processedText');
-
-          await _generateAIResponse(processedText);
-          _evaluateUserInput(processedText);
-        } else {
-          _showSnackBar('Transcription returned empty. Did you speak clearly?');
-          logger.w('AssemblyAI returned empty transcript');
-        }
-      } catch (e) {
-        logger.e('Error processing audio: $e');
-        _showSnackBar('Error processing audio: $e');
+        _addMessageToActiveChatSession(userMessageData, audioUrl: audioUrl);
+        _scrollToBottom();
+        await _generateAIResponse(transcript);
+      } else {
+        _showSnackBar('Transcription failed.');
       }
     }
+  } catch (e) {
+    _addBotMessage("Error processing audio: ${e.toString()}");
   }
-
+}
   Future<String> _uploadToCloudinary(String filePath) async {
-// ...existing code...
     final cloudName = dotenv.env['CLOUDINARY_CLOUD_NAME'] ?? '';
     final uploadPreset = dotenv.env['CLOUDINARY_UPLOAD_PRESET'] ?? '';
     if (cloudName.isEmpty || uploadPreset.isEmpty) {
-      _showSnackBar('Cloudinary credentials missing. Please check .env file.');
+      final errorMsg = 'Cloudinary credentials missing. Please check .env file.';
+      logger.e(errorMsg);
+      _showSnackBar(errorMsg);
       throw Exception('Cloudinary credentials not found in .env');
     }
-
     try {
       final url = 'https://api.cloudinary.com/v1_1/$cloudName/upload';
       final request = http.MultipartRequest('POST', Uri.parse(url));
       request.fields['upload_preset'] = uploadPreset;
-      request.files.add(await http.MultipartFile.fromPath('file', filePath));
-
+      request.files.add(await http.MultipartFile.fromPath('file', filePath, filename: 'audio.wav'));
+      logger.i('Uploading to Cloudinary: $filePath');
       final response = await request.send();
-      if (response.statusCode == 200) {
-        final responseData = await response.stream.bytesToString();
-        final data = jsonDecode(responseData);
+      final responseBody = await response.stream.bytesToString();
+      logger.i('Cloudinary response status: ${response.statusCode}, body: $responseBody');
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(responseBody);
         final secureUrl = data['secure_url'] as String?;
         if (secureUrl == null || secureUrl.isEmpty) {
-          _showSnackBar(
-              'Cloudinary upload returned an invalid URL. Please check settings.');
-          throw Exception('Invalid Cloudinary response');
+          final errorMsg = 'Cloudinary upload returned invalid URL.';
+          logger.e(errorMsg);
+          _showSnackBar(errorMsg);
+          throw Exception(errorMsg);
         }
+        logger.i('Cloudinary upload successful: $secureUrl');
         return secureUrl;
+      } else {
+        final errorMsg = 'Cloudinary upload failed: Status ${response.statusCode}.';
+        logger.e(errorMsg);
+        _showSnackBar(errorMsg);
+        throw Exception(errorMsg);
       }
-      _showSnackBar('Cloudinary upload failed: Status ${response.statusCode}');
-      throw Exception(
-          'Failed to upload to Cloudinary: Status ${response.statusCode}');
     } catch (e) {
-      _showSnackBar('Cloudinary upload error: $e');
-      throw Exception('Cloudinary upload failed: $e');
+      final errorMsg = 'Cloudinary error: $e';
+      logger.e(errorMsg);
+      _showSnackBar(errorMsg);
+      throw Exception(errorMsg);
     }
   }
 
   Future<String?> _transcribeWithAssemblyAI(String audioUrl) async {
-// ...existing code...
-    final apiKey = dotenv.env['ASSEMBLY_API_KEY'] ?? '';
+    final apiKey = dotenv.env['ASSEMBLYAI_API_KEY'] ?? '';
     if (apiKey.isEmpty) {
+      logger.e('AssemblyAI API key missing.');
       _showSnackBar('AssemblyAI API key missing.');
       return null;
     }
-
+    logger.i('Attempting transcription with AssemblyAI for: $audioUrl');
     try {
       final submitResponse = await http.post(
         Uri.parse('https://api.assemblyai.com/v2/transcript'),
         headers: {
-          'Authorization': apiKey,
+          'Authorization': 'Bearer $apiKey',
           'Content-Type': 'application/json',
         },
-        body: jsonEncode({'audio_url': audioUrl}),
+        body: jsonEncode({
+          'audio_url': audioUrl,
+        }),
       );
-
+      logger.i('status: ${submitResponse.statusCode}, body: ${submitResponse.body}');
       if (submitResponse.statusCode != 200) {
-        _showSnackBar(
-            'Failed to submit transcription: ${submitResponse.statusCode}');
+        logger.e('Submission error: ${submitResponse.body}');
+        _showSnackBar('Failed to submit transcription: ${submitResponse.statusCode}');
         return null;
       }
-
       final submitData = jsonDecode(submitResponse.body);
       String transcriptId = submitData['id'];
-
-      while (true) {
+      logger.i('Transcript ID: $transcriptId');
+      int attempts = 0;
+      const maxAttempts = 30;
+      while (attempts < maxAttempts) {
+        attempts++;
+        await Future.delayed(Duration(seconds: 2));
         final pollResponse = await http.get(
           Uri.parse('https://api.assemblyai.com/v2/transcript/$transcriptId'),
-          headers: {'Authorization': apiKey},
+          headers: {'Authorization': 'Bearer $apiKey'},
         );
+        if (pollResponse.statusCode != 200) {
+          logger.w('Poll error: ${pollResponse.statusCode}');
+          if (attempts > 5 && pollResponse.statusCode >= 500) {
+            _showSnackBar('AssemblyAI server error.');
+            return null;
+          }
+          continue;
+        }
         final pollData = jsonDecode(pollResponse.body);
         String status = pollData['status'];
-
+        logger.i('Status: $status ($attempts/$maxAttempts)');
         if (status == 'completed') {
-          return pollData['text'] ?? '';
+          logger.i('Transcription completed.');
+          return pollData['text'] as String? ?? '';
         } else if (status == 'error') {
-          _showSnackBar('Transcription error: ${pollData['error']}');
+          logger.e('Error: ${pollData['error']}');
+          _showSnackBar('Transcription error');
           return null;
         }
-        await Future.delayed(const Duration(seconds: 2));
       }
+      logger.w('Transcription timed out.');
+      _showSnackBar('Transcription timed out.');
+      return null;
     } catch (e) {
+      logger.e('Error: $e');
       _showSnackBar('AssemblyAI error: $e');
       return null;
     }
   }
 
-  Future<String> _getOpenAIResponse(String prompt, {String? userInput}) async {
-// ...existing code...
-    if (!dotenv.isInitialized) {
-      logger.e('DotEnv not initialized');
-      _showSnackBar(
-          'Environment variables not loaded. Please check app configuration.');
-      return 'Sorry, I can’t respond right now. There’s a configuration issue.';
-    }
-
+  Future<String> _generateCallCenterPhrase() async {
     final apiKey = dotenv.env['OPENAI_API_KEY'] ?? '';
-    if (apiKey.isEmpty) {
-      logger.e('OpenAI API key missing');
-      _showSnackBar('OpenAI API key missing. Please check .env file.');
-      return 'Sorry, I can’t respond right now. Please try again later.';
-    }
+    if (apiKey.isEmpty) throw Exception('OpenAI key missing');
 
     try {
-      logger.d(
-          'Sending request to OpenAI with system prompt: $prompt, userInput: $userInput');
-      final List<Map<String, String>> messages = [
-        {
-          'role': 'system',
-          'content': prompt,
+      final response = await http.post(
+        Uri.parse('https://api.openai.com/v1/chat/completions'),
+        headers: {
+          'Authorization': 'Bearer $apiKey',
+          'Content-Type': 'application/json',
         },
-        ..._messages.map((msg) => {
-              'role': msg['isUser'] ? 'user' : 'assistant',
-              'content': msg['text'],
-            }),
-      ];
+        body: jsonEncode({
+          'model': 'gpt-4',
+          'messages': [
+            {
+              'role': 'system',
+              'content': '''
+              Generate ONE concise call-center practice phrase (8-12 words) for English learners.
+              Examples:
+              - "How may I assist you today?"
+              - "Could you hold for a moment please?"
+              - "Let me transfer you to the right department."
+              Return ONLY the phrase. No quotes or numbering.
+            '''
+            }
+          ],
+          'temperature': 0.7,
+          'max_tokens': 30,
+        }),
+      );
 
+      if (response.statusCode == 200) {
+        final phrase = jsonDecode(response.body)['choices'][0]['message']['content']
+            .trim()
+            .replaceAll('"', '');
+        logger.i('Generated phrase: $phrase');
+        return phrase;
+      } else {
+        throw Exception('OpenAI error: ${response.statusCode}');
+      }
+    } catch (e) {
+      logger.e('Phrase generation failed: $e');
+      return "Could you please repeat that?";
+    }
+  }
+
+  Future<String> _getOpenAIResponse(String prompt, {String? userInput}) async {
+    final apiKey = dotenv.env['OPENAI_API_KEY'] ?? '';
+    if (apiKey.isEmpty) {
+      logger.e('OpenAI API key missing.');
+      _showSnackBar('OpenAI API key missing.');
+      return 'Sorry, I can’t respond right now.';
+    }
+    try {
+      final messages = [
+        {'role': 'system', 'content': prompt},
+        ..._messages.reversed.take(5).map((msg) => ({
+              'role': msg['isUser'] ? 'user' : 'assistant',
+              'content': msg['text'].toString(),
+            })).toList().reversed,
+      ];
       if (userInput != null) {
         messages.add({'role': 'user', 'content': userInput});
       }
-
       final response = await http.post(
         Uri.parse('https://api.openai.com/v1/chat/completions'),
         headers: {
@@ -893,332 +1066,200 @@ class _AIBotScreenState extends State<AIBotScreen> {
           'temperature': 0.7,
         }),
       );
-
-      logger.d(
-          'OpenAI response status: ${response.statusCode}, body: ${response.body}');
       if (response.statusCode == 200) {
-        final responseBody =
-            utf8.decode(response.body.runes.toList(), allowMalformed: true);
-        final data = jsonDecode(responseBody);
-        final aiResponse = data['choices'][0]['message']['content'] ??
-            'Interesting! How can I help you today?';
-        final cleanedAiResponse = _cleanText(aiResponse);
-        logger.i('OpenAI response: $cleanedAiResponse');
-        return cleanedAiResponse;
+        final data = jsonDecode(response.body);
+        final aiResponse = data['choices'][0]['message']['content'] ?? 'How can I help you?';
+        logger.i('OpenAI response: $aiResponse');
+        return _cleanText(aiResponse);
       } else {
-        logger.w(
-            'OpenAI failed with status: ${response.statusCode}, body: ${response.body}');
-        _showSnackBar(
-            'OpenAI API request failed: Status ${response.statusCode}');
-        return 'Oops, something went wrong. Let’s try that again!';
+        logger.e('OpenAI failed: ${response.statusCode}, ${response.body}');
+        return 'Oops, something went wrong!';
       }
     } catch (e) {
-      logger.e('OpenAI error: $e');
-      _showSnackBar('OpenAI API error: $e');
-      return 'Sorry, I’m having trouble responding. Please try again!';
+      logger.e('Error: $e');
+      return 'Sorry, I’m having trouble connecting.';
     }
   }
 
   String _processText(String text) {
-// ...existing code...
-    logger.d('Raw text before processing: "$text"');
     String processedText = _cleanText(text.trim());
-    logger.d('After _cleanText: "$processedText"');
-
-    if (!processedText.endsWith('.') &&
+    if (processedText.isNotEmpty &&
+        !processedText.endsWith('.') &&
         !processedText.endsWith('?') &&
         !processedText.endsWith('!')) {
-      processedText = processedText.replaceAll(RegExp(r'[.?!]$'), '');
-      logger.d('After removing trailing punctuation: "$processedText"');
-
       List<String> questionStarters = [
-        'how',
-        'what',
-        'where',
-        'when',
-        'why',
-        'who',
-        'are',
-        'is',
-        'can',
-        'do',
-        'will'
+        'how', 'what', 'where', 'when', 'why', 'who', 'which',
+        'are', 'is', 'can', 'do', 'does', 'did', 'will', 'would', 'should', 'could',
+        'am', 'have', 'has', 'was', 'were',
       ];
-      bool isQuestion = questionStarters
-              .any((starter) => processedText.toLowerCase().startsWith(starter)) ||
+      bool isQuestion = questionStarters.any((starter) => processedText.toLowerCase().startsWith('$starter ')) ||
           processedText.toLowerCase().contains(' or ');
-      if (isQuestion) {
-        processedText += '?';
-        logger.d('Added ? for question: "$processedText"');
-      } else if (processedText.isNotEmpty) {
-        processedText += '.';
-        logger.d('Added . for statement: "$processedText"');
-      }
+      processedText += isQuestion ? '?' : '.';
     }
     return processedText;
   }
 
   String _cleanText(String text) {
-// ...existing code...
     return text
         .replaceAll('â€™', "'")
-        .replaceAll('â€', '"')
-        .replaceAll('Ã©', 'e')
+        .replaceAll('â€œ', '"')
+        .replaceAll('â€ ', '"')
+        .replaceAll('â€“', '–')
+        .replaceAll('â€”', '—')
         .trim();
   }
 
   Future<void> _generateAIResponse(String userInput) async {
-// ...existing code...
-    if (mounted) {
-      setState(() => _isProcessingTTS = true);
-      logger.d(
-          'Generating AI response for: $userInput with prompt: ${_currentLearningPrompt?.title ?? "General"}');
+    if (!mounted) return;
+    setState(() => _isProcessingTTS = true);
+    String prompt;
+    if (_currentLearningPrompt != null) {
+      prompt = _currentLearningPrompt!.promptText;
+      logger.i("Using prompt: ${_currentLearningPrompt!.title}");
+    } else {
+      prompt = 'You are TalkReady, a friendly English-speaking assistant for call-center practice. Be encouraging. User: $_userName.';
+      logger.i("Using general conversation prompt.");
+    }
+    String aiResponse = await _getOpenAIResponse(prompt, userInput: userInput);
+    final aiMessageData = {
+      'text': aiResponse,
+      'isUser': false,
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+    setState(() {
+      _messages.add(aiMessageData);
+      _isTyping = false;
+      _pruneMessages();
+    });
+    _addMessageToActiveChatSession(aiMessageData);
+    _scrollToBottom();
+    logger.i('AI message: $aiResponse');
+    _speakText(aiResponse, isUser: false);
+  }
 
-      String systemMessage;
-      if (_currentLearningPrompt != null) {
-        systemMessage = _currentLearningPrompt!.promptText;
-      } else {
-        final userName = _userName ?? "User";
-        systemMessage =
-            'You are an advanced English-speaking assistant named TalkReady. You are designed to help non-native speakers improve their spoken English skills. Based on user’s speaking level, You provide clear, friendly, and constructive feedback while encouraging natural and confident communication. The user\'s name is $userName.';
-      }
-
-      String aiResponse = await _getOpenAIResponse(
-        systemMessage,
-        userInput: userInput,
-      );
-      if (mounted) {
-        final aiMessageData = {
-          'text': aiResponse,
-          'isUser': false,
-          'timestamp': DateTime.now().toIso8601String(),
-        };
-        setState(() {
-          _messages.add(aiMessageData);
-          _isProcessingTTS = false;
-          _isTyping = false;
-          _pruneMessages();
-        });
-        _addMessageToActiveChatSession(aiMessageData);
-        _scrollToBottom();
-        logger.i('AI message added: $aiResponse');
-        _speakText(aiResponse, isUser: false);
-        _evaluateUserInput(userInput);
-      }
+  void _pruneMessages() {
+    const maxMessages = 50;
+    if (_messages.length > maxMessages) {
+      setState(() {
+        _messages.removeRange(0, _messages.length - maxMessages);
+      });
+      logger.i('Kept last $maxMessages messages.');
     }
   }
 
-  Future<void> _evaluateUserInput(String userInput) async {
-// ...existing code...
-    _responseCount++;
-    try {
-      double fluencyScore = await _analyzeFluency(userInput);
-      double grammarScore = await _analyzeGrammar(userInput);
-      double vocabScore = await _analyzeVocabulary(userInput);
-      double pronunciationScore = 0.0;
-      double interactionScore = await _analyzeInteraction(userInput, _messages);
-
-      if (mounted) {
-        setState(() {
-          _sessionProgress['Fluency'] =
-              (_sessionProgress['Fluency']! + fluencyScore) / _responseCount;
-          _sessionProgress['Grammar'] =
-              (_sessionProgress['Grammar']! + grammarScore) / _responseCount;
-          _sessionProgress['Pronunciation'] =
-              (_sessionProgress['Pronunciation']! + pronunciationScore) /
-                  _responseCount;
-          _sessionProgress['Vocabulary'] =
-              (_sessionProgress['Vocabulary']! + vocabScore) / _responseCount;
-          _sessionProgress['Interaction'] =
-              (_sessionProgress['Interaction']! + interactionScore) /
-                  _responseCount;
-        });
-        logger.i('Updated session progress: $_sessionProgress');
-      }
-    } catch (e) {
-      logger.e('Error evaluating user input: $e');
-      _showSnackBar('Error analyzing your speech. Using default scores.');
+  Future<void> _speakText(String text, {required bool isUser, bool skipTTS = false}) async {
+    if (!mounted || isUser || text.trim().isEmpty || skipTTS) {
+      logger.w("Skip TTS: isUser=$isUser, emptyText=${text.trim().isEmpty}, skipTTS=$skipTTS, mounted=$mounted");
+      setState(() => _isProcessingTTS = false);
+      return;
     }
-  }
-
-  Future<double> _analyzeFluency(String text) async {
-// ...existing code...
-    try {
-      final response = await _getOpenAIResponse(
-        'Analyze the following text for fluency (smoothness, clarity, and flow) on a scale of 0.0 to 1.0. Return only the number, e.g., 0.8. Text: "$text"',
-      );
-      return double.tryParse(response.trim()) ?? 0.1;
-    } catch (e) {
-      logger.e('Error analyzing fluency: $e');
-      return 0.1;
+    final apiKey = dotenv.env['AZURE_SPEECH_API_KEY'];
+    final region = dotenv.env['AZURE_SPEECH_REGION'];
+    if (apiKey == null || region == null) {
+      logger.e('Azure TTS missing: API Key: $apiKey, Region: $region');
+      _showSnackBar('TTS config error.');
+      setState(() => _isProcessingTTS = false);
+      return;
     }
-  }
-
-  Future<double> _analyzeGrammar(String text) async {
-// ...existing code...
+    setState(() => _isProcessingTTS = true);
     try {
-      final response = await _getOpenAIResponse(
-        'Analyze the following text for grammatical correctness on a scale of 0.0 to 1.0. Return only the number, e.g., 0.7. Text: "$text"',
-      );
-      return double.tryParse(response.trim()) ?? 0.1;
-    } catch (e) {
-      logger.e('Error analyzing grammar: $e');
-      return 0.1;
-    }
-  }
-
-  Future<double> _analyzeVocabulary(String text) async {
-// ...existing code...
-    try {
-      final response = await _getOpenAIResponse(
-        'Analyze the following text for vocabulary richness (variety, complexity) on a scale of 0.0 to 1.0. Return only the number, e.g., 0.9. Text: "$text"',
-      );
-      return double.tryParse(response.trim()) ?? 0.1;
-    } catch (e) {
-      logger.e('Error analyzing vocabulary: $e');
-      return 0.1;
-    }
-  }
-
-  Future<double> _analyzeInteraction(
-// ...existing code...
-      String text, List<Map<String, dynamic>> history) async {
-    try {
-      final historyString = jsonEncode(history
-          .map((msg) => {'text': msg['text'], 'isUser': msg['isUser']})
-          .toList());
-      final response = await _getOpenAIResponse(
-        'Analyze the following text for interaction quality (relevance, coherence with history) on a scale of 0.0 to 1.0 based on the conversation history. Return only the number, e.g., 0.85. Text: "$text", History: $historyString',
-      );
-      return double.tryParse(response.trim()) ?? 0.1;
-    } catch (e) {
-      logger.e('Error analyzing interaction: $e');
-      return 0.1;
-    }
-  }
-
-  Future<void> _speakText(String text, {required bool isUser}) async {
-// ...existing code...
-    if (!mounted || isUser) return;
-    if (mounted) {
-      setState(() => _isProcessingTTS = true);
-    }
-    try {
-      logger.i('Requesting TTS for text: "$text"');
+      final endpoint = 'https://$region.tts.speech.microsoft.com/cognitiveservices/v1';
+      final cleanText = text
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&apos;');
       final response = await http.post(
-        Uri.parse(_ttsServerUrl),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'text': text,
-          'locale': 'en_US', // Defaulting to en_US as _accentLocale is removed
-        }),
-      );
-      logger.i('TTS server response: status=${response.statusCode}');
+        Uri.parse(endpoint),
+        headers: {
+          'Ocp-Apim-Subscription-Key': apiKey,
+          'Content-Type': 'application/ssml+xml',
+          'X-Microsoft-OutputFormat': 'audio-16khz-128kbitrate-mono-mp3',
+          'User-Agent': 'TalkReady',
+        },
+        body: '''
+<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">
+  <voice name="en-US-JennyNeural">
+    <prosody rate="0.9" pitch="+0%">
+      <break time="100ms" />$cleanText<break time="100ms" />
+    </prosody>
+  </voice>
+</speak>''',
+      ).timeout(Duration(seconds: 30), onTimeout: () {
+        logger.e('Azure TTS request timed out');
+        throw Exception('TTS request timed out');
+      });
       if (response.statusCode == 200) {
-        logger.i('Playing audio with default locale');
-        await _audioPlayer.play(ap.BytesSource(response.bodyBytes));
+        final tempDir = await getTemporaryDirectory();
+        final audioPath = '${tempDir.path}/tts_output_${DateTime.now().millisecondsSinceEpoch}.mp3';
+        final file = File(audioPath);
+        await file.writeAsBytes(response.bodyBytes);
+        await _audioPlayer.stop();
+        await _audioPlayer.play(ap.DeviceFileSource(audioPath));
+        _audioPlayer.onPlayerComplete.listen((_) {
+          if (mounted) setState(() => _isProcessingTTS = false);
+        });
+        logger.i('Azure TTS played: $text');
       } else {
-        logger.w(
-            'TTS server failed with status ${response.statusCode}, falling back to FlutterTts');
-        await _flutterTtsFallback(text);
-      }
-    } catch (e) {
-      logger.e('F5-TTS error: $e, falling back to FlutterTts');
-      await _flutterTtsFallback(text);
-    } finally {
-      if (mounted) {
+        logger.e('Azure TTS failed: ${response.statusCode}, Response: ${response.body}');
+        _showSnackBar('Failed to play response audio.');
         setState(() => _isProcessingTTS = false);
       }
-    }
-  }
-
-  Future<void> _flutterTtsFallback(String text) async {
-// ...existing code...
-    try {
-      if (text.contains('!')) {
-        await _flutterTts.setPitch(0.9);
-        await _flutterTts.setSpeechRate(0.6);
-      } else if (text.contains('?')) {
-        await _flutterTts.setPitch(1.1);
-        await _flutterTts.setSpeechRate(0.85);
-      } else {
-        await _flutterTts.setPitch(0.9);
-        await _flutterTts.setSpeechRate(0.9);
-      }
-      await _flutterTts.setLanguage('en_US'); // Defaulting to en_US
-      await _flutterTts.speak(text);
-      logger.d('Flutter TTS fallback played with locale: en_US');
     } catch (e) {
-      logger.e('Error with Flutter TTS fallback: $e');
+      logger.e('TTS error: $e');
+      _showSnackBar('Error playing response: $e');
+      setState(() => _isProcessingTTS = false);
     }
   }
 
   Future<void> _saveProgress({bool showSnackBar = true}) async {
-// ...existing code...
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .update({
-        'sessionProgress': _sessionProgress,
-        'lastPracticeTime': FieldValue.serverTimestamp(),
-        'responseCount': _responseCount,
-        'lastRecognizedText': _lastRecognizedText,
-      }).then((value) {
-        logger.i(
-            'Progress and lastRecognizedText saved to Firestore user document');
-        if (showSnackBar && mounted) {
-          _showSnackBar('Progress saved successfully.');
-        }
-      }).catchError((error) {
-        logger.e('Error saving progress to Firestore: $error');
-        if (showSnackBar && mounted) {
-          _showSnackBar('Error saving progress. Please try again.');
-        }
-      });
-    }
-  }
-
-  void _pruneMessages() {
-// ...existing code...
-    if (_messages.length > 20) {
-      _messages.removeRange(0, _messages.length - 20);
-      logger.i('Pruned local _messages list to last 20');
-    }
-  }
-
-  Future<void> _saveTutorialStatus() async {
-// ...existing code...
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null && mounted) {
       try {
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .update({
-          'hasSeenTutorial': _hasSeenTutorial,
-        });
-        logger.i(
-            'Tutorial status saved to Firestore: hasSeenTutorial=$_hasSeenTutorial');
+        logger.i('No aggregated progress data to save.');
       } catch (e) {
-        logger.e('Error saving tutorial status: $e');
-        _showSnackBar('Error saving tutorial status.');
+        logger.e('Error in _saveProgress: $e');
+        if (showSnackBar && mounted) {
+          _showSnackBar('Error during cleanup: $e');
+        }
       }
     }
   }
 
-  void _showSnackBar(String message) {
-// ...existing code...
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
+  Future<void> _saveTutorialStatus() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      logger.w('Cannot save tutorial status: user not logged in.');
+      return;
+    }
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .update({
+            'hasSeenTutorial': _hasSeenTutorial,
+          });
+      logger.i('Tutorial status saved: hasSeenTutorial=$_hasSeenTutorial for user ${user.uid}');
+    } catch (e) {
+      logger.e('Error saving tutorial status: $e');
     }
   }
 
+  void _showSnackBar(String message) {
+    if (mounted && ScaffoldMessenger.maybeOf(context) != null) {
+      ScaffoldMessenger.of(context).removeCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    }
+    logger.w("SnackBar not shown: $message");
+  }
+
   void _scrollToBottom() {
-// ...existing code...
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
@@ -1231,34 +1272,26 @@ class _AIBotScreenState extends State<AIBotScreen> {
   }
 
   void _stopAudio() async {
-// ...existing code...
-    logger.d("Attempting to stop audio. Current _audioPlayer state: ${_audioPlayer.state}");
     try {
-      logger.d("_audioPlayer.state is of type: ${_audioPlayer.state.runtimeType}");
-    
       if (_audioPlayer.state == ap.PlayerState.playing) {
-        logger.d("AudioPlayer is in 'playing' state, calling stop().");
         await _audioPlayer.stop();
-      } else {
-        logger.d("AudioPlayer is not in 'playing' state or state is null. Current state: ${_audioPlayer.state}");
+        logger.i('AudioPlayer stopped.');
       }
-      logger.d("Attempting to stop FlutterTts.");
-      await _flutterTts.stop();
-
-      if (mounted) {
-        setState(() => _isProcessingTTS = false);
+      if (_player.isPlaying) {
+        await _player.stopPlayer();
+        logger.i('FlutterSoundPlayer stopped.');
       }
-      logger.i('Audio stopped successfully routine finished.');
-    } catch (e, s) {
-      logger.e('Error stopping audio: $e', error: e, stackTrace: s);
-      if (mounted) {
-        _showSnackBar('Failed to stop audio: $e');
-      }
+      setState(() {
+        _isProcessingTTS = false;
+        _isPlayingUserAudio = false;
+      });
+    } catch (e) {
+      logger.e('Error stopping audio: $e');
+      _showSnackBar('Failed to stop audio: $e');
     }
   }
 
   String _categoryToString(PromptCategory category) {
-// ...existing code...
     switch (category) {
       case PromptCategory.vocabulary:
         return "Vocabulary";
@@ -1269,152 +1302,146 @@ class _AIBotScreenState extends State<AIBotScreen> {
     }
   }
 
-  void _addBotMessage(String text) {
-// ...existing code...
-    if (mounted) {
-      final botMessageData = {
-        'text': text,
-        'isUser': false,
-        'timestamp': DateTime.now().toIso8601String(),
-      };
-      setState(() {
-        _messages.add(botMessageData);
-        _pruneMessages();
-      });
-      _addMessageToActiveChatSession(botMessageData);
-      _speakText(text, isUser: false);
-      _scrollToBottom();
-    }
+  void _addBotMessage(String text, {bool skipTTS = false}) {
+    final botMessageData = {
+      'text': text,
+      'isUser': false,
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+    setState(() {
+      _messages.add(botMessageData);
+      _pruneMessages();
+    });
+    _addMessageToActiveChatSession(botMessageData);
+    _scrollToBottom();
+    logger.i('Bot message: $text');
+    _speakText(text, isUser: false, skipTTS: skipTTS);
   }
 
   Future<void> _showLearningFocusDialog() async {
-// ...existing code...
     List<Widget> dialogOptions = [];
-
-    for (var category in PromptCategory.values) {
-      dialogOptions.add(SimpleDialogOption(
+    dialogOptions.add(
+      SimpleDialogOption(
         onPressed: () {
-          Navigator.pop(context, category);
+          Navigator.pop(context, 'General');
         },
-        child: Text(_categoryToString(category)),
-      ));
+        child: Text("General Dialog Conversation"),
+      ),
+    );
+    for (var category in PromptCategory.values) {
+      dialogOptions.add(
+        SimpleDialogOption(
+          onPressed: () {
+            Navigator.pop(context, category);
+          },
+          child: Text(_categoryToString(category)),
+        ),
+      );
     }
-
-    dialogOptions.add(SimpleDialogOption(
-      onPressed: () {
-        Navigator.pop(context, null);
-      },
-      child: const Text("General Conversation"),
-    ));
-
     var result = await showDialog(
       context: context,
-      builder: (BuildContext context) {
-        return SimpleDialog(
-          title: const Text('Choose a Learning Focus'),
-          children: dialogOptions,
-        );
-      },
+      builder: (BuildContext context) => SimpleDialog(
+        title: const Text('Choose a Learning Focus'),
+        children: dialogOptions,
+      ),
     );
-
     if (result is PromptCategory) {
       _showPromptsForCategoryDialog(result);
-    } else if (result == null) {
-      if (mounted) {
-        setState(() {
-          _currentLearningPrompt = null;
-        });
-      }
+    } else if (result == "General" || result == null) {
+      setState(() {
+        _currentLearningPrompt = null;
+      });
       _addBotMessage("Okay, let's have a general chat. How can I help you today?");
+      logger.i('Switched to General Conversation.');
     }
   }
 
   Future<void> _showPromptsForCategoryDialog(PromptCategory category) async {
-// ...existing code...
-    final List<Prompt> categoryPrompts =
-        _englishLearningPrompts.where((p) => p.category == category).toList();
+    final categoryPrompts = _englishLearningPrompts.where((p) => p.category == category).toList();
+    if (categoryPrompts.isEmpty) {
+      logger.w("No prompts for category: $category");
+      _addBotMessage("Sorry, no exercises for ${_categoryToString(category)}.");
+      setState(() => _currentLearningPrompt = null);
+      return;
+    }
 
     Prompt? selectedPrompt = await showDialog<Prompt>(
       context: context,
-      builder: (BuildContext context) {
-        return SimpleDialog(
-          title: Text('Choose a ${_categoryToString(category)} Prompt'),
-          children: categoryPrompts.map((prompt) {
-            return SimpleDialogOption(
-              onPressed: () {
-                Navigator.pop(context, prompt);
-              },
-              child: Text(prompt.title),
-            );
-          }).toList(),
-        );
-      },
+      builder: (BuildContext context) => SimpleDialog(
+        title: Text('Choose a ${_categoryToString(category)} Prompt'),
+        children: categoryPrompts
+            .map((prompt) => SimpleDialogOption(
+                  onPressed: () {
+                    Navigator.pop(context, prompt);
+                  },
+                  child: Text(prompt.title),
+                ))
+            .toList(),
+      ),
     );
 
+    if (!mounted) return;
+
+    setState(() {
+      _currentLearningPrompt = selectedPrompt;
+    });
+
     if (selectedPrompt != null) {
-      if (mounted) {
-        setState(() {
-          _currentLearningPrompt = selectedPrompt;
-        });
-      }
-      if (selectedPrompt.initialBotMessage != null &&
-          selectedPrompt.initialBotMessage!.isNotEmpty) {
+      if (selectedPrompt.category == PromptCategory.pronunciation) {
+        _addBotMessage("Let's practice your pronunciation! First, I'll suggest a phrase...");
+        final phrase = await _generateCallCenterPhrase();
+        setState(() => _currentPracticePhrase = phrase);
+        _addBotMessage("Try saying: '$phrase'");
+      } else if (selectedPrompt.initialBotMessage != null) {
         _addBotMessage(selectedPrompt.initialBotMessage!);
-      } else {
-        _addBotMessage(
-            "Okay, we're focusing on: ${selectedPrompt.title}. What's your input?");
       }
     }
   }
 
   @override
   void dispose() {
-// ...existing code...
-    _flutterTts.stop();
-    if (_isRecorderInitialized) {
-      _recorder.closeRecorder();
-    }
-    if (_isPlayerInitialized) {
-      _player.closePlayer();
-    }
     _stopAudio();
+    if (_recorder.isRecording) {
+      _recorder.stopRecorder().catchError((e) {
+        logger.e(e);
+        return null;
+      });
+    }
+    _recorder.closeRecorder();
+    if (_player.isPlaying) {
+      _player.stopPlayer();
+    }
+    _player.closePlayer();
     _textController.dispose();
     _audioPlayer.release();
     _audioPlayer.dispose();
     _scrollController.dispose();
+    logger.i('AIBotScreen disposed.');
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-// ...existing code...
+  Widget buildMainScreen(BuildContext context) {
     return ShowCaseWidget(
       onFinish: () {
-        logger.i('ShowCaseWidget onFinish triggered');
         TutorialService.handleTutorialCompletion();
-        if (mounted) {
-          setState(() {
-            _hasSeenTutorial = true;
-          });
-          _saveTutorialStatus();
-        }
+        setState(() => _hasSeenTutorial = true);
+        _saveTutorialStatus();
       },
+      autoPlay: false,
       builder: (BuildContext showcaseContext) {
         if (!_hasSeenTutorial && !_hasTriggeredTutorial) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              logger.i('Automatic tutorial trigger for first-time user');
-              _triggerTutorial(showcaseContext);
-            }
+            if (mounted) _triggerTutorial(showcaseContext);
           });
         }
-
-        return WillPopScope(
-          onWillPop: () async {
-            _stopAudio();
-            widget.onBackPressed?.call();
-            _saveProgress(showSnackBar: false);
-            return true;
+        return PopScope(
+          canPop: true,
+          onPopInvoked: (didPop) async {
+            if (!didPop) {
+              _stopAudio();
+              widget.onBackPressed?.call();
+              _saveProgress(showSnackBar: false);
+            }
           },
           child: Scaffold(
             appBar: AppBar(
@@ -1427,22 +1454,30 @@ class _AIBotScreenState extends State<AIBotScreen> {
                 ),
               ),
               backgroundColor: Colors.white,
+              elevation: 1.0,
               actions: [
-                IconButton(
-                  icon: const Icon(Icons.lightbulb_outline),
-                  tooltip: 'Choose Learning Focus',
-                  onPressed: _showLearningFocusDialog,
-                  color: const Color.fromARGB(255, 41, 115, 178),
+                TutorialService.buildShowcase(
+                  context: showcaseContext,
+                  key: _promptIconKey,
+                  title: 'Learning Focus',
+                  description: 'Choose a focus like vocabulary or pronunciation.',
+                  targetShapeBorder: CircleBorder(),
+                  child: IconButton(
+                    icon: Icon(Icons.lightbulb_outline),
+                    onPressed: _showLearningFocusDialog,
+                    tooltip: 'Choose Learning Focus',
+                    color: Color.fromARGB(255, 41, 115, 178),
+                  ),
                 ),
                 if (_isProcessingTTS)
-                  const Padding(
-                    padding: EdgeInsets.all(8.0),
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
                     child: SizedBox(
-                      width: 20,
-                      height: 20,
+                      width: 24,
+                      height: 24,
                       child: CircularProgressIndicator(
-                        strokeWidth: 2.0,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                        strokeWidth: 2.5,
+                        valueColor: AlwaysStoppedAnimation<Color>(Color.fromARGB(255, 41, 115, 178)),
                       ),
                     ),
                   ),
@@ -1455,14 +1490,10 @@ class _AIBotScreenState extends State<AIBotScreen> {
                     context: showcaseContext,
                     key: _chatAreaKey,
                     title: 'Chat Area',
-                    description:
-                        'Here, you’ll see your conversation with the TalkReady Bot. Your messages appear on the right, and the bot’s on the left.',
+                    description: 'Your conversation with TalkReady Bot happens here.',
                     child: Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
+                      padding: EdgeInsets.all(16),
+                      color: Colors.grey[50],
                       child: ListView.builder(
                         controller: _scrollController,
                         itemCount: _messages.length,
@@ -1473,6 +1504,9 @@ class _AIBotScreenState extends State<AIBotScreen> {
                             isUser: message['isUser'],
                             userProfileImage: _userProfileImage,
                             timestamp: message['timestamp'],
+                            audioPath: message['audioPath'],
+                            onPlayAudio: _playUserAudio,
+                            isPlaying: _isPlayingUserAudio,
                           );
                         },
                       ),
@@ -1481,22 +1515,36 @@ class _AIBotScreenState extends State<AIBotScreen> {
                 ),
                 if (_isListening)
                   Padding(
-                    padding: const EdgeInsets.only(top: 8.0),
-                    child: Text(
-                      _lastRecognizedText.isEmpty
-                          ? 'Listening...'
-                          : 'Listening: $_lastRecognizedText',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        color: Colors.blue,
-                        fontStyle: FontStyle.italic,
-                      ),
+                    padding: EdgeInsets.only(top: 8.0, bottom: 4.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.0,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                          ),
+                        ),
+                        SizedBox(width: 8),
+                        Text(
+                          _lastRecognizedText.isEmpty
+                              ? 'Listening...'
+                              : 'Heard "${_lastRecognizedText.substring(0, min(25, _lastRecognizedText.length))}${_lastRecognizedText.length > 25 ? '...' : ''}"',
+                          style: TextStyle(
+                            fontSize: 15,
+                            color: Colors.blue.shade700,
+                            fontStyle: FontStyle.italic,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
                   ),
                 if (_isTyping)
                   Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16.0, vertical: 8.0),
+                    padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
                     child: Row(
                       children: [
                         Expanded(
@@ -1505,25 +1553,37 @@ class _AIBotScreenState extends State<AIBotScreen> {
                             decoration: InputDecoration(
                               hintText: 'Type your message...',
                               border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
+                                borderRadius: BorderRadius.circular(25),
+                                borderSide: BorderSide(color: Colors.grey.shade400),
                               ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(25),
+                                borderSide: BorderSide(color: Theme.of(context).primaryColor, width: 2),
+                              ),
+                              contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                             ),
                             onSubmitted: (_) => _submitTypedText(),
+                            textInputAction: TextInputAction.send,
                           ),
                         ),
-                        const SizedBox(width: 8),
+                        SizedBox(width: 8),
                         IconButton(
-                          icon: const Icon(Icons.send, color: Colors.blue),
+                          icon: Icon(Icons.send, color: Theme.of(context).primaryColor),
                           onPressed: _submitTypedText,
+                          tooltip: 'Send Message',
                         ),
                       ],
                     ),
                   ),
                 Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 20),
+                  padding: EdgeInsets.only(
+                    bottom: MediaQuery.of(context).padding.bottom + 20,
+                    top: 10,
+                    left: 20,
+                    right: 20,
+                  ),
                   child: IconRow(
-                    onMicTap: () =>
-                        _isListening ? _stopListening() : _startListening(),
+                    onMicTap: () => _isListening ? _stopListening() : _startListening(),
                     onKeyboardTap: _toggleTyping,
                     isListening: _isListening,
                     isTyping: _isTyping,
@@ -1545,6 +1605,9 @@ class ChatMessage extends StatefulWidget {
   final bool isUser;
   final ImageProvider? userProfileImage;
   final String? timestamp;
+  final String? audioPath;
+  final VoidCallback onPlayAudio;
+  final bool isPlaying;
 
   const ChatMessage({
     super.key,
@@ -1552,6 +1615,9 @@ class ChatMessage extends StatefulWidget {
     required this.isUser,
     this.userProfileImage,
     this.timestamp,
+    this.audioPath,
+    required this.onPlayAudio,
+    required this.isPlaying,
   });
 
   @override
@@ -1561,11 +1627,17 @@ class ChatMessage extends StatefulWidget {
 class _ChatMessageState extends State<ChatMessage> {
   bool _showTimestamp = false;
 
-  String _formatTimestamp(String? timestamp) {
-    if (timestamp == null) return 'Unknown time';
+  String _formatTimestamp(String? isoTimestamp) {
+    if (isoTimestamp == null) return 'Unknown time';
     try {
-      final dateTime = DateTime.parse(timestamp);
-      return DateFormat('MMM d, yyyy, h:mm a').format(dateTime);
+      final dateTime = DateTime.parse(isoTimestamp).toLocal();
+      if (DateTime.now().difference(dateTime).inDays == 0) {
+        return DateFormat('h:mm a').format(dateTime);
+      } else if (DateTime.now().difference(dateTime).inDays == 1) {
+        return 'Yesterday, ${DateFormat('h:mm a').format(dateTime)}';
+      } else {
+        return DateFormat('MMM d, h:mm a').format(dateTime);
+      }
     } catch (e) {
       logger.e('Error parsing timestamp: $e');
       return 'Invalid time';
@@ -1574,77 +1646,106 @@ class _ChatMessageState extends State<ChatMessage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return GestureDetector(
       onTap: () {
-        setState(() {
-          _showTimestamp = !_showTimestamp;
-        });
+        if (widget.timestamp != null) {
+          setState(() => _showTimestamp = !_showTimestamp);
+        }
       },
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-        child: Row(
-          mainAxisAlignment:
-              widget.isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
-          crossAxisAlignment: CrossAxisAlignment.start,
+        padding: EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+        child: Column(
+          crossAxisAlignment: widget.isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
-            if (!widget.isUser) ...[
-              CircleAvatar(
-                radius: 20,
-                backgroundImage: const AssetImage('images/talkready_bot.png'),
-                backgroundColor: Colors.blue.shade100,
-              ),
-              const SizedBox(width: 8),
-            ],
-            Flexible(
-              child: Column(
-                crossAxisAlignment: widget.isUser
-                    ? CrossAxisAlignment.end
-                    : CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    margin: const EdgeInsets.symmetric(vertical: 4),
-                    padding: const EdgeInsets.all(12),
+            Row(
+              mainAxisAlignment: widget.isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (!widget.isUser) ...[
+                  CircleAvatar(
+                    radius: 18,
+                    backgroundImage: AssetImage('images/talkready_bot.png'),
+                    backgroundColor: Colors.blueGrey[50],
+                  ),
+                  SizedBox(width: 10),
+                ],
+                Flexible(
+                  child: Container(
+                    constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+                    margin: EdgeInsets.only(
+                      top: widget.isUser ? 2 : 4,
+                      bottom: 2,
+                    ),
+                    padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     decoration: BoxDecoration(
                       color: widget.isUser
-                          ? Colors.blue.shade100
+                          ? theme.primaryColor.withOpacity(0.15)
                           : Colors.white,
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.only(
+                        topLeft: Radius.circular(16),
+                        topRight: Radius.circular(16),
+                        bottomLeft: widget.isUser ? Radius.circular(16) : Radius.circular(4),
+                        bottomRight: widget.isUser ? Radius.circular(4) : Radius.circular(16),
+                      ),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.grey.withOpacity(0.1),
-                          blurRadius: 4,
-                          offset: const Offset(0, 2),
+                          blurRadius: 3,
+                          offset: Offset(0, 1),
                         ),
                       ],
                     ),
-                    child: Text(widget.message),
-                  ),
-                  if (_showTimestamp && widget.timestamp != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        _formatTimestamp(widget.timestamp),
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade600,
-                          fontStyle: FontStyle.italic,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.message,
+                          style: TextStyle(fontSize: 15, color: Colors.black87),
                         ),
-                      ),
+                        if (widget.isUser && widget.audioPath != null) ...[
+                          SizedBox(height: 8),
+                          IconButton(
+                            icon: Icon(
+                              widget.isPlaying ? Icons.stop : Icons.play_arrow,
+                              color: theme.primaryColor,
+                            ),
+                            onPressed: widget.onPlayAudio,
+                            tooltip: widget.isPlaying ? 'Stop playback' : 'Play your recording',
+                          ),
+                        ],
+                      ],
                     ),
+                  ),
+                ),
+                if (widget.isUser) ...[
+                  SizedBox(width: 10),
+                  CircleAvatar(
+                    radius: 18,
+                    backgroundColor: Colors.grey.shade300,
+                    backgroundImage: widget.userProfileImage,
+                    child: widget.userProfileImage == null
+                        ? Text(
+                            widget.message.isNotEmpty ? widget.message[0].toUpperCase() : 'U',
+                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                          )
+                        : null,
+                  ),
                 ],
-              ),
+              ],
             ),
-            if (widget.isUser) ...[
-              const SizedBox(width: 8),
-              CircleAvatar(
-                radius: 20,
-                backgroundColor: Colors.grey.shade300,
-                backgroundImage: widget.userProfileImage,
-                child: widget.userProfileImage == null
-                    ? const Icon(Icons.person, color: Colors.white, size: 24)
-                    : null,
+            if (_showTimestamp && widget.timestamp != null)
+              Padding(
+                padding: EdgeInsets.only(
+                  top: 4,
+                  left: widget.isUser ? 0 : 58,
+                  right: widget.isUser ? 58 : 0,
+                ),
+                child: Text(
+                  _formatTimestamp(widget.timestamp),
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                ),
               ),
-            ],
           ],
         ),
       ),
@@ -1672,56 +1773,66 @@ class IconRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
         TutorialService.buildShowcase(
           context: context,
           key: keyboardKey,
           title: 'Keyboard Input',
-          description: 'Tap here to type your message instead of speaking.',
-          child: _buildIcon(Icons.keyboard, Colors.purple.shade200, onKeyboardTap,
-              isActive: isTyping),
+          description: 'Type your message here.',
+          targetShapeBorder: CircleBorder(),
+          child: _buildIcon(
+            Icons.keyboard_alt_outlined,
+            isTyping ? theme.colorScheme.primary.withOpacity(0.5) : theme.colorScheme.secondary,
+            onKeyboardTap,
+            isActive: isTyping,
+            tooltip: 'Type message',
+          ),
         ),
-        const SizedBox(width: 20),
         TutorialService.buildShowcase(
           context: context,
           key: micKey,
           title: 'Microphone',
-          description: 'Tap to start recording your voice. Tap again to stop.',
+          description: 'Record your voice here.',
+          targetShapeBorder: CircleBorder(),
           child: _buildIcon(
-            isListening ? Icons.stop : Icons.mic,
-            Colors.blue.shade300,
+            isListening ? Icons.stop_circle_outlined : Icons.mic_none_outlined,
+            isListening ? Colors.red.shade400 : theme.primaryColor,
             onMicTap,
             isActive: isListening,
+            tooltip: isListening ? 'Stop recording' : 'Start recording',
           ),
         ),
       ],
     );
   }
 
-  Widget _buildIcon(IconData icon, Color color, VoidCallback? onTap,
-      {bool isActive = false}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 70,
-        height: 70,
-        decoration: BoxDecoration(
-          color: onTap != null && isActive ? color.withOpacity(0.7) : color,
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.grey.withOpacity(0.3),
-              spreadRadius: 1,
-              blurRadius: 3,
-              offset: const Offset(0, 1),
-            ),
-          ],
+  Widget _buildIcon(IconData icon, Color color, VoidCallback onTap, {bool isActive = false, String? tooltip}) {
+    return Tooltip(
+      message: tooltip ?? '',
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 64,
+          height: 64,
+          decoration: BoxDecoration(
+            color: isActive ? color.withOpacity(0.8) : color.withOpacity(0.7),
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(isActive ? 0.2 : 0.1),
+                spreadRadius: isActive ? 2 : 1,
+                blurRadius: isActive ? 4 : 2,
+                offset: Offset(0, isActive ? 2 : 1),
+              ),
+            ],
+            border: isActive ? Border.all(color: Colors.white.withOpacity(0.7), width: 2) : null,
+          ),
+          child: Icon(icon, color: Colors.white, size: 30),
         ),
-        child: Icon(icon, color: Colors.white, size: 30),
       ),
     );
   }
 }
-// ...existing code...
