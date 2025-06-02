@@ -338,7 +338,7 @@ class _Module3PageState extends State<Module3Page> {
       final response = await http
           .post(
             //
-            Uri.parse('http://192.168.254.103:5000/evaluate-scenario'), //
+            Uri.parse('http://192.168.208.38:5000/evaluate-scenario'), //
             headers: {'Content-Type': 'application/json'}, //
             body: jsonEncode(
                 {'answers': userTextAnswers, 'lesson': 'Lesson 3.1'}), //

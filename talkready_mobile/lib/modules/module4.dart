@@ -168,7 +168,7 @@ class _Module4PageState extends State<Module4Page> {
     _logger.i(
         "Evaluating Lesson 4.1 scenarios: $scenarioAnswers for lesson ID: $lessonId");
     final String apiBaseUrl =
-        dotenv.env['API_BASE_URL'] ?? 'http://192.168.254.103:5000';
+        dotenv.env['API_BASE_URL'] ?? 'http://192.168.208.38:5000';
 
     try {
       final response = await http.post(

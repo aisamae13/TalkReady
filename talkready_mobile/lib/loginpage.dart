@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:logger/logger.dart'; // Add this if not already included
 import 'forgotpass.dart';
 import 'loading_screen.dart';
 import 'homepage.dart';
@@ -18,13 +19,30 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final GoogleSignIn _googleSignIn = GoogleSignIn(scopes: ['email']);
+  final GoogleSignIn _googleSignIn = GoogleSignIn(scopes: ['email', 'profile']); // Added 'profile' for more data
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
   bool _isPasswordVisible = false;
+
+  final logger = Logger(
+    printer: PrettyPrinter(
+      methodCount: 2,
+      errorMethodCount: 8,
+      lineLength: 120,
+      colors: true,
+      printEmojis: true,
+      dateTimeFormat: DateTimeFormat.onlyTimeAndSinceStart,
+    ),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _configureAuthSettings(); // Configure Firebase settings on init
+  }
 
   @override
   void dispose() {
@@ -33,18 +51,28 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
-  // Updated onboarding check: looks for onboardingCompleted == true
+  Future<void> _configureAuthSettings() async {
+    try {
+      await FirebaseAuth.instance.setSettings(
+        appVerificationDisabledForTesting: false, // Enable reCAPTCHA for production
+        // For testing only (disable in production):
+        // appVerificationDisabledForTesting: true,
+      );
+      logger.i('Firebase auth settings configured successfully');
+    } catch (e) {
+      logger.e('Error configuring auth settings: $e');
+    }
+  }
+
   Future<bool> _hasCompletedOnboarding(String uid) async {
     try {
       DocumentSnapshot doc = await _firestore.collection('users').doc(uid).get();
       Map<String, dynamic>? userData = doc.data() as Map<String, dynamic>?;
 
-      // If onboardingCompleted is already true, return true
       if (doc.exists && userData != null && userData['onboardingCompleted'] == true) {
         return true;
       }
 
-      // Check if onboarding info fields exist (customize these fields as needed)
       bool hasOnboardingInfo = userData != null &&
           userData['firstName'] != null &&
           userData['lastName'] != null &&
@@ -52,7 +80,6 @@ class _LoginPageState extends State<LoginPage> {
           userData['lastName'].toString().isNotEmpty;
 
       if (hasOnboardingInfo) {
-        // Set onboardingCompleted to true if info exists
         await FirebaseFirestore.instance
             .collection('users')
             .doc(uid)
@@ -62,20 +89,18 @@ class _LoginPageState extends State<LoginPage> {
 
       return false;
     } catch (e) {
+      logger.e('Error checking onboarding: $e');
       return false;
     }
   }
 
-  // Updated: Navigate based on userType
   Future<void> _navigateAfterLogin(User user) async {
     try {
       DocumentSnapshot doc = await _firestore.collection('users').doc(user.uid).get();
       Map<String, dynamic>? userData = doc.data() as Map<String, dynamic>?;
 
-      // Check userType
       String? userType = userData?['userType']?.toString().toLowerCase();
 
-      // If onboarding is not completed, go to WelcomePage
       bool hasOnboardingData = await _hasCompletedOnboarding(user.uid);
       if (!mounted) return;
 
@@ -87,14 +112,12 @@ class _LoginPageState extends State<LoginPage> {
         return;
       }
 
-      // Navigate based on userType
       if (userType == 'trainer') {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => TrainerDashboard()),
         );
       } else {
-        // Default to HomePage for students and others
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => const HomePage()),
@@ -105,6 +128,7 @@ class _LoginPageState extends State<LoginPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Login error: $e')),
       );
+      logger.e('Navigation error after login: $e');
     }
   }
 
@@ -112,7 +136,10 @@ class _LoginPageState extends State<LoginPage> {
     try {
       await _googleSignIn.signOut();
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-      if (googleUser == null) return;
+      if (googleUser == null) {
+        logger.w('Google Sign-In cancelled by user');
+        return;
+      }
 
       Navigator.push(
         context,
@@ -133,9 +160,7 @@ class _LoginPageState extends State<LoginPage> {
       }
 
       if (userCredential.user != null) {
-        // Check if this is a new user
         if (userCredential.additionalUserInfo?.isNewUser ?? false) {
-          // New user: Sign out and redirect to sign-up
           await _auth.signOut();
           await _googleSignIn.signOut();
           Navigator.pop(context);
@@ -151,11 +176,9 @@ class _LoginPageState extends State<LoginPage> {
           return;
         }
 
-        // Existing user: Check Firestore document
         final userDoc = _firestore.collection('users').doc(userCredential.user!.uid);
         final docSnapshot = await userDoc.get();
         if (!docSnapshot.exists) {
-          // Rare case: Firebase user exists but no Firestore doc
           await _auth.signOut();
           await _googleSignIn.signOut();
           Navigator.pop(context);
@@ -184,6 +207,7 @@ class _LoginPageState extends State<LoginPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: $e')),
       );
+      logger.e('Google Sign-In error: $e');
     }
   }
 
@@ -201,6 +225,9 @@ class _LoginPageState extends State<LoginPage> {
         context,
         MaterialPageRoute(builder: (context) => const LoadingScreen()),
       );
+
+      // Configure reCAPTCHA settings
+      await _configureAuthSettings();
 
       final UserCredential userCredential = await _auth.signInWithEmailAndPassword(
         email: _emailController.text.trim(),
@@ -220,24 +247,36 @@ class _LoginPageState extends State<LoginPage> {
       if (!mounted) return;
       Navigator.pop(context);
       String message;
-      if (e.code == 'user-not-found') {
-        message = 'No user found for that email.';
-      } else if (e.code == 'wrong-password') {
-        message = 'Incorrect password.';
-      } else if (e.code == 'invalid-email') {
-        message = 'The email address is not valid.';
-      } else {
-        message = 'Login failed: $e';
+      switch (e.code) {
+        case 'user-not-found':
+          message = 'No user found for that email.';
+          break;
+        case 'wrong-password':
+          message = 'Incorrect password.';
+          break;
+        case 'invalid-email':
+          message = 'The email address is not valid.';
+          break;
+        case 'too-many-requests':
+          message = 'Too many attempts. Please try again later.';
+          break;
+        case 'invalid-credential':
+          message = 'The supplied auth credential is incorrect, malformed, or has expired. Check your internet connection or credentials.';
+          break;
+        default:
+          message = 'Login failed: ${e.message}';
       }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message)),
       );
+      logger.e('FirebaseAuthException: ${e.code} - ${e.message}');
     } catch (e) {
       if (!mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('An error occurred: $e')),
       );
+      logger.e('Unexpected error during email/password sign-in: $e');
     }
   }
 

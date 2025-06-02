@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'dart:math' as math; // Renamed to avoid conflict
+import 'dart:math' as math;
 import 'ai_bot.dart';
 import 'profile.dart';
 import 'package:logger/logger.dart';
@@ -16,15 +16,19 @@ Route _createSlidingPageRoute({
   required Widget page,
   required int newIndex,
   required int oldIndex,
-  required Duration duration, // duration will be ignored
+  required Duration duration,
 }) {
   return PageRouteBuilder(
     pageBuilder: (context, animation, secondaryAnimation) => page,
     transitionsBuilder: (context, animation, secondaryAnimation, child) {
-      return child; // Return child directly for no animation
+      final offset = oldIndex < newIndex ? Offset(1.0, 0.0) : Offset(-1.0, 0.0);
+      return SlideTransition(
+        position: Tween<Offset>(begin: offset, end: Offset.zero).animate(animation),
+        child: child,
+      );
     },
-    transitionDuration: Duration.zero, // Instant transition
-    reverseTransitionDuration: Duration.zero, // Instant reverse transition
+    transitionDuration: duration,
+    reverseTransitionDuration: duration,
   );
 }
 
@@ -44,6 +48,13 @@ class _HomePageState extends State<HomePage> {
     'Pronunciation': 0.0,
     'Vocabulary': 0.0,
     'Interaction': 0.0,
+  };
+  final Map<String, String> skillDescriptions = {
+    'Grammar': 'Your Grammar score is derived from your performance in lessons focusing on written accuracy and structure. This includes your scores from text-based scenario exercises (e.g., in Modules 2, 3, and 4, such as L2.1, L2.2, L2.3, L3.1, L4.1, L4.2) where AI evaluates your responses. It reflects your ability to form correct sentences and use appropriate language.',
+    'Fluency': 'Your Fluency score is calculated from your performance in dedicated speaking practice lessons (e.g., Lessons L3.2, L5.1, L5.2). Our AI analyzes aspects like the smoothness, naturalness, and flow of your speech, including how well you connect words without undue hesitation.',
+    'Interaction': 'Your Interaction score is based on your performance in speaking lessons that involve dialogues or call simulations (e.g., Lessons L3.2, L5.1, L5.2). It primarily reflects how effectively you complete conversational turns and cover the required information, based on the AI\'s analysis of speech completeness.',
+    'Pronunciation': 'Your Pronunciation score is assessed during speaking exercises (e.g., Lessons L3.2, L5.1, L5.2). The AI evaluates the clarity of your speech, accuracy of sounds, rhythm, and intonation (prosody) to determine how well you are likely to be understood.',
+    'Vocabulary': 'Your Vocabulary score reflects your understanding and use of a range of words appropriate for different contexts. It\'s based on your performance in text-based AI-evaluated exercises (e.g., in Modules 2, 3, and 4, such as L2.1, L2.2, L2.3, L3.1, L4.1, L4.2) where AI assesses how effectively you use vocabulary in context.'
   };
 
   final Logger logger = Logger();
@@ -114,6 +125,7 @@ class _HomePageState extends State<HomePage> {
   void _onItemTapped(int index) {
     logger.d('Tapped navigation item. Index: $index, currentIndex: $_selectedIndex');
     if (_selectedIndex == index) {
+      logger.d('Already on selected page, skipping navigation');
       return;
     }
 
@@ -126,11 +138,8 @@ class _HomePageState extends State<HomePage> {
     Widget nextPage;
     switch (index) {
       case 0:
-        // Already on Home or navigating to Home.
-        // If HomePage is the root, pushReplacement with HomePage might be redundant
-        // but ensures state consistency if HomePage could be pushed over something else.
-        nextPage = const HomePage();
-        break;
+        logger.d('Already on HomePage, skipping navigation');
+        return;
       case 1:
         nextPage = const CoursesPage();
         break;
@@ -148,18 +157,16 @@ class _HomePageState extends State<HomePage> {
         return;
     }
 
-    Navigator.pushReplacement(
+    Navigator.push(
       context,
       _createSlidingPageRoute(
         page: nextPage,
         newIndex: index,
         oldIndex: oldNavIndex,
-        duration: const Duration(milliseconds: 300), // This duration is now ignored
+        duration: const Duration(milliseconds: 300),
       ),
     );
   }
-
-  // _resetToHomeIndex method is removed
 
   @override
   Widget build(BuildContext context) {
@@ -171,7 +178,7 @@ class _HomePageState extends State<HomePage> {
       child: Scaffold(
         backgroundColor: Colors.white,
         appBar: AppBar(
-          title: const Text('TalkReady'),
+          title: const Text('Student Dashboard'),
           backgroundColor: Colors.transparent,
           elevation: 0,
           foregroundColor: const Color(0xFF00568D),
@@ -232,6 +239,16 @@ class _HomePageState extends State<HomePage> {
                     ],
                   ),
                   const SizedBox(height: 20),
+                  const Text(
+                    'Skill Progress Tracker',
+                    style: TextStyle(
+                      fontSize: 20,
+                      color: Color(0xFF00568D),
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 10),
                   Wrap(
                     alignment: WrapAlignment.center,
                     spacing: 10,
@@ -271,6 +288,38 @@ class _HomePageState extends State<HomePage> {
                       );
                     }).toList(),
                   ),
+                  if (selectedSkill != null) ...[
+                    const SizedBox(height: 10),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10.0),
+                      child: Text(
+                        skillDescriptions[selectedSkill] ?? 'No description available.',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.grey[700],
+                          height: 1.5,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ],
+                  if (selectedSkill == null &&
+                      FirebaseAuth.instance.currentUser != null &&
+                      skillPercentages.values.every((value) => value == 0.0)) ...[
+                    const SizedBox(height: 10),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10.0),
+                      child: Text(
+                        'Complete speaking exercises in the courses to see your skill progress here!',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[600],
+                          height: 1.5,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 20),
                   const Text(
                     'AI-Powered Vocabulary Booster',
@@ -350,7 +399,7 @@ class _HomePageState extends State<HomePage> {
           barHeight: 55,
           selectedIconPadding: 10,
           animationDuration: const Duration(milliseconds: 300),
-          customNotchWidthFactor: 1.8, // This line was already present and correct
+          customNotchWidthFactor: 1.8,
         ),
       ),
     );

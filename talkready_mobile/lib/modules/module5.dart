@@ -161,7 +161,7 @@ class _Module5PageState extends State<Module5Page> {
         "Processing Agent Turn: $turnId, AudioPath: $localAudioPath, Script: \"$originalText\"");
 
     final String apiBaseUrl =
-        dotenv.env['API_BASE_URL'] ?? 'http://192.168.254.103:5000';
+        dotenv.env['API_BASE_URL'] ?? 'http://192.168.208.38:5000';
     String? audioStorageUrl;
     String lessonIdForFirebase = _lessonNumericToFirestoreKey[currentLesson]!;
 

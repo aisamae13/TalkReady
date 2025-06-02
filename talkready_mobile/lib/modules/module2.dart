@@ -387,7 +387,7 @@ class _Module2PageState extends State<Module2Page> {
     required String lessonIdForServer,
   }) async {
     final String serverUrl =
-        'http://192.168.254.103:5000/evaluate-scenario'; // TODO: Replace with your actual IP or use a config
+        'http://192.168.208.38:5000/evaluate-scenario'; // TODO: Replace with your actual IP or use a config
     _logger.i(
         'Sending to AI server ($serverUrl) for $lessonIdForServer: $userScenarioAnswers');
     try {
