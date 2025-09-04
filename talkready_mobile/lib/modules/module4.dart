@@ -1,14 +1,14 @@
-import 'package:flutter/material.dart' hide CarouselController;
+import 'package:flutter/material.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:logger/logger.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:flutter_dotenv/flutter_dotenv.dart'; // For API Base URL
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import '../firebase_service.dart';
-import '../lessons/lesson4_1.dart'; // Will be refactored
-import '../lessons/lesson4_2.dart'; // Will be refactored
+import '../lessons/lesson4_1.dart';
+import '../lessons/lesson4_2.dart';
 
 class Module4Page extends StatefulWidget {
   final String? targetLessonKey;
@@ -23,9 +23,9 @@ class _Module4PageState extends State<Module4Page> {
   bool showActivity = false; // General flag if activity section is shown
   YoutubePlayerController? _youtubeController;
   int _currentSlide = 0;
-  final CarouselSliderController _carouselController =
-      CarouselSliderController();
+  final CarouselSliderController _carouselController = CarouselSliderController(); // Changed from CarouselController
   final Logger _logger = Logger();
+  final FirebaseService _firebase_service = FirebaseService();
   final FirebaseService _firebaseService = FirebaseService();
 
   String? _youtubeError;
@@ -36,11 +36,8 @@ class _Module4PageState extends State<Module4Page> {
 
   // Video IDs for Module 4 lessons
   final Map<int, String?> _videoIds = {
-    1: 'ENCnqouZgyQ', // Placeholder for Lesson 4.1 (Asking for Clarification) from your dart file
-    2: 'IddzjASeuUE', // Placeholder for Lesson 4.2 (Providing Solutions) from your dart file
-    // These should match the videos used in your JSX files if applicable
-    // L4.1.jsx video: '0' (googleusercontent) -> update with actual YouTube ID from your project if available
-    // L4.2.jsx video: '1' (googleusercontent) -> update with actual YouTube ID from your project if available
+    1: 'ENCnqouZgyQ',
+    2: 'IddzjASeuUE',
   };
 
   // Firestore keys for lessons
@@ -48,6 +45,16 @@ class _Module4PageState extends State<Module4Page> {
     1: "Lesson 4.1",
     2: "Lesson 4.2",
   };
+
+  // Add these state variables to the _Module4PageState class after the existing declarations
+
+  // Enhanced UI state for lesson4_1 integration
+  bool _isSaveComplete = false;
+  bool _showFeedbackModal = false;
+  Map<String, dynamic>? _currentFeedback;
+
+  // Animation-related state (if you want to add transitions)
+  bool _isTransitioning = false;
 
   @override
   void initState() {
@@ -60,16 +67,18 @@ class _Module4PageState extends State<Module4Page> {
     setState(() => _isContentLoaded = false);
     try {
       await _loadLessonProgress();
-      _initializeYoutubeController(); // Initialize based on currentLesson
+      _initializeYoutubeController();
+      
       if (mounted) {
         setState(() {
-          // Determine if activity should be shown based on progress
-          showActivity = _lessonCompletion['lesson$currentLesson'] ?? false;
+          final attempts = _lessonAttemptCounts['lesson$currentLesson'] ?? 0;
+          final completed = _lessonCompletion['lesson$currentLesson'] ?? false;
+          showActivity = attempts > 0 || completed;
           _isContentLoaded = true;
         });
       }
     } catch (error) {
-      _logger.e("Error during Module 4 initState loading: $error");
+      _logger.e("Error during Module 4 initialization: $error");
       if (mounted) {
         setState(() {
           _youtubeError = "Failed to load lesson content. Please try again.";
@@ -119,9 +128,9 @@ class _Module4PageState extends State<Module4Page> {
   }
 
   void _determineInitialLesson() {
-    if (!(_lessonCompletion['lesson1'] ?? false))
+    if (!(_lessonCompletion['lesson1'] ?? false)) {
       currentLesson = 1;
-    else if (!(_lessonCompletion['lesson2'] ?? false))
+    } else if (!(_lessonCompletion['lesson2'] ?? false))
       currentLesson = 2;
     else
       currentLesson = 2; // Default to last if all complete or other issue
@@ -157,18 +166,16 @@ class _Module4PageState extends State<Module4Page> {
   }
 
   // --- Lesson 4.1 Handlers ---
-  // Matches: onEvaluateScenarios in buildLesson4_1
   Future<Map<String, dynamic>?> _handleEvaluateLesson4_1Scenarios({
     required Map<String, String> scenarioAnswers,
-    // Add 'required String lessonId,' here if your buildLesson4_1 onEvaluateScenarios prop signature includes it.
-    // Based on your latest lesson4_1.dart, it *does* require lessonId.
     required String lessonId,
   }) async {
     setState(() => _isLoading = true);
-    _logger.i(
-        "Evaluating Lesson 4.1 scenarios: $scenarioAnswers for lesson ID: $lessonId");
-    final String apiBaseUrl =
-        dotenv.env['API_BASE_URL'] ?? 'http://192.168.208.38:5000';
+    _logger.i("Evaluating Lesson 4.1 scenarios: $scenarioAnswers for lesson ID: $lessonId");
+    
+    final String apiBaseUrl = dotenv.env['API_BASE_URL'] ?? 'http://10.0.2.2:5001';  // For Android emulator
+    // OR use your computer's actual IP address
+    // final String apiBaseUrl = dotenv.env['API_BASE_URL'] ?? 'http://192.168.x.x:5000';
 
     try {
       final response = await http.post(
@@ -177,25 +184,25 @@ class _Module4PageState extends State<Module4Page> {
         body: jsonEncode({
           'answers': scenarioAnswers,
           'lesson': lessonId
-        }), // Use the passed lessonId
+        }),
       );
 
       if (!mounted) return null;
+      
       if (response.statusCode == 200) {
         final result = jsonDecode(response.body);
         _logger.i("Lesson 4.1 AI Feedback received: $result");
         return {
           'aiFeedbackForScenarios': result['feedback'],
-          'overallAIScore': result['overallScore']
+          'overallAIScore': result['overallScore'] ?? 0.0
         };
       } else {
-        _logger.e(
-            "Error evaluating L4.1 scenarios: ${response.statusCode} ${response.body}");
-        return {'error': response.body};
+        _logger.e("Error evaluating L4.1 scenarios: ${response.statusCode} ${response.body}");
+        return {'error': 'Server error: ${response.statusCode}'};
       }
     } catch (e) {
       _logger.e("Exception evaluating L4.1 scenarios: $e");
-      return {'error': e.toString()};
+      return {'error': 'Network error: ${e.toString()}'};
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -209,7 +216,7 @@ class _Module4PageState extends State<Module4Page> {
     required Map<String, dynamic> aiFeedbackForScenarios,
     required double overallAIScore,
     Map<String, String>? reflectionResponses,
-    required bool isUpdate, // Make sure to include this
+    required bool isUpdate,
   }) async {
     _logger.i(
         "Saving Lesson 4.1 attempt: #$attemptNumber, Score: $overallAIScore, isUpdate: $isUpdate");
@@ -235,13 +242,13 @@ class _Module4PageState extends State<Module4Page> {
       await _saveLessonProgressAndUpdateCompletion(1); // 1 for lesson 4.1
     } catch (e) {
       _logger.e("Error saving L4.1 attempt: $e");
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text("Error saving attempt: ${e.toString()}")));
+      }
     }
   }
 
-  // Matches: onSaveReflection in buildLesson4_1
   Future<void> _handleSaveLesson4_1Reflection({
     required String lessonIdFirestoreKey,
     required int attemptNumber,
@@ -252,38 +259,34 @@ class _Module4PageState extends State<Module4Page> {
   }) async {
     _logger.i("Saving Lesson 4.1 reflection for attempt: #$attemptNumber");
     try {
-      // For reflections, we call onSaveAttempt with isUpdate: true
       await _handleSaveLesson4_1Attempt(
-        lessonIdFirestoreKey: lessonIdFirestoreKey, // Should be "Lesson 4.1"
+        lessonIdFirestoreKey: lessonIdFirestoreKey,
         attemptNumber: attemptNumber,
-        timeSpent:
-            -1, // Indicate no new time spent or use a specific value if needed
+        timeSpent: -1,
         scenarioResponses: submittedScenarioResponses,
         aiFeedbackForScenarios: aiFeedbackForScenarios,
-        overallAIScore:
-            originalOverallAIScore, // The score does not change with reflection
+        overallAIScore: originalOverallAIScore,
         reflectionResponses: reflectionResponses,
-        isUpdate: true, // This is an update to an existing attempt
+        isUpdate: true,
       );
       _logger.i("Lesson 4.1 Reflection for attempt #$attemptNumber saved.");
     } catch (e) {
       _logger.e("Error saving L4.1 reflection: $e");
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text("Error saving reflection: ${e.toString()}")));
+      }
     }
   }
 
   // --- Lesson 4.2 Handlers ---
   Future<Map<String, dynamic>?> _handleEvaluateLesson4_2Solutions({
     required Map<String, String> solutionResponses,
-    // Add 'required String lessonId,' if your buildLesson4_2 onEvaluateSolutions prop needs it.
-    // Let's assume for now it's specific and doesn't need lessonId passed.
   }) async {
     setState(() => _isLoading = true);
     _logger.i("Evaluating Lesson 4.2 solutions: $solutionResponses");
     final String apiBaseUrl =
-        dotenv.env['API_BASE_URL'] ?? 'http://192.168.254.103:5000';
+        dotenv.env['API_BASE_URL'] ?? 'http://192.168.254.103:5001';
 
     try {
       final response = await http.post(
@@ -297,10 +300,8 @@ class _Module4PageState extends State<Module4Page> {
       if (response.statusCode == 200) {
         final result = jsonDecode(response.body);
         _logger.i("Lesson 4.2 AI Feedback received: $result");
-        // Expected structure from server.js for /evaluate-solutions is {'feedback': {solution1: {text, score}, ...}}
         return {
           'aiSolutionFeedback': result['feedback'],
-          // 'overallAIScore' is calculated in lesson4_2.dart, not directly from this endpoint usually
         };
       } else {
         _logger.e(
@@ -319,11 +320,11 @@ class _Module4PageState extends State<Module4Page> {
     required String lessonIdFirestoreKey,
     required int attemptNumber,
     required int timeSpent,
-    required Map<String, String> solutionResponses, // Specific to L4.2
-    required Map<String, dynamic> aiSolutionFeedback, // Specific to L4.2
+    required Map<String, String> solutionResponses,
+    required Map<String, dynamic> aiSolutionFeedback,
     required double overallAIScore,
     Map<String, String>? reflectionResponses,
-    required bool isUpdate, // Make sure to include this
+    required bool isUpdate,
   }) async {
     _logger.i(
         "Saving Lesson 4.2 attempt: #$attemptNumber, Overall Score: $overallAIScore, isUpdate: $isUpdate");
@@ -332,58 +333,57 @@ class _Module4PageState extends State<Module4Page> {
 
     try {
       final detailedResponsesPayload = {
-        'solutionResponses_L4_2':
-            solutionResponses, // Using specific keys as in firebase.js
+        'solutionResponses_L4_2': solutionResponses,
         'solutionFeedback_L4_2': aiSolutionFeedback,
         'reflectionResponses_L4_2': reflectionResponses ?? {},
       };
 
       await _firebaseService.saveSpecificLessonAttempt(
-        lessonIdKey: lessonIdFirestoreKey, // Should be "Lesson 4.2"
+        lessonIdKey: lessonIdFirestoreKey,
         score: overallAIScore.round(),
         attemptNumberToSave: attemptNumber,
         timeSpent: timeSpent,
         detailedResponsesPayload: detailedResponsesPayload,
-        isUpdate: isUpdate, // Pass it to the service
+        isUpdate: isUpdate,
       );
       _lessonAttemptCounts[lessonKeyForProgress] = attemptNumber;
       await _saveLessonProgressAndUpdateCompletion(2); // 2 for lesson 4.2
     } catch (e) {
       _logger.e("Error saving L4.2 attempt: $e");
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text("Error saving attempt: ${e.toString()}")));
+      }
     }
   }
 
   Future<void> _handleSaveLesson4_2Reflection({
     required String lessonIdFirestoreKey,
     required int attemptNumber,
-    required Map<String, String> submittedSolutionResponses, // Specific to L4.2
-    required Map<String, dynamic> aiSolutionFeedback, // Specific to L4.2
+    required Map<String, String> submittedSolutionResponses,
+    required Map<String, dynamic> aiSolutionFeedback,
     required double originalOverallAIScore,
     required Map<String, String> reflectionResponses,
   }) async {
     _logger.i("Saving Lesson 4.2 reflection for attempt: #$attemptNumber");
     try {
-      // For reflections, we call onSaveAttempt with isUpdate: true
       await _handleSaveLesson4_2Attempt(
-        // Reuse the L4.2 save attempt logic
-        lessonIdFirestoreKey: lessonIdFirestoreKey, // "Lesson 4.2"
+        lessonIdFirestoreKey: lessonIdFirestoreKey,
         attemptNumber: attemptNumber,
         timeSpent: -1,
         solutionResponses: submittedSolutionResponses,
         aiSolutionFeedback: aiSolutionFeedback,
         overallAIScore: originalOverallAIScore,
         reflectionResponses: reflectionResponses,
-        isUpdate: true, // This is an update
+        isUpdate: true,
       );
       _logger.i("Lesson 4.2 Reflection for attempt #$attemptNumber saved.");
     } catch (e) {
       _logger.e("Error saving L4.2 reflection: $e");
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text("Error saving reflection: ${e.toString()}")));
+      }
     }
   }
 
@@ -412,19 +412,37 @@ class _Module4PageState extends State<Module4Page> {
         setState(() {
           currentLesson++;
           _currentSlide = 0;
-          _carouselController.jumpToPage(0);
-          showActivity = _lessonCompletion['lesson$currentLesson'] ?? false;
+          _carouselController.animateToPage(0);
+          // recompute showActivity using same rule (attempts OR completion)
+          final attempts = _lessonAttemptCounts['lesson$currentLesson'] ?? 0;
+          final completed = _lessonCompletion['lesson$currentLesson'] ?? false;
+          showActivity = attempts > 0 || completed;
           _initializeYoutubeController(); // Re-initialize for new lesson
           _isLoading = false;
         });
       }
     } else {
-      // All lessons in module completed
       _logger.i("Module 4 completed. Navigating back or to summary.");
       if (mounted) Navigator.pop(context);
     }
   }
 
+  // Add this method to help with debugging
+  void _debugResetAndReload() {
+    setState(() {
+      _isContentLoaded = false;
+      _youtubeError = null;
+    });
+    
+    // Force dispose and re-initialize
+    _youtubeController?.dispose();
+    _youtubeController = null;
+    
+    // Re-initialize everything
+    _performAsyncInit();
+  }
+
+  // Modify your build method to include debug options
   @override
   Widget build(BuildContext context) {
     if (!_isContentLoaded) {
@@ -438,7 +456,6 @@ class _Module4PageState extends State<Module4Page> {
         _lessonCompletion.values.every((completed) => completed);
     int initialAttemptForChild =
         (_lessonAttemptCounts['lesson$currentLesson'] ?? 0);
-    // Note: Child lesson will manage its "current attempt number for display" as initialAttemptNumber + 1
 
     return Scaffold(
       appBar: AppBar(
@@ -447,64 +464,99 @@ class _Module4PageState extends State<Module4Page> {
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
         ),
+        actions: [
+          // Add debug button
+          IconButton(
+            icon: Icon(Icons.bug_report),
+            onPressed: _debugResetAndReload,
+            tooltip: 'Debug Reset',
+          )
+        ],
       ),
       body: SafeArea(
         child: Stack(
           children: [
-            SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                children: [
-                  Text(
-                    'Lesson $currentLesson of ${_videoIds.length}',
-                    style: const TextStyle(fontSize: 16, color: Colors.grey),
-                  ),
-                  const SizedBox(height: 16),
-                  if (_youtubeError != null)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8.0),
-                      child: Text(_youtubeError!,
-                          style:
-                              const TextStyle(color: Colors.red, fontSize: 16),
-                          textAlign: TextAlign.center),
-                    ),
-                  _buildLessonContentWidget(initialAttemptForChild),
-                  if (showActivity &&
-                      (_lessonCompletion['lesson$currentLesson'] ?? false) &&
-                      _youtubeError == null) ...[
-                    const SizedBox(height: 24),
-                    if (currentLesson <
-                        _videoIds.length) // Check if there's a next lesson
-                      ElevatedButton(
-                        onPressed: _isLoading ? null : _goToNextLesson,
-                        child: _isLoading
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2))
-                            : const Text('Next Lesson'),
-                      )
-                    else // This is the last lesson
-                      ElevatedButton(
-                        onPressed: () => Navigator.pop(
-                            context), // Or navigate to a module completion page
-                        style: ElevatedButton.styleFrom(
-                            backgroundColor: isModuleCompleted
-                                ? Colors.green
-                                : Theme.of(context).primaryColor),
-                        child: Text(isModuleCompleted
-                            ? 'Module Completed - Return'
-                            : 'Finish Module & Return'),
+            // Add debug container to ensure something is visible
+            Container(
+              color: Colors.white,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  children: [
+                    // Debug information section
+                    Container(
+                      width: double.infinity,
+                      padding: EdgeInsets.all(8),
+                      margin: EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.blue[50],
+                        border: Border.all(color: Colors.blue),
+                        borderRadius: BorderRadius.circular(8)
                       ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Debug Info:'),
+                          Text('Lesson: $currentLesson of ${_videoIds.length}'),
+                          Text('Attempts: ${_lessonAttemptCounts['lesson$currentLesson'] ?? 0}'),
+                          Text('Completed: ${_lessonCompletion['lesson$currentLesson'] ?? false}'),
+                          Text('Show Activity: $showActivity'),
+                          Text('YouTube Error: ${_youtubeError ?? "None"}'),
+                        ],
+                      ),
+                    ),
+                    
+                    Text(
+                      'Lesson $currentLesson of ${_videoIds.length}',
+                      style: const TextStyle(fontSize: 16, color: Colors.grey),
+                    ),
+                    const SizedBox(height: 16),
+                    if (_youtubeError != null)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8.0),
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.red[50],
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.red[200]!),
+                          ),
+                          child: Text(
+                            _youtubeError!,
+                            style: TextStyle(color: Colors.red[700], fontSize: 14),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                    _buildLessonContentWidget(initialAttemptForChild),
+                    if (showActivity &&
+                        (_lessonCompletion['lesson$currentLesson'] ?? false) &&
+                        _youtubeError == null) ...[
+                      const SizedBox(height: 24),
+                      _buildNavigationButton(),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
+            
+            // Loading overlay
             if (_isLoading)
               Container(
-                color: Colors.black.withOpacity(0.3),
-                child: const Center(child: CircularProgressIndicator()),
+                color: Colors.black.withOpacity(0.5),
+                child: const Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(color: Colors.white),
+                      SizedBox(height: 16),
+                      Text(
+                        'Processing...',
+                        style: TextStyle(color: Colors.white, fontSize: 16),
+                      ),
+                    ],
+                  ),
+                ),
               ),
           ],
         ),
@@ -512,55 +564,187 @@ class _Module4PageState extends State<Module4Page> {
     );
   }
 
+  // Replace your _buildLessonContentWidget method with this version
   Widget _buildLessonContentWidget(int initialAttemptNumberFromModule) {
-    // Callback to show activity section, typically called by child lesson after study phase
-    VoidCallback onShowActivityCallback = () {
-      if (mounted) {
-        setState(() {
-          showActivity = true;
-          // Resetting feedback states for the current lesson in module page is not needed
-          // as the child lesson will manage its own display state (e.g. _showResultsView)
-        });
+    // Debug visibility to find issue
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.red, width: 2)
+      ),
+      child: Column(
+        children: [
+          // Debug text to confirm this method is being called
+          Container(
+            padding: const EdgeInsets.all(8),
+            color: Colors.yellow[100],
+            child: Text(
+              "Debug: Loading lesson ${currentLesson}, attempts: ${_lessonAttemptCounts['lesson$currentLesson']}, show activity: $showActivity",
+              style: TextStyle(color: Colors.black),
+            ),
+          ),
+          
+          // Callback function to show activity section
+          Builder(builder: (context) {
+            onShowActivityCallback() {
+              if (mounted) {
+                setState(() {
+                  showActivity = true;
+                });
+              }
+            }
+
+            // compute showActivityInitially for the child
+            final bool showActivityInitiallyForChild =
+                (_lessonAttemptCounts['lesson$currentLesson'] ?? 0) > 0 ||
+                (_lessonCompletion['lesson$currentLesson'] ?? false);
+
+            try {
+              switch (currentLesson) {
+                case 1:
+                  return Container(
+                    color: Colors.green[50],
+                    padding: const EdgeInsets.all(8),
+                    margin: const EdgeInsets.all(8),
+                    child: buildLesson4_1(  // Capitalized class name
+                      currentSlide: _currentSlide,
+                      carouselController: _carouselController,
+                      youtubeController: _youtubeController,
+                      showActivityInitially: showActivityInitiallyForChild,
+                      onShowActivitySection: onShowActivityCallback,
+                      initialAttemptNumber: initialAttemptNumberFromModule,
+                      onSlideChanged: (index) => setState(() => _currentSlide = index),
+                      onEvaluateScenarios: _handleEvaluateLesson4_1Scenarios,
+                      onSaveAttempt: _handleSaveLesson4_1Attempt,
+                      onSaveReflection: _handleSaveLesson4_1Reflection,
+                    ),
+                  );
+                case 2:
+                  return Container(
+                    color: Colors.blue[50],
+                    padding: const EdgeInsets.all(8),
+                    margin: const EdgeInsets.all(8),
+                    child: buildLesson4_2(  // Capitalized class name
+                      currentSlide: _currentSlide,
+                      carouselController: _carouselController,
+                      youtubeController: _youtubeController,
+                      showActivityInitially: showActivityInitiallyForChild,
+                      onShowActivitySection: onShowActivityCallback,
+                      initialAttemptNumber: initialAttemptNumberFromModule,
+                      onSlideChanged: (index) => setState(() => _currentSlide = index),
+                      onEvaluateSolutions: _handleEvaluateLesson4_2Solutions,
+                      onSaveAttempt: _handleSaveLesson4_2Attempt,
+                      onSaveReflection: _handleSaveLesson4_2Reflection,
+                    ),
+                  );
+                default:
+                  return Text('Error: Invalid lesson $currentLesson');
+              }
+            } catch (e) {
+              // Debug error in rendering
+              return Container(
+                padding: EdgeInsets.all(16),
+                color: Colors.red[100],
+                child: Column(
+                  children: [
+                    Text('Error rendering lesson: $e', 
+                      style: TextStyle(color: Colors.red[900]),
+                    ),
+                    SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: () => _initializeYoutubeController(),
+                      child: Text('Try Reinitialize'),
+                    )
+                  ],
+                ),
+              );
+            }
+          }),
+        ],
+      ),
+    );
+  }
+
+  // Add these methods before the dispose() method
+
+  Future<void> _handleFetchActivityLog() async {
+    // This method will be called by lesson4_1 when user clicks activity log
+    _logger.i("Activity log requested from lesson 4.1");
+    // The actual implementation is handled by the lesson widget itself
+  }
+
+  Future<Map<String, dynamic>?> _handleGetLessonData() async {
+    // Provide lesson data structure for the enhanced lesson4_1
+    return {
+      'moduleTitle': 'Module 4: Professional Communication',
+      'lessonTitle': 'Lesson 4.1: Asking for Clarification',
+      'video': {
+        'url': 'https://www.youtube.com/embed/${_videoIds[1] ?? ""}'
+      },
+      'objective': {
+        'heading': 'Learning Objectives',
+        'points': [
+          'Use polite and professional phrases to ask customers to repeat or clarify information',
+          'Respond naturally when you don\'t understand a customer during a call',
+          'Practice these skills in simulated role-play conversations',
+          'Build confidence in handling unclear communication'
+        ]
+      },
+      'introduction': {
+        'heading': 'Why Clarification Matters',
+        'paragraph': 'In a call center, background noise, unclear speech, or unfamiliar accents can make it hard to understand the customer. Agents must ask for clarification politely and confidently to ensure accuracy and professionalism.'
+      },
+      'keyPhrases': {
+        'table': [
+          {'situation': 'Didn\'t catch what was said', 'phrase': '"Sorry, can you say that again?"'},
+          {'situation': 'Didn\'t understand fully', 'phrase': '"I didn\'t quite get that. Could you repeat it?"'},
+          {'situation': 'Need spelling confirmation', 'phrase': '"Could you spell that for me, please?"'},
+          {'situation': 'Need to confirm details', 'phrase': '"Just to confirm, did you say [repeat info]?"'},
+          {'situation': 'Need more information', 'phrase': '"Could you explain that a little more?"'},
+          {'situation': 'Need clarification on meaning', 'phrase': '"Could you clarify what you meant by...?"'},
+        ]
+      },
+      'summary': {
+        'heading': 'Lesson Summary',
+        'paragraph': 'Asking for clarification politely and effectively is crucial in call center environments. These strategies help ensure clear understanding, build trust, and prevent mistakes. With practice, these techniques will become natural, enhancing your confidence and communication skills.'
       }
     };
+  }
 
-    switch (currentLesson) {
-      case 1:
-        return buildLesson4_1(
-          // context: context, // Not needed if buildLesson4_1 doesn't require BuildContext directly for routing etc.
-          currentSlide: _currentSlide,
-          carouselController: _carouselController,
-          youtubeController: _youtubeController, // Pass null if no video
-          showActivityInitially:
-              showActivity, // Use a different prop name if lesson manages its own "showActivity" vs "showStudy"
-          onShowActivitySection:
-              onShowActivityCallback, // Renamed from onShowActivity for clarity
+  // Add this method before the dispose() method
 
-          initialAttemptNumber: initialAttemptNumberFromModule,
-          onSlideChanged: (index) => setState(() => _currentSlide = index),
-
-          onEvaluateScenarios: _handleEvaluateLesson4_1Scenarios,
-          onSaveAttempt: _handleSaveLesson4_1Attempt,
-          onSaveReflection: _handleSaveLesson4_1Reflection,
-        );
-      case 2:
-        return buildLesson4_2(
-          // context: context,
-          currentSlide: _currentSlide,
-          carouselController: _carouselController,
-          youtubeController: _youtubeController, // Pass null if no video
-          showActivityInitially: showActivity,
-          onShowActivitySection: onShowActivityCallback,
-
-          initialAttemptNumber: initialAttemptNumberFromModule,
-          onSlideChanged: (index) => setState(() => _currentSlide = index),
-
-          onEvaluateSolutions: _handleEvaluateLesson4_2Solutions,
-          onSaveAttempt: _handleSaveLesson4_2Attempt,
-          onSaveReflection: _handleSaveLesson4_2Reflection,
-        );
-      default:
-        return Center(child: Text('Error: Invalid lesson $currentLesson'));
+  Widget _buildNavigationButton() {
+    final isModuleCompleted = _lessonCompletion.values.every((completed) => completed);
+    
+    if (currentLesson < _videoIds.length) {
+      return ElevatedButton.icon(
+        onPressed: _isLoading ? null : _goToNextLesson,
+        icon: _isLoading
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              )
+            : const Icon(Icons.arrow_forward),
+        label: Text(_isLoading ? 'Loading...' : 'Next Lesson'),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.blue[600],
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      );
+    } else {
+      return ElevatedButton.icon(
+        onPressed: () => Navigator.pop(context),
+        icon: Icon(isModuleCompleted ? Icons.check_circle : Icons.home),
+        label: Text(isModuleCompleted ? 'Module Completed' : 'Return to Modules'),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: isModuleCompleted ? Colors.green[600] : Colors.grey[600],
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      );
     }
   }
 }

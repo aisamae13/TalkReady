@@ -340,14 +340,17 @@ class _Lesson5_2State extends State<Lesson5_2> {
         await _audioRecorder.hasPermission();
     if (!hasPermission) {
       _logger.w("L5.2: Mic permission denied.");
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Mic permission required.')));
+      }
       return;
     }
     final currentTurn = _callSimulationTurns[_currentTurnIndex];
     if (_turnDataStateMap[currentTurn.id]?.isProcessed == true ||
-        _isProcessingTurn) return;
+        _isProcessingTurn) {
+      return;
+    }
     final tempDir = await getTemporaryDirectory();
     final path =
         '${tempDir.path}/turn_L5_2_${currentTurn.id}_${DateTime.now().millisecondsSinceEpoch}.m4a';
@@ -432,13 +435,14 @@ class _Lesson5_2State extends State<Lesson5_2> {
         });
       }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _turnDataStateMap[turnId] = (_turnDataStateMap[turnId] ??
                   _callSimulationTurns.firstWhere((t) => t.id == turnId))
               .copyWith(
                   isProcessed: true, openAiDetailedFeedback: "Exception: $e");
         });
+      }
     } finally {
       if (mounted) setState(() => _isProcessingTurn = false);
     }
@@ -446,15 +450,18 @@ class _Lesson5_2State extends State<Lesson5_2> {
 
   Future<void> _handleNextTurn() async {
     /* ...same as L5.1, adjust log for L5.2... */ if (_isProcessingTurn ||
-        _isRecording) return;
+        _isRecording) {
+      return;
+    }
     final currentTurnId = _callSimulationTurns[_currentTurnIndex].id;
     final currentTurnData = _turnDataStateMap[currentTurnId];
     if (_callSimulationTurns[_currentTurnIndex].character ==
             "Agent - Your Turn" &&
         (currentTurnData == null || currentTurnData.isProcessed != true)) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
             content: Text("Please record/submit your response.")));
+      }
       return;
     }
     if (_currentTurnIndex < _callSimulationTurns.length - 1) {
@@ -490,9 +497,10 @@ class _Lesson5_2State extends State<Lesson5_2> {
     final double averageAccuracy = agentTurnsProcessed > 0
         ? (totalAccuracyScore / agentTurnsProcessed)
         : 0.0;
-    if (mounted)
+    if (mounted) {
       setState(() => _overallLessonScore =
           double.parse(averageAccuracy.toStringAsFixed(1)));
+    }
     final List<Map<String, dynamic>> turnDetailsForFirebase =
         _callSimulationTurns.map((turn) {
       final data = _turnDataStateMap[turn.id];
@@ -711,7 +719,7 @@ class _Lesson5_2State extends State<Lesson5_2> {
             child: ElevatedButton.icon(
                 icon: const Icon(Icons.refresh),
                 label: Text(
-                    "Try Another Simulation (Attempt #${_currentAttemptNumberForUI})"),
+                    "Try Another Simulation (Attempt #$_currentAttemptNumberForUI)"),
                 onPressed: _isLoadingAI ? null : _startNewLessonAttempt,
                 style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 12))),
@@ -947,7 +955,9 @@ class _Lesson5_2State extends State<Lesson5_2> {
       final wordText = wordData['word'] as String? ?? '';
       final errorType = wordData['errorType'] as String?;
       if (errorType == "Omission" &&
-          (wordText.isEmpty || wordText == "omitted")) return "omitted";
+          (wordText.isEmpty || wordText == "omitted")) {
+        return "omitted";
+      }
       return wordText;
     }
 

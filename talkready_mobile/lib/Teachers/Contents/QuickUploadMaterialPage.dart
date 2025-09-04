@@ -1354,6 +1354,6 @@ class _QuickUploadMaterialPageState extends State<QuickUploadMaterialPage> {
       numberPart = numberPart.padRight(3, '0');
     }
 
-    return '${subjectPart.toUpperCase()}${numberPart}';
+    return '${subjectPart.toUpperCase()}$numberPart';
   }
 }

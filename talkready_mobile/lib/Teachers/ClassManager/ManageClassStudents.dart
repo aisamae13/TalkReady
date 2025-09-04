@@ -181,7 +181,7 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> with 
 
     try {
       final details = await fetchClassDetailsFromService(widget.classId);
-      if (details.trainerId != _currentUser!.uid) {
+      if (details.trainerId != _currentUser.uid) {
         setState(() {
           _error = "You are not authorized to manage students for this class.";
           _classDetails = null;
@@ -258,7 +258,7 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> with 
         studentToEnroll.uid,
         studentToEnroll.displayName ?? "Student",
         studentToEnroll.email ?? "",
-        _currentUser!.uid,
+        _currentUser.uid,
       );
 
       await _fetchClassAndStudentData(showLoading: false);

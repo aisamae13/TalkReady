@@ -1,3 +1,5 @@
+//Trainer
+
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -898,13 +900,13 @@ class _ManageClassContentPageState extends State<ManageClassContentPage>
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),
-      ),
-    );
+      );
   }
 
   Widget _buildUploadButton(bool isSmallScreen) {
@@ -1094,20 +1096,32 @@ class _ManageClassContentPageState extends State<ManageClassContentPage>
   }
 
   Widget _buildMaterialsGrid(bool isSmallScreen) {
+    // On narrow screens we just stack cards; avoids forced fixed heights.
+    if (isSmallScreen) {
+      return Column(
+        children: List.generate(
+          _materials.length,
+          (i) => Padding(
+            padding: EdgeInsets.only(bottom: i == _materials.length - 1 ? 0 : 12),
+            child: _buildMaterialCard(_materials[i], isSmallScreen),
+          ),
+        ),
+      );
+    }
+
+    // Wider screens: true grid.
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: isSmallScreen ? 1 : 2,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
         crossAxisSpacing: 12,
         mainAxisSpacing: 12,
-        childAspectRatio: isSmallScreen ? 3.5 : 3,
+        // Smaller ratio => taller cell. Adjusted to avoid overflow.
+        childAspectRatio: 2.6,
       ),
       itemCount: _materials.length,
-      itemBuilder: (context, index) {
-        final material = _materials[index];
-        return _buildMaterialCard(material, isSmallScreen);
-      },
+      itemBuilder: (context, index) => _buildMaterialCard(_materials[index], isSmallScreen),
     );
   }
 
@@ -1116,10 +1130,7 @@ class _ManageClassContentPageState extends State<ManageClassContentPage>
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
         color: Colors.white,
-        border: Border.all(
-          color: Colors.grey[200]!,
-          width: 1,
-        ),
+        border: Border.all(color: Colors.grey[200]!, width: 1),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.05),
@@ -1132,15 +1143,17 @@ class _ManageClassContentPageState extends State<ManageClassContentPage>
         color: Colors.transparent,
         child: InkWell(
           onTap: () {
-            // Add download/view functionality here
+            // TODO: view/download
           },
           borderRadius: BorderRadius.circular(16),
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(14),
             child: Column(
+              mainAxisSize: MainAxisSize.min, // Let height wrap content
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
                       padding: const EdgeInsets.all(8),
@@ -1151,29 +1164,31 @@ class _ManageClassContentPageState extends State<ManageClassContentPage>
                       child: FaIcon(
                         _getFileIcon(material.fileName),
                         color: const Color(0xFF8B5CF6),
-                        size: 20,
+                        size: 18,
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 10),
                     Expanded(
                       child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
                             material.title,
                             style: TextStyle(
                               color: const Color(0xFF1E293B),
-                              fontSize: isSmallScreen ? 14 : 16,
-                              fontWeight: FontWeight.bold,
+                              fontSize: isSmallScreen ? 14 : 15,
+                              fontWeight: FontWeight.w600,
                             ),
-                            maxLines: 1,
+                            maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
+                          const SizedBox(height: 2),
                           Text(
                             material.fileName,
                             style: TextStyle(
                               color: Colors.grey[600],
-                              fontSize: isSmallScreen ? 12 : 13,
+                              fontSize: isSmallScreen ? 11 : 12,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -1181,61 +1196,47 @@ class _ManageClassContentPageState extends State<ManageClassContentPage>
                         ],
                       ),
                     ),
-                    Row(
+                    const SizedBox(width: 8),
+                    Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Container(
-                          decoration: BoxDecoration(
-                            color: Colors.blue.shade50,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: IconButton(
-                            icon: FaIcon(
-                              FontAwesomeIcons.download,
-                              color: Colors.blue.shade600,
-                              size: 16,
-                            ),
-                            onPressed: () {
-                              // Add download functionality
-                            },
-                            tooltip: "Download",
-                          ),
+                        _MaterialIconButton(
+                          color: Colors.blue.shade50,
+                          iconColor: Colors.blue.shade600,
+                          icon: FontAwesomeIcons.download,
+                          tooltip: 'Download',
+                          onTap: () {
+                            // TODO
+                          },
                         ),
-                        const SizedBox(width: 4),
-                        Container(
-                          decoration: BoxDecoration(
-                            color: Colors.red.shade50,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: IconButton(
-                            icon: FaIcon(
-                              FontAwesomeIcons.trashCan,
-                              color: Colors.red.shade600,
-                              size: 16,
-                            ),
-                            onPressed: () => _handleDeleteMaterial(material),
-                            tooltip: "Delete",
-                          ),
+                        const SizedBox(height: 6),
+                        _MaterialIconButton(
+                          color: Colors.red.shade50,
+                          iconColor: Colors.red.shade600,
+                          icon: FontAwesomeIcons.trashCan,
+                          tooltip: 'Delete',
+                          onTap: () => _handleDeleteMaterial(material),
                         ),
                       ],
                     ),
                   ],
                 ),
                 if (material.description != null && material.description!.isNotEmpty) ...[
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   Text(
                     material.description!,
                     style: TextStyle(
                       color: Colors.grey[700],
-                      fontSize: isSmallScreen ? 12 : 13,
+                      fontSize: isSmallScreen ? 11 : 12,
+                      height: 1.25,
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
-                const Spacer(),
+                const SizedBox(height: 8),
                 Text(
-                  "Uploaded: ${_formatTimestamp(material.createdAt)}",
+                  'Uploaded: ${_formatTimestamp(material.createdAt)}',
                   style: TextStyle(
                     color: Colors.grey[500],
                     fontSize: 10,
@@ -1247,6 +1248,40 @@ class _ManageClassContentPageState extends State<ManageClassContentPage>
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _MaterialIconButton extends StatelessWidget {
+  final Color color;
+  final Color iconColor;
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+  const _MaterialIconButton({
+    required this.color,
+    required this.iconColor,
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 34,
+      height: 34,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: IconButton(
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(),
+        icon: FaIcon(icon, color: iconColor, size: 14),
+        tooltip: tooltip,
+        onPressed: onTap,
       ),
     );
   }

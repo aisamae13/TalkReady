@@ -107,7 +107,7 @@ class _EditClassPageState extends State<EditClassPage>
 
     try {
       final details = await getClassDetails(widget.classId);
-      if (details['trainerId'] != _currentUser!.uid) {
+      if (details['trainerId'] != _currentUser.uid) {
         setState(() {
           _error = "You are not authorized to edit this class.";
           _initialLoading = false;

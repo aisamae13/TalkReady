@@ -35,7 +35,7 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
   // NEW: Add stream subscriptions for real-time updates
   StreamSubscription<QuerySnapshot>? _classesSubscription;
   StreamSubscription<QuerySnapshot>? _assessmentsSubscription;
-  Map<String, StreamSubscription<QuerySnapshot>> _submissionsSubscriptions = {};
+  final Map<String, StreamSubscription<QuerySnapshot>> _submissionsSubscriptions = {};
 
   @override
   void initState() {
@@ -58,7 +58,9 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
     // NEW: Cancel all subscriptions
     _classesSubscription?.cancel();
     _assessmentsSubscription?.cancel();
-    _submissionsSubscriptions.values.forEach((subscription) => subscription.cancel());
+    for (var subscription in _submissionsSubscriptions.values) {
+      subscription.cancel();
+    }
     
     _fadeController.dispose();
     _slideController.dispose();
@@ -161,7 +163,9 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
     _assessmentsSubscription?.cancel();
     
     // Cancel all existing submissions listeners
-    _submissionsSubscriptions.values.forEach((subscription) => subscription.cancel());
+    for (var subscription in _submissionsSubscriptions.values) {
+      subscription.cancel();
+    }
     _submissionsSubscriptions.clear();
 
     if (mounted) setState(() => _loadingAssessments = true);
@@ -263,7 +267,9 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
     if (_selectedClassId == null) {
       // Cancel existing listeners when no class is selected
       _assessmentsSubscription?.cancel();
-      _submissionsSubscriptions.values.forEach((subscription) => subscription.cancel());
+      for (var subscription in _submissionsSubscriptions.values) {
+        subscription.cancel();
+      }
       _submissionsSubscriptions.clear();
       
       if (mounted) {

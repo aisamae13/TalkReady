@@ -37,13 +37,13 @@ class _Module5PageState extends State<Module5Page> {
   bool _isLoading =
       false; // General loading for module-level actions (e.g., fetching API)
 
-  Map<int, bool> _showSummaryAfterCompletion = {1: false, 2: false};
+  final Map<int, bool> _showSummaryAfterCompletion = {1: false, 2: false};
 
-  Map<int, Map<String, dynamic>?> _lastAttemptDataForSummary = {
+  final Map<int, Map<String, dynamic>?> _lastAttemptDataForSummary = {
     1: null,
     2: null
   };
-  Map<int, bool> _triggerSummaryDisplay = {1: false, 2: false};
+  final Map<int, bool> _triggerSummaryDisplay = {1: false, 2: false};
 
   // Firestore keys for lessons in Module 5
   final Map<int, String> _lessonNumericToFirestoreKey = {
@@ -122,9 +122,9 @@ class _Module5PageState extends State<Module5Page> {
   }
 
   void _determineInitialLesson() {
-    if (!(_lessonCompletion['lesson1'] ?? false))
+    if (!(_lessonCompletion['lesson1'] ?? false)) {
       currentLesson = 1;
-    else if (!(_lessonCompletion['lesson2'] ?? false))
+    } else if (!(_lessonCompletion['lesson2'] ?? false))
       currentLesson = 2;
     else
       currentLesson = 2; // Default to last lesson if all complete
@@ -501,14 +501,14 @@ class _Module5PageState extends State<Module5Page> {
   }
 
   Widget _buildLessonContentWidget(int initialAttemptNumberFromModule) {
-    VoidCallback onShowActivityCallback = () {
+    onShowActivityCallback() {
       if (mounted) {
         setState(() {
           showActivity = true;
           // Lesson widget will handle its internal state reset (e.g., _isStudied)
         });
       }
-    };
+    }
 
     final int lessonNum = currentLesson;
 

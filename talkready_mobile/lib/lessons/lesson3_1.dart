@@ -1,57 +1,21 @@
-// lesson3_1.dart
+//OK NAMAN
+
 import 'package:flutter/material.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:logger/logger.dart';
 import 'dart:async';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../lessons/common_widgets.dart';
+import '../StudentAssessment/AiFeedbackData.dart';
+import '../widgets/parsed_feedback_card.dart';
+import '../firebase_service.dart';
 
-// ... (ParsedFeedbackCard remains the same) ...
-class ParsedFeedbackCard extends StatelessWidget {
-  final Map<String, dynamic> feedbackData;
-  final String? scenarioLabel;
-  const ParsedFeedbackCard(
-      {super.key, required this.feedbackData, this.scenarioLabel});
-
-  @override
-  Widget build(BuildContext context) {
-    final score = feedbackData['score'] ?? 'N/A';
-    final text = feedbackData['text'] as String? ?? "No feedback text.";
-    return Card(
-      elevation: 2,
-      margin: const EdgeInsets.symmetric(vertical: 6.0),
-      child: Padding(
-        padding: const EdgeInsets.all(10.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (scenarioLabel != null)
-              Text(scenarioLabel!,
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).primaryColorDark)),
-            const SizedBox(height: 4),
-            Text("AI Score: $score/5",
-                style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: (score is num && score >= 3)
-                        ? Colors.green.shade700
-                        : (score is num && score >= 0)
-                            ? Colors.orange.shade800
-                            : Colors.grey)),
-            const SizedBox(height: 4),
-            HtmlFormattedText(htmlString: text),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class buildLesson3_1 extends StatefulWidget {
-  // ... (Constructor remains the same)
+class BuildLesson3_1 extends StatefulWidget {
   final BuildContext parentContext;
   final int currentSlide;
   final CarouselSliderController carouselController;
@@ -59,8 +23,7 @@ class buildLesson3_1 extends StatefulWidget {
   final Key? youtubePlayerKey;
   final bool showActivitySectionInitially;
   final VoidCallback onShowActivitySection;
-  final Function(Map<String, String> userTextAnswers, int timeSpent,
-      int attemptNumberForSubmission) onSubmitAnswers;
+  final Function(Map<String, String> userTextAnswers, int timeSpent, int attemptNumberForSubmission) onSubmitAnswers;
   final Function(int) onSlideChanged;
   final int initialAttemptNumber;
   final bool displayFeedback;
@@ -68,7 +31,7 @@ class buildLesson3_1 extends StatefulWidget {
   final int? overallAIScoreForDisplay;
   final int? maxPossibleAIScoreForDisplay;
 
-  const buildLesson3_1({
+  const BuildLesson3_1({
     super.key,
     required this.parentContext,
     required this.currentSlide,
@@ -90,13 +53,18 @@ class buildLesson3_1 extends StatefulWidget {
   _Lesson3_1State createState() => _Lesson3_1State();
 }
 
-class _Lesson3_1State extends State<buildLesson3_1> {
+class _Lesson3_1State extends State<BuildLesson3_1> with TickerProviderStateMixin {
   final Logger _logger = Logger();
+  final FirebaseService _firebaseService = FirebaseService();
   late FlutterTts flutterTts;
-  List<dynamic> _voices = []; // To store available voices
-  Map<String, String>? _selectedVoice; // To store the voice map for setting
+  late AnimationController _fadeController;
+  late Animation<double> _fadeAnimation;
 
-  // ... (other state variables: _videoFinished, _isSubmitting, etc. remain the same) ...
+  // TTS and Voice state
+  List<dynamic> _voices = [];
+  Map<String, String>? _selectedVoice;
+
+  // Content and UI state
   bool _videoFinished = false;
   bool _isSubmitting = false;
   Timer? _timer;
@@ -105,20 +73,50 @@ class _Lesson3_1State extends State<buildLesson3_1> {
   bool _isLoadingLessonContent = true;
   Map<String, dynamic>? _lessonData;
   late Map<String, TextEditingController> _textControllers;
-  Map<int, bool> _showTranscriptFor = {};
-  final List<String> _questionLabels = [
-    "What was the customer’s issue?",
-    "What information did the agent ask for?",
-    "What solution did the agent offer?",
-    "Was the customer satisfied with the response? (e.g., Yes/No, and why)"
-  ];
-  final List<Map<String, dynamic>> _staticSlidesDataFallback = [
-    {'title': 'Objective (Fallback)', 'content': 'Listen and comprehend.'},
-  ];
+
+  // Pre-assessment state
+  bool _isPreAssessmentComplete = false;
+  String _preAssessmentAnswer = '';
+  String? _preAssessmentResult; // 'correct' or 'incorrect'
+  bool _showPreAssessmentFeedback = false;
+  bool _isAudioLoading = false;
+
+  // Activity state
+  bool _hasStudied = false;
+  bool _isActivityVisible = false;
+  bool _showResults = false;
+  bool _isTimedOut = false;
+  int _countdownTimer = 1200;
+  bool _timerActive = false;
+  int? _overallScore;
+  int _maxPossibleAIScore = 0;
+  Map<String, dynamic> _feedback = {};
+  Map<String, String> _answers = {};
+  String? _loadingAudioId;
+  bool _isTranscriptVisible = false;
+
+  // Activity log state
+  bool _showActivityLog = false;
+  List<Map<String, dynamic>> _activityLog = [];
+  bool _activityLogLoading = false;
+
+  static const String staticLessonId = "Lesson-3-1";
+  static const int initialTime = 1200;
 
   @override
   void initState() {
     super.initState();
+    
+    // Initialize animation
+    _fadeController = AnimationController(
+      duration: const Duration(milliseconds: 700),
+      vsync: this,
+    );
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
+    );
+
+    // Initialize TTS
     flutterTts = FlutterTts();
     _initializeAndConfigureTts();
 
@@ -130,248 +128,17 @@ class _Lesson3_1State extends State<buildLesson3_1> {
     if (widget.showActivitySectionInitially && !widget.displayFeedback) {
       _startTimer();
     }
-  }
 
-  Future<void> _initializeAndConfigureTts() async {
-    // Get available voices first
-    try {
-      var voices = await flutterTts.getVoices;
-      if (voices != null && voices is List && mounted) {
-        setState(() {
-          _voices = voices;
-        });
-        _logger.i("Available TTS Voices: $_voices");
-        // Now try to select and set a desired voice
-        _setDesiredVoice(
-            "en-GB"); // Example: Try to set a British English voice
-      }
-    } catch (e) {
-      _logger.e("Error getting TTS voices: $e");
-    }
+    // Start animation
+    _fadeController.forward();
 
-    // Set general TTS properties
-    try {
-      await flutterTts.setSpeechRate(0.45);
-      await flutterTts.setVolume(1.0);
-      await flutterTts.setPitch(1.0);
-    } catch (e) {
-      _logger.e("Error setting basic TTS properties: $e");
-    }
-  }
-
-  Future<void> _configureTts() async {
-    try {
-      await flutterTts
-          .stop(); // Stop any ongoing speech before changing settings
-
-      // 1. Set the base language (still important as it can affect pronunciation rules)
-      // Even if the accent doesn't change, this helps the TTS engine know how to interpret words.
-      // For example, for general clarity, "en-US" is often a good default if specific accents aren't working.
-      await flutterTts
-          .setLanguage("en-US"); // Or your preferred base English locale
-
-      // 2. Adjust Speech Rate for Clarity
-      // Rate is typically 0.0 (slowest) to 1.0 (normal). Values up to 2.0 might be possible.
-      // Slower rates (e.g., 0.4 to 0.5) can make speech easier to understand.
-      // Experiment to find what sounds best.
-      await flutterTts.setSpeechRate(0.5); // Example: A bit slower than normal
-
-      // 3. Adjust Pitch (Optional - can make it sound less robotic or different)
-      // Pitch is typically 0.5 (lower) to 2.0 (higher), with 1.0 being normal.
-      // Minor adjustments can sometimes improve naturalness.
-      await flutterTts.setPitch(0.5); // Example: Normal pitch
-
-      // 4. Ensure Volume is adequate
-      await flutterTts.setVolume(1.0); // Max volume
-
-      _logger
-          .i("L3.1: Flutter TTS configured with rate and pitch adjustments.");
-    } catch (e) {
-      _logger.e("L3.1: Error configuring TTS settings: $e");
-    }
-  }
-
-  Future<void> _setDesiredVoice(String targetLocalePrefix) async {
-    // Example: targetLocalePrefix = "en-GB"
-    Map<String, String>? foundVoice;
-    for (var voiceDyn in _voices) {
-      if (voiceDyn is Map) {
-        // Convert Map<dynamic, dynamic> to Map<String, String>
-        final voiceMap = Map<String, String>.from(
-            voiceDyn.map((k, v) => MapEntry(k.toString(), v.toString())));
-        final String? locale = voiceMap['locale']?.toLowerCase();
-        // final String? name = voiceMap['name']?.toLowerCase(); // You can also filter by name if known
-
-        if (locale != null &&
-            locale.startsWith(targetLocalePrefix.toLowerCase())) {
-          // Prefer voices that are not network-based if possible, or specific names
-          // For simplicity, we take the first one found for the locale.
-          foundVoice = voiceMap;
-          _logger.i(
-              "Found matching voice for locale $targetLocalePrefix: $foundVoice");
-          break;
-        }
-      }
-    }
-
-    if (foundVoice != null) {
-      try {
-        await flutterTts.setVoice(foundVoice);
-        setState(() {
-          _selectedVoice = foundVoice;
-        });
-        _logger.i("L3.1: Successfully set TTS Voice to: $foundVoice");
-      } catch (e) {
-        _logger.e(
-            "L3.1: Error setting specific voice $foundVoice: $e. Will try setLanguage as fallback.");
-        // Fallback to setLanguage if setVoice fails or specific voice isn't perfect
-        await _setLanguageFallback(targetLocalePrefix);
-      }
-    } else {
-      _logger.w(
-          "L3.1: No specific voice found for locale '$targetLocalePrefix'. Using setLanguage as fallback.");
-      await _setLanguageFallback(targetLocalePrefix);
-    }
-  }
-
-  Future<void> _setLanguageFallback(String languageCode) async {
-    try {
-      await flutterTts.setLanguage(languageCode);
-      _logger.i("L3.1: TTS Language set to $languageCode as a fallback.");
-    } catch (e) {
-      _logger
-          .e("L3.1: Error setting TTS language $languageCode as fallback: $e");
-    }
-  }
-
-  Future<void> _fetchLessonContentAndInitialize() async {
-    /* ... remains the same ... */
-    setState(() => _isLoadingLessonContent = true);
-    await Future.delayed(const Duration(milliseconds: 50));
-
-    final Map<String, dynamic> hardcodedData = {
-      'lessonTitle':
-          'Lesson 3.1: Listening Comprehension – Understanding Customer Calls',
-      'slides': [
-        {
-          'title': 'Objective',
-          'content': 'To develop effective listening comprehension skills...'
-        },
-        {
-          'title': 'Introduction',
-          'content': 'Effective listening is more than just hearing words...'
-        },
-        {
-          'title': 'Watch: Mastering Active Listening',
-          'content':
-              'The following video explains active listening techniques...'
-        },
-        {
-          'title': 'Key Takeaways',
-          'content':
-              '• Active listening involves focusing on both verbal and non-verbal cues...'
-        },
-      ],
-      'video': {'url': 'nMC16FZhsUM'},
-      'activity': {
-        'title': 'Listening Activity',
-        'instructions':
-            'Listen to each call script carefully, then answer the questions based on what you heard.',
-        'scripts': {
-          '1':
-              "Customer: Hi, I received the wrong item in my order. Agent: I'm really sorry about that. Can you please provide the order number? Customer: It's 784512. Agent: Thank you. I’ll arrange a replacement right away. Customer: Thanks.",
-          '2':
-              "Customer: My internet has been disconnected for two days. Agent: I apologize for the inconvenience. Can I have your account ID? Customer: Sure, it's 56102. Agent: I’ve reported the issue and a technician will visit tomorrow. Customer: Great, thanks.",
-          '3':
-              "Customer: I was charged twice for the same bill. Agent: I see. Can I verify your billing date and amount? Customer: April 3rd, \$39.99. Agent: I’ll process the refund today. Customer: Thank you.",
-        },
-      },
-    };
-    _lessonData = hardcodedData;
-    _initializeTextControllers();
-    _logger.i("L3.1: Hardcoded content loaded.");
-    if (mounted) setState(() => _isLoadingLessonContent = false);
-  }
-
-  void _initializeTextControllers() {
-    /* ... remains the same ... */
-    _textControllers.forEach((_, controller) => controller.dispose());
-    _textControllers.clear();
-    for (int callNum = 1; callNum <= 3; callNum++) {
-      for (int qNum = 1; qNum <= 4; qNum++) {
-        _textControllers['call${callNum}_q${qNum}'] = TextEditingController();
-      }
-      _showTranscriptFor[callNum] = false;
-    }
-  }
-
-  // Your _playScript method will then use these settings:
-  Future<void> _playScript(String scriptText) async {
-    try {
-      await flutterTts.stop();
-      // The settings applied in _configureTts should persist for subsequent .speak() calls.
-      // However, some platforms might reset some settings. If you find settings are not sticking,
-      // you might need to re-apply rate/pitch/language directly before each speak call,
-      // though this is usually not necessary if configured once after initialization.
-      // Example:
-      // await flutterTts.setSpeechRate(0.45);
-
-      int result = await flutterTts.speak(scriptText);
-      if (result == 1) {
-        // 1 indicates success
-        _logger.i("L3.1: TTS speaking script.");
-      } else {
-        _logger.w("L3.1: TTS speak command failed.");
-      }
-    } catch (e) {
-      _logger.e("L3.1: Error during TTS speak: $e");
-    }
-  }
-
-  @override
-  void didUpdateWidget(covariant buildLesson3_1 oldWidget) {
-    /* ... same as before ... */
-    super.didUpdateWidget(oldWidget);
-    if (widget.youtubeController != oldWidget.youtubeController) {
-      oldWidget.youtubeController.removeListener(_videoListener);
-      widget.youtubeController.addListener(_videoListener);
-    }
-    if (widget.showActivitySectionInitially &&
-        !oldWidget.showActivitySectionInitially &&
-        !widget.displayFeedback) {
-      _logger.i("L3.1 didUpdateWidget: Resetting for new attempt.");
-      _currentAttemptForDisplay = widget.initialAttemptNumber + 1;
-      _textControllers.forEach((_, controller) => controller.clear());
-      _showTranscriptFor.updateAll((key, value) => false);
-      _resetTimer();
-      _startTimer();
-    } else if (!widget.showActivitySectionInitially &&
-        oldWidget.showActivitySectionInitially) {
-      _stopTimer();
-    }
-    if (widget.displayFeedback &&
-        !oldWidget.displayFeedback &&
-        _timer?.isActive == true) {
-      _logger.i(
-          "L3.1 didUpdateWidget: displayFeedback became true. Stopping timer.");
-      _stopTimer();
-    }
-    if (widget.initialAttemptNumber != oldWidget.initialAttemptNumber &&
-        widget.showActivitySectionInitially &&
-        !widget.displayFeedback) {
-      _logger.i(
-          "L3.1 didUpdateWidget: initialAttemptNumber changed. Resetting for new attempt.");
-      _currentAttemptForDisplay = widget.initialAttemptNumber + 1;
-      _textControllers.forEach((_, controller) => controller.clear());
-      _showTranscriptFor.updateAll((key, value) => false);
-      _resetTimer();
-      _startTimer();
-    }
+    // Check user authentication and progress
+    _checkUserProgressAndPreAssessment();
   }
 
   @override
   void dispose() {
-    // ... (youtube listener, text controllers, timer disposals remain the same) ...
+    _fadeController.dispose();
     widget.youtubeController.removeListener(_videoListener);
     _textControllers.forEach((_, controller) => controller.dispose());
     _stopTimer();
@@ -380,383 +147,1400 @@ class _Lesson3_1State extends State<buildLesson3_1> {
     super.dispose();
   }
 
+  Future<void> _checkUserProgressAndPreAssessment() async {
+    if (_firebaseService.userId == null) return;
+
+    try {
+      final userProgressDoc = await FirebaseFirestore.instance
+          .collection('userProgress')
+          .doc(_firebaseService.userId)
+          .get();
+
+      if (userProgressDoc.exists) {
+        final data = userProgressDoc.data();
+        final preAssessmentsCompleted = data?['preAssessmentsCompleted'] as Map<String, dynamic>? ?? {};
+        
+        if (preAssessmentsCompleted[staticLessonId] == true) {
+          setState(() {
+            _isPreAssessmentComplete = true;
+            _hasStudied = true;
+          });
+        }
+
+        final lessonAttempts = data?['lessonAttempts'] as Map<String, dynamic>? ?? {};
+        final attempts = lessonAttempts[staticLessonId] as List<dynamic>? ?? [];
+        setState(() {
+          _currentAttemptForDisplay = attempts.length + 1;
+        });
+      }
+    } catch (e) {
+      _logger.e("Error checking user progress: $e");
+    }
+  }
+
+  Future<void> _initializeAndConfigureTts() async {
+    try {
+      var voices = await flutterTts.getVoices;
+      if (voices != null && voices is List && mounted) {
+        setState(() {
+          _voices = voices;
+        });
+        _setDesiredVoice("en-GB");
+      }
+    } catch (e) {
+      _logger.e("Error getting TTS voices: $e");
+    }
+    try {
+      await flutterTts.setSpeechRate(0.45);
+      await flutterTts.setVolume(1.0);
+      await flutterTts.setPitch(1.0);
+    } catch (e) {
+      _logger.e("Error setting basic TTS properties: $e");
+    }
+    await _configureTts();
+  }
+
+  Future<void> _configureTts() async {
+    try {
+      await flutterTts.stop();
+      await flutterTts.setLanguage("en-US");
+      await flutterTts.setSpeechRate(0.5);
+      await flutterTts.setPitch(0.5);
+      await flutterTts.setVolume(1.0);
+      _logger.i("L3.1: Flutter TTS configured with rate and pitch adjustments.");
+    } catch (e) {
+      _logger.e("L3.1: Error configuring TTS settings: $e");
+    }
+  }
+
+  Future<void> _setDesiredVoice(String targetLocalePrefix) async {
+    Map<String, String>? foundVoice;
+    for (var voiceDyn in _voices) {
+      if (voiceDyn is Map) {
+        final voiceMap = Map<String, String>.from(
+            voiceDyn.map((k, v) => MapEntry(k.toString(), v.toString())));
+        final String? locale = voiceMap['locale']?.toLowerCase();
+        if (locale != null && locale.startsWith(targetLocalePrefix.toLowerCase())) {
+          foundVoice = voiceMap;
+          break;
+        }
+      }
+    }
+    if (foundVoice != null) {
+      try {
+        await flutterTts.setVoice(foundVoice);
+        setState(() {
+          _selectedVoice = foundVoice;
+        });
+      } catch (e) {
+        _logger.e("L3.1: Error setting specific voice: $e");
+      }
+    }
+  }
+
+  Future<void> _fetchLessonContentAndInitialize() async {
+    setState(() => _isLoadingLessonContent = true);
+
+    // Enhanced hardcoded data matching the React structure
+    final Map<String, dynamic> hardcodedData = {
+      'moduleTitle': 'Module 3: Listening & Speaking Practice',
+      'lessonTitle': 'Lesson 3.1: Listening Comprehension – Understanding Customer Calls',
+      'objective': {
+        'heading': 'Objective',
+        'paragraph': 'To develop effective listening comprehension skills crucial for call center success, focusing on understanding customer needs and emotions accurately.',
+      },
+      'introduction': {
+        'heading': 'Introduction to Listening Comprehension',
+        'paragraph1': 'Effective listening is more than just hearing words; it\'s about understanding the full message being conveyed, including the emotions and intentions behind it. In a call center, this skill is paramount for providing excellent customer service.',
+        'paragraph2': 'Active listening involves focusing on both verbal (words) and non-verbal cues (tone, pace), identifying keywords and main points, and understanding customer emotions.',
+      },
+      'slides': [
+        {
+          'title': 'Objective',
+          'content': 'To develop effective listening comprehension skills crucial for call center success, focusing on understanding customer needs and emotions accurately.',
+        },
+        {
+          'title': 'Introduction',
+          'content': 'Effective listening is more than just hearing words; it\'s about understanding the full message being conveyed, including the emotions and intentions behind it.',
+        },
+        {
+          'title': 'Watch: Mastering Active Listening',
+          'content': 'The following video explains active listening techniques essential for call center professionals.',
+        },
+        {
+          'title': 'Key Takeaways',
+          'content': '• Active listening involves focusing on both verbal and non-verbal cues\n• Identifying keywords and main points helps in quickly grasping issues\n• Understanding customer emotions is crucial for empathetic service\n• Summarizing or paraphrasing confirms understanding',
+        },
+      ],
+      'video': {'url': 'qY9iPdZfOic'}, // YouTube video ID
+      'preAssessmentData': {
+        'title': 'Pre-Assessment',
+        'instruction': 'Listen to the following audio and type what you hear.',
+        'question': 'What is the order number mentioned?',
+        'textToSpeak': 'The order number is 784512.',
+        'correctAnswer': '784512',
+      },
+      'activity': {
+        'title': 'Listening Activity',
+        'instructions': 'Listen to each call script carefully, then answer the questions based on what you heard.',
+        'maxPossibleAIScore': 60,
+        'timerDuration': 1200,
+        'questionSets': [
+          {
+            'callId': 'call1',
+            'questions': [
+              {
+                'id': 'call1_q1',
+                'text': 'What was the customer\'s issue?',
+              },
+              {
+                'id': 'call1_q2',
+                'text': 'What information did the agent ask for?',
+              },
+              {
+                'id': 'call1_q3',
+                'text': 'What solution did the agent offer?',
+              },
+              {
+                'id': 'call1_q4',
+                'text': 'Was the customer satisfied with the response? (e.g., Yes/No, and why)',
+              },
+            ],
+          },
+          {
+            'callId': 'call2',
+            'questions': [
+              {
+                'id': 'call2_q1',
+                'text': 'What was the customer\'s issue?',
+              },
+              {
+                'id': 'call2_q2',
+                'text': 'What information did the agent ask for?',
+              },
+              {
+                'id': 'call2_q3',
+                'text': 'What solution did the agent offer?',
+              },
+              {
+                'id': 'call2_q4',
+                'text': 'Was the customer satisfied with the response? (e.g., Yes/No, and why)',
+              },
+            ],
+          },
+          {
+            'callId': 'call3',
+            'questions': [
+              {
+                'id': 'call3_q1',
+                'text': 'What was the customer\'s issue?',
+              },
+              {
+                'id': 'call3_q2',
+                'text': 'What information did the agent ask for?',
+              },
+              {
+                'id': 'call3_q3',
+                'text': 'What solution did the agent offer?',
+              },
+              {
+                'id': 'call3_q4',
+                'text': 'Was the customer satisfied with the response? (e.g., Yes/No, and why)',
+              },
+            ],
+          },
+        ],
+        'transcripts': {
+          'call1': [
+            {'character': 'Customer', 'text': 'Hi, I received the wrong item in my order.'},
+            {'character': 'Agent', 'text': 'I\'m really sorry about that. Can you please provide the order number?'},
+            {'character': 'Customer', 'text': 'It\'s 784512.'},
+            {'character': 'Agent', 'text': 'Thank you. I\'ll arrange a replacement right away.'},
+            {'character': 'Customer', 'text': 'Thanks.'},
+          ],
+          'call2': [
+            {'character': 'Customer', 'text': 'My internet has been disconnected for two days.'},
+            {'character': 'Agent', 'text': 'I apologize for the inconvenience. Can I have your account ID?'},
+            {'character': 'Customer', 'text': 'Sure, it\'s 56102.'},
+            {'character': 'Agent', 'text': 'I\'ve reported the issue and a technician will visit tomorrow.'},
+            {'character': 'Customer', 'text': 'Great, thanks.'},
+          ],
+          'call3': [
+            {'character': 'Customer', 'text': 'I was charged twice for the same bill.'},
+            {'character': 'Agent', 'text': 'I see. Can I verify your billing date and amount?'},
+            {'character': 'Customer', 'text': 'April 3rd, \$39.99.'},
+            {'character': 'Agent', 'text': 'I\'ll process the refund today.'},
+            {'character': 'Customer', 'text': 'Thank you.'},
+          ],
+        },
+      },
+    };
+
+    _lessonData = hardcodedData;
+    _initializeTextControllers();
+    _maxPossibleAIScore = _lessonData!['activity']?['maxPossibleAIScore'] ?? 60;
+    
+    if (mounted) setState(() => _isLoadingLessonContent = false);
+  }
+
+  void _initializeTextControllers() {
+    _textControllers.clear();
+    _answers.clear();
+    
+    if (_lessonData?['activity']?['questionSets'] != null) {
+      final questionSets = _lessonData!['activity']['questionSets'] as List<dynamic>;
+      for (final questionSet in questionSets) {
+        final questions = questionSet['questions'] as List<dynamic>;
+        for (final question in questions) {
+          final questionId = question['id'] as String;
+          _textControllers[questionId] = TextEditingController();
+          _answers[questionId] = '';
+        }
+      }
+    }
+  }
+
+  Future<void> _playScript(String callId) async {
+    if (_loadingAudioId != null) return;
+
+    final transcripts = _lessonData?['activity']?['transcripts'];
+    final scriptToPlay = transcripts?[callId] as List<dynamic>?;
+    
+    if (scriptToPlay == null || scriptToPlay.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not find the script text.')),
+      );
+      return;
+    }
+
+    setState(() => _loadingAudioId = callId);
+
+    try {
+      // Convert script to readable text for TTS
+      final scriptText = scriptToPlay.map((turn) => 
+        '${turn['character']}: ${turn['text']}'
+      ).join('. ');
+
+      await flutterTts.stop();
+      await flutterTts.speak(scriptText);
+      
+      // Reset loading state after a delay
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) {
+          setState(() => _loadingAudioId = null);
+        }
+      });
+      
+    } catch (e) {
+      _logger.e("L3.1: Error during TTS speak: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not play the audio script. Please try again.')),
+      );
+      setState(() => _loadingAudioId = null);
+    }
+  }
+
+  Future<void> _playPreAssessmentAudio() async {
+    if (_isAudioLoading) return;
+
+    final textToSpeak = _lessonData?['preAssessmentData']?['textToSpeak'];
+    if (textToSpeak == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No text to speak.')),
+      );
+      return;
+    }
+
+    setState(() => _isAudioLoading = true);
+
+    try {
+      await flutterTts.stop();
+      await flutterTts.speak(textToSpeak);
+    } catch (e) {
+      _logger.e("Error playing pre-assessment audio: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not play audio. Please try again.')),
+      );
+    } finally {
+      setState(() => _isAudioLoading = false);
+    }
+  }
+
+  void _handleCheckPreAssessment() {
+    final correctAnswer = _lessonData?['preAssessmentData']?['correctAnswer'] ?? '';
+    final isCorrect = _preAssessmentAnswer.trim().toLowerCase() == correctAnswer.toLowerCase();
+    
+    setState(() {
+      _preAssessmentResult = isCorrect ? 'correct' : 'incorrect';
+      _showPreAssessmentFeedback = true;
+    });
+
+    // Save to Firebase and proceed after delay
+    Timer(const Duration(seconds: 3), () async {
+      if (_firebaseService.userId != null) {
+        try {
+          await _markPreAssessmentAsComplete();
+          setState(() {
+            _isPreAssessmentComplete = true;
+            _hasStudied = true;
+          });
+        } catch (e) {
+          _logger.e("Failed to save pre-assessment status: $e");
+        }
+      } else {
+        setState(() => _hasStudied = true);
+      }
+    });
+  }
+
+  Future<void> _markPreAssessmentAsComplete() async {
+    if (_firebaseService.userId == null) return;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('userProgress')
+          .doc(_firebaseService.userId)
+          .set({
+        'preAssessmentsCompleted': {
+          staticLessonId: true,
+        },
+      }, SetOptions(merge: true));
+    } catch (e) {
+      _logger.e("Error marking pre-assessment as complete: $e");
+      rethrow;
+    }
+  }
+
   void _videoListener() {
-    /* ... same as before ... */
-    if (widget.youtubeController.value.playerState == PlayerState.ended &&
-        !_videoFinished) {
+    if (widget.youtubeController.value.playerState == PlayerState.ended && !_videoFinished) {
       if (mounted) setState(() => _videoFinished = true);
       _logger.i('L3.1 Video finished.');
     }
   }
 
   void _startTimer() {
-    /* ... same as before ... */
     _stopTimer();
     _secondsElapsed = 0;
+    _countdownTimer = _lessonData?['activity']?['timerDuration'] ?? initialTime;
+    _timerActive = true;
+    
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) {
         timer.cancel();
         return;
       }
-      setState(() => _secondsElapsed++);
+      
+      setState(() {
+        if (_countdownTimer > 0) {
+          _countdownTimer--;
+          _secondsElapsed++;
+        } else {
+          _isTimedOut = true;
+          _timerActive = false;
+          timer.cancel();
+          _handleSubmitToAIAndFirestore(); // Auto-submit when time runs out
+        }
+      });
     });
+    
     _logger.i('L3.1 Timer started. Attempt: $_currentAttemptForDisplay.');
   }
 
   void _stopTimer() {
-    /* ... same as before ... */
     _timer?.cancel();
+    _timerActive = false;
     _logger.i('L3.1 Timer stopped. Elapsed: $_secondsElapsed s.');
   }
 
-  void _resetTimer() {
-    /* ... same as before ... */ if (mounted)
-      setState(() => _secondsElapsed = 0);
+  String _formatTime(int seconds) {
+    final minutes = (seconds ~/ 60).toString().padLeft(2, '0');
+    final secs = (seconds % 60).toString().padLeft(2, '0');
+    return '$minutes:$secs';
   }
 
-  String _formatDuration(int totalSeconds) {
-    /* ... same as before ... */
-    final duration = Duration(seconds: totalSeconds);
-    final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return '$minutes:$seconds';
+  void _handleAnswerChanged(String questionId, String value) {
+    if (_showResults || _isTimedOut) return;
+    
+    setState(() {
+      _answers[questionId] = value;
+      _textControllers[questionId]?.text = value;
+    });
   }
 
-  void _handleSubmit() async {
-    /* ... same as before ... */
-    if (!mounted) return;
-    _logger.i("L3.1: Submit button pressed.");
+  void _handleStudyComplete() {
+    setState(() => _hasStudied = true);
+  }
 
-    bool allAnswered = !_textControllers.values
-        .any((controller) => controller.text.trim().isEmpty);
-    if (!allAnswered) {
-      ScaffoldMessenger.of(widget.parentContext).showSnackBar(
-          const SnackBar(content: Text('Please answer all questions.')));
-      return;
+  void _handleStartActivity() {
+    setState(() {
+      _isActivityVisible = true;
+      _showResults = false;
+      _overallScore = null;
+      _isTimedOut = false;
+      _isTranscriptVisible = false;
+      _countdownTimer = _lessonData?['activity']?['timerDuration'] ?? initialTime;
+      
+      // Reset answers and controllers
+      _answers.clear();
+      _feedback.clear();
+      _textControllers.forEach((key, controller) {
+        controller.clear();
+        _answers[key] = '';
+      });
+    });
+    
+    _startTimer();
+    widget.onShowActivitySection();
+  }
+
+  Future<void> _handleSubmitToAIAndFirestore() async {
+    if (_firebaseService.userId == null || _lessonData == null) return;
+    if (_showResults && !_isTimedOut) return;
+
+    // Check if all fields are filled (unless timed out)
+    if (!_isTimedOut) {
+      final questionSets = _lessonData!['activity']['questionSets'] as List<dynamic>;
+      bool allFieldsFilled = true;
+      
+      for (final questionSet in questionSets) {
+        final questions = questionSet['questions'] as List<dynamic>;
+        for (final question in questions) {
+          final questionId = question['id'] as String;
+          if (_answers[questionId]?.trim().isEmpty ?? true) {
+            allFieldsFilled = false;
+            break;
+          }
+        }
+        if (!allFieldsFilled) break;
+      }
+
+      if (!allFieldsFilled) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please provide an answer for all questions before submitting.')),
+        );
+        return;
+      }
     }
+
     setState(() => _isSubmitting = true);
     _stopTimer();
-    Map<String, String> currentAnswers = {};
-    _textControllers.forEach((key, controller) {
-      currentAnswers[key] = controller.text.trim();
-    });
-    await widget.onSubmitAnswers(
-        currentAnswers, _secondsElapsed, widget.initialAttemptNumber + 1);
-    if (mounted) setState(() => _isSubmitting = false);
+
+    try {
+      // Call the parent's submission handler which connects to AI server and saves to Firebase
+      await widget.onSubmitAnswers(
+        Map<String, String>.from(_answers),
+        _secondsElapsed,
+        widget.initialAttemptNumber,
+      );
+
+      setState(() {
+        _showResults = true;
+        _currentAttemptForDisplay = widget.initialAttemptNumber + 1;
+      });
+
+      _logger.i('Lesson 3.1: Successfully submitted answers to parent module');
+      
+    } catch (e) {
+      _logger.e("Error during lesson submission: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Submission error: $e. Please try again.')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
+    }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    /* ... Your existing build method structure remains the same ... */
-    if (_isLoadingLessonContent || _lessonData == null) {
-      return const Center(child: CircularProgressIndicator());
+  Future<void> _loadActivityLog() async {
+    if (_firebaseService.userId == null) return;
+    
+    setState(() {
+      _showActivityLog = true;
+      _activityLogLoading = true;
+    });
+
+    try {
+      // Load activity log data - implement actual loading here
+      await Future.delayed(const Duration(seconds: 1));
+      setState(() {
+        _activityLog = []; // Replace with actual data
+        _activityLogLoading = false;
+      });
+    } catch (e) {
+      _logger.e('Error loading activity log: $e');
+      setState(() {
+        _activityLog = [];
+        _activityLogLoading = false;
+      });
     }
+  }
 
-    final String lessonTitle =
-        _lessonData!['lessonTitle'] as String? ?? 'Lesson 3.1';
-    List<dynamic> slides =
-        _lessonData!['slides'] as List<dynamic>? ?? _staticSlidesDataFallback;
-    if (slides.isEmpty) slides = _staticSlidesDataFallback;
+  int? _convertToInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is double) return value.round();
+    if (value is num) return value.round();
+    if (value is String) {
+      final parsed = double.tryParse(value);
+      return parsed?.round();
+    }
+    return null;
+  }
 
-    final String activityTitle =
-        _lessonData!['activity']?['title'] as String? ?? 'Activity';
-    final String activityInstructions =
-        _lessonData!['activity']?['instructions'] as String? ?? '';
-    final Map<String, dynamic> activityScripts =
-        _lessonData!['activity']?['scripts'] as Map<String, dynamic>? ?? {};
+  Widget _buildPreAssessmentSection() {
+    final preAssessmentData = _lessonData?['preAssessmentData'];
+    if (preAssessmentData == null) return const SizedBox.shrink();
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(lessonTitle,
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  color: const Color(0xFF00568D), fontWeight: FontWeight.bold)),
-          const SizedBox(height: 16),
-          if (!widget.showActivitySectionInitially || !widget.displayFeedback)
-            CarouselSlider(
-              /* ... existing Carousel for slides ... */
-              key: ValueKey('carousel_l3_1_${slides.hashCode}'),
-              carouselController: widget.carouselController,
-              items: slides
-                  .map((slide) => buildSlide(
-                        title: slide['title'] as String? ?? 'Slide',
-                        content: slide['content'] as String? ?? '',
-                        slideIndex: slides.indexOf(slide),
-                      ))
-                  .toList(),
-              options: CarouselOptions(
-                height: 250.0,
-                viewportFraction: 0.9,
-                enlargeCenterPage: false,
-                enableInfiniteScroll: false,
-                initialPage: widget.currentSlide,
-                onPageChanged: (index, reason) => widget.onSlideChanged(index),
+    return Card(
+      elevation: 4,
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const FaIcon(FontAwesomeIcons.infoCircle, color: Colors.blue),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    preAssessmentData['title'] ?? 'Pre-Assessment',
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              preAssessmentData['instruction'] ?? '',
+              style: const TextStyle(fontSize: 14, color: Colors.grey),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    preAssessmentData['question'] ?? '',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      IconButton(
+                        onPressed: _isAudioLoading ? null : _playPreAssessmentAudio,
+                        icon: _isAudioLoading 
+                            ? const FaIcon(FontAwesomeIcons.spinner, size: 20)
+                            : const FaIcon(FontAwesomeIcons.volumeUp, size: 20),
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.indigo,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.all(12),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextField(
+                          onChanged: (value) => setState(() => _preAssessmentAnswer = value),
+                          enabled: !_showPreAssessmentFeedback,
+                          decoration: const InputDecoration(
+                            hintText: 'Type your answer here...',
+                            border: OutlineInputBorder(),
+                            contentPadding: EdgeInsets.all(12),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
-          if (!widget.showActivitySectionInitially || !widget.displayFeedback)
-            Row(
-              /* ... Carousel dots ... */
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: slides.asMap().entries.map((entry) {
-                return GestureDetector(
-                  onTap: () =>
-                      widget.carouselController.animateToPage(entry.key),
-                  child: Container(
-                    width: 8.0,
-                    height: 8.0,
-                    margin: const EdgeInsets.symmetric(
-                        vertical: 10.0, horizontal: 2.0),
-                    decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: widget.currentSlide == entry.key
-                            ? const Color(0xFF00568D)
-                            : Colors.grey),
+            const SizedBox(height: 16),
+            if (!_showPreAssessmentFeedback) ...[
+              Center(
+                child: ElevatedButton(
+                  onPressed: _preAssessmentAnswer.trim().isEmpty ? null : _handleCheckPreAssessment,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
                   ),
-                );
-              }).toList(),
+                  child: const Text(
+                    'Check Answer',
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ] else ...[
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _preAssessmentResult == 'correct' ? Colors.green : Colors.red,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Center(
+                  child: Text(
+                    _preAssessmentResult == 'correct' 
+                        ? 'Correct! Getting you ready for the lesson...'
+                        : 'Not quite. The correct answer was "${preAssessmentData['correctAnswer']}". Let\'s review the material.',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStudyMaterialSection() {
+    return Column(
+      children: [
+        // Objective Section
+        Card(
+          elevation: 2,
+          margin: const EdgeInsets.symmetric(vertical: 8),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const FaIcon(FontAwesomeIcons.book, color: Colors.blue),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _lessonData?['objective']?['heading'] ?? 'Objective',
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  _lessonData?['objective']?['paragraph'] ?? '',
+                  style: const TextStyle(fontSize: 14, height: 1.4),
+                ),
+              ],
             ),
-          const SizedBox(height: 16),
-          if (widget.currentSlide >= slides.length - 1 ||
-              widget.showActivitySectionInitially) ...[
-            if (!widget.showActivitySectionInitially ||
-                !widget.displayFeedback) ...[
-              Text('Watch: Mastering Active Listening',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(color: const Color(0xFF00568D))),
-              const SizedBox(height: 8),
+          ),
+        ),
+
+        // Introduction Section
+        Card(
+          elevation: 2,
+          margin: const EdgeInsets.symmetric(vertical: 8),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const FaIcon(FontAwesomeIcons.infoCircle, color: Colors.grey),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _lessonData?['introduction']?['heading'] ?? 'Introduction',
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  _lessonData?['introduction']?['paragraph1'] ?? '',
+                  style: const TextStyle(fontSize: 14, height: 1.4),
+                ),
+                if (_lessonData?['introduction']?['paragraph2'] != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    _lessonData!['introduction']['paragraph2'],
+                    style: const TextStyle(fontSize: 14, height: 1.4),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+
+        // Video Section
+        Card(
+          elevation: 2,
+          margin: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                ),
+                child: const Row(
+                  children: [
+                    FaIcon(FontAwesomeIcons.headphones, color: Colors.purple),
+                    SizedBox(width: 8),
+                    Text(
+                      'Watch: Mastering Active Listening',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ),
               AspectRatio(
                 aspectRatio: 16 / 9,
                 child: YoutubePlayer(
                   key: widget.youtubePlayerKey,
                   controller: widget.youtubeController,
                   showVideoProgressIndicator: true,
-                  onReady: () => _logger.i("L3.1 Player Ready"),
                   onEnded: (_) => _videoListener(),
                 ),
               ),
             ],
-            if (!widget.showActivitySectionInitially) ...[
-              const SizedBox(height: 16),
-              SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                      onPressed:
-                          _videoFinished ? widget.onShowActivitySection : null,
-                      child: const Text('Proceed to Activity'))),
-              if (!_videoFinished)
-                const Padding(
-                    padding: EdgeInsets.only(top: 8.0),
-                    child: Text('Please watch the video to proceed.',
-                        style: TextStyle(color: Colors.red),
-                        textAlign: TextAlign.center)),
-            ],
-          ],
-          if (widget.showActivitySectionInitially) ...[
-            const SizedBox(height: 24),
-            Text(activityTitle,
-                style: Theme.of(context)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(color: Colors.orange)),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8.0),
+          ),
+        ),
+
+        // Key Takeaways Section
+        Card(
+          elevation: 2,
+          margin: const EdgeInsets.symmetric(vertical: 8),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    FaIcon(FontAwesomeIcons.listUl, color: Colors.orange),
+                    SizedBox(width: 8),
+                    Text(
+                      'Key Takeaways:',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.orange),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue.shade200),
+                  ),
+                  child: const Column(
+                    children: [
+                      _KeyTakeawayItem(text: 'Active listening involves focusing on both verbal (words) and non-verbal cues (tone, pace).'),
+                      _KeyTakeawayItem(text: 'Identifying keywords and main points helps in quickly grasping the customer\'s primary issue.'),
+                      _KeyTakeawayItem(text: 'Understanding and acknowledging customer emotions are crucial for empathetic and effective service.'),
+                      _KeyTakeawayItem(text: 'Summarizing or paraphrasing what the customer said can confirm understanding and show engagement.'),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActivitySection() {
+    if (!_lessonData!.containsKey('activity')) return const SizedBox.shrink();
+
+    final activity = _lessonData!['activity'];
+    final questionSets = activity['questionSets'] as List<dynamic>? ?? [];
+
+    return Card(
+      elevation: 3,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const FaIcon(FontAwesomeIcons.headphones, color: Colors.orange),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    activity['title'] ?? 'Listening Activity',
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.orange),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Attempt: $_currentAttemptForDisplay',
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                ),
+                if (_timerActive && !_isTimedOut)
+                  Row(
+                    children: [
+                      const FaIcon(FontAwesomeIcons.clock, size: 16),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Time: ${_formatTime(_countdownTimer)}',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          color: _countdownTimer < 60 ? Colors.red : null,
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // Instructions
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.shade200),
+              ),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('Attempt: $_currentAttemptForDisplay',
-                      style: Theme.of(context).textTheme.titleMedium),
-                  if (!widget.displayFeedback)
-                    Text('Time: ${_formatDuration(_secondsElapsed)}',
-                        style: Theme.of(context).textTheme.titleMedium),
+                  const FaIcon(FontAwesomeIcons.infoCircle, color: Colors.blue),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      activity['instructions'] ?? '',
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                  ),
                 ],
               ),
             ),
-            HtmlFormattedText(htmlString: activityInstructions),
-            const SizedBox(height: 16),
-            if (!widget.displayFeedback) ...[
-              ...List.generate(3, (callIndex) {
-                int callNum = callIndex + 1;
-                String scriptText =
-                    activityScripts[callNum.toString()] as String? ??
-                        "Script not found.";
-                return Card(
-                  elevation: 2,
-                  margin: const EdgeInsets.symmetric(vertical: 8.0),
-                  child: Padding(
-                    padding: const EdgeInsets.all(12.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+            const SizedBox(height: 20),
+
+            // Question Sets
+            ...questionSets.asMap().entries.map((entry) {
+              final questionSet = entry.value;
+              final callId = questionSet['callId'] as String;
+              final questions = questionSet['questions'] as List<dynamic>;
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 24),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text("Call $callNum Scenario",
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.bold)),
-                            TextButton.icon(
-                              icon: const FaIcon(FontAwesomeIcons.volumeUp,
-                                  size: 16),
-                              label: const Text("Play Script"),
-                              onPressed: () => _playScript(scriptText),
-                            ),
-                          ],
+                        Text(
+                          'Call Transcript (${callId.replaceAll('call', 'Call ')})',
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                         ),
-                        const SizedBox(height: 8),
-                        ...List.generate(4, (qIndex) {
-                          String questionKey = "call${callNum}_q${qIndex + 1}";
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 8.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(_questionLabels[qIndex],
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleSmall
-                                        ?.copyWith(
-                                            color: Theme.of(context)
-                                                .primaryColorDark)),
-                                const SizedBox(height: 4),
-                                TextField(
-                                  controller: _textControllers[questionKey],
-                                  decoration: InputDecoration(
-                                    border: const OutlineInputBorder(),
-                                    hintText: "Your answer for Q${qIndex + 1}",
-                                    filled: true,
-                                    fillColor: Colors.grey[50],
-                                  ),
-                                  maxLines: 2,
-                                ),
-                              ],
-                            ),
-                          );
-                        }),
+                        ElevatedButton.icon(
+                          onPressed: (_isSubmitting || _showResults || _isTimedOut || _loadingAudioId != null)
+                              ? null
+                              : () => _playScript(callId),
+                          icon: _loadingAudioId == callId
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const FaIcon(FontAwesomeIcons.volumeUp, size: 16),
+                          label: Text(_loadingAudioId == callId ? 'Loading...' : 'Play Script'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.indigo,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
                       ],
                     ),
-                  ),
-                );
-              }),
-              const SizedBox(height: 24),
-              SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    onPressed: _isSubmitting ? null : _handleSubmit,
-                    style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF00568D)),
-                    child: _isSubmitting
-                        ? const CircularProgressIndicator(
-                            valueColor:
-                                AlwaysStoppedAnimation<Color>(Colors.white))
-                        : const Text('Submit All Answers',
-                            style:
-                                TextStyle(color: Colors.white, fontSize: 16)),
-                  )),
-            ],
-            if (widget.displayFeedback && widget.aiFeedbackData != null) ...[
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16.0),
-                child: Center(
-                    child: Text(
-                        'Overall Score: ${widget.overallAIScoreForDisplay ?? 'N/A'} / ${widget.maxPossibleAIScoreForDisplay ?? (3 * 4 * 5)}',
-                        style: Theme.of(context)
-                            .textTheme
-                            .headlineSmall
-                            ?.copyWith(
-                                color: Colors.purple,
-                                fontWeight: FontWeight.bold))),
-              ),
-              ...List.generate(activityScripts.keys.length, (callIndex) {
-                int callNum = callIndex + 1;
-                String scriptKey = callNum.toString();
-                String scriptText = activityScripts[scriptKey] as String? ??
-                    "Script not found.";
-                return ExpansionTile(
-                  title: Text("Call $callNum Feedback & Transcript",
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleMedium
-                          ?.copyWith(fontWeight: FontWeight.bold)),
-                  initiallyExpanded: callIndex == 0,
+                    const SizedBox(height: 16),
+
+                    // Transcript visibility toggle (only show after results)
+                    if (_showResults && !_isTranscriptVisible) ...[
+                      TextButton(
+                        onPressed: () => setState(() => _isTranscriptVisible = true),
+                        child: const Text(
+                          'Show Transcript to Review',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+
+                    // Transcript display
+                    if (_isTranscriptVisible) ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border(left: BorderSide(color: Colors.grey.shade400, width: 4)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            ..._buildTranscriptLines(callId),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+
+                    // Questions
+                    ...questions.asMap().entries.map((qEntry) {
+                      final question = qEntry.value;
+                      final questionId = question['id'] as String;
+                      final questionText = question['text'] as String;
+
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              questionText,
+                              style: const TextStyle(fontWeight: FontWeight.w500),
+                            ),
+                            const SizedBox(height: 8),
+                            TextField(
+                              controller: _textControllers[questionId],
+                              onChanged: (value) => _handleAnswerChanged(questionId, value),
+                              enabled: !_isSubmitting && !_showResults && !_isTimedOut,
+                              decoration: const InputDecoration(
+                                hintText: 'Your answer here...',
+                                border: OutlineInputBorder(),
+                                contentPadding: EdgeInsets.all(12),
+                              ),
+                              maxLines: 2,
+                            ),
+                            // Show feedback if available
+                            if (_showResults && widget.aiFeedbackData != null && widget.aiFeedbackData!.containsKey(questionId))
+                              Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: ParsedFeedbackCard(
+                                  feedbackData: widget.aiFeedbackData![questionId],
+                                  scenarioLabel: questionText,
+                                ),
+                              ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  ],
+                ),
+              );
+            }).toList(),
+
+            // Timeout Warning
+            if (_isTimedOut && !_showResults) ...[
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.shade300),
+                ),
+                child: const Row(
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.all(8.0),
+                    FaIcon(FontAwesomeIcons.exclamationTriangle, color: Colors.red),
+                    SizedBox(width: 12),
+                    Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          TextButton.icon(
-                            icon: FaIcon(
-                                _showTranscriptFor[callNum] == true
-                                    ? FontAwesomeIcons.eyeSlash
-                                    : FontAwesomeIcons.eye,
-                                size: 16),
-                            label: Text(_showTranscriptFor[callNum] == true
-                                ? "Hide Transcript"
-                                : "Show Transcript"),
-                            onPressed: () {
-                              setState(() => _showTranscriptFor[callNum] =
-                                  !(_showTranscriptFor[callNum] ?? false));
-                            },
-                          ),
-                          if (_showTranscriptFor[callNum] == true)
-                            Container(
-                              padding: const EdgeInsets.all(10),
-                              margin: const EdgeInsets.symmetric(vertical: 6),
-                              decoration: BoxDecoration(
-                                  color: Colors.grey[100],
-                                  borderRadius: BorderRadius.circular(4),
-                                  border:
-                                      Border.all(color: Colors.grey.shade300)),
-                              width: double.infinity,
-                              child: Text(scriptText,
-                                  style: const TextStyle(
-                                      fontStyle: FontStyle.italic,
-                                      color: Colors.black87,
-                                      height: 1.4)),
+                          Text(
+                            "Time's Up!",
+                            style: TextStyle(
+                              color: Colors.red,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
                             ),
-                          const SizedBox(height: 10),
-                          ...List.generate(_questionLabels.length, (qIndex) {
-                            String questionKey =
-                                "call${callNum}_q${qIndex + 1}";
-                            final feedbackDataForQuestion =
-                                widget.aiFeedbackData![questionKey]
-                                        as Map<String, dynamic>? ??
-                                    {
-                                      'score': 'N/A',
-                                      'text': 'Feedback not available.'
-                                    };
-                            final userAnswer =
-                                _textControllers[questionKey]?.text ?? "N/A";
-                            return ParsedFeedbackCard(
-                                scenarioLabel:
-                                    "Q${qIndex + 1}: ${_questionLabels[qIndex]}\nYour Answer: $userAnswer",
-                                feedbackData: feedbackDataForQuestion);
-                          })
+                          ),
+                          Text(
+                            "This attempt was not submitted and will not be saved.",
+                            style: TextStyle(color: Colors.red),
+                          ),
                         ],
                       ),
                     ),
                   ],
-                );
-              }),
-              const SizedBox(height: 24),
-              SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                      onPressed: widget.onShowActivitySection,
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // Action Buttons
+            Row(
+              children: [
+                if (!_showResults && !_isTimedOut) ...[
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: _isSubmitting ? null : _handleSubmitToAIAndFirestore,
+                      icon: _isSubmitting
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const FaIcon(FontAwesomeIcons.checkCircle, size: 16),
+                      label: Text(_isSubmitting ? 'Submitting...' : 'Submit My Answers'),
                       style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green),
-                      child: const Text('Try Again',
-                          style:
-                              TextStyle(color: Colors.white, fontSize: 16)))),
+                        backgroundColor: const Color(0xFF3066be),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                ],
+                if (_showResults || _isTimedOut) ...[
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: _handleStartActivity,
+                      icon: const FaIcon(FontAwesomeIcons.redo, size: 16),
+                      label: const Text('Try Again'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+
+            // Score Display
+            if (_showResults && !_isTimedOut && widget.overallAIScoreForDisplay != null) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.purple.shade600,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Center(
+                  child: Column(
+                    children: [
+                      Text(
+                        'Your Total AI Score: ${_convertToInt(widget.overallAIScoreForDisplay)} / ${_convertToInt(widget.maxPossibleAIScoreForDisplay) ?? _maxPossibleAIScore}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        '(This score and time spent have been saved.)',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ],
           ],
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildTranscriptLines(String callId) {
+    final transcripts = _lessonData?['activity']?['transcripts'];
+    final script = transcripts?[callId] as List<dynamic>? ?? [];
+    
+    return script.map((turn) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: RichText(
+          text: TextSpan(
+            children: [
+              TextSpan(
+                text: '${turn['character']}: ',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+              TextSpan(
+                text: turn['text'],
+                style: const TextStyle(
+                  fontStyle: FontStyle.italic,
+                  color: Colors.black87,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }).toList();
+  }
+
+  Widget _buildActivityLogModal() {
+    return Container(
+      color: Colors.black54,
+      child: Center(
+        child: Container(
+          margin: const EdgeInsets.all(20),
+          constraints: const BoxConstraints(maxWidth: 800, maxHeight: 600),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Activity Log: $staticLessonId',
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                    IconButton(
+                      onPressed: () => setState(() => _showActivityLog = false),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: _activityLogLoading
+                      ? const Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              CircularProgressIndicator(),
+                              SizedBox(height: 16),
+                              Text('Loading log...'),
+                            ],
+                          ),
+                        )
+                      : _activityLog.isEmpty
+                          ? const Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  FaIcon(FontAwesomeIcons.book, size: 48, color: Colors.grey),
+                                  SizedBox(height: 16),
+                                  Text(
+                                    'No activity recorded for this lesson yet.',
+                                    style: TextStyle(fontSize: 16, color: Colors.grey),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : ListView.builder(
+                              itemCount: _activityLog.length,
+                              itemBuilder: (context, index) {
+                                final log = _activityLog[index];
+                                return Card(
+                                  margin: const EdgeInsets.symmetric(vertical: 4),
+                                  child: ListTile(
+                                    title: Text('Attempt ${log['attemptNumber'] ?? index + 1}'),
+                                    subtitle: Text('Score: ${log['score'] ?? 'N/A'}'),
+                                  ),
+                                );
+                              },
+                            ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: ElevatedButton(
+                  onPressed: () => setState(() => _showActivityLog = false),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo),
+                  child: const Text('Close Log', style: TextStyle(color: Colors.white)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoadingLessonContent || _lessonData == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    return FadeTransition(
+      opacity: _fadeAnimation,
+      child: Stack(
+        children: [
+          SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Title
+                Text(
+                  _lessonData!['lessonTitle'] ?? 'Lesson 3.1',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    color: const Color(0xFF00568D),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Activity Log Button (only when activity not visible and user logged in)
+                if (!_isActivityVisible && _firebaseService.userId != null) ...[
+                  Center(
+                    child: OutlinedButton.icon(
+                      onPressed: _loadActivityLog,
+                      icon: const FaIcon(FontAwesomeIcons.book, size: 16),
+                      label: const Text('View Your Activity Log'),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+
+                // Content based on state
+                if (!_isActivityVisible) ...[
+                  // Pre-assessment or study material
+                  if (!_isPreAssessmentComplete && !_hasStudied && _lessonData!.containsKey('preAssessmentData'))
+                    _buildPreAssessmentSection()
+                  else ...[
+                    // Study material
+                    _buildStudyMaterialSection(),
+                    const SizedBox(height: 20),
+                    
+                    // Study complete / Start activity buttons
+                    Center(
+                      child: !_hasStudied
+                          ? ElevatedButton(
+                              onPressed: _handleStudyComplete,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF3066be),
+                                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                              ),
+                              child: const Text(
+                                'I\'ve Finished Studying – Proceed to Activity',
+                                style: TextStyle(color: Colors.white, fontSize: 16),
+                              ),
+                            )
+                          : ElevatedButton.icon(
+                              onPressed: _firebaseService.userId != null ? _handleStartActivity : null,
+                              icon: const FaIcon(FontAwesomeIcons.playCircle),
+                              label: const Text('Start the Activity'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                                textStyle: const TextStyle(fontSize: 16),
+                              ),
+                            ),
+                    ),
+                    if (_firebaseService.userId == null) ...[
+                      const SizedBox(height: 8),
+                      const Center(
+                        child: Text(
+                          'Please log in to start the activity.',
+                          style: TextStyle(color: Colors.red),
+                        ),
+                      ),
+                    ],
+                  ],
+                ],
+
+                // Activity Section
+                if (_isActivityVisible && _firebaseService.userId != null) ...[
+                  const SizedBox(height: 20),
+                  _buildActivitySection(),
+                ],
+              ],
+            ),
+          ),
+
+          // Activity log modal overlay
+          if (_showActivityLog) _buildActivityLogModal(),
+
+          // Loading overlay
+          if (_isSubmitting)
+            Container(
+              color: Colors.black54,
+              child: const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(color: Colors.white),
+                    SizedBox(height: 16),
+                    Text(
+                      'Evaluating your responses...',
+                      style: TextStyle(color: Colors.white, fontSize: 16),
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      'Please wait for your personalized feedback.',
+                      style: TextStyle(color: Colors.white70, fontSize: 14),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// Helper widget for key takeaway items
+class _KeyTakeawayItem extends StatelessWidget {
+  final String text;
+
+  const _KeyTakeawayItem({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('• ', style: TextStyle(fontWeight: FontWeight.bold)),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(fontSize: 14, height: 1.4),
+            ),
+          ),
         ],
       ),
     );

@@ -182,7 +182,7 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> with Ti
           classId: _selectedClassId!,
           title: _titleController.text.trim(),
           content: _contentController.text.trim(),
-          trainerId: _currentUser!.uid,
+          trainerId: _currentUser.uid,
           className: selectedClass['className'] as String?,
         );
         

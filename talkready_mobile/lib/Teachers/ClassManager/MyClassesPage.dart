@@ -1,10 +1,12 @@
+//Trainer
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'ClassListItem.dart';
 import 'CreateClassForm.dart';
-import 'ManageClassContent.dart'; // Add this import
+// Removed unused import: ManageClassContent.dart
 
 // Keep your existing Firebase service functions unchanged
 Future<List<Map<String, dynamic>>> getTrainerClassesFromService(String trainerId) async {
@@ -98,7 +100,8 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
       _error = null;
     });
     try {
-      final classesData = await getTrainerClassesFromService(_currentUser!.uid);
+  // _currentUser is promoted to non-null after the null check above
+  final classesData = await getTrainerClassesFromService(_currentUser.uid);
       setState(() {
         _classes = classesData;
         _filterClasses();

@@ -22,6 +22,7 @@ import 'package:talkready_mobile/all_notifications_page.dart';
 import 'package:talkready_mobile/Teachers/Assessment/ClassAssessmentsListPage.dart';
 import 'package:talkready_mobile/Teachers/Assessment/CreateAssessmentPage.dart';
 import 'package:talkready_mobile/Teachers/Assessment/ViewAssessmentResultsPage.dart';
+import 'package:talkready_mobile/Teachers/Assessment/ReviewSpeakingSubmission.dart';
 
 // ClassManager Page Imports
 import 'package:talkready_mobile/Teachers/ClassManager/CreateClassForm.dart';
@@ -172,6 +173,14 @@ class MyApp extends StatelessWidget {
             final classId = segments[2];
             return MaterialPageRoute(
               builder: (_) => ManageClassContentPage(classId: classId),
+              settings: settings,
+            );
+          }
+          // Review Speaking Submission: /submissions/speaking/<submissionId>/review
+          if (segments.length == 4 && segments[0] == 'submissions' && segments[1] == 'speaking' && segments[3] == 'review') {
+            final submissionId = segments[2];
+            return MaterialPageRoute(
+              builder: (_) => ReviewSpeakingSubmission(submissionId: submissionId),
               settings: settings,
             );
           }

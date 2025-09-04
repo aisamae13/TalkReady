@@ -503,9 +503,9 @@ class _Module1PageState extends State<Module1Page> {
 
   void _setLessonBySequentialProgress() {
     // ... (Keep existing implementation)
-    if (!(_lessonCompletion['lesson1'] ?? false))
+    if (!(_lessonCompletion['lesson1'] ?? false)) {
       currentLesson = 1;
-    else if (!(_lessonCompletion['lesson2'] ?? false))
+    } else if (!(_lessonCompletion['lesson2'] ?? false))
       currentLesson = 2;
     else if (!(_lessonCompletion['lesson3'] ?? false))
       currentLesson = 3;
@@ -561,10 +561,11 @@ class _Module1PageState extends State<Module1Page> {
     // If controller exists and videoId is the same, just ensure it's reset if needed
     // _youtubeController.seekTo(Duration.zero); _youtubeController.pause();
 
-    if (mounted)
+    if (mounted) {
       setState(() {
         _youtubeError = errorMsg;
       });
+    }
   }
 
   void _youtubePlayerListener() {
@@ -707,16 +708,19 @@ class _Module1PageState extends State<Module1Page> {
   void _handleToggleFlag(String questionId) {
     /* ... Keep ... */
     if (_showResults) return;
-    if (mounted)
+    if (mounted) {
       setState(() => _flaggedQuestions[questionId] =
           !(_flaggedQuestions[questionId] ?? false));
+    }
   }
 
   void _handleGoToNextFlagged() {
     /* ... Keep ... */
     if (_showResults ||
         _flaggedQuestions.isEmpty ||
-        _shuffledActivityQuestions.isEmpty) return;
+        _shuffledActivityQuestions.isEmpty) {
+      return;
+    }
     int searchStartIndex = _currentQuestionIndex + 1;
     for (int i = 0; i < _shuffledActivityQuestions.length; i++) {
       int actualIndex =
@@ -735,13 +739,15 @@ class _Module1PageState extends State<Module1Page> {
     if (currentQId != null &&
         (_flaggedQuestions[currentQId] ?? false) &&
         _flaggedQuestions.values.where((f) => f).length == 1) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
             content: Text("This is the only flagged question.")));
+      }
     } else if (_flaggedQuestions.values.where((f) => f).isNotEmpty) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text("Cycled through flagged questions.")));
+      }
     }
   }
 
@@ -769,14 +775,16 @@ class _Module1PageState extends State<Module1Page> {
           userAnswer == correctAnswer) {
         score++;
         if (i < newIsCorrectStates.length) newIsCorrectStates[i] = true;
-        if (i < newErrorMessages.length)
+        if (i < newErrorMessages.length) {
           newErrorMessages[i] =
               question['explanation']?.toString() ?? "Correct!";
+        }
       } else {
         if (i < newIsCorrectStates.length) newIsCorrectStates[i] = false;
-        if (i < newErrorMessages.length)
+        if (i < newErrorMessages.length) {
           newErrorMessages[i] = question['explanation']?.toString() ??
               "Incorrect. Correct: $correctAnswer";
+        }
       }
     }
     _userScore = score;
@@ -796,12 +804,13 @@ class _Module1PageState extends State<Module1Page> {
         timeSpentFromLesson: timeSpent,
         attemptNumberFromLessonWidget: currentSpecificAttempts,
         preCalculatedScore: _userScore);
-    if (mounted)
+    if (mounted) {
       setState(() {
         _showResults = true;
         _isActivitySubmitting = false;
         _attemptInitialized = false;
       });
+    }
   }
 
   void _handleTryAgain() {
@@ -844,9 +853,9 @@ class _Module1PageState extends State<Module1Page> {
 
     int calculatedScore;
     int totalQuestions = questionsData.length;
-    if (preCalculatedScore != null)
+    if (preCalculatedScore != null) {
       calculatedScore = preCalculatedScore;
-    else {
+    } else {
       /* fallback scoring if needed, though _handleFinalSubmit should provide it */ calculatedScore =
           0;
     }
@@ -927,9 +936,10 @@ class _Module1PageState extends State<Module1Page> {
     } catch (e) {
       /* error handling */
       _logger.e("Failed to save attempt for $firestoreLessonKey: $e");
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text('Error saving attempt for $firestoreLessonKey: $e')));
+      }
     }
   }
 

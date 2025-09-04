@@ -109,7 +109,7 @@ class _AIBotScreenState extends State<AIBotScreen> {
   late FlutterSoundRecorder _recorder;
   bool _isListening = false;
   bool _isProcessingTTS = false;
-  String _lastRecognizedText = '';
+  final String _lastRecognizedText = '';
   String? _audioFilePath;
   String? _userProfilePictureBase64;
   ImageProvider? _userProfileImage;

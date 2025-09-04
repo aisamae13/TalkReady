@@ -1,22 +1,27 @@
-// lesson2_2.dart
+// Enhanced Lesson 2.2 with Firestore meta, pre-assessment gating, activity log,
+// interactive definitions, key phrase mini MCQ. Public constructor unchanged.
 
+import 'dart:async';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:logger/logger.dart';
-import '../lessons/common_widgets.dart'; // For buildSlide
-import 'dart:async';
-import '../firebase_service.dart'; // Your FirebaseService
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
+import '../lessons/common_widgets.dart';
+import '../firebase_service.dart';
+import '../widgets/parsed_feedback_card.dart';
+import '../StudentAssessment/RolePlayScenarioQuestion.dart';
+import '../StudentAssessment/AiFeedbackData.dart';
 
 class buildLesson2_2 extends StatefulWidget {
   final BuildContext parentContext;
   final int currentSlide;
   final CarouselSliderController carouselController;
   final YoutubePlayerController youtubeController;
-
-  // VV ADD THIS LINE VV
   final Key? youtubePlayerKey;
-  // ^^ ADD THIS LINE ^^
 
   final bool showActivitySection;
   final VoidCallback onShowActivitySection;
@@ -59,8 +64,8 @@ class buildLesson2_2 extends StatefulWidget {
 
 class _Lesson2_2State extends State<buildLesson2_2> {
   final Logger _logger = Logger();
-  // final FirebaseService _firebaseService = FirebaseService(); // Not strictly needed for hardcoded content
 
+  // Existing fields
   bool _videoFinished = false;
   bool _isSubmitting = false;
   Timer? _timer;
@@ -72,32 +77,53 @@ class _Lesson2_2State extends State<buildLesson2_2> {
   List<dynamic> _activityPrompts = [];
   late Map<String, TextEditingController> _textControllers;
 
-  // Fallback static slides if Firestore fetch fails (original from your code)
+  // New enhancements
+  static const String _lessonDocId = 'lesson_2_2';
+  static const String _preAssessmentKey = 'Lesson-2-2';
+  bool _preAssessmentCompleted = true;
+  bool _checkingPreAssessment = true;
+
+  // Activity log
+  bool _showActivityLog = false;
+  bool _activityLogLoading = false;
+  List<Map<String, dynamic>> _activityLog = [];
+
+  // Key phrase mini-activity
+  Map<String, String> _keyPhraseAnswers = {};
+  bool _showKeyPhraseResults = false;
+
+  // Interactive definitions base
+  final Map<String, String> _baseDefinitions = {
+    'polite': 'Showing good manners toward others.',
+    'clarify': 'To make a statement or situation less confused.',
+    'probe': 'Ask further questions to gain more detail.',
+    'verify': 'Confirm the truth or accuracy.',
+    'assist': 'Help or support.',
+  };
+
+  // Fallback slides
   final List<Map<String, dynamic>> _staticSlidesDataFallback = [
     {
       'title': 'Objective: Asking for Information Politely (Fallback)',
       'content':
-          'Learn phrases and techniques for asking for information from customers in a polite and professional manner.',
+          'Learn polite techniques for gathering information from customers.'
     },
     {
-      'title': 'Using Polite Question Forms (Fallback)',
+      'title': 'Polite Question Forms (Fallback)',
       'content':
-          '• Use "Could you," "Would you mind," or "May I" for requests.\n  Example: "Could you please provide your account number?"',
+          '• Could you... • Would you mind... • May I...'
     },
     {
-      'title': 'Explaining Why Information is Needed (Fallback)',
-      'content':
-          '• Briefly explain why you need certain information to build trust.\n  Example: "May I have your date of birth to verify your account?"',
+      'title': 'Explaining Need (Fallback)',
+      'content': 'Explain why information is needed to build trust.'
     },
     {
-      'title': 'Active Listening and Clarification (Fallback)',
-      'content':
-          '• Listen carefully to the customer\'s responses.\n• Ask clarifying questions if needed.\n  Example: "Could you please repeat that?"',
+      'title': 'Clarifying (Fallback)',
+      'content': 'Active listening and clarification improve accuracy.'
     },
     {
-      'title': 'Conclusion (Fallback)',
-      'content':
-          'Asking for information politely and clearly is key to efficient customer service. Practice these techniques.',
+      'title': 'Video Intro (Fallback)',
+      'content': 'Watch how probing questions improve outcomes.'
     },
   ];
 
@@ -106,129 +132,640 @@ class _Lesson2_2State extends State<buildLesson2_2> {
     super.initState();
     _currentAttemptForDisplay = widget.initialAttemptNumber + 1;
     _textControllers = {};
-    _fetchLessonContentAndInitialize(); // Will use hardcoded data
+    _fetchLessonContent();
     widget.youtubeController.addListener(_videoListener);
-
     if (widget.showActivitySection && !widget.displayFeedback) {
       _startTimer();
     }
   }
 
-  final YoutubePlayerController _controller = YoutubePlayerController(
-    initialVideoId: 'bQ90ZCNFuq0', // correct video ID for lesson 2.1
-    flags: YoutubePlayerFlags(
-      autoPlay: false,
-      mute: false,
-    ),
-  );
+  // Firestore (with fallback hardcoded dataset)
+  Future<void> _fetchLessonContent() async {
+    setState(() => _isLoadingLessonContent = true);
+    Map<String, dynamic>? firestoreData;
+    try {
+      final doc =
+          await FirebaseFirestore.instance.collection('lessons').doc(_lessonDocId).get();
+      if (doc.exists) {
+        firestoreData = doc.data();
+        _logger.i('Lesson2_2 Firestore data loaded.');
+      } else {
+        _logger.w('Lesson2_2 Firestore doc missing. Using fallback.');
+      }
+    } catch (e) {
+      _logger.e('Lesson2_2 Firestore fetch error: $e');
+    }
 
-  Future<void> _fetchLessonContentAndInitialize() async {
-    if (!mounted) return;
-    setState(() {
-      _isLoadingLessonContent = true;
-    });
-
-    // ---- START HARDCODED LESSON 2.2 DATA ----
     final Map<String, dynamic> hardcodedLesson2_2Data = {
-      'lessonTitle': 'Lesson 2.2: Asking for Information (HC)', // From JSX
+      'lessonTitle': 'Lesson 2.2: Asking for Information (HC)',
       'slides': [
         {
-          'title': 'Objective', // From JSX
+          'title': 'Objective',
           'content':
-              'By the end of this lesson, learners will be able to confidently ask for information in customer service scenarios, using common questions that will help them effectively engage with customers.', // From JSX
+              'Confidently ask for information in customer service scenarios.'
         },
         {
-          'title': 'Introduction', // From JSX
+          'title': 'Introduction',
           'content':
-              'In a call center environment, asking the right questions is crucial to understanding the customer\'s issue and providing appropriate assistance. The ability to ask clear, polite, and professional questions ensures that customers feel heard and that their problems are addressed efficiently.', // From JSX
+              'Asking clear, polite, professional questions ensures efficiency.'
         },
         {
-          'title': 'Key Phrases for Getting Customer Information', // From JSX
-          'content': 'Based on "36 English Phrases for Professional Customer Service," here are some effective ways to request information:\n\n' // From JSX
-              '• "Absolutely. Could I please get your full name to check that order for you?"\n' // From JSX
-              '• "Great. Could you please give me your customer/account number?"\n' // From JSX
-              '• "No problem. Do you happen to have the order number so I can bring it up?"\n' // From JSX
-              '• "I see. Could you please give me the account number listed on the invoice?"', // From JSX
-        },
-        {
-          'title': 'More Common Questions in Customer Service', // From JSX
-          'content': '1. "How can I assist you today?" – A polite and professional opening.\n' // From JSX
-              '2. "What is the issue you are experiencing?" – Helps focus on the customer’s concern.\n' // From JSX
-              '3. "Could you explain the problem a bit more?" – Encourages clarification.', // From JSX
-          // You can add more items here if your JSX has them
-        },
-        // This slide can represent the point where the video is introduced.
-        // The actual video player appears after the last slide in the Flutter UI.
-        {
-          'title':
-              'Watch: How to Ask Probing Questions', // From JSX Video Section
+          'title': 'Key Phrases',
           'content':
-              'The following video will demonstrate techniques for asking effective probing questions in customer service scenarios.'
+              '• "Could I get your full name?"\n• "Could you provide the account number?"\n• "Do you have the order number?"'
+        },
+        {
+          'title': 'More Common Questions',
+          'content':
+              '1. How can I assist you today?\n2. What issue are you experiencing?\n3. Could you explain the problem a bit more?'
+        },
+        {
+          'title': 'Watch: Probing Questions',
+          'content':
+              'Video demonstration of effective probing questions.'
         }
       ],
-      'video': {
-        // The JSX file had "https://www.youtube.com/embed/bQ90ZCNFuq0" which is not a direct playable ID.
-        // Using a known valid public YouTube ID for testing.
-        'url':
-            'bQ90ZCNFuq0' // Example: Google I/O 2011 Keynote. Replace if you have a specific Lesson 2.2 video.
-      },
+      'video': {'url': 'bQ90ZCNFuq0'},
       'activity': {
-        'title': 'Interactive Activity: Asking for Information', // From JSX
+        'title': 'Interactive Activity: Asking for Information',
         'objective':
-            'Practice asking clear, polite, and professional questions to gather necessary information from customers.', // From JSX (used as instructions intro)
+            'Practice asking clear, polite, professional questions.',
         'instructions': {
           'introParagraph':
-              'For each scenario, respond as a call center agent. Your response should include at least <strong>three appropriate questions</strong> to help understand and address the customer\'s situation. Focus on being polite and professional.' // From JSX instructions
+              'Respond as an agent. Include at least three relevant questions.'
         },
         'prompts': [
-          // From activityPrompts_L2_2 in JSX
           {
-            'name': 'scenario1', // Matches JSX and desired key for consistency
-            'label': 'Scenario 1: Broken Item', // From JSX
+            'name': 'scenario1',
+            'label': 'Scenario 1: Broken Item',
             'customerText':
-                'Customer: "I need help with my recent purchase. The item I received is broken."', // From JSX
+                'Customer: "The item I received is broken."',
             'agentPrompt':
-                'Agent Prompt: Ask at least 3 relevant questions to understand the problem and gather details about the broken item and order.', // From JSX
+                'Ask at least 3 relevant questions about the order and issue.'
           },
           {
-            'name': 'scenario2', // Matches JSX and desired key for consistency
-            'label': 'Scenario 2: Slow Internet', // From JSX
+            'name': 'scenario2',
+            'label': 'Scenario 2: Slow Internet',
             'customerText':
-                'Customer: "My internet has been very slow for the past few days."', // From JSX
+                'Customer: "My internet has been very slow for days."',
             'agentPrompt':
-                'Agent Prompt: Ask at least 3 probing questions to diagnose the issue with the slow internet.', // From JSX
+                'Ask at least 3 probing questions to diagnose the issue.'
           },
         ],
-        'maxPossibleAIScore':
-            10, // Assuming 2 prompts, 5 points each, as per web example
+        'maxPossibleAIScore': 10,
       },
     };
 
-    _lessonData = hardcodedLesson2_2Data;
-    // ---- END HARDCODED LESSON 2.2 DATA ----
+    _lessonData = firestoreData ?? hardcodedLesson2_2Data;
 
-    if (_lessonData != null) {
-      _activityPrompts =
-          _lessonData!['activity']?['prompts'] as List<dynamic>? ?? [];
-      _textControllers.forEach((_, controller) => controller.dispose());
-      _textControllers.clear();
-      for (var promptData in _activityPrompts) {
-        if (promptData is Map && promptData['name'] is String) {
-          _textControllers[promptData['name']] = TextEditingController();
-        }
+    _activityPrompts =
+        _lessonData?['activity']?['prompts'] as List<dynamic>? ?? [];
+    _textControllers.forEach((_, c) => c.dispose());
+    _textControllers.clear();
+    for (final p in _activityPrompts) {
+      if (p is Map && p['name'] is String) {
+        _textControllers[p['name']] = TextEditingController();
       }
-      _logger.i(
-          "L2.2 HARDCODED content loaded. Prompts: ${_activityPrompts.length}");
-    } else {
-      _logger.w("L2.2 hardcoded content is null. Defaulting to empty prompts.");
-      _activityPrompts = [];
     }
 
-    if (mounted) {
+    // Key phrase mini activity setup
+    final kp = _lessonData?['keyPhraseActivity'];
+    if (kp is Map &&
+        kp['questions'] is List &&
+        (kp['questions'] as List).isNotEmpty) {
+      _keyPhraseAnswers = {
+        for (final q in (kp['questions'] as List))
+          if (q is Map && q['id'] is String) q['id']: ''
+      };
+    }
+
+    setState(() => _isLoadingLessonContent = false);
+    _checkPreAssessmentStatus();
+  }
+
+  // Pre-assessment
+  Future<void> _checkPreAssessmentStatus() async {
+    setState(() => _checkingPreAssessment = true);
+    final hasPre = _lessonData?['preAssessmentData'] != null;
+    if (!hasPre) {
+      _preAssessmentCompleted = true;
+      _checkingPreAssessment = false;
+      setState(() {});
+      return;
+    }
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      _preAssessmentCompleted = false;
+      _checkingPreAssessment = false;
+      setState(() {});
+      return;
+    }
+    try {
+      final prog = await FirebaseFirestore.instance
+          .collection('userProgress')
+          .doc(user.uid)
+          .get();
+      if (prog.exists) {
+        final map =
+            (prog.data()?['preAssessmentsCompleted'] as Map<String, dynamic>?) ??
+                {};
+        _preAssessmentCompleted = map[_preAssessmentKey] == true;
+      } else {
+        _preAssessmentCompleted = false;
+      }
+    } catch (e) {
+      _logger.w('Pre-assessment status error: $e');
+      _preAssessmentCompleted = true; // fail-open
+    }
+    _checkingPreAssessment = false;
+    setState(() {});
+  }
+
+  Future<void> _markPreAssessmentComplete() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(widget.parentContext)
+          .showSnackBar(const SnackBar(content: Text('Login required.')));
+      return;
+    }
+    try {
+      await FirebaseFirestore.instance
+          .collection('userProgress')
+          .doc(user.uid)
+          .set({
+        'preAssessmentsCompleted': {_preAssessmentKey: true}
+      }, SetOptions(merge: true));
+      setState(() => _preAssessmentCompleted = true);
+    } catch (e) {
+      _logger.e('Mark pre-assessment error: $e');
+    }
+  }
+
+  Widget _preAssessmentGate() {
+    if (_checkingPreAssessment) {
+      return const Padding(
+        padding: EdgeInsets.all(16),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_lessonData?['preAssessmentData'] == null ||
+        _preAssessmentCompleted) {
+      return const SizedBox();
+    }
+    final pre = _lessonData!['preAssessmentData'];
+    return Card(
+      margin: const EdgeInsets.only(bottom: 20),
+      elevation: 3,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child:
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Pre-Assessment',
+              style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF00568D))),
+          const SizedBox(height: 10),
+          Text(
+            (pre['instruction'] ??
+                    'Complete this quick pre-assessment before continuing.')
+                .toString(),
+            style: const TextStyle(fontSize: 14),
+          ),
+            const SizedBox(height: 16),
+          ElevatedButton(
+              onPressed: _markPreAssessmentComplete,
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF00568D),
+                  foregroundColor: Colors.white),
+              child: const Text('Mark as Complete'))
+        ]),
+      ),
+    );
+  }
+
+  // Activity Log
+  Future<void> _loadActivityLog() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(widget.parentContext)
+          .showSnackBar(const SnackBar(content: Text('Login required.')));
+      return;
+    }
+    setState(() {
+      _showActivityLog = true;
+      _activityLogLoading = true;
+    });
+    try {
+      final prog = await FirebaseFirestore.instance
+          .collection('userProgress')
+          .doc(user.uid)
+          .get();
+      List<Map<String, dynamic>> logs = [];
+      if (prog.exists) {
+        final attemptsMap =
+            prog.data()?['lessonAttempts'] as Map<String, dynamic>? ?? {};
+        final arr = attemptsMap[_preAssessmentKey] as List<dynamic>? ?? [];
+        logs = arr.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        logs.sort((a, b) {
+          final aN = (a['attemptNumber'] ?? 0) as num;
+          final bN = (b['attemptNumber'] ?? 0) as num;
+          return aN.compareTo(bN);
+        });
+      }
       setState(() {
-        _isLoadingLessonContent = false;
+        _activityLog = logs;
+        _activityLogLoading = false;
+      });
+    } catch (e) {
+      _logger.e('Activity log error: $e');
+      setState(() {
+        _activityLog = [];
+        _activityLogLoading = false;
       });
     }
+  }
+
+  void _closeActivityLog() =>
+      setState(() => _showActivityLog = false);
+
+  Widget _activityLogOverlay() {
+    return Positioned.fill(
+      child: Material(
+        color: Colors.black54,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 640, maxHeight: 620),
+            child: Card(
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18)),
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      const Icon(Icons.history, color: Color(0xFF00568D)),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                          child: Text('Activity Log - Lesson 2.2',
+                              style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF00568D)))),
+                      IconButton(
+                          onPressed: _closeActivityLog,
+                          icon: const Icon(Icons.close))
+                    ]),
+                    const Divider(),
+                    Expanded(
+                      child: _activityLogLoading
+                          ? const Center(child: CircularProgressIndicator())
+                          : _activityLog.isEmpty
+                              ? const Center(
+                                  child: Text('No attempts yet.',
+                                      style: TextStyle(color: Colors.grey)))
+                              : ListView.separated(
+                                  itemCount: _activityLog.length,
+                                  separatorBuilder: (_, __) => Divider(
+                                      color: Colors.grey.shade200, height: 16),
+                                  itemBuilder: (_, i) {
+                                    final a = _activityLog[i];
+                                    final ts = a['timestamp'] ??
+                                        a['attemptTimestamp'];
+                                    DateTime? dt;
+                                    if (ts is Timestamp) dt = ts.toDate();
+                                    return ExpansionTile(
+                                      tilePadding: EdgeInsets.zero,
+                                      title: Text(
+                                          'Attempt ${a['attemptNumber'] ?? '-'} - Score ${a['score'] ?? '-'}',
+                                          style: const TextStyle(
+                                              fontWeight: FontWeight.w600)),
+                                      subtitle: Text(
+                                          'Time Spent: ${a['timeSpent'] ?? a['timeSpentSeconds'] ?? '—'}s • ${dt != null ? dt.toLocal().toString() : ''}',
+                                          style: const TextStyle(fontSize: 12)),
+                                      children: [
+                                        if (_lessonData?['activity']
+                                                ?['prompts']
+                                            is List)
+                                          ...((_lessonData?['activity']
+                                                      ?['prompts'] as List)
+                                                  .cast()
+                                                  .whereType<Map>())
+                                              .map((p) {
+                                            final name = p['name'] ?? '';
+                                            final label = p['label'] ?? name;
+                                            final userAnswer =
+                                                a['detailedResponses']
+                                                        ?['scenarioAnswers_L2_2']
+                                                    ?[name];
+                                            final fb =
+                                                a['detailedResponses']
+                                                        ?['scenarioFeedback_L2_2']
+                                                    ?[name];
+                                            return Padding(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      vertical: 6),
+                                              child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(label,
+                                                        style: const TextStyle(
+                                                            fontWeight:
+                                                                FontWeight
+                                                                    .bold)),
+                                                    const SizedBox(height: 4),
+                                                    Text(
+                                                      userAnswer ??
+                                                          '(No answer)',
+                                                      style: const TextStyle(
+                                                          fontStyle:
+                                                              FontStyle.italic),
+                                                    ),
+                                                    if (fb != null)
+                                                      Padding(
+                                                        padding:
+                                                            const EdgeInsets
+                                                                .only(top: 4),
+                                                        child: Text(
+                                                          (fb['text'] ??
+                                                                  'No feedback')
+                                                              .toString(),
+                                                          style:
+                                                              const TextStyle(
+                                                                  fontSize: 12,
+                                                                  color: Colors
+                                                                      .blueGrey),
+                                                        ),
+                                                      )
+                                                  ]),
+                                            );
+                                          })
+                                      ],
+                                    );
+                                  },
+                                ),
+                    ),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: _closeActivityLog,
+                        icon: const Icon(Icons.close),
+                        label: const Text('Close'),
+                      ),
+                    )
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Video
+  void _videoListener() {
+    if (widget.youtubeController.value.playerState == PlayerState.ended &&
+        !_videoFinished) {
+      setState(() => _videoFinished = true);
+      _logger.i('Video finished L2.2');
+    }
+  }
+
+  // Timer
+  void _startTimer() {
+    _stopTimer();
+    _secondsElapsed = 0;
+    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
+      setState(() => _secondsElapsed++);
+    });
+  }
+
+  void _stopTimer() => _timer?.cancel();
+  void _resetTimer() => setState(() => _secondsElapsed = 0);
+
+  String _formatDuration(int s) {
+    final d = Duration(seconds: s);
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final sec = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$m:$sec';
+  }
+
+  // Scenario submission
+  void _handleSubmit() async {
+    if (!mounted) return;
+    final allAnswered = _activityPrompts.every((p) {
+      final name = p['name'] as String?;
+      if (name == null) return false;
+      return _textControllers[name]?.text.trim().isNotEmpty == true;
+    });
+    if (!allAnswered) {
+      ScaffoldMessenger.of(widget.parentContext).showSnackBar(const SnackBar(
+          content: Text('Please answer all scenarios before submitting.')));
+      return;
+    }
+    setState(() => _isSubmitting = true);
+    _stopTimer();
+
+    final answers = <String, String>{};
+    _textControllers.forEach((k, c) => answers[k] = c.text.trim());
+    try {
+      await widget.onSubmitAnswers(
+          answers, _secondsElapsed, widget.initialAttemptNumber);
+    } catch (e) {
+      _logger.e('Submit error L2.2: $e');
+      ScaffoldMessenger.of(widget.parentContext).showSnackBar(
+          SnackBar(content: Text('Submission error: $e')));
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  // Key phrase mini activity
+  void _onKeyPhraseTap(String qId, String opt) {
+    if (_showKeyPhraseResults) return;
+    setState(() {
+      _keyPhraseAnswers[qId] = opt;
+    });
+  }
+
+  Widget _buildKeyPhraseQuestion(Map q, int idx) {
+    final id = q['id']?.toString() ?? 'q$idx';
+    final prompt = q['promptText']?.toString() ?? 'Question';
+    final options = (q['options'] as List?)?.cast<String>() ?? [];
+    final correct = q['correctAnswer']?.toString();
+    final selected = _keyPhraseAnswers[id];
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('${idx + 1}. $prompt',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w600, fontSize: 15)),
+              const SizedBox(height: 10),
+              ...options.map((opt) {
+                final isSel = selected == opt;
+                bool isCorrect = false;
+                bool isIncorrect = false;
+                if (_showKeyPhraseResults) {
+                  if (opt == correct) {
+                    isCorrect = true;
+                  } else if (isSel && opt != correct) {
+                    isIncorrect = true;
+                  }
+                }
+                Color border = Colors.grey.shade300;
+                Color? tile;
+                Icon? trailing;
+                if (isCorrect) {
+                  border = Colors.green;
+                  tile = Colors.green.shade50;
+                  trailing =
+                      const Icon(Icons.check_circle, color: Colors.green);
+                } else if (isIncorrect) {
+                  border = Colors.red;
+                  tile = Colors.red.shade50;
+                  trailing =
+                      const Icon(Icons.cancel, color: Colors.red);
+                } else if (isSel) {
+                  border = Theme.of(context).primaryColor;
+                }
+                return Container(
+                  margin: const EdgeInsets.symmetric(vertical: 4),
+                  decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: border, width: 1.2),
+                      color: tile),
+                  child: ListTile(
+                    dense: true,
+                    title: Text(opt),
+                    trailing: trailing,
+                    onTap: () => _onKeyPhraseTap(id, opt),
+                  ),
+                );
+              })
+            ]),
+      ),
+    );
+  }
+
+  Widget _buildKeyPhraseActivity() {
+    final kp = _lessonData?['keyPhraseActivity'];
+    if (kp is! Map) return const SizedBox();
+    final qs = (kp['questions'] as List?) ?? [];
+    if (qs.isEmpty) return const SizedBox();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(kp['title']?.toString() ?? 'Key Phrase Check',
+            style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF00568D))),
+        if (kp['instruction'] is String)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(kp['instruction'],
+                style:
+                    const TextStyle(fontSize: 13, color: Colors.black87)),
+          ),
+        const SizedBox(height: 10),
+        ...qs.asMap().entries.map((e) => _buildKeyPhraseQuestion(
+            e.value as Map, e.key)),
+        const SizedBox(height: 10),
+        if (!_showKeyPhraseResults)
+          Center(
+            child: ElevatedButton(
+              onPressed: () {
+                final allAnswered = qs.every((q) =>
+                    _keyPhraseAnswers[(q as Map)['id']]?.isNotEmpty == true);
+                if (!allAnswered) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                      content:
+                          Text('Answer all key phrase questions first.')));
+                  return;
+                }
+                setState(() => _showKeyPhraseResults = true);
+              },
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF00568D),
+                  foregroundColor: Colors.white),
+              child: const Text('Check My Answers'),
+            ),
+          )
+        else
+          Center(
+            child: TextButton(
+              onPressed: () {
+                setState(() {
+                  _showKeyPhraseResults = false;
+                  _keyPhraseAnswers.updateAll((key, value) => '');
+                });
+              },
+              child: const Text('Retry Key Phrase Activity'),
+            ),
+          ),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+
+  // Interactive text
+  Widget _interactiveText(String text, {Map<String, dynamic>? defsDynamic}) {
+    final merged = {
+      ..._baseDefinitions,
+      ...?defsDynamic?.map((k, v) => MapEntry(k.toString(), v.toString()))
+    };
+    final words = text.split(' ');
+    final spans = <TextSpan>[];
+    for (var i = 0; i < words.length; i++) {
+      final raw = words[i];
+      final clean = raw.toLowerCase().replaceAll(RegExp(r'[^\w]'), '');
+      if (merged.containsKey(clean)) {
+        spans.add(TextSpan(
+            text: raw,
+            style: const TextStyle(
+                color: Color(0xFF00568D),
+                fontWeight: FontWeight.bold,
+                decoration: TextDecoration.underline),
+            recognizer: TapGestureRecognizer()
+              ..onTap =
+                  () => _showDefinitionDialog(clean, merged[clean] ?? '')));
+      } else {
+        spans.add(TextSpan(text: raw));
+      }
+      if (i != words.length - 1) spans.add(const TextSpan(text: ' '));
+    }
+    return RichText(
+        text: TextSpan(
+            style: const TextStyle(
+                fontSize: 14, height: 1.5, color: Colors.black87),
+            children: spans));
+  }
+
+  void _showDefinitionDialog(String w, String def) {
+    showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+              title: Text(w.toUpperCase()),
+              content: Text(def),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Close'))
+              ],
+            ));
   }
 
   @override
@@ -238,22 +775,17 @@ class _Lesson2_2State extends State<buildLesson2_2> {
       oldWidget.youtubeController.removeListener(_videoListener);
       widget.youtubeController.addListener(_videoListener);
     }
-
-    bool shouldResetForNewAttempt = (widget.showActivitySection &&
+    final shouldResetForNewAttempt = (widget.showActivitySection &&
             !widget.displayFeedback) &&
         ((widget.showActivitySection != oldWidget.showActivitySection &&
                 !oldWidget.displayFeedback) ||
             (widget.initialAttemptNumber != oldWidget.initialAttemptNumber));
-
     if (shouldResetForNewAttempt) {
       _currentAttemptForDisplay = widget.initialAttemptNumber + 1;
-      _logger
-          .i("L2.2: Resetting for new attempt ${_currentAttemptForDisplay}.");
-      _textControllers.forEach((_, controller) => controller.clear());
+      _textControllers.forEach((_, c) => c.clear());
       _resetTimer();
       _startTimer();
     }
-
     if (!widget.showActivitySection && oldWidget.showActivitySection) {
       _stopTimer();
     }
@@ -267,93 +799,9 @@ class _Lesson2_2State extends State<buildLesson2_2> {
   @override
   void dispose() {
     widget.youtubeController.removeListener(_videoListener);
-    _textControllers.forEach((_, controller) => controller.dispose());
+    _textControllers.forEach((_, c) => c.dispose());
     _stopTimer();
     super.dispose();
-  }
-
-  void _videoListener() {
-    if (widget.youtubeController.value.playerState == PlayerState.ended &&
-        !_videoFinished) {
-      if (mounted) setState(() => _videoFinished = true);
-      _logger.i('Video finished in Lesson 2.2');
-    }
-  }
-
-  void _startTimer() {
-    _stopTimer();
-    _secondsElapsed = 0;
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-      setState(() => _secondsElapsed++);
-    });
-    _logger.i('Timer started for L2.2. Attempt: $_currentAttemptForDisplay.');
-  }
-
-  void _stopTimer() {
-    _timer?.cancel();
-    _logger.i('Timer stopped for L2.2. Elapsed: $_secondsElapsed s.');
-  }
-
-  void _resetTimer() {
-    if (mounted) setState(() => _secondsElapsed = 0);
-  }
-
-  String _formatDuration(int totalSeconds) {
-    final duration = Duration(seconds: totalSeconds);
-    final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return '$minutes:$seconds';
-  }
-
-  void _handleSubmit() async {
-    if (!mounted) return;
-
-    // Check if all answers are provided
-    bool allAnswered = _activityPrompts.every((prompt) {
-      final promptName = prompt['name'] as String?;
-      return promptName != null &&
-          _textControllers[promptName]?.text.trim().isNotEmpty == true;
-    });
-
-    if (!allAnswered) {
-      if (mounted) {
-        ScaffoldMessenger.of(widget.parentContext).showSnackBar(const SnackBar(
-            content: Text('Please answer all scenarios before submitting.')));
-      }
-      // Do not set _isSubmitting to true if validation fails
-      return;
-    }
-
-    setState(() {
-      _isSubmitting = true;
-    });
-    _stopTimer();
-
-    Map<String, String> currentAnswers = {};
-    _textControllers.forEach((key, controller) {
-      currentAnswers[key] = controller.text.trim();
-    });
-
-    try {
-      await widget.onSubmitAnswers(
-          currentAnswers, _secondsElapsed, widget.initialAttemptNumber);
-    } catch (e) {
-      _logger.e("Error in onSubmitAnswers callback for Lesson 2.2: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(widget.parentContext).showSnackBar(
-            SnackBar(content: Text('Submission error: $e. Please try again.')));
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSubmitting = false;
-        });
-      }
-    }
   }
 
   @override
@@ -362,413 +810,517 @@ class _Lesson2_2State extends State<buildLesson2_2> {
       return const Center(child: CircularProgressIndicator());
     }
     if (_lessonData == null) {
-      // Removed && _activityPrompts.isEmpty for clarity as _lessonData null implies prompts would be too
       return const Center(
-          child: Text(
-              "Error: Hardcoded lesson data for L2.2 is missing. Check implementation."));
+          child: Text('Lesson 2.2 content unavailable (fallback failed).'));
     }
 
-    final String lessonTitle =
-        _lessonData!['lessonTitle'] as String? ?? 'Lesson 2.2 (Error)';
-    List<dynamic> fetchedSlidesData =
+    final title = _lessonData!['lessonTitle']?.toString() ?? 'Lesson 2.2';
+    List<dynamic> slides =
         _lessonData!['slides'] as List<dynamic>? ?? [];
-    if (fetchedSlidesData.isEmpty) {
-      fetchedSlidesData =
-          _staticSlidesDataFallback; // Use fallback if hardcoded slides are empty
-    }
+    if (slides.isEmpty) slides = _staticSlidesDataFallback;
 
-    // final String videoIdFromData =
-    //     _lessonData!['video']?['url'] as String? ?? '';
+    final activityTitle =
+        _lessonData!['activity']?['title']?.toString() ??
+            'Interactive Scenarios';
 
-    // // Similar logic to lesson2_1.dart for video loading, primarily handled by module2.dart
-    // // This block in the child can act as a fallback or for specific child-driven loads if needed.
-    // if (widget.youtubeController.metadata.videoId != videoIdFromData &&
-    //     videoIdFromData.isNotEmpty &&
-    //     videoIdFromData !=
-    //         'dQw4w9WgXcQ' /* Avoid reloading the specific placeholder used here if that's what module2 also uses */) {
-    //   _logger.i(
-    //       "Lesson2_2 build: Attempting to load videoIdFromData: '$videoIdFromData' into controller. Current: '${widget.youtubeController.metadata.videoId}'");
-    //   Future.microtask(() {
-    //     try {
-    //       widget.youtubeController.load(videoIdFromData);
-    //     } catch (e) {
-    //       _logger.e("Error trying to load video in buildLesson2_2: $e");
-    //     }
-    //   });
-    // } else if (videoIdFromData.isEmpty) {
-    //   _logger.w("Lesson2_2 build: videoIdFromData is empty.");
-    // }
-
-    final String activityTitle =
-        _lessonData!['activity']?['title'] as String? ??
-            'Interactive Scenarios (Error)';
     String activityInstructions = '';
     final instructionsMap =
         _lessonData!['activity']?['instructions'] as Map<String, dynamic>?;
     if (instructionsMap != null &&
         instructionsMap['introParagraph'] is String) {
-      activityInstructions = instructionsMap['introParagraph'] as String;
+      activityInstructions =
+          instructionsMap['introParagraph'] as String;
     } else if (_lessonData!['activity']?['objective'] is String) {
-      activityInstructions = _lessonData!['activity']?['objective'] as String;
+      activityInstructions =
+          _lessonData!['activity']?['objective'] as String;
     } else {
-      activityInstructions = 'Type your responses to the following scenarios.';
+      activityInstructions =
+          'Type your responses to the following scenarios.';
     }
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(lessonTitle,
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  color: const Color(0xFF00568D), fontWeight: FontWeight.bold)),
-          const SizedBox(height: 16),
-          if (fetchedSlidesData.isNotEmpty) ...[
-            CarouselSlider(
-              key: ValueKey('carousel_l2_2_${fetchedSlidesData.hashCode}'),
-              carouselController: widget.carouselController,
-              items: fetchedSlidesData.map((slide) {
-                return buildSlide(
-                  title: slide['title'] as String? ?? 'Slide Title',
-                  content: slide['content'] as String? ?? 'Slide Content',
-                  slideIndex: fetchedSlidesData.indexOf(slide),
-                );
-              }).toList(),
-              options: CarouselOptions(
-                height: 250.0,
-                viewportFraction: 0.9,
-                enlargeCenterPage: false,
-                enableInfiniteScroll: false,
-                initialPage: widget.currentSlide,
-                onPageChanged: (index, reason) {
-                  if (mounted) widget.onSlideChanged(index);
-                },
-              ),
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: fetchedSlidesData.asMap().entries.map((entry) {
-                return GestureDetector(
-                  onTap: () =>
-                      widget.carouselController.animateToPage(entry.key),
-                  child: Container(
-                    width: 8.0,
-                    height: 8.0,
-                    margin: const EdgeInsets.symmetric(
-                        vertical: 10.0, horizontal: 2.0),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: widget.currentSlide == entry.key
-                          ? const Color(0xFF00568D)
-                          : Colors.grey,
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-          ] else
-            Text("No slides available for this lesson (hardcoded)."),
-          const SizedBox(height: 16),
-          if (widget.currentSlide >=
-              (fetchedSlidesData.isNotEmpty
-                  ? fetchedSlidesData.length - 1
-                  : 0)) ...[
-            Text('Watch the Video',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(color: const Color(0xFF00568D))),
-            const SizedBox(height: 8),
-            AspectRatio(
-              aspectRatio: 16 / 9,
-              child: YoutubePlayer(
-                key: widget.youtubePlayerKey, // USE THE KEY HERE
-                controller: widget.youtubeController,
-                showVideoProgressIndicator: true,
-                onReady: () => _logger
-                    .i("L2.2 Player Ready (from buildLesson2_2 hardcoded)"),
-                onEnded: (_) => _videoListener(),
-              ),
-            ),
-            if (!widget.showActivitySection) ...[
-              const SizedBox(height: 16),
-              SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                      onPressed:
-                          _videoFinished ? widget.onShowActivitySection : null,
-                      style: ElevatedButton.styleFrom(
-                          disabledBackgroundColor: Colors.grey[300]),
-                      child: const Text('Proceed to Activity'))),
-              if (!_videoFinished)
-                const Padding(
-                  padding: EdgeInsets.only(top: 8.0),
-                  child: Text('Please watch the video to the end to proceed.',
-                      style: TextStyle(color: Colors.red, fontSize: 14),
-                      textAlign: TextAlign.center),
-                ),
-            ],
-          ] else if (widget.currentSlide >=
-              (fetchedSlidesData.isNotEmpty
-                  ? fetchedSlidesData.length - 1
-                  : 0)) ...[
-            const Text("No video configured for this lesson (hardcoded).",
-                style: TextStyle(color: Colors.orange)),
-            if (!widget.showActivitySection) ...[
-              const SizedBox(height: 16),
-              SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                      onPressed: widget.onShowActivitySection,
-                      child: const Text('Proceed to Activity (No Video)'))),
-            ],
-          ],
-          if (widget.showActivitySection) ...[
-            const SizedBox(height: 24),
-            Text(activityTitle,
-                style: Theme.of(context)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(color: Colors.orange)),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Attempt: $_currentAttemptForDisplay',
-                      style: Theme.of(context).textTheme.titleMedium),
-                  if (!widget.displayFeedback)
-                    Text('Time: ${_formatDuration(_secondsElapsed)}',
-                        style: Theme.of(context).textTheme.titleMedium),
-                ],
-              ),
-            ),
-            HtmlFormattedText(htmlString: activityInstructions),
-            const SizedBox(height: 16),
-            if (!widget.displayFeedback) ...[
-              // Input Mode
-              if (_activityPrompts.isEmpty && !_isLoadingLessonContent)
-                const Center(
-                    child: Padding(
-                        padding: EdgeInsets.all(16.0),
-                        child: Text(
-                            "No activity prompts defined for L2.2 (hardcoded)."))),
+    final keyPhrases = _lessonData?['keyPhrases'] as Map<String, dynamic>?;
 
-              ..._activityPrompts.map((promptData) {
-                final String promptName = promptData['name'] as String? ??
-                    'unknown_prompt_l22_${_activityPrompts.indexOf(promptData)}';
-                final String promptLabel =
-                    promptData['label'] as String? ?? 'Scenario';
-                final String customerText =
-                    promptData['customerText'] as String? ?? '';
-                final String agentTask =
-                    promptData['agentPrompt'] as String? ?? 'Your response:';
-                final TextEditingController? controller =
-                    _textControllers[promptName];
+    return Stack(
+      children: [
+        SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _preAssessmentGate(),
 
-                if (controller == null) {
-                  _logger.w(
-                      "No TextEditingController for L2.2 prompt name: $promptName");
-                  return const SizedBox.shrink();
-                }
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 10.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(promptLabel,
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleMedium
-                              ?.copyWith(fontWeight: FontWeight.bold)),
-                      if (customerText.isNotEmpty)
-                        Padding(
-                            padding:
-                                const EdgeInsets.only(top: 4.0, bottom: 2.0),
-                            child: Text("Customer: \"$customerText\"",
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodyMedium
-                                    ?.copyWith(
-                                        fontStyle: FontStyle.italic,
-                                        color: Colors.grey[700]))),
-                      Padding(
-                          padding: const EdgeInsets.only(top: 4.0),
-                          child: Text(agentTask,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodyMedium
-                                  ?.copyWith(color: Colors.blueAccent))),
-                      const SizedBox(height: 6),
-                      TextField(
-                        controller: controller,
-                        decoration: InputDecoration(
-                          border: const OutlineInputBorder(),
-                          hintText: 'Type your questions for $promptLabel...',
-                          filled: true,
-                          fillColor: Colors.grey[50],
-                        ),
-                        keyboardType: TextInputType.multiline,
-                        maxLines: 4,
-                        minLines: 3,
-                        textInputAction: TextInputAction.newline,
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: _isSubmitting ? null : _handleSubmit,
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF00568D),
-                      disabledBackgroundColor: Colors.grey),
-                  child: _isSubmitting
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                              valueColor:
-                                  AlwaysStoppedAnimation<Color>(Colors.white)))
-                      : const Text('Submit for AI Feedback',
-                          style: TextStyle(color: Colors.white, fontSize: 16)),
-                ),
-              ),
-            ],
-            if (widget.displayFeedback && widget.aiFeedbackData != null) ...[
-              // Feedback Display Mode
-              if (widget.overallAIScoreForDisplay != null &&
-                  widget.maxPossibleAIScoreForDisplay != null)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 16.0),
-                  child: Center(
-                    child: Text(
-                      'Overall AI Score: ${widget.overallAIScoreForDisplay} / ${widget.maxPossibleAIScoreForDisplay}',
+                if (!widget.showActivitySection) ...[
+                  Text(title,
                       style: Theme.of(context)
                           .textTheme
                           .headlineSmall
                           ?.copyWith(
-                              color: Colors.purple,
-                              fontWeight: FontWeight.bold),
+                              color: const Color(0xFF00568D),
+                              fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 16),
+                  if (slides.isNotEmpty) ...[
+                    CarouselSlider(
+                      key: ValueKey('carousel_l2_2_${slides.hashCode}'),
+                      carouselController: widget.carouselController,
+                      items: slides.map((slide) {
+                        return buildSlide(
+                          title: slide['title']?.toString() ??
+                              'Slide Title',
+                          content: slide['content']?.toString() ??
+                              'Slide Content',
+                          slideIndex: slides.indexOf(slide),
+                        );
+                      }).toList(),
+                      options: CarouselOptions(
+                          height: 250,
+                          viewportFraction: 0.9,
+                          enlargeCenterPage: false,
+                          enableInfiniteScroll: false,
+                          initialPage: widget.currentSlide,
+                          onPageChanged: (i, _) =>
+                              widget.onSlideChanged(i)),
                     ),
-                  ),
-                ),
-
-              if (_activityPrompts.isEmpty && !_isLoadingLessonContent)
-                const Center(
-                    child: Padding(
-                        padding: EdgeInsets.all(16.0),
-                        child: Text(
-                            "No prompts to display feedback for L2.2 (hardcoded)."))),
-
-              ..._activityPrompts.map((promptData) {
-                final String promptName = promptData['name'] as String? ??
-                    'unknown_prompt_l22_${_activityPrompts.indexOf(promptData)}';
-                final String promptLabel =
-                    promptData['label'] as String? ?? 'Scenario';
-                final feedbackForThisPrompt =
-                    widget.aiFeedbackData![promptName] as Map<String, dynamic>?;
-
-                String userAnswer =
-                    _textControllers[promptName]?.text.trim() ?? '';
-                if (userAnswer.isEmpty) {
-                  // IMPORTANT: This key 'scenarioAnswers_L2_2' must match how module2.dart structures the feedback payload for Lesson 2.2
-                  final Map<String, dynamic>? allAnswersFromParent =
-                      widget.aiFeedbackData!['scenarioAnswers_L2_2']
-                          as Map<String, dynamic>?;
-                  userAnswer = allAnswersFromParent?[promptName] as String? ??
-                      'Not available';
-                }
-
-                return Card(
-                  margin: const EdgeInsets.symmetric(vertical: 8.0),
-                  elevation: 3,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: slides.asMap().entries.map((e) {
+                        return GestureDetector(
+                          onTap: () => widget.carouselController
+                              .animateToPage(e.key),
+                          child: Container(
+                            width: 8,
+                            height: 8,
+                            margin: const EdgeInsets.symmetric(
+                                vertical: 10, horizontal: 2),
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: widget.currentSlide == e.key
+                                  ? const Color(0xFF00568D)
+                                  : Colors.grey,
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  if (widget.currentSlide >=
+                      (slides.isNotEmpty ? slides.length - 1 : 0))
+                    Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(promptLabel,
+                        Text('Watch the Video',
                             style: Theme.of(context)
                                 .textTheme
-                                .titleMedium
+                                .titleLarge
                                 ?.copyWith(
-                                    fontWeight: FontWeight.bold,
                                     color: const Color(0xFF00568D))),
-                        const SizedBox(height: 6),
-                        Text("Your Answer:",
-                            style: Theme.of(context).textTheme.labelLarge),
-                        Text(
-                            userAnswer.isNotEmpty
-                                ? userAnswer
-                                : '(No answer provided)',
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodyMedium
-                                ?.copyWith(
-                                    fontStyle: FontStyle.italic,
-                                    color: Colors.grey[700])),
-                        const SizedBox(height: 12),
-                        if (feedbackForThisPrompt != null) ...[
-                          Text(
-                            'AI Feedback (Score: ${feedbackForThisPrompt['score'] ?? 'N/A'}):',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleSmall
-                                ?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.blueAccent),
+                        const SizedBox(height: 8),
+                        AspectRatio(
+                          aspectRatio: 16 / 9,
+                          child: YoutubePlayer(
+                            key: widget.youtubePlayerKey,
+                            controller: widget.youtubeController,
+                            showVideoProgressIndicator: true,
+                            onReady: () =>
+                                _logger.i('L2.2 Player Ready'),
+                            onEnded: (_) => _videoListener(),
                           ),
-                          const SizedBox(height: 4),
-                          HtmlFormattedText(
-                              // Defined at the bottom
-                              htmlString:
-                                  feedbackForThisPrompt['text'] as String? ??
-                                      'No feedback text.'),
-                        ] else
-                          const Text('AI Feedback: Not available.',
-                              style: TextStyle(color: Colors.grey)),
+                        ),
+                        if (!widget.showActivitySection) ...[
+                          const SizedBox(height: 16),
+                          SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton(
+                                  onPressed: _videoFinished
+                                      ? widget.onShowActivitySection
+                                      : null,
+                                  style: ElevatedButton.styleFrom(
+                                      disabledBackgroundColor:
+                                          Colors.grey[300]),
+                                  child:
+                                      const Text('Proceed to Activity'))),
+                          if (!_videoFinished)
+                            const Padding(
+                              padding: EdgeInsets.only(top: 8),
+                              child: Text(
+                                'Please watch the video to proceed.',
+                                style: TextStyle(
+                                    color: Colors.red, fontSize: 13),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                        ],
+                      ],
+                    ),
+                  const SizedBox(height: 24),
+                  if (keyPhrases != null &&
+                      keyPhrases['heading'] != null) ...[
+                    Text(keyPhrases['heading'].toString(),
+                        style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF00568D))),
+                    const SizedBox(height: 8),
+                    if (keyPhrases['introParagraph'] is String)
+                      _interactiveText(
+                        keyPhrases['introParagraph'] as String,
+                        defsDynamic:
+                            keyPhrases['definitions'] as Map<String, dynamic>?,
+                      ),
+                    if (keyPhrases['listItems'] is List &&
+                        (keyPhrases['listItems'] as List).isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                                color: Colors.blue.shade100),
+                          ),
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment:
+                                CrossAxisAlignment.start,
+                            children:
+                                (keyPhrases['listItems'] as List)
+                                    .map((e) => Padding(
+                                          padding:
+                                              const EdgeInsets.symmetric(
+                                                  vertical: 4),
+                                          child: Text('• ${e.toString()}',
+                                              style: const TextStyle(
+                                                  fontSize: 13.5,
+                                                  height: 1.4)),
+                                        ))
+                                    .toList(),
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 24),
+                  ],
+                  _buildKeyPhraseActivity(),
+                  if (!_videoFinished)
+                    Align(
+                      alignment: Alignment.center,
+                      child: OutlinedButton(
+                          onPressed: widget.onShowActivitySection,
+                          child:
+                              const Text('Skip Video & Start Activity')),
+                    ),
+                ],
+
+                if (widget.showActivitySection) ...[
+                  const SizedBox(height: 8),
+                  Text(activityTitle,
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleLarge
+                          ?.copyWith(color: Colors.orange)),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      mainAxisAlignment:
+                          MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Attempt: $_currentAttemptForDisplay',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium),
+                        if (!widget.displayFeedback)
+                          Text('Time: ${_formatDuration(_secondsElapsed)}',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium),
                       ],
                     ),
                   ),
-                );
-              }).toList(),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: () {
-                    widget.onShowActivitySection();
-                  },
-                  style:
-                      ElevatedButton.styleFrom(backgroundColor: Colors.green),
-                  child: const Text('Try Again',
-                      style: TextStyle(color: Colors.white, fontSize: 16)),
+                  HtmlFormattedText(htmlString: activityInstructions),
+                  const SizedBox(height: 16),
+                  if (!widget.displayFeedback) ...[
+                    if (_activityPrompts.isEmpty &&
+                        !_isLoadingLessonContent)
+                      const Center(
+                          child: Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Text('No activity prompts defined.'),
+                      )),
+                    ..._activityPrompts.map((promptData) {
+                      final name = promptData['name'] as String? ??
+                          'scenario';
+                      final label =
+                          promptData['label'] as String? ?? 'Scenario';
+                      final customerText =
+                          promptData['customerText'] as String? ?? '';
+                      final agentTask =
+                          promptData['agentPrompt'] as String? ??
+                              'Your response:';
+                      final controller =
+                          _textControllers[name];
+                      if (controller == null) return const SizedBox();
+                      return Padding(
+                        padding:
+                            const EdgeInsets.symmetric(vertical: 10),
+                        child: Column(
+                            crossAxisAlignment:
+                                CrossAxisAlignment.start,
+                            children: [
+                              Text(label,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleMedium
+                                      ?.copyWith(
+                                          fontWeight:
+                                              FontWeight.bold)),
+                              if (customerText.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(
+                                      top: 4, bottom: 2),
+                                  child: Text(
+                                      'Customer: "$customerText"',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium
+                                          ?.copyWith(
+                                              fontStyle:
+                                                  FontStyle.italic,
+                                              color: Colors
+                                                  .grey[700])),
+                                ),
+                              Padding(
+                                padding:
+                                    const EdgeInsets.only(top: 4),
+                                child: Text(agentTask,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(
+                                            color: Colors.blueAccent)),
+                              ),
+                              const SizedBox(height: 6),
+                              TextField(
+                                controller: controller,
+                                decoration: InputDecoration(
+                                  border: const OutlineInputBorder(),
+                                  hintText:
+                                      'Type your questions for $label...',
+                                  filled: true,
+                                  fillColor: Colors.grey[50],
+                                ),
+                                keyboardType: TextInputType.multiline,
+                                maxLines: 4,
+                                minLines: 3,
+                              ),
+                            ]),
+                      );
+                    }),
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        onPressed:
+                            _isSubmitting ? null : _handleSubmit,
+                        style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF00568D),
+                            disabledBackgroundColor: Colors.grey),
+                        child: _isSubmitting
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                    valueColor:
+                                        AlwaysStoppedAnimation<Color>(
+                                            Colors.white)))
+                            : const Text('Submit for AI Feedback',
+                                style: TextStyle(
+                                    color: Colors.white, fontSize: 16)),
+                      ),
+                    ),
+                  ],
+                  if (widget.displayFeedback &&
+                      widget.aiFeedbackData != null) ...[
+                    if (widget.overallAIScoreForDisplay != null &&
+                        widget.maxPossibleAIScoreForDisplay != null)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 16),
+                        child: Center(
+                          child: Text(
+                            'Overall AI Score: ${widget.overallAIScoreForDisplay} / ${widget.maxPossibleAIScoreForDisplay}',
+                            style: Theme.of(context)
+                                .textTheme
+                                .headlineSmall
+                                ?.copyWith(
+                                    color: Colors.purple,
+                                    fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
+                    if (_activityPrompts.isEmpty &&
+                        !_isLoadingLessonContent)
+                      const Center(
+                          child: Padding(
+                        padding: EdgeInsets.all(16),
+                        child:
+                            Text('No prompts loaded for feedback.'),
+                      )),
+                    ..._activityPrompts.map((promptData) {
+                      final name = promptData['name'] as String? ??
+                          'scenario';
+                      final label =
+                          promptData['label'] as String? ?? 'Scenario';
+                      final feedbackForPrompt =
+                          widget.aiFeedbackData![name]
+                              as Map<String, dynamic>?;
+
+                      String userAnswer =
+                          _textControllers[name]?.text.trim() ?? '';
+                      if (userAnswer.isEmpty) {
+                        final allAnswersParent =
+                            widget.aiFeedbackData!['scenarioAnswers_L2_2']
+                                as Map<String, dynamic>?;
+                        userAnswer =
+                            allAnswersParent?[name] as String? ??
+                                'Not available';
+                      }
+
+                      return Card(
+                        margin: const EdgeInsets.symmetric(vertical: 8),
+                        elevation: 3,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.start,
+                              children: [
+                                Text(label,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(
+                                            fontWeight: FontWeight.bold,
+                                            color:
+                                                const Color(0xFF00568D))),
+                                const SizedBox(height: 6),
+                                Text('Your Answer:',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelLarge),
+                                Text(
+                                  userAnswer.isNotEmpty
+                                      ? userAnswer
+                                      : '(No answer provided)',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium
+                                      ?.copyWith(
+                                          fontStyle: FontStyle.italic,
+                                          color: Colors.grey[700]),
+                                ),
+                                const SizedBox(height: 12),
+                                if (feedbackForPrompt != null) ...[
+                                  Text(
+                                    'AI Feedback (Score: ${feedbackForPrompt['score'] ?? 'N/A'}):',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleSmall
+                                        ?.copyWith(
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.blueAccent),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  HtmlFormattedText(
+                                      htmlString:
+                                          feedbackForPrompt['text']
+                                                  as String? ??
+                                              'No feedback text.'),
+                                ] else
+                                  const Text(
+                                      'AI Feedback: Not available.',
+                                      style: TextStyle(
+                                          color: Colors.grey)),
+                              ]),
+                        ),
+                      );
+                    }),
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        onPressed: widget.onShowActivitySection,
+                        style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green),
+                        child: const Text('Try Again',
+                            style: TextStyle(
+                                color: Colors.white, fontSize: 16)),
+                      ),
+                    ),
+                  ],
+                ],
+                const SizedBox(height: 28),
+                Center(
+                  child: OutlinedButton.icon(
+                      onPressed: _loadActivityLog,
+                      icon: const Icon(Icons.history),
+                      label: const Text('View Activity Log')),
                 ),
-              ),
-            ],
-          ],
-        ],
-      ),
+                const SizedBox(height: 40),
+              ]),
+        ),
+        if (_showActivityLog) _activityLogOverlay(),
+      ],
+    );
+  }
+
+  Widget _aiFeedbackWidget() {
+    if (!widget.displayFeedback || widget.aiFeedbackData == null) {
+      return const SizedBox.shrink();
+    }
+    final data = widget.aiFeedbackData!;
+    if (data.isEmpty) return const SizedBox.shrink();
+
+    final overallScore = widget.overallAIScoreForDisplay;
+    final maxScore = widget.maxPossibleAIScoreForDisplay;
+
+    final list = data.entries
+        .where((e) => e.value is Map<String, dynamic>)
+        .map((e) => ParsedFeedbackCard(
+              feedbackData: e.value as Map<String, dynamic>,
+              scenarioLabel: e.key,
+            ))
+        .toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (overallScore != null && maxScore != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              'AI Score: $overallScore / $maxScore',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ...list,
+      ],
     );
   }
 }
 
-// Definition of HtmlFormattedText (as provided in your original files)
-// If this is in common_widgets.dart and imported, you can remove this local definition.
+// HTML-lite formatter
 class HtmlFormattedText extends StatelessWidget {
   final String htmlString;
   const HtmlFormattedText({super.key, required this.htmlString});
 
   @override
   Widget build(BuildContext context) {
-    // Basic replacement for display. For proper HTML, use flutter_html package.
     String displayText = htmlString
         .replaceAll('<br/>', '\n')
         .replaceAll('<br>', '\n')
@@ -782,21 +1334,14 @@ class HtmlFormattedText extends StatelessWidget {
         .replaceAll('</li>', '\n')
         .replaceAll(RegExp(r'<span.*?>'), '')
         .replaceAll('</span>', '')
-        .replaceAllMapped(RegExp(r'(📚 Vocabulary Used:|💡 Tip:)\s*'),
-            (match) => '\n${match.group(1)}\n  ')
-        .replaceAllMapped(
-            RegExp(
-                r'(- Greeting Appropriateness:|- Self-introduction Clarity:|- Tone and Politeness:|- Grammar Accuracy:|- Suggestion for Improvement:|- Format & Unit Accuracy:|- Clarity for Customer Understanding:)\s*'),
-            (match) => '\n${match.group(1)}\n  ')
         .replaceAll(RegExp(r'<[^>]*>'), '');
-
     displayText = displayText
         .trim()
         .split('\n')
         .map((s) => s.trim())
         .where((s) => s.isNotEmpty)
         .join('\n');
-
-    return Text(displayText, style: const TextStyle(fontSize: 14, height: 1.5));
+    return Text(displayText,
+        style: const TextStyle(fontSize: 14, height: 1.5));
   }
 }

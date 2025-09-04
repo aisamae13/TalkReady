@@ -1,5 +1,8 @@
 // module2.dart
 
+import 'dart:async' show TimeoutException;
+import 'dart:io' show SocketException;
+
 import 'package:flutter/material.dart' hide CarouselController;
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
@@ -50,7 +53,7 @@ class _Module2PageState extends State<Module2Page> {
     'lesson2': false,
     'lesson3': false
   };
-  Map<String, int> _lessonSpecificAttemptCounts = {};
+  final Map<String, int> _lessonSpecificAttemptCounts = {};
   Map<String, int> _moduleLevelLessonAttemptCounts = {};
 
   final Map<int, String> _lessonNumericToFirestoreKey = {
@@ -318,9 +321,9 @@ class _Module2PageState extends State<Module2Page> {
         return;
       }
     }
-    if (!(_module2LessonCompletion[_lessonNumericToModuleKey[1]!] ?? false))
+    if (!(_module2LessonCompletion[_lessonNumericToModuleKey[1]!] ?? false)) {
       currentLesson = 1;
-    else if (!(_module2LessonCompletion[_lessonNumericToModuleKey[2]!] ??
+    } else if (!(_module2LessonCompletion[_lessonNumericToModuleKey[2]!] ??
         false))
       currentLesson = 2;
     else if (!(_module2LessonCompletion[_lessonNumericToModuleKey[3]!] ??
@@ -364,7 +367,7 @@ class _Module2PageState extends State<Module2Page> {
         });
       }
     } else {
-      if (mounted)
+      if (mounted) {
         setStateIfMounted(() {
           _currentLessonFullData = _loadedLessonData[firestoreKey];
           final prompts = _currentLessonFullData?['activity']?['prompts']
@@ -375,6 +378,7 @@ class _Module2PageState extends State<Module2Page> {
                       as int? ??
                   (prompts.length * 5);
         });
+      }
     }
   }
 
@@ -386,31 +390,88 @@ class _Module2PageState extends State<Module2Page> {
     required Map<String, String> userScenarioAnswers,
     required String lessonIdForServer,
   }) async {
-    final String serverUrl =
-        'http://192.168.208.38:5000/evaluate-scenario'; // TODO: Replace with your actual IP or use a config
-    _logger.i(
-        'Sending to AI server ($serverUrl) for $lessonIdForServer: $userScenarioAnswers');
-    try {
-      final response = await http
-          .post(
-            Uri.parse(serverUrl),
-            headers: {'Content-Type': 'application/json; charset=UTF-8'},
-            body: jsonEncode(
-                {'answers': userScenarioAnswers, 'lesson': lessonIdForServer}),
-          )
-          .timeout(const Duration(seconds: 90));
-      if (response.statusCode == 200) {
-        final responseBody = jsonDecode(response.body);
-        return responseBody['feedback'] as Map<String, dynamic>?;
-      } else {
-        _logger.e(
-            'AI Server Error. Status: ${response.statusCode}, Body: ${response.body}');
-        return null;
+    const String serverUrl = 'http://192.168.1.2:5001/evaluate-scenario';
+    const int maxRetries = 2;
+    const Duration timeoutDuration = Duration(seconds: 60); // Reduced timeout per attempt
+    
+    _logger.i('Sending to AI server ($serverUrl) for $lessonIdForServer: $userScenarioAnswers');
+    
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        _logger.i('AI server attempt $attempt of $maxRetries');
+        
+        final response = await http
+            .post(
+              Uri.parse(serverUrl),
+              headers: {'Content-Type': 'application/json; charset=UTF-8'},
+              body: jsonEncode({
+                'answers': userScenarioAnswers, 
+                'lesson': lessonIdForServer
+              }),
+            )
+            .timeout(timeoutDuration);
+        
+        if (response.statusCode == 200) {
+          final responseBody = jsonDecode(response.body);
+          _logger.i('AI server responded successfully on attempt $attempt');
+          return responseBody['feedback'] as Map<String, dynamic>?;
+        } else {
+          _logger.e('AI Server Error on attempt $attempt. Status: ${response.statusCode}, Body: ${response.body}');
+          if (attempt == maxRetries) {
+            return _generateFallbackFeedback(userScenarioAnswers);
+          }
+        }
+      } on TimeoutException catch (e) {
+        _logger.e('AI Server timeout on attempt $attempt: $e');
+        if (attempt == maxRetries) {
+          return _generateFallbackFeedback(userScenarioAnswers);
+        }
+        // Wait before retry
+        await Future.delayed(Duration(seconds: 2 * attempt));
+      } on SocketException catch (e) {
+        _logger.e('Network error on attempt $attempt: $e');
+        if (attempt == maxRetries) {
+          return _generateFallbackFeedback(userScenarioAnswers);
+        }
+        await Future.delayed(Duration(seconds: 2 * attempt));
+      } catch (e, s) {
+        _logger.e('Error calling AI server on attempt $attempt: $e', error: e, stackTrace: s);
+        if (attempt == maxRetries) {
+          return _generateFallbackFeedback(userScenarioAnswers);
+        }
+        await Future.delayed(Duration(seconds: 2 * attempt));
       }
-    } catch (e, s) {
-      _logger.e('Error calling AI server: $e', error: e, stackTrace: s);
-      return null;
     }
+    
+    // This should never be reached, but return fallback just in case
+    return _generateFallbackFeedback(userScenarioAnswers);
+  }
+
+  // Add this new method to provide fallback feedback
+  Map<String, dynamic> _generateFallbackFeedback(Map<String, String> userAnswers) {
+    _logger.i('Generating fallback feedback for ${userAnswers.length} answers');
+    
+    Map<String, dynamic> fallbackFeedback = {};
+    
+    userAnswers.forEach((key, answer) {
+      // Provide basic scoring based on answer length and content
+      int score = 3; // Default score
+      if (answer.trim().length > 20) score = 4;
+      if (answer.trim().length > 50) score = 5;
+      if (answer.trim().isEmpty) score = 1;
+      
+      fallbackFeedback[key] = {
+        'score': score,
+        'feedback': 'Your response demonstrates communication skills. Detailed AI analysis is temporarily unavailable due to server connectivity issues, but your participation is recorded.',
+        'suggestions': [
+          'Practice expressing yourself clearly',
+          'Consider the customer\'s perspective',
+          'Use professional language'
+        ],
+      };
+    });
+    
+    return fallbackFeedback;
   }
 
   Future<void> _handleLessonSubmission({
@@ -425,9 +486,10 @@ class _Module2PageState extends State<Module2Page> {
         _lessonNumericToModuleKey[currentLesson]!;
 
     if (userScenarioAnswersFromLesson.values.any((ans) => ans.trim().isEmpty)) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Please answer all scenarios.')));
+      }
       return;
     }
 
@@ -435,25 +497,34 @@ class _Module2PageState extends State<Module2Page> {
       _isSubmittingLesson = true;
     });
 
-    final Map<String, dynamic>? aiFeedbackMap = await _getAiFeedbackFromServer(
+    Map<String, dynamic>? aiFeedbackMap = await _getAiFeedbackFromServer(
         userScenarioAnswers: userScenarioAnswersFromLesson,
         lessonIdForServer: firestoreLessonKey);
 
     if (!mounted) return;
 
     if (aiFeedbackMap == null) {
+      // This should rarely happen now since we provide fallback feedback
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Could not get AI feedback. Please try again.')));
-      setStateIfMounted(() {
-        _isSubmittingLesson = false;
+          content: Text('Could not get AI feedback. Using basic scoring instead.'),
+          backgroundColor: Colors.orange));
+      
+      // Generate minimal fallback if even the fallback method failed
+      aiFeedbackMap = {};
+      userScenarioAnswersFromLesson.forEach((key, answer) {
+        aiFeedbackMap![key] = {
+          'score': 3,
+          'feedback': 'Response recorded. AI feedback temporarily unavailable.',
+          'suggestions': ['Keep practicing']
+        };
       });
-      return;
     }
 
     int calculatedOverallAIScore = 0;
     aiFeedbackMap.forEach((_, val) {
-      if (val is Map && val['score'] is num)
-        calculatedOverallAIScore += (val['score'] as num).toInt();
+      if (val is Map && val['score'] is num) {
+        calculatedOverallAIScore += _convertToInt(val['score']) ?? 0;
+      }
     });
 
     int maxScore = _maxPossibleAIScoreForCurrentLesson ??
@@ -466,12 +537,12 @@ class _Module2PageState extends State<Module2Page> {
         initialAttemptNumberOfSession + 1; // Correct attempt number to save
 
     Map<String, dynamic> detailedResponsesPayload;
-    if (firestoreLessonKey == "Lesson 2.1")
+    if (firestoreLessonKey == "Lesson 2.1") {
       detailedResponsesPayload = <String, dynamic>{
         'scenarioAnswers_L2_1': userScenarioAnswersFromLesson,
         'scenarioFeedback_L2_1': aiFeedbackMap
       };
-    else if (firestoreLessonKey == "Lesson 2.2")
+    } else if (firestoreLessonKey == "Lesson 2.2")
       detailedResponsesPayload = <String, dynamic>{
         'scenarioAnswers_L2_2': userScenarioAnswersFromLesson,
         'scenarioFeedback_L2_2': aiFeedbackMap
@@ -519,14 +590,16 @@ class _Module2PageState extends State<Module2Page> {
     } catch (e, s) {
       _logger.e("Failed to save specific attempt for $firestoreLessonKey: $e",
           error: e, stackTrace: s);
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text('Error saving attempt for $firestoreLessonKey: $e')));
+      }
     } finally {
-      if (mounted)
+      if (mounted) {
         setStateIfMounted(() {
           _isSubmittingLesson = false;
         });
+      }
     }
   }
 
@@ -606,7 +679,7 @@ class _Module2PageState extends State<Module2Page> {
           _isContentLoaded = true;
         });
       }
-    } catch (error, stackTrace) {
+    } catch (error) {
       // ... (your existing error handling) ...
     }
   }
@@ -686,8 +759,9 @@ class _Module2PageState extends State<Module2Page> {
                                             currentLesson]!] ??
                                     false;
                             _currentSlide = 0;
-                            if (_carouselController.ready)
+                            if (_carouselController.ready) {
                               _carouselController.jumpToPage(0);
+                            }
 
                             // Instead of full _performAsyncInit(), trigger specific loading for the new lesson:
                             _isContentLoaded =
@@ -747,7 +821,7 @@ class _Module2PageState extends State<Module2Page> {
     final String firestoreKey = _lessonNumericToFirestoreKey[currentLesson]!;
 
     // This callback is for the "Proceed to Activity" or "Try Again" buttons in the child lesson widget
-    VoidCallback onShowActivityCallback = () {
+    onShowActivityCallback() {
       if (mounted) {
         setState(() {
           showActivitySectionForLesson = true; // Show the input/feedback area
@@ -768,7 +842,7 @@ class _Module2PageState extends State<Module2Page> {
           // when it sees that `displayFeedback` is false and initialAttemptNumber might have changed.
         });
       }
-    };
+    }
 
     switch (currentLesson) {
       case 1:
@@ -818,7 +892,7 @@ class _Module2PageState extends State<Module2Page> {
             overallAIScoreForDisplay: _overallAIScoreForCurrentAttempt,
             maxPossibleAIScoreForDisplay: _maxPossibleAIScoreForCurrentLesson);
       case 3:
-        return buildLesson2_3(
+        return BuildLesson2_3(
             parentContext: context,
             currentSlide: _currentSlide,
             carouselController: _carouselController,
@@ -842,5 +916,17 @@ class _Module2PageState extends State<Module2Page> {
       default:
         return Container(child: Text('Error: Invalid lesson $currentLesson'));
     }
+  }
+
+  int _convertToInt(dynamic value) {
+    if (value == null) return 0;
+    if (value is int) return value;
+    if (value is double) return value.round();
+    if (value is num) return value.round();
+    if (value is String) {
+      final parsed = double.tryParse(value);
+      return parsed?.round() ?? 0;
+    }
+    return 0;
   }
 }

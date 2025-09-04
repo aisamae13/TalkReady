@@ -127,6 +127,8 @@ class FirebaseService {
 
   String? get userId => _auth.currentUser?.uid;
 
+  get getLessonDocument => null;
+
   // NEW METHOD: Upload user audio for a lesson prompt
   Future<String?> uploadLessonAudio(
       String localFilePath, String lessonIdKey, String promptId) async {
@@ -200,7 +202,7 @@ class FirebaseService {
       if (docSnapshot.exists) {
         _logger.d(
             'Lesson content found for $lessonDocumentId: ${docSnapshot.data()}');
-        return docSnapshot.data() as Map<String, dynamic>?;
+        return docSnapshot.data();
       } else {
         _logger.w(
             'Lesson document "$lessonDocumentId" not found in "lessons" collection.');
@@ -461,9 +463,9 @@ class FirebaseService {
             _logger.e(
                 "CRITICAL: InitializeUserProgress for $moduleId: No lesson keys found in courseConfig. Module progress might be incorrect.");
             // Define a hardcoded fallback if absolutely necessary, e.g.
-            if (moduleId == 'module5')
+            if (moduleId == 'module5') {
               lessonKeysToUse = ['lesson1', 'lesson2'];
-            else if (moduleId == 'module1')
+            } else if (moduleId == 'module1')
               lessonKeysToUse = ['lesson1', 'lesson2', 'lesson3'];
             // Add other fallbacks based on your modules_config.dart
           }
@@ -577,9 +579,9 @@ class FirebaseService {
       } else {
         _logger.w(
             "Default progress for $moduleId: lesson keys not found in courseConfig. Using fallback/hardcoded for $moduleId.");
-        if (moduleId == 'module5')
+        if (moduleId == 'module5') {
           lessonKeysToUse = ['lesson1', 'lesson2'];
-        else if (moduleId == 'module1')
+        } else if (moduleId == 'module1')
           lessonKeysToUse = ['lesson1', 'lesson2', 'lesson3'];
         // Add other module fallbacks as defined in your modules_config.dart
       }
@@ -648,7 +650,7 @@ class FirebaseService {
       final docSnapshot = await userProgressDocRef.get();
 
       if (docSnapshot.exists) {
-        final data = docSnapshot.data() as Map<String, dynamic>?;
+        final data = docSnapshot.data();
         // Check if 'lessonAttempts' map and the specific 'lessonIdKey' exist
         if (data != null && data.containsKey('lessonAttempts')) {
           final lessonAttemptsMap =
@@ -697,7 +699,7 @@ class FirebaseService {
       final docSnapshot = await userProgressDocRef.get();
 
       if (docSnapshot.exists) {
-        final data = docSnapshot.data() as Map<String, dynamic>?;
+        final data = docSnapshot.data();
         _logger.d(
             '[SERVICE] Raw userProgress data: $data'); // LOG THE ENTIRE DOCUMENT DATA
 
@@ -709,7 +711,7 @@ class FirebaseService {
           _logger.d(
               '[SERVICE] Raw lessonAttemptsMapFromFirestore: $lessonAttemptsMapFromFirestore');
           _logger.i(
-              '[SERVICE] Keys in raw lessonAttemptsMapFromFirestore: ${lessonAttemptsMapFromFirestore?.keys?.toList()}');
+              '[SERVICE] Keys in raw lessonAttemptsMapFromFirestore: ${lessonAttemptsMapFromFirestore?.keys.toList()}');
 
           if (lessonAttemptsMapFromFirestore != null) {
             final Map<String, List<Map<String, dynamic>>> typedAttemptsMap = {};
@@ -812,7 +814,7 @@ class FirebaseService {
       if (docSnapshot.exists) {
         _logger.d(
             'Full lesson content found for $lessonDocumentId: ${docSnapshot.data()}');
-        return docSnapshot.data() as Map<String, dynamic>?;
+        return docSnapshot.data();
       } else {
         _logger.w(
             'Lesson document "$lessonDocumentId" not found in "lessons" collection.');
@@ -909,7 +911,7 @@ class FirebaseService {
             "Module completion check for $moduleId: Lesson keys not found/invalid in courseConfig. Using keys from user's progress map: ${lessonsInProgressMap.keys.toList()}");
         actualLessonKeysForCompletion = lessonsInProgressMap.keys.toList();
         // Add specific fallbacks if a module's keys are known but config might be missing
-        // Ensure these match your actual lesson keys in courseConfig.dart
+        // Ensure these match your actual lesson keys in modules_config.dart
         if (actualLessonKeysForCompletion.isEmpty && moduleId == 'module5') {
           actualLessonKeysForCompletion = ['lesson1', 'lesson2'];
           _logger.w(
@@ -1109,4 +1111,132 @@ class FirebaseService {
       rethrow;
     }
   }
+
+  Future<bool> checkPreAssessmentComplete(String lessonKey) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return false;
+
+      final userProgressDoc = await FirebaseFirestore.instance
+          .collection('userProgress')
+          .doc(user.uid)
+          .get();
+
+      if (!userProgressDoc.exists) return false;
+
+      final data = userProgressDoc.data();
+      if (data == null) return false;
+
+      final preAssessmentsCompleted = data['preAssessmentsCompleted'] as Map<String, dynamic>?;
+      if (preAssessmentsCompleted == null) return false;
+
+      // I-ensure na boolean ang return value
+      final isComplete = preAssessmentsCompleted[lessonKey];
+      return isComplete == true; // Explicitly check for true value
+
+    } catch (e) {
+      _logger.e("Error checking pre-assessment status: $e");
+      return false; // Safe default
+    }
+  }
+
+  /// Marks a specific pre-assessment as complete for the current user.
+  /// The [lessonKey] is the identifier for the pre-assessment (e.g., 'module3_pre_assessment').
+  Future<void> markPreAssessmentAsComplete(String lessonKey) async {
+    final uId = userId;
+    if (uId == null) {
+      _logger.e('User not authenticated to mark pre-assessment complete.');
+      throw Exception('User not authenticated');
+    }
+    if (lessonKey.isEmpty) {
+      _logger.w('Lesson key is empty, cannot mark pre-assessment as complete.');
+      return;
+    }
+
+    try {
+      final userProgressDocRef = _firestore.collection('userProgress').doc(uId);
+      // Use dot notation to update a specific field within the 'preAssessmentsCompleted' map.
+      // This will create the map if it doesn't exist and add/update the lessonKey.
+      await userProgressDocRef.set({
+        'preAssessmentsCompleted': {
+          lessonKey: true,
+        }
+      }, SetOptions(merge: true)); // Use merge:true to avoid overwriting the whole document
+
+      _logger.i('Successfully marked pre-assessment "$lessonKey" as complete for user $uId.');
+    } catch (e, s) {
+      _logger.e('Error marking pre-assessment "$lessonKey" as complete: $e\n$s');
+      rethrow;
+    }
+  }
+
+  // This seems to be a duplicate of the async version above.
+  // It's better to use the async version directly. I'm leaving it empty.
+  void markPreAssessmentComplete(String s) {}
+
+  /// Submits the specific data for Lesson 3.2, wrapping it for the generic save function.
+  Future<void> submitLesson3_2Data({
+    required int attemptNumber,
+    required double overallScore,
+    required int timeSpent,
+    required Map<String, String> reflections,
+    required List<Map<String, dynamic>> submittedPrompts, required String lessonIdKey, required List<Map<String, dynamic>> promptDetails, required String lessonId
+  }) async {
+    const String lessonIdKey = 'Lesson 3.2'; // Hardcoded for this specific function
+    _logger.i('Submitting data for $lessonIdKey, attempt: $attemptNumber');
+
+    try {
+      // Construct the detailed payload from the specific parameters
+      final detailedResponsesPayload = {
+        'prompts': submittedPrompts,
+        'reflections': reflections,
+        // You can add any other specific data for L3.2 here
+      };
+
+      // Use the existing generic method to save the attempt
+      await saveSpecificLessonAttempt(
+        lessonIdKey: lessonIdKey,
+        score: overallScore.toInt(), // Convert double to int if score is always integer
+        attemptNumberToSave: attemptNumber,
+        timeSpent: timeSpent,
+        detailedResponsesPayload: detailedResponsesPayload,
+        isUpdate: false, // Assuming this is a new submission
+      );
+
+      _logger.i('Successfully submitted data for $lessonIdKey.');
+    } catch (e) {
+      _logger.e('Error submitting data for $lessonIdKey: $e');
+      rethrow;
+    }
+  }
+
+  /// Directly updates the completion status of a specific module.
+  Future<void> updateModuleCompletionStatus(String moduleId, bool isCompleted) async {
+    final uId = userId;
+    if (uId == null) {
+      _logger.e('User not authenticated to update module completion status.');
+      throw Exception('User not authenticated');
+    }
+    if (moduleId.isEmpty) {
+      _logger.w('Module ID is empty, cannot update completion status.');
+      return;
+    }
+
+    try {
+      final userProgressDocRef = _firestore.collection('userProgress').doc(uId);
+      // Use dot notation to update only the 'isCompleted' field of the specified module
+      await userProgressDocRef.update({
+        '$moduleId.isCompleted': isCompleted,
+        '$moduleId.lastUpdated': FieldValue.serverTimestamp(),
+      });
+      _logger.i('Updated module "$moduleId" completion status to $isCompleted for user $uId.');
+    } catch (e, s) {
+      _logger.e('Error updating module completion status for "$moduleId": $e\n$s');
+      rethrow;
+    }
+  }
+
+  Future getLessonAttempts(String s) async {}
+
+  Future getUserProgress(String s, String t) async {}
 }

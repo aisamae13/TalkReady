@@ -3,6 +3,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'dart:ui';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
+import 'package:path/path.dart' as path;
+import 'package:uuid/uuid.dart';
+import 'package:firebase_storage/firebase_storage.dart' as firebase_storage;
 
 // Add the new imports
 import 'package:talkready_mobile/Teachers/Assessment/ClassAssessmentsListPage.dart';
@@ -62,6 +68,32 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
   bool _isLoading = false;
   String? _error;
   final User? currentUser = FirebaseAuth.instance.currentUser;
+
+  // Image + ID helpers
+  final _imagePicker = ImagePicker();
+  final _uuid = const Uuid();
+
+  // Assessment type
+  String _assessmentType = 'standard_quiz';
+
+  // Deadline
+  DateTime? _deadline;
+  final _deadlineFmt = DateFormat('yyyy-MM-dd HH:mm');
+  String? get _deadlineDisplay => _deadline == null ? null : _deadlineFmt.format(_deadline!);
+
+  // Header image (5MB limit)
+  XFile? _assessmentHeaderXFile;
+  String? _assessmentHeaderImageUrl;
+  String? _assessmentHeaderImagePath;
+  bool _isUploadingHeaderImage = false;
+  String? _headerImageError;
+
+  // Current question image (2MB limit)
+  XFile? _currentQuestionXFile;
+  String? _currentQuestionImageUrl;
+  String? _currentQuestionImagePath;
+  bool _isUploadingQuestionImage = false;
+  String? _questionImageError;
 
   late AnimationController _fadeController;
   late AnimationController _slideController;
@@ -313,50 +345,210 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
     );
   }
 
+  // --- Storage helpers ---
+  Future<Map<String, String>> _uploadXFileToStorage({
+    required XFile xfile,
+    required String basePath,
+    void Function(double pct)? onProgress,
+  }) async {
+    final file = File(xfile.path);
+    final ext = path.extension(xfile.path);
+    final id = _uuid.v4();
+    final storagePath = '$basePath/$id$ext';
+
+    final ref = firebase_storage.FirebaseStorage.instance.ref(storagePath);
+    final task = ref.putFile(file);
+
+    task.snapshotEvents.listen((s) {
+      if (onProgress != null && s.totalBytes > 0) {
+        onProgress((s.bytesTransferred / s.totalBytes) * 100);
+      }
+    });
+
+    final snap = await task;
+    final url = await snap.ref.getDownloadURL();
+    return {'url': url, 'path': storagePath};
+  }
+
+  Future<void> _deleteStorageFileIfAny(String? storagePath) async {
+    if (storagePath == null || storagePath.isEmpty) return;
+    try {
+      await firebase_storage.FirebaseStorage.instance.ref(storagePath).delete();
+    } catch (_) {}
+  }
+
+  // --- Header image ---
+  Future<void> _pickHeaderImage() async {
+    if (currentUser == null) {
+      setState(() => _headerImageError = 'Not logged in.');
+      return;
+    }
+    _headerImageError = null;
+    final picked = await _imagePicker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+    if (picked == null) return;
+
+    final size = await picked.length();
+    if (size > 5 * 1024 * 1024) {
+      setState(() {
+        _headerImageError = 'File is too large. Max 5MB.';
+        _assessmentHeaderXFile = null;
+      });
+      return;
+    }
+
+    setState(() {
+      _assessmentHeaderXFile = picked;
+      _isUploadingHeaderImage = true;
+    });
+
+    if ((_assessmentHeaderImagePath ?? '').isNotEmpty) {
+      await _deleteStorageFileIfAny(_assessmentHeaderImagePath);
+      setState(() {
+        _assessmentHeaderImageUrl = null;
+        _assessmentHeaderImagePath = null;
+      });
+    }
+
+    final basePath = 'assessments/temp_${currentUser!.uid}/header';
+    try {
+      final res = await _uploadXFileToStorage(xfile: picked, basePath: basePath);
+      setState(() {
+        _assessmentHeaderImageUrl = res['url'];
+        _assessmentHeaderImagePath = res['path'];
+      });
+    } catch (e) {
+      setState(() {
+        _headerImageError = 'Failed to upload header image.';
+        _assessmentHeaderXFile = null;
+      });
+    } finally {
+      if (mounted) setState(() => _isUploadingHeaderImage = false);
+    }
+  }
+
+  Future<void> _removeHeaderImage() async {
+    setState(() => _isUploadingHeaderImage = true);
+    await _deleteStorageFileIfAny(_assessmentHeaderImagePath);
+    if (mounted) {
+      setState(() {
+        _isUploadingHeaderImage = false;
+        _assessmentHeaderXFile = null;
+        _assessmentHeaderImageUrl = null;
+        _assessmentHeaderImagePath = null;
+        _headerImageError = null;
+      });
+    }
+  }
+
+  // --- Question image ---
+  Future<void> _pickQuestionImage({String? questionId}) async {
+    if (currentUser == null) {
+      setState(() => _questionImageError = 'Not logged in.');
+      return;
+    }
+    _questionImageError = null;
+    final picked = await _imagePicker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+    if (picked == null) return;
+
+    final size = await picked.length();
+    if (size > 2 * 1024 * 1024) {
+      setState(() {
+        _questionImageError = 'File is too large. Max 2MB.';
+        _currentQuestionXFile = null;
+      });
+      return;
+    }
+
+    setState(() {
+      _currentQuestionXFile = picked;
+      _isUploadingQuestionImage = true;
+    });
+
+    if ((_currentQuestionImagePath ?? '').isNotEmpty) {
+      await _deleteStorageFileIfAny(_currentQuestionImagePath);
+      setState(() {
+        _currentQuestionImageUrl = null;
+        _currentQuestionImagePath = null;
+      });
+    }
+
+    final qId = questionId ?? 'temp_q_${DateTime.now().millisecondsSinceEpoch}';
+    final basePath = 'assessments/temp_${currentUser!.uid}/questions/$qId';
+    try {
+      final res = await _uploadXFileToStorage(xfile: picked, basePath: basePath);
+      setState(() {
+        _currentQuestionImageUrl = res['url'];
+        _currentQuestionImagePath = res['path'];
+      });
+    } catch (e) {
+      setState(() {
+        _questionImageError = 'Failed to upload question image.';
+        _currentQuestionXFile = null;
+      });
+    } finally {
+      if (mounted) setState(() => _isUploadingQuestionImage = false);
+    }
+  }
+
+  Future<void> _removeQuestionImage() async {
+    setState(() => _isUploadingQuestionImage = true);
+    await _deleteStorageFileIfAny(_currentQuestionImagePath);
+    if (mounted) {
+      setState(() {
+        _isUploadingQuestionImage = false;
+        _currentQuestionXFile = null;
+        _currentQuestionImageUrl = null;
+        _currentQuestionImagePath = null;
+        _questionImageError = null;
+      });
+    }
+  }
+
+  // --- Build payload (call inside your save flow) ---
+  Map<String, dynamic> _buildAssessmentPayload() {
+    return {
+      'trainerId': currentUser?.uid,
+      'classId': _selectedClassId ?? widget.classId,
+      'title': _titleController.text.trim(),
+      'description': _descriptionController.text.trim(),
+      'assessmentType': _assessmentType,
+      'status': 'published',
+      'deadline': _deadline?.toIso8601String(),
+      if (_assessmentHeaderImageUrl != null) 'assessmentHeaderImageUrl': _assessmentHeaderImageUrl,
+      if (_assessmentHeaderImagePath != null) 'assessmentHeaderImagePath': _assessmentHeaderImagePath,
+      'questions': _questions
+          .map((q) => q.toMap()
+            ..addAll({
+              // If you attach per-question images from your editor, merge them here
+              if (_currentQuestionImageUrl != null) 'questionImageUrl': _currentQuestionImageUrl,
+              if (_currentQuestionImagePath != null) 'questionImagePath': _currentQuestionImagePath,
+            }))
+          .toList(),
+    };
+  }
+
+  // Example save using payload
   Future<void> _saveAssessment() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_selectedClassId == null && widget.classId == null) {
-        setState(() => _error = "Please select a class for this assessment.");
-        return;
+    if ((_selectedClassId ?? widget.classId) == null) {
+      setState(() => _error = 'Please select a class.');
+      return;
     }
     if (_questions.isEmpty) {
-        setState(() => _error = "Please add at least one question.");
-        return;
+      setState(() => _error = 'Please add at least one question.');
+      return;
     }
 
     setState(() { _isLoading = true; _error = null; });
-
     try {
-      if (currentUser == null) {
-        throw Exception("User not logged in.");
-      }
-
-      final assessmentData = {
-        'title': _titleController.text.trim(),
-        'description': _descriptionController.text.trim(),
-        'classId': _selectedClassId ?? widget.classId,
-        'trainerId': currentUser!.uid,
-        'questions': _questions.map((q) => q.toMap()).toList(),
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-        'status': 'published',
-        'totalPoints': _questions.fold<int>(0, (sum, q) => sum + q.points),
-        'questionCount': _questions.length,
-      };
-
-      final docRef = await FirebaseFirestore.instance
-          .collection('trainerAssessments')
-          .add(assessmentData);
-
-      if (mounted) {
-        _showSuccessDialog(docRef.id);
-      }
+      final data = _buildAssessmentPayload();
+      final docRef = await FirebaseFirestore.instance.collection('trainerAssessments').add(data);
+      if (!mounted) return;
+      _showSuccessDialog(docRef.id);
     } catch (e) {
-      setState(() { _error = "Failed to save assessment: ${e.toString()}"; });
+      if (mounted) setState(() => _error = 'Failed to save assessment: $e');
     } finally {
-      if (mounted) {
-        setState(() { _isLoading = false; });
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 

@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'welcome_page.dart';
@@ -73,9 +74,9 @@ class ChooseUserTypePage extends StatelessWidget {
                           border: Border.all(color: Colors.white.withOpacity(0.25), width: 1.5),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.blue.withOpacity(0.08),
-                              blurRadius: 24,
-                              offset: const Offset(0, 8),
+                              color: Colors.blue.withOpacity(0.06),
+                              blurRadius: 28,
+                              offset: const Offset(0, 10),
                             ),
                           ],
                         ),
@@ -87,7 +88,7 @@ class ChooseUserTypePage extends StatelessWidget {
                                 color: Color(0xFF00568D),
                                 fontSize: 32,
                                 fontWeight: FontWeight.bold,
-                                letterSpacing: 1.2,
+                                letterSpacing: 0.8,
                                 shadows: [
                                   Shadow(
                                     color: Colors.black12,
@@ -97,27 +98,27 @@ class ChooseUserTypePage extends StatelessWidget {
                                 ],
                               ),
                             ),
-                            const SizedBox(height: 10),
+                            const SizedBox(height: 8),
                             const Text(
                               "Select your role to continue",
                               style: TextStyle(
                                 color: Colors.black54,
-                                fontSize: 18,
-                                fontWeight: FontWeight.w400,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
                               ),
                             ),
-                            const SizedBox(height: 40),
+                            const SizedBox(height: 36),
                             AnimatedUserTypeButton(
-                              icon: Icons.school,
+                              icon: Icons.school_rounded,
                               label: 'I am a Trainer',
-                              color: Color(0xFF4CAF50), // Solid blue
+                              color: const Color(0xFF2E7D32), // green variant
                               onTap: () => _saveUserTypeAndNavigate(context, 'trainer'),
                             ),
-                            const SizedBox(height: 28),
+                            const SizedBox(height: 22),
                             AnimatedUserTypeButton(
-                              icon: Icons.person,
+                              icon: Icons.person_2_rounded,
                               label: 'I am a Student',
-                              color: Color(0xFF2196F3), // Solid blue
+                              color: const Color(0xFF1565C0), // blue variant
                               onTap: () => _saveUserTypeAndNavigate(context, 'student'),
                             ),
                           ],
@@ -163,6 +164,7 @@ class _AnimatedUserTypeButtonState extends State<AnimatedUserTypeButton>
       _scale = 0.96;
       _isPressed = true;
     });
+    HapticFeedback.selectionClick();
   }
 
   void _onTapUp(TapUpDetails details) {
@@ -170,6 +172,7 @@ class _AnimatedUserTypeButtonState extends State<AnimatedUserTypeButton>
       _scale = 1.0;
       _isPressed = false;
     });
+    HapticFeedback.lightImpact();
     widget.onTap();
   }
 
@@ -182,79 +185,84 @@ class _AnimatedUserTypeButtonState extends State<AnimatedUserTypeButton>
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: _onTapDown,
-      onTapUp: _onTapUp,
-      onTapCancel: _onTapCancel,
-      child: AnimatedScale(
-        scale: _scale,
-        duration: const Duration(milliseconds: 120),
-        curve: Curves.easeOut,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            if (_isPressed)
-              Container(
-                width: 270,
-                height: 80,
-                decoration: BoxDecoration(
-                  boxShadow: [
-                    BoxShadow(
-                      color: widget.color.withOpacity(0.4),
-                      blurRadius: 32,
-                      spreadRadius: 2,
-                    ),
-                  ],
-                ),
+    return AnimatedScale(
+      scale: _scale,
+      duration: const Duration(milliseconds: 120),
+      curve: Curves.easeOut,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTapDown: _onTapDown,
+          onTapUp: _onTapUp,
+          onTapCancel: _onTapCancel,
+          borderRadius: BorderRadius.circular(28),
+          splashColor: Colors.white24,
+          highlightColor: Colors.white10,
+          child: Container(
+            width: 300,
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 18),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  widget.color.withOpacity(0.98),
+                  widget.color.withOpacity(0.9),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
-            ClipRRect(
               borderRadius: BorderRadius.circular(28),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                child: Container(
-                  width: 270,
-                  padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+              boxShadow: [
+                BoxShadow(
+                  color: widget.color.withOpacity(0.22),
+                  blurRadius: _isPressed ? 6 : 20,
+                  offset: Offset(0, _isPressed ? 4 : 10),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // icon circle
+                Container(
+                  width: 46,
+                  height: 46,
                   decoration: BoxDecoration(
-                    color: widget.color,
-                    borderRadius: BorderRadius.circular(28),
-                    border: Border.all(color: Colors.white.withOpacity(0.7), width: 2),
+                    color: Colors.white.withOpacity(0.14),
+                    shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: widget.color.withOpacity(0.18),
-                        blurRadius: 18,
-                        offset: const Offset(0, 8),
+                        color: Colors.black.withOpacity(0.06),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
                       ),
                     ],
+                    border: Border.all(color: Colors.white.withOpacity(0.08)),
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(widget.icon, color: Colors.white, size: 34),
-                      const SizedBox(width: 12),
-                      Flexible(
-                      child: Text(
-                        widget.label,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1.2,
-                          shadows: [
-                            Shadow(
-                              color: Colors.black26,
-                              blurRadius: 8,
-                              offset: Offset(0, 2),
-                            ),
-                          ],
+                  child: Icon(widget.icon, color: Colors.white, size: 22),
+                ),
+                const SizedBox(width: 14),
+                Flexible(
+                  child: Text(
+                    widget.label,
+                    textAlign: TextAlign.left,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.4,
+                      shadows: [
+                        Shadow(
+                          color: Colors.black26,
+                          blurRadius: 6,
+                          offset: Offset(0, 2),
                         ),
-                      ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

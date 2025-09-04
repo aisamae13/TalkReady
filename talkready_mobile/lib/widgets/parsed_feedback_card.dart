@@ -70,13 +70,15 @@ class ParsedFeedbackCard extends StatelessWidget {
   }
 
   IconData _getIconForCategory(String categoryTitle) {
-    if (categoryTitle.contains("Format") || categoryTitle.contains("Accuracy"))
+    if (categoryTitle.contains("Format") || categoryTitle.contains("Accuracy")) {
       return FontAwesomeIcons.checkToSlot;
+    }
     if (categoryTitle.contains("Clarity")) return FontAwesomeIcons.eye;
     if (categoryTitle.contains("Suggestion")) return FontAwesomeIcons.lightbulb;
     if (categoryTitle.contains("Vocabulary")) return FontAwesomeIcons.book;
-    if (categoryTitle.contains("Tip"))
+    if (categoryTitle.contains("Tip")) {
       return FontAwesomeIcons.solidLightbulb; // Or a different lightbulb
+    }
     return FontAwesomeIcons.infoCircle; // Default
   }
 
@@ -87,17 +89,29 @@ class ParsedFeedbackCard extends StatelessWidget {
     return Colors.red.shade700;
   }
 
+  int? _convertToInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is double) return value.round();
+    if (value is num) return value.round();
+    if (value is String) {
+      final parsed = double.tryParse(value);
+      return parsed?.round();
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final score = feedbackData['score'] as int?;
+    final score = _convertToInt(feedbackData['score']);
     final rawFeedbackText = feedbackData['text'] as String?;
     final parsedSections = _parseFeedbackText(rawFeedbackText);
 
     String scoreTextLabel = 'N/A';
     if (score != null) {
-      if (score >= 4)
+      if (score >= 4) {
         scoreTextLabel = 'Excellent';
-      else if (score == 3)
+      } else if (score == 3)
         scoreTextLabel = 'Good';
       else if (score == 2)
         scoreTextLabel = 'Fair';
@@ -168,10 +182,12 @@ class ParsedFeedbackCard extends StatelessWidget {
                 IconData categoryIcon = _getIconForCategory(categoryTitle);
 
                 // Clean up category title if icons are part of it
-                if (categoryTitle.startsWith("📚 "))
+                if (categoryTitle.startsWith("📚 ")) {
                   categoryTitle = categoryTitle.substring(2);
-                if (categoryTitle.startsWith("💡 "))
+                }
+                if (categoryTitle.startsWith("💡 ")) {
                   categoryTitle = categoryTitle.substring(2);
+                }
 
                 return Padding(
                   padding: const EdgeInsets.only(top: 8.0),
@@ -210,7 +226,7 @@ class ParsedFeedbackCard extends StatelessWidget {
                     ],
                   ),
                 );
-              }).toList(),
+              }),
           ],
         ),
       ),

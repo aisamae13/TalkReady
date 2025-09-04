@@ -1,24 +1,26 @@
 import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:intl/intl.dart'; // For date formatting
+import 'package:intl/intl.dart';
 
 class ViewAssessmentResultsPage extends StatefulWidget {
   final String assessmentId;
-  const ViewAssessmentResultsPage({required this.assessmentId, super.key});
+
+  const ViewAssessmentResultsPage({Key? key, required this.assessmentId})
+      : super(key: key);
 
   @override
-  State<ViewAssessmentResultsPage> createState() => _ViewAssessmentResultsPageState();
+  _ViewAssessmentResultsPageState createState() =>
+      _ViewAssessmentResultsPageState();
 }
 
 class _ViewAssessmentResultsPageState extends State<ViewAssessmentResultsPage> {
   bool _isLoading = true;
   String? _error;
   Map<String, dynamic>? _assessmentDetails;
-  List<Map<String, dynamic>> _submissions = []; 
-  // ThemeData? _theme;
+  List<Map<String, dynamic>> _submissions = [];
+  String? _className;
 
   @override
   void initState() {
@@ -26,14 +28,12 @@ class _ViewAssessmentResultsPageState extends State<ViewAssessmentResultsPage> {
     _fetchData();
   }
 
-  // @override
-  // void didChangeDependencies() {
-  //   super.didChangeDependencies();
-  //   _theme = Theme.of(context);
-  // }
-
   Future<void> _fetchData() async {
-    setState(() { _isLoading = true; _error = null; });
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
     try {
       // Fetch assessment details
       final assessmentDoc = await FirebaseFirestore.instance
@@ -47,35 +47,60 @@ class _ViewAssessmentResultsPageState extends State<ViewAssessmentResultsPage> {
       _assessmentDetails = assessmentDoc.data();
       _assessmentDetails!['id'] = assessmentDoc.id;
 
-      // Fetch submissions for this assessment from the correct collection
+      // Fetch class details
+      if (_assessmentDetails != null && _assessmentDetails!.containsKey('classId')) {
+        final classDoc = await FirebaseFirestore.instance
+            .collection('classes')
+            .doc(_assessmentDetails!['classId'])
+            .get();
+
+        if (classDoc.exists) {
+          setState(() {
+            _className = classDoc.data()?['className'] ?? 'Class name not found';
+          });
+        } else {
+          setState(() {
+            _className = 'Class not found';
+          });
+        }
+      } else {
+        setState(() {
+          _className = 'No class assigned';
+        });
+      }
+
+      // Fetch submissions for this assessment
       final submissionsSnapshot = await FirebaseFirestore.instance
-          .collection('studentSubmissions') // Changed from 'submissions' to 'studentSubmissions'
+          .collection('studentSubmissions')
           .where('assessmentId', isEqualTo: widget.assessmentId)
-          .orderBy('submittedAt', descending: true)
+          .orderBy('studentName') // Sort by studentName
           .get();
 
       List<Map<String, dynamic>> fetchedSubmissions = [];
       for (var subDoc in submissionsSnapshot.docs) {
-        Map<String, dynamic> submissionData = {'id': subDoc.id, ...subDoc.data()};
-        
-        // Use the existing studentName, studentEmail from the submission document
-        // No need to fetch from users collection since the data is already there
+        Map<String, dynamic> submissionData = {
+          'id': subDoc.id,
+          ...subDoc.data()
+        };
+
         if (!submissionData.containsKey('studentName')) {
           submissionData['studentName'] = 'Unknown Student';
         }
         if (!submissionData.containsKey('studentEmail')) {
           submissionData['studentEmail'] = 'No Email';
         }
-        
+
         fetchedSubmissions.add(submissionData);
       }
       _submissions = fetchedSubmissions;
-
     } catch (e) {
       _error = "Failed to load results: ${e.toString()}";
-    }
-    if (mounted) {
-      setState(() { _isLoading = false; });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -112,6 +137,7 @@ class _ViewAssessmentResultsPageState extends State<ViewAssessmentResultsPage> {
         ),
       );
     }
+
     if (_error != null) {
       return Scaffold(
         appBar: AppBar(
@@ -122,11 +148,16 @@ class _ViewAssessmentResultsPageState extends State<ViewAssessmentResultsPage> {
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(16.0),
-            child: Text(_error!, style: TextStyle(color: theme.colorScheme.error, fontSize: 16), textAlign: TextAlign.center),
+            child: Text(
+              _error!,
+              style: TextStyle(color: theme.colorScheme.error, fontSize: 16),
+              textAlign: TextAlign.center,
+            ),
           ),
         ),
       );
     }
+
     if (_assessmentDetails == null) {
       return Scaffold(
         appBar: AppBar(
@@ -139,14 +170,16 @@ class _ViewAssessmentResultsPageState extends State<ViewAssessmentResultsPage> {
     }
 
     final assessmentTitle = _assessmentDetails!['title'] ?? 'Assessment Results';
+    final assessmentDescription = _assessmentDetails!['description'] ?? 'No description.';
     final totalPossiblePoints = (_assessmentDetails!['questions'] as List?)
-        ?.fold(0, (sum, q) => sum + (q['points'] ?? 0) as int) ?? 0;
-
+            ?.fold(0, (sum, q) => sum + (q['points'] ?? 0) as int) ??
+        0;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text(assessmentTitle, style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.1)),
+        title: Text(assessmentTitle,
+            style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.1)),
         backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [
@@ -191,20 +224,38 @@ class _ViewAssessmentResultsPageState extends State<ViewAssessmentResultsPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(_assessmentDetails!['description'] ?? 'No description.',
-                              style: theme.textTheme.bodyLarge?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-                          const SizedBox(height: 12),
+                          Text(assessmentDescription,
+                              style: theme.textTheme.bodyLarge?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant)),
+                          const SizedBox(height: 8),
+                          // Display Class Name
                           Row(
                             children: [
-                              FaIcon(FontAwesomeIcons.listOl, size: 16, color: theme.colorScheme.secondary),
+                              FaIcon(FontAwesomeIcons.chalkboard,
+                                  size: 16, color: theme.colorScheme.secondary),
                               const SizedBox(width: 8),
-                              Text('${_assessmentDetails!['questions']?.length ?? 0} Questions',
-                                  style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurface)),
+                              Text('Class: ${_className ?? "Loading..."}',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: theme.colorScheme.onSurface)),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              FaIcon(FontAwesomeIcons.listOl,
+                                  size: 16, color: theme.colorScheme.secondary),
+                              const SizedBox(width: 8),
+                              Text(
+                                  '${_assessmentDetails!['questions']?.length ?? 0} Questions',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: theme.colorScheme.onSurface)),
                               const SizedBox(width: 20),
-                              FaIcon(FontAwesomeIcons.checkDouble, size: 16, color: theme.colorScheme.secondary),
+                              FaIcon(FontAwesomeIcons.checkDouble,
+                                  size: 16, color: theme.colorScheme.secondary),
                               const SizedBox(width: 8),
                               Text('Total Points: $totalPossiblePoints',
-                                  style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurface)),
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: theme.colorScheme.onSurface)),
                             ],
                           ),
                         ],
@@ -222,10 +273,14 @@ class _ViewAssessmentResultsPageState extends State<ViewAssessmentResultsPage> {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            FaIcon(FontAwesomeIcons.faceSadTear, size: 60, color: theme.colorScheme.onSurfaceVariant.withOpacity(0.5)),
+                            FaIcon(FontAwesomeIcons.listOl,
+                                size: 60,
+                                color: theme.colorScheme.onSurfaceVariant
+                                    .withOpacity(0.5)),
                             const SizedBox(height: 20),
                             Text('No submissions for this assessment yet.',
-                                style: theme.textTheme.titleMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant)),
                           ],
                         ),
                       ),
@@ -239,12 +294,11 @@ class _ViewAssessmentResultsPageState extends State<ViewAssessmentResultsPage> {
                         itemBuilder: (context, idx) {
                           final sub = _submissions[idx];
                           final studentName = sub['studentName'] ?? 'Unknown Student';
+                          final studentEmail = sub['studentEmail'] ?? 'No Email';
                           final score = sub['score'] ?? 0;
-                          final submissionTotalPossiblePoints = sub['totalPossiblePoints'] ?? totalPossiblePoints; // Use from submission or assessment
+                          final submissionTotalPossiblePoints =
+                              sub['totalPossiblePoints'] ?? totalPossiblePoints;
                           final submittedAt = sub['submittedAt'] as Timestamp?;
-                          final scoreColor = score >= submissionTotalPossiblePoints * 0.7
-                              ? Colors.green.shade600
-                              : (score >= submissionTotalPossiblePoints * 0.4 ? Colors.orange.shade600 : Colors.red.shade600);
 
                           return AnimatedContainer(
                             duration: Duration(milliseconds: 350 + idx * 30),
@@ -252,13 +306,15 @@ class _ViewAssessmentResultsPageState extends State<ViewAssessmentResultsPage> {
                             child: Card(
                               elevation: 4,
                               margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16)),
                               color: Colors.white.withOpacity(0.93),
                               child: ListTile(
                                 contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 18),
                                 leading: CircleAvatar(
                                   backgroundColor: theme.colorScheme.primary.withOpacity(0.13),
-                                  child: FaIcon(FontAwesomeIcons.userGraduate, color: theme.colorScheme.primary, size: 20),
+                                  child: FaIcon(FontAwesomeIcons.userGraduate,
+                                      color: theme.colorScheme.primary, size: 20),
                                 ),
                                 title: Text(studentName,
                                     style: theme.textTheme.titleSmall?.copyWith(
@@ -269,9 +325,12 @@ class _ViewAssessmentResultsPageState extends State<ViewAssessmentResultsPage> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     const SizedBox(height: 2),
+                                    Text(studentEmail,
+                                        style: theme.textTheme.bodyMedium?.copyWith(
+                                          color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
+                                        )),
                                     Text('Score: $score / $submissionTotalPossiblePoints',
                                         style: theme.textTheme.bodyMedium?.copyWith(
-                                          color: scoreColor,
                                           fontWeight: FontWeight.bold,
                                         )),
                                     if (submittedAt != null)
@@ -284,12 +343,11 @@ class _ViewAssessmentResultsPageState extends State<ViewAssessmentResultsPage> {
                                           ),
                                         ),
                                       ),
-                                  
                                   ],
                                 ),
-                                trailing: Icon(Icons.chevron_right, color: theme.colorScheme.primary.withOpacity(0.7)),
+                                trailing: Icon(Icons.chevron_right,
+                                    color: theme.colorScheme.primary.withOpacity(0.7)),
                                 onTap: () {
-                                  // Show detailed submission review
                                   _showSubmissionDetails(context, sub);
                                 },
                               ),
@@ -307,80 +365,81 @@ class _ViewAssessmentResultsPageState extends State<ViewAssessmentResultsPage> {
 
   void _showSubmissionDetails(BuildContext context, Map<String, dynamic> submission) {
     final theme = Theme.of(context);
-    
+
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return Dialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          constraints: const BoxConstraints(maxWidth: 400, maxHeight: 600),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header
-              Row(
-                children: [
-                  Icon(Icons.person, color: theme.colorScheme.primary),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      submission['studentName'] ?? 'Unknown Student',
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
-              ),
-              const Divider(),
-              const SizedBox(height: 16),
-              
-              // Submission Details
-              _buildDetailRow('Email', submission['studentEmail'] ?? 'N/A', theme),
-              _buildDetailRow('Score', '${submission['score'] ?? 0} / ${submission['totalPossiblePoints'] ?? 0}', theme),
-              _buildDetailRow('Submitted', _formatTimestamp(submission['submittedAt']), theme),
-              _buildDetailRow('Reviewed', submission['isReviewed'] == true ? 'Yes' : 'No', theme),
-
-              const SizedBox(height: 16),
-
-              // Action Buttons
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.of(context).pop();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Detailed review feature coming soon!'),
-                          ),
-                        );
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: theme.colorScheme.primary,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            constraints: const BoxConstraints(maxWidth: 400, maxHeight: 600),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header
+                Row(
+                  children: [
+                    Icon(Icons.person, color: theme.colorScheme.primary),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        submission['studentName'] ?? 'Unknown Student',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                      child: const Text('Review Answers'),
                     ),
-                  ),
-                ],
-              ),
-            ],
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+                const Divider(),
+                const SizedBox(height: 16),
+
+                // Submission Details
+                _buildDetailRow('Email', submission['studentEmail'] ?? 'N/A', theme),
+                _buildDetailRow('Score',
+                    '${submission['score'] ?? 0} / ${submission['totalPossiblePoints'] ?? 0}', theme),
+                _buildDetailRow('Submitted', _formatTimestamp(submission['submittedAt']), theme),
+                _buildDetailRow('Reviewed', submission['isReviewed'] == true ? 'Yes' : 'No', theme),
+
+                const SizedBox(height: 16),
+
+                // Action Buttons
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Detailed review feature coming soon!'),
+                            ),
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: theme.colorScheme.primary,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text('Review Answers'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-        ),
-      );
-    },
-  );
-}
+        );
+      },
+    );
+  }
 
   Widget _buildDetailRow(String label, String value, ThemeData theme) {
     return Padding(

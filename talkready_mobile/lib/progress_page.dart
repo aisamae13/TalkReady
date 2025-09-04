@@ -420,7 +420,7 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage> {
     'totalAttempts': 0,
     'averageScore': "N/A"
   };
-  Map<String, bool> _expandedLesson = {};
+  final Map<String, bool> _expandedLesson = {};
 
   // New state for PDF processing
   bool _isProcessingPdf = false;
@@ -843,7 +843,7 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage> {
                                   }).toList(),
                                 ),
                               );
-                            }).toList(),
+                            }),
                             const SizedBox(
                                 height: 24), // Spacer before next section
                           ],
@@ -1365,8 +1365,9 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage> {
 
   Widget _formatScore(double? score, BuildContext context,
       {double maxScore = 100.0}) {
-    if (score == null)
+    if (score == null) {
       return Text("N/A", style: TextStyle(color: Colors.grey[600]));
+    }
     final percentage =
         maxScore > 0 ? (score / maxScore) * 100 : 0.0; // Avoid division by zero
     Color scoreColorVal = scoreColor(score,

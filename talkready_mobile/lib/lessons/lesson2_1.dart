@@ -12,6 +12,10 @@ import 'dart:async';
 // firebase_service.dart is not directly used when hardcoding, but keeping the import
 // as other parts of your app structure might expect it.
 import '../firebase_service.dart';
+import '../widgets/parsed_feedback_card.dart';
+import '../StudentAssessment/InteractiveText.dart';
+import '../StudentAssessment/RolePlayScenarioQuestion.dart';
+import '../StudentAssessment/AiFeedbackData.dart';
 
 class buildLesson2_1 extends StatefulWidget {
   final BuildContext parentContext; // Renamed from context to avoid conflict
@@ -240,7 +244,7 @@ class _Lesson2_1State extends State<buildLesson2_1> {
     if (shouldResetForNewAttempt) {
       _currentAttemptForDisplay = widget.initialAttemptNumber + 1;
       _logger.i(
-          "L2.1: Resetting for new attempt ${_currentAttemptForDisplay}. Clearing text fields and timer.");
+          "L2.1: Resetting for new attempt $_currentAttemptForDisplay. Clearing text fields and timer.");
       _textControllers.forEach((_, controller) => controller.clear());
       _resetTimer();
       _startTimer();
@@ -349,6 +353,43 @@ class _Lesson2_1State extends State<buildLesson2_1> {
         });
       }
     }
+  }
+
+  Widget _aiFeedbackWidget() {
+    if (!widget.displayFeedback || widget.aiFeedbackData == null) {
+      return const SizedBox.shrink();
+    }
+    final map = widget.aiFeedbackData!;
+    if (map.isEmpty) return const SizedBox.shrink();
+
+    final overallScore = widget.overallAIScoreForDisplay;
+    final maxScore = widget.maxPossibleAIScoreForDisplay;
+
+    final cards = map.entries
+        .where((e) => e.value is Map<String, dynamic>)
+        .map((e) => ParsedFeedbackCard(
+              feedbackData: e.value as Map<String, dynamic>,
+              scenarioLabel: e.key,
+            ))
+        .toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (overallScore != null && maxScore != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8.0),
+            child: Text(
+              'AI Score: $overallScore / $maxScore',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ...cards,
+      ],
+    );
   }
 
   @override
@@ -641,7 +682,7 @@ class _Lesson2_1State extends State<buildLesson2_1> {
                     ],
                   ),
                 );
-              }).toList(),
+              }),
               const SizedBox(height: 24),
               SizedBox(
                 width: double.infinity,
@@ -769,7 +810,7 @@ class _Lesson2_1State extends State<buildLesson2_1> {
                     ),
                   ),
                 );
-              }).toList(),
+              }),
               const SizedBox(height: 24),
               SizedBox(
                 width: double.infinity,

@@ -6,15 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart'; // For date formatting
 
-// --- Models (Simplified - reuse or define as in CreateAssessmentPage) ---
-// Assuming QuestionType, AssessmentQuestion, Option, TrainerClass models are defined
-// (e.g., in a shared models file or copied from CreateAssessmentPage.dart)
-// For brevity, I'm omitting them here but they are crucial.
-// Ensure they match the structure used in CreateAssessmentPage.dart
 
-// --- Placeholder Firebase Service Functions (reuse or define as in CreateAssessmentPage) ---
-// getTrainerClasses, uploadAssessmentMediaFile, deleteAssessmentMediaFile
-// And new ones:
 Future<Map<String, dynamic>> getAssessmentDetailsFromService(String assessmentId) async {
   final doc = await FirebaseFirestore.instance.collection('assessments').doc(assessmentId).get();
   if (!doc.exists) throw Exception("Assessment not found");
