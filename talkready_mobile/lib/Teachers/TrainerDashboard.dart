@@ -13,6 +13,7 @@ import 'Announcement/CreateAnnouncementPage.dart'; // <-- Import CreateAnnouncem
 import 'package:talkready_mobile/Teachers/Contents/QuickUploadMaterialPage.dart';
 import 'dart:ui'; // Add this import for BackdropFilter
 import 'ClassManager/ManageClassContent.dart'; // Add this import
+import 'package:shimmer/shimmer.dart';
 
 class TrainerDashboard extends StatefulWidget {
   const TrainerDashboard({super.key});
@@ -172,14 +173,16 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
 
   Widget _buildDashboardContent() {
     if (currentUser == null) {
-      return loadingScreen("Initializing Dashboard...");
+      return _buildDashboardWithShimmer();
     }
     if (loading) {
-      return loadingScreen("Loading Trainer Dashboard...");
+      return _buildDashboardWithShimmer();
     }
     if (error != null) {
       return errorScreen(error!, fetchDashboardData);
     }
+    
+    // Your existing code for the loaded dashboard
     final displayName = firstName ?? "Trainer";
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
@@ -387,47 +390,210 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
     );
   }
 
-  Widget loadingScreen(String message) => Scaffold(
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const CircularProgressIndicator(),
-              const SizedBox(height: 20),
-              Text(message),
-            ],
-          ),
-        ),
-      );
+  // Replace the loadingScreen method with this shimmer implementation
+  Widget loadingScreen(String message) {
+    return _buildDashboardWithShimmer();
+  }
 
-  Widget errorScreen(String errorMsg, VoidCallback onRetry) => Scaffold(
-        backgroundColor: Colors.red[50],
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
+  Widget errorScreen(String errorMessage, VoidCallback onRetry) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 64,
+              color: Colors.red[400],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Something went wrong',
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                color: Colors.red[700],
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              errorMessage,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.grey[600],
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Try Again'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue[600],
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Add this method for shimmer dashboard
+  Widget _buildDashboardWithShimmer() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Welcome message shimmer
+          Shimmer.fromColors(
+            baseColor: Colors.grey[300]!,
+            highlightColor: Colors.grey[100]!,
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(FontAwesomeIcons.triangleExclamation,
-                    size: 48, color: Colors.red),
-                const SizedBox(height: 16),
-                Text(errorMsg,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.red, fontSize: 16)),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: onRetry,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red,
-                    foregroundColor: Colors.white,
+                Container(
+                  width: 220,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Text("Try Again"),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  width: 280,
+                  height: 16,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
               ],
             ),
           ),
+          
+          const SizedBox(height: 24),
+          
+          // Stats cards shimmer
+          Row(
+            children: [
+              Expanded(child: _buildStatCardShimmer()),
+              const SizedBox(width: 8),
+              Expanded(child: _buildStatCardShimmer()),
+              const SizedBox(width: 8),
+              Expanded(child: _buildStatCardShimmer()),
+            ],
+          ),
+          
+          const SizedBox(height: 32),
+          
+          // Quick Actions section shimmer
+          Shimmer.fromColors(
+            baseColor: Colors.grey[300]!,
+            highlightColor: Colors.grey[100]!,
+            child: Container(
+              width: 120,
+              height: 24,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
+          
+          const SizedBox(height: 12),
+          
+          // Quick actions grid shimmer
+          GridView.count(
+            crossAxisCount: 3,
+            mainAxisSpacing: 14,
+            crossAxisSpacing: 14,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            children: List.generate(6, (index) => _buildQuickActionShimmer()),
+          ),
+          
+          const SizedBox(height: 25),
+          
+          // Recent class section title shimmer
+          Shimmer.fromColors(
+            baseColor: Colors.grey[300]!,
+            highlightColor: Colors.grey[100]!,
+            child: Container(
+              width: 180,
+              height: 24,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
+          
+          const SizedBox(height: 12),
+          
+          // Recent class card shimmer
+          _buildRecentClassCardShimmer(),
+        ],
+      ),
+    );
+  }
+
+  // Shimmer for stat cards
+  Widget _buildStatCardShimmer() {
+    return Shimmer.fromColors(
+      baseColor: Colors.grey[300]!,
+      highlightColor: Colors.grey[100]!,
+      child: Card(
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        child: Container(
+          height: 150,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+          ),
         ),
-      );
+      ),
+    );
+  }
+
+  // Shimmer for quick action buttons
+  Widget _buildQuickActionShimmer() {
+    return Shimmer.fromColors(
+      baseColor: Colors.grey[300]!,
+      highlightColor: Colors.grey[100]!,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(22),
+        ),
+      ),
+    );
+  }
+
+  // Shimmer for recent class card
+  Widget _buildRecentClassCardShimmer() {
+    return Shimmer.fromColors(
+      baseColor: Colors.grey[300]!,
+      highlightColor: Colors.grey[100]!,
+      child: Container(
+        height: 220,
+        margin: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+        ),
+      ),
+    );
+  }
 
   // 1. Use a constant for border radius and padding
   static const double kCardRadius = 16.0;

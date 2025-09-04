@@ -328,13 +328,25 @@ class _EditAssessmentPageState extends State<EditAssessmentPage> {
       // if (_assessmentHeaderImagePath != null) await deleteAssessmentMediaFile(_assessmentHeaderImagePath!);
       // for (var q in _questions) { if (q.imagePath != null) await deleteAssessmentMediaFile(q.imagePath!); }
 
-      await deleteTrainerAssessmentFromService(widget.assessmentId); // From ClassAssessmentsListPage
+      await deleteTrainerAssessmentFromService(widget.assessmentId);
       setState(() { _success = 'Assessment "${_titleController.text}" deleted successfully.'; });
       Future.delayed(const Duration(seconds: 2), () {
         if (mounted) {
-          // Navigate back to a relevant page, e.g., class assessments list or trainer dashboard
-          int popCount = 0;
-          Navigator.of(context).popUntil((_) => popCount++ >= 2); // Pop twice if Edit came from List
+          // Mas reliable navigation pagkatapos mag-delete
+          if (_originalClassId != null) {
+            Navigator.pushNamedAndRemoveUntil(
+              context,
+              '/trainer/classes/${_originalClassId}/dashboard',
+              (route) => false,
+            );
+          } else {
+            // Fallback kung walang class ID
+            Navigator.pushNamedAndRemoveUntil(
+              context, 
+              '/trainer/classes', 
+              (route) => false,
+            );
+          }
         }
       });
     } catch (e) {

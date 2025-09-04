@@ -9,6 +9,7 @@ import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:logger/logger.dart';
 import 'package:animations/animations.dart';
+import 'package:shimmer/shimmer.dart';
 
 import '../settings/about_us.dart';
 import '../settings/comm_guide.dart';
@@ -683,19 +684,126 @@ class _TrainerProfileState extends State<TrainerProfile> {
     );
   }
 
+  Widget _buildProfileShimmer() {
+    return ScrollConfiguration(
+      behavior: const ScrollBehavior().copyWith(overscroll: false),
+      child: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+        children: [
+          // Profile header shimmer
+          Container(
+            decoration: const BoxDecoration(
+              color: Color(0xFF2973B2),
+              borderRadius: BorderRadius.only(
+                bottomLeft: Radius.circular(30),
+                bottomRight: Radius.circular(30),
+              ),
+            ),
+            child: SafeArea(
+              top: false,
+              child: Column(
+                children: [
+                  const SizedBox(height: 16),
+                  // Avatar shimmer
+                  Shimmer.fromColors(
+                    baseColor: Colors.grey[400]!,
+                    highlightColor: Colors.grey[200]!,
+                    child: Container(
+                      width: 140,
+                      height: 140,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Name shimmer
+                  Shimmer.fromColors(
+                    baseColor: Colors.grey[400]!,
+                    highlightColor: Colors.grey[200]!,
+                    child: Container(
+                      width: 180,
+                      height: 22,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // Email shimmer
+                  Shimmer.fromColors(
+                    baseColor: Colors.grey[400]!,
+                    highlightColor: Colors.grey[200]!,
+                    child: Container(
+                      width: 150,
+                      height: 16,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Settings tiles shimmer
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              itemCount: 7, // Number of setting items to shimmer
+              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              itemBuilder: (_, __) => _buildSettingsTileShimmer(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSettingsTileShimmer() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10.0),
+      child: Shimmer.fromColors(
+        baseColor: Colors.grey[300]!,
+        highlightColor: Colors.grey[100]!,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8.0),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          height: 52, // Match the height of your actual setting tiles
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
         title: const Text('Trainer Profile', style: TextStyle(color: Colors.white)),
-        backgroundColor: const Color(0xFF2973B2), // Existing AppBar color
+        backgroundColor: const Color(0xFF2973B2),
         iconTheme: const IconThemeData(color: Colors.white),
         elevation: 0,
-        automaticallyImplyLeading: false, // No back button if this is a top-level tab
+        automaticallyImplyLeading: false,
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF00568D)))
+          ? _buildProfileShimmer() // Use shimmer instead of CircularProgressIndicator
           : ScrollConfiguration(
               behavior: const ScrollBehavior().copyWith(overscroll: false),
               child: ListView(

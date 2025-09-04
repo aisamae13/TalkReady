@@ -160,7 +160,16 @@ class _ClassListItemWidgetState extends State<ClassListItemWidget>
                         color: Colors.transparent,
                         child: InkWell(
                           onTap: () {
-                            Navigator.pushNamed(context, '/trainer/classes/$classId/dashboard');
+                            // Navigate to one of your existing routes that makes sense
+                            Navigator.pushNamed(context, '/trainer/classes/${widget.classData['id']}/content');
+                            
+                            // Or just show a snackbar instead of navigating
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Class dashboard coming soon!'),
+                                duration: const Duration(seconds: 2),
+                              ),
+                            );
                           },
                           borderRadius: BorderRadius.circular(24),
                           splashColor: Colors.blue.shade100.withOpacity(0.3),

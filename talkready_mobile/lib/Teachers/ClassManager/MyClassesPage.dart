@@ -122,19 +122,23 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
     }
   }
 
+  // Replace the _filterClasses method with this implementation
   void _filterClasses() {
     final query = _searchController.text.toLowerCase();
-    setState(() {
-      if (query.isEmpty) {
-        _filteredClasses = List.from(_classes);
-      } else {
-        _filteredClasses = _classes.where((classItem) {
-          final className = classItem['className']?.toString().toLowerCase() ?? '';
-          final subject = classItem['subject']?.toString().toLowerCase() ?? '';
-          return className.contains(query) || subject.contains(query);
-        }).toList();
-      }
-    });
+    
+    // Don't use setState inside this method to prevent unnecessary triggers
+    if (query.isEmpty) {
+      _filteredClasses = List.from(_classes);
+    } else {
+      _filteredClasses = _classes.where((classItem) {
+        final className = classItem['className']?.toString().toLowerCase() ?? '';
+        final subject = classItem['subject']?.toString().toLowerCase() ?? '';
+        return className.contains(query) || subject.contains(query);
+      }).toList();
+    }
+    
+    // Only update the state once after filtering is done
+    if (mounted) setState(() {});
   }
 
   void _clearSearchField() {
@@ -419,9 +423,6 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
           fontWeight: FontWeight.w500,
           color: const Color(0xFF1E293B),
         ),
-        onChanged: (_) {
-          if (mounted) setState(() {});
-        },
       ),
     );
   }
