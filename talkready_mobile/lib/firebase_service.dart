@@ -1,3 +1,6 @@
+//firebase
+
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:logger/logger.dart';
@@ -1239,4 +1242,7 @@ class FirebaseService {
   Future getLessonAttempts(String s) async {}
 
   Future getUserProgress(String s, String t) async {}
+
+  Future getPreAssessmentStatus(String userId, String lessonId) async {}
+  
 }

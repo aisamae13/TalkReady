@@ -2,10 +2,12 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:logger/logger.dart';
 import '../firebase_service.dart';
 import '../StudentAssessment/AiFeedbackData.dart';
+import '../StudentAssessment/PreAssessment.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:flutter_html/flutter_html.dart';
@@ -585,6 +587,29 @@ class _Lesson3_2State extends State<buildLesson3_2> {
     return {'color': Colors.red.shade500, 'textColor': Colors.red.shade700};
   }
 
+  Future<Map<String, dynamic>?> _fetchUserProgress() async {
+  try {
+    final userId = _firebaseService.userId;
+    if (userId == null) {
+      _logger.w("L3.2: User not authenticated");
+      return null;
+    }
+    
+    final prog = await FirebaseFirestore.instance
+        .collection('userProgress')
+        .doc(userId)
+        .get();
+        
+    if (prog.exists) {
+      _logger.i('L3.2: User progress data fetched');
+      return prog.data();
+    }
+  } catch (e) {
+    _logger.e('L3.2: Error fetching user progress: $e');
+  }
+  return null;
+}
+
   @override
   void dispose() {
     _confidenceController.dispose();
@@ -625,131 +650,42 @@ class _Lesson3_2State extends State<buildLesson3_2> {
   Widget _buildPreAssessmentSection() {
     final preAssessmentData = _lessonData!['preAssessmentData'];
     
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            preAssessmentData['title'],
-            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF3949AB)),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            preAssessmentData['instruction'],
-            style: const TextStyle(fontSize: 16),
-          ),
-          const SizedBox(height: 24),
-          
-          // English-only notice
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.yellow.shade100,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.yellow.shade400),
-            ),
-            child: Row(
-              children: [
-                const FaIcon(FontAwesomeIcons.globe, color: Colors.orange),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
-                      Text(
-                        'Please Speak in English Only',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      Text(
-                        'This is an English proficiency assessment. Responses in other languages will be scored incorrectly.',
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-          
-          // Prompt text
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade100,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              '"${preAssessmentData['promptText']}"',
-              style: const TextStyle(fontSize: 18, fontStyle: FontStyle.italic),
-              textAlign: TextAlign.center,
-            ),
-          ),
-          const SizedBox(height: 24),
-          
-          // Recording controls
-          Center(
-            child: Column(
-              children: [
-                ElevatedButton.icon(
-                  onPressed: _isProcessingPreAssessment || _preAssessmentResult != null
-                      ? null
-                      : (_isRecordingPreAssessment ? _stopPreAssessmentRecording : _startPreAssessmentRecording),
-                  icon: FaIcon(_isRecordingPreAssessment ? FontAwesomeIcons.stop : FontAwesomeIcons.microphone),
-                  label: Text(_isRecordingPreAssessment ? 'Stop Recording' : 'Start Recording'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _isRecordingPreAssessment ? Colors.red : Colors.green,
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                
-                if (_preAssessmentAudioPath != null && !_isRecordingPreAssessment && _preAssessmentResult == null)
-                  ElevatedButton.icon(
-                    onPressed: _isProcessingPreAssessment ? null : _submitPreAssessment,
-                    icon: _isProcessingPreAssessment 
-                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const FaIcon(FontAwesomeIcons.paperPlane),
-                    label: Text(_isProcessingPreAssessment ? 'Analyzing...' : 'Submit for Analysis'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue,
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          
-          // Results display
-          if (_preAssessmentResult != null)
-            Container(
-              margin: const EdgeInsets.only(top: 24),
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Column(
-                children: [
-                  const Text(
-                    'Your baseline accuracy score is:',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    '${(_preAssessmentResult!['score'] as double).toStringAsFixed(0)}%',
-                    style: const TextStyle(fontSize: 48, fontWeight: FontWeight.bold, color: Color(0xFF3949AB)),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'This lesson will help you improve. Preparing the lesson now...',
-                    style: TextStyle(fontSize: 16),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
+    // Convert your existing preAssessmentData to the format expected by PreAssessment
+    final assessmentData = {
+      'title': preAssessmentData['title'],
+      'instruction': preAssessmentData['instruction'],
+      'columns': {
+        'sourceColumn': {
+          'name': 'Available Options',
+          'items': [
+            {
+              'id': 'prompt1',
+              'content': preAssessmentData['promptText'],
+              'correctColumn': 'targetColumn'
+            }
+          ]
+        },
+        'targetColumn': {
+          'name': 'Your Recording',
+          'items': []
+        }
+      },
+      'columnOrder': ['sourceColumn', 'targetColumn'],
+      'sourceColumnId': 'sourceColumn',
+      'feedback': {
+        'heading': 'Assessment Complete!',
+        'paragraph': 'Your baseline has been established. Let\'s start improving!'
+      }
+    };
+
+    return PreAssessment(
+      assessmentData: assessmentData,
+      onComplete: () {
+        setState(() {
+          _isPreAssessmentComplete = true;
+          _hasStudied = true;
+        });
+      },
     );
   }
 

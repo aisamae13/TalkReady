@@ -324,11 +324,13 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
   }
 
   void _navigateToViewResults(String assessmentId) {
+    // This method should only be used when you want to view results of a specific assessment
+    // For now, let's navigate to the assessments list instead
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => ViewAssessmentResultsPage(
-          assessmentId: assessmentId,
+        builder: (context) => ClassAssessmentsListPage(
+          classId: _selectedClassId ?? widget.classId!,
         ),
       ),
     );
@@ -513,14 +515,13 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
       'description': _descriptionController.text.trim(),
       'assessmentType': _assessmentType,
       'status': 'published',
+      'createdAt': FieldValue.serverTimestamp(), // Add this line
       'deadline': _deadline?.toIso8601String(),
       if (_assessmentHeaderImageUrl != null) 'assessmentHeaderImageUrl': _assessmentHeaderImageUrl,
       if (_assessmentHeaderImagePath != null) 'assessmentHeaderImagePath': _assessmentHeaderImagePath,
       'questions': _questions
           .map((q) => q.toMap()
             ..addAll({
-              // If you attach per-question images from your editor, merge them here
-              if (_currentQuestionImageUrl != null) 'questionImageUrl': _currentQuestionImageUrl,
               if (_currentQuestionImagePath != null) 'questionImagePath': _currentQuestionImagePath,
             }))
           .toList(),
@@ -555,6 +556,7 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
   void _showSuccessDialog(String assessmentId) {
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (BuildContext context) {
         return Dialog(
           backgroundColor: Colors.transparent,
@@ -577,69 +579,91 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF10B981).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(50),
+                    color: Colors.green.withOpacity(0.1),
+                    shape: BoxShape.circle,
                   ),
-                  child: Icon(
-                    FontAwesomeIcons.checkCircle,
-                    color: const Color(0xFF10B981),
+                  child: const Icon(
+                    Icons.check_circle,
+                    color: Colors.green,
                     size: 48,
                   ),
                 ),
-                const SizedBox(height: 20),
-                Text(
+                const SizedBox(height: 24),
+                const Text(
                   'Success!',
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
-                    color: const Color(0xFF1E293B),
+                    color: Colors.black87,
                   ),
                 ),
                 const SizedBox(height: 12),
-                Text(
-                  'Assessment created successfully!\nWhat would you like to do next?',
+                const Text(
+                  'Assessment created successfully!',
                   style: TextStyle(
                     fontSize: 16,
-                    color: const Color(0xFF64748B),
-                    height: 1.5,
+                    color: Colors.grey,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'What would you like to do next?',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey,
                   ),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 24),
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
                     Expanded(
                       child: OutlinedButton(
                         onPressed: () {
-                          Navigator.pop(context);
-                          Navigator.pop(context, true);
+                          Navigator.of(context).pop(); // Close dialog
+                          Navigator.of(context).pop(); // Go back to previous page
                         },
                         style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(8),
                           ),
+                          side: const BorderSide(color: Colors.grey),
                         ),
-                        child: const Text('Go Back'),
+                        child: const Text(
+                          'Go Back',
+                          style: TextStyle(color: Colors.grey),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: ElevatedButton(
                         onPressed: () {
-                          Navigator.pop(context);
-                          _navigateToViewResults(assessmentId);
+                          Navigator.of(context).pop(); // Close dialog
+                          // Navigate to ClassAssessmentsListPage to show all assessments
+                          Navigator.of(context).pushReplacement(
+                            MaterialPageRoute(
+                              builder: (context) => ClassAssessmentsListPage(
+                                classId: _selectedClassId ?? widget.classId!,
+                              ),
+                            ),
+                          );
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF8B5CF6),
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(8),
                           ),
+                          elevation: 2,
                         ),
-                        child: const Text('View Results'),
+                        child: const Text(
+                          'View Results',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
                       ),
                     ),
                   ],

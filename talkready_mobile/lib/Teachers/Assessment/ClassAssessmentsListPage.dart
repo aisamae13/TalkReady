@@ -1,9 +1,8 @@
 import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:intl/intl.dart'; // For date formatting
+import 'package:intl/intl.dart';
 import 'CreateAssessmentPage.dart';
 import 'ViewAssessmentResultsPage.dart';
 
@@ -20,26 +19,68 @@ class _ClassAssessmentsListPageState extends State<ClassAssessmentsListPage> {
   String? error;
   List<Map<String, dynamic>> assessments = [];
   Map<String, dynamic>? classDetails;
-  // ThemeData? _theme;
+  
+  // Add stream subscriptions for real-time updates
+  late Stream<QuerySnapshot> _assessmentsStream;
+  late Stream<DocumentSnapshot> _classStream;
 
   @override
   void initState() {
     super.initState();
-    fetchData();
+    _initializeStreams();
+    fetchClassDetails(); // Fetch class details once
   }
 
-  // @override
-  // void didChangeDependencies() {
-  //   super.didChangeDependencies();
-  //   _theme = Theme.of(context);
-  // }
+  void _initializeStreams() {
+    // Real-time stream for assessments
+    _assessmentsStream = FirebaseFirestore.instance
+        .collection('trainerAssessments')
+        .where('classId', isEqualTo: widget.classId)
+        .orderBy('createdAt', descending: true)
+        .snapshots();
 
+    // Real-time stream for class details
+    _classStream = FirebaseFirestore.instance
+        .collection('classes')
+        .doc(widget.classId)
+        .snapshots();
+  }
+
+  Future<void> fetchClassDetails() async {
+    setState(() { loading = true; error = null; });
+    try {
+      final classDoc = await FirebaseFirestore.instance
+          .collection('classes')
+          .doc(widget.classId)
+          .get();
+
+      if (!classDoc.exists) {
+        throw Exception("Class not found.");
+      }
+      if (mounted) {
+        setState(() {
+          classDetails = classDoc.data();
+          classDetails!['id'] = classDoc.id;
+          loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          error = "Failed to load class details: ${e.toString()}";
+          loading = false;
+        });
+      }
+    }
+  }
+
+  // Keep this method for manual refresh
   Future<void> fetchData() async {
     setState(() { loading = true; error = null; });
     try {
-      // Fetch class details - Fix collection name
+      // Fetch class details
       final classDoc = await FirebaseFirestore.instance
-          .collection('classes') // Changed from 'trainerClass' to 'classes'
+          .collection('classes')
           .doc(widget.classId)
           .get();
 
@@ -49,9 +90,9 @@ class _ClassAssessmentsListPageState extends State<ClassAssessmentsListPage> {
       classDetails = classDoc.data();
       classDetails!['id'] = classDoc.id;
 
-      // Fetch assessments for this class - Fix collection name
+      // Fetch assessments
       final assessmentsSnapshot = await FirebaseFirestore.instance
-          .collection('trainerAssessments') // Changed from 'assessments' to 'trainerAssessments'
+          .collection('trainerAssessments')
           .where('classId', isEqualTo: widget.classId)
           .orderBy('createdAt', descending: true)
           .get();
@@ -63,7 +104,9 @@ class _ClassAssessmentsListPageState extends State<ClassAssessmentsListPage> {
     } catch (e) {
       error = "Failed to load assessments: ${e.toString()}";
     }
-    setState(() { loading = false; });
+    if (mounted) {
+      setState(() { loading = false; });
+    }
   }
 
   String _formatTimestamp(Timestamp? timestamp) {
@@ -110,9 +153,9 @@ class _ClassAssessmentsListPageState extends State<ClassAssessmentsListPage> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => CreateAssessmentPage(classId: widget.classId, initialClassId: null,), // Remove initialClassId parameter
+                    builder: (_) => CreateAssessmentPage(classId: widget.classId),
                   ),
-                ).then((_) => fetchData());
+                );
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: theme.colorScheme.primary,
@@ -242,24 +285,87 @@ class _ClassAssessmentsListPageState extends State<ClassAssessmentsListPage> {
           ? Center(child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary)))
           : error != null
             ? Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Text(error!, style: TextStyle(color: theme.colorScheme.error, fontSize: 16), textAlign: TextAlign.center),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Text(
+                        error!, 
+                        style: TextStyle(color: theme.colorScheme.error, fontSize: 16), 
+                        textAlign: TextAlign.center
+                      ),
+                    ),
+                    ElevatedButton.icon(
+                      onPressed: fetchData,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Retry'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: theme.colorScheme.primary,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ],
                 ),
               )
             : classDetails == null
               ? const Center(child: Text("Class details not found."))
-              : assessments.isEmpty
-                ? buildEmptyState()
-                : RefreshIndicator(
-                    onRefresh: fetchData,
-                    color: theme.colorScheme.primary,
-                    child: ListView.builder(
-                      padding: const EdgeInsets.only(top: 100, left: 8, right: 8, bottom: 80),
-                      itemCount: assessments.length,
-                      itemBuilder: (context, idx) => buildAssessmentCard(assessments[idx], idx),
-                    ),
-                  ),
+              : StreamBuilder<QuerySnapshot>(
+                  stream: _assessmentsStream,
+                  builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              'Error loading assessments: ${snapshot.error}',
+                              style: TextStyle(color: theme.colorScheme.error),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 16),
+                            ElevatedButton.icon(
+                              onPressed: () {
+                                setState(() {
+                                  _initializeStreams();
+                                });
+                              },
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('Retry'),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    if (snapshot.connectionState == ConnectionState.waiting && assessments.isEmpty) {
+                      return Center(
+                        child: CircularProgressIndicator(
+                          valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary)
+                        )
+                      );
+                    }
+
+                    if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                      return buildEmptyState();
+                    }
+
+                    // Update assessments list from stream
+                    final streamAssessments = snapshot.data!.docs
+                        .map((doc) => {'id': doc.id, ...doc.data() as Map<String, dynamic>})
+                        .toList();
+
+                    return RefreshIndicator(
+                      onRefresh: fetchData,
+                      color: theme.colorScheme.primary,
+                      child: ListView.builder(
+                        padding: const EdgeInsets.only(top: 100, left: 8, right: 8, bottom: 80),
+                        itemCount: streamAssessments.length,
+                        itemBuilder: (context, idx) => buildAssessmentCard(streamAssessments[idx], idx),
+                      ),
+                    );
+                  },
+                ),
       ),
       floatingActionButton: Container(
         decoration: BoxDecoration(
@@ -277,13 +383,9 @@ class _ClassAssessmentsListPageState extends State<ClassAssessmentsListPage> {
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => CreateAssessmentPage(classId: widget.classId, initialClassId: null,), // Remove initialClassId parameter
+                builder: (_) => CreateAssessmentPage(classId: widget.classId),
               ),
-            ).then((value) {
-              if (value == true) {
-                fetchData();
-              }
-            });
+            );
           },
           label: const Text('New Assessment'),
           icon: const Icon(Icons.add),

@@ -113,7 +113,7 @@ class _RolePlayScenarioQuestionState extends State<RolePlayScenarioQuestion> {
   // Environment variables
   String get cloudinaryCloudName => dotenv.env['CLOUDINARY_CLOUD_NAME'] ?? 'CLOUDINARY_CLOUD_NAME';
   String get cloudinaryUploadPreset => dotenv.env['CLOUDINARY_UPLOAD_PRESET'] ?? 'CLOUDINARY_UPLOAD_PRESET';
-  String get serverUrl => dotenv.env['SERVER_URL'] ?? 'http://localhost:5000';
+  String get serverUrl => dotenv.env['SERVER_URL'] ?? 'http://localhost:5001';
 
   // Stored paths & cloud URLs
   final Map<String, String?> recordedPaths = {};

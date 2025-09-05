@@ -1,5 +1,9 @@
+import 'dart:io';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:carousel_slider/carousel_slider.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:logger/logger.dart';
 import '../lessons/common_widgets.dart';
@@ -627,36 +631,78 @@ class _Lesson4_1State extends State<buildLesson4_1> with TickerProviderStateMixi
   }
 
   Future<void> _playScenarioAudio() async {
-    if (_isAudioLoading) return;
-    
-    final currentScenario = _rolePlayScenarios[_currentScenarioIndex];
-    setState(() => _isAudioLoading = true);
-    
+  if (_isAudioLoading) return;
+  
+  final currentScenario = _rolePlayScenarios[_currentScenarioIndex];
+  setState(() => _isAudioLoading = true);
+  
+  try {
+    // Check for network connectivity first
+    bool hasNetwork = false;
     try {
-      final uri = Uri.parse('http://localhost:5001/synthesize-speech');
-      final resp = await http.post(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'parts': [{'text': currentScenario['text']}]
-        }),
-      );
-      
-      if (resp.statusCode != 200) {
-        throw Exception('TTS failed: ${resp.statusCode}');
-      }
-      
-      final bytes = resp.bodyBytes;
-      await _audioPlayer.stop();
-      await _audioPlayer.play(BytesSource(bytes));
-      
-    } catch (e) {
-      _logger.e('Error playing audio: $e');
+      final result = await InternetAddress.lookup('google.com')
+          .timeout(const Duration(seconds: 3));
+      hasNetwork = result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+    } catch (_) {
+      hasNetwork = false;
+    }
+    
+    if (!hasNetwork) {
+      // Skip server attempt if no connectivity
+      throw Exception('No internet connection detected');
+    }
+    
+    // CONFIGURATION: I-setup ang actual server address at port
+    final String serverAddress = "192.168.1.2"; // PALITAN NG ACTUAL IP NG SERVER
+    final int serverPort = 5001;
+    
+    final uri = Uri.parse('http://$serverAddress:$serverPort/synthesize-speech');
+    _logger.i('Connecting to TTS server at $uri');
+    
+    final resp = await http.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({
+        'parts': [{'text': currentScenario['text']}]
+      }),
+    ).timeout(const Duration(seconds: 10)); // Shorter timeout - fail faster
+  
+    if (resp.statusCode != 200) {
+      throw Exception('TTS failed: ${resp.statusCode}');
+    }
+    
+    final bytes = resp.bodyBytes;
+    await _audioPlayer.stop();
+    await _audioPlayer.play(BytesSource(bytes));
+    
+  } catch (e) {
+    _logger.e('Error playing audio: $e');
+    // Always use fallback TTS when server is unreachable
+    _tryFallbackTTS(currentScenario['text'] as String);
+    
+    if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not play scenario audio.')),
+        const SnackBar(
+          content: Text('Using device text-to-speech instead of server'),
+          duration: Duration(seconds: 2),
+        ),
       );
-    } finally {
-      setState(() => _isAudioLoading = false);
+    }
+  } finally {
+    if (mounted) setState(() => _isAudioLoading = false);
+  }
+}
+
+  // New fallback method that uses Flutter's built-in TTS
+  void _tryFallbackTTS(String text) async {
+    try {
+      final FlutterTts flutterTts = FlutterTts();
+      await flutterTts.setLanguage("en-US");
+      await flutterTts.setPitch(1.0);
+      await flutterTts.setSpeechRate(0.5);
+      await flutterTts.speak(text);
+    } catch (e) {
+      _logger.e('Fallback TTS failed: $e');
     }
   }
 
@@ -728,6 +774,29 @@ class _Lesson4_1State extends State<buildLesson4_1> with TickerProviderStateMixi
       setState(() => _isLoadingAI = false);
     }
   }
+
+  Future<Map<String, dynamic>?> _fetchUserProgress() async {
+  try {
+    final userId = _firebaseService.userId;
+    if (userId == null) {
+      _logger.w("L4.1: User not authenticated");
+      return null;
+    }
+    
+    final prog = await FirebaseFirestore.instance
+        .collection('userProgress')
+        .doc(userId)
+        .get();
+        
+    if (prog.exists) {
+      _logger.i('L4.1: User progress data fetched');
+      return prog.data();
+    }
+  } catch (e) {
+    _logger.e('L4.1: Error fetching user progress: $e');
+  }
+  return null;
+}
 
   @override
   Widget build(BuildContext context) {

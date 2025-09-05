@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:logger/logger.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 // Assuming common_widgets.dart contains buildSlide. If HtmlFormattedText is also there,
 // you might not need the local definition at the bottom of this file.
 // For this example, I'll assume buildSlide is from common_widgets.dart and HtmlFormattedText is defined below.
@@ -16,6 +18,7 @@ import '../widgets/parsed_feedback_card.dart';
 import '../StudentAssessment/InteractiveText.dart';
 import '../StudentAssessment/RolePlayScenarioQuestion.dart';
 import '../StudentAssessment/AiFeedbackData.dart';
+import '../StudentAssessment/PreAssessment.dart';
 
 class buildLesson2_1 extends StatefulWidget {
   final BuildContext parentContext; // Renamed from context to avoid conflict
@@ -123,6 +126,13 @@ class _Lesson2_1State extends State<buildLesson2_1> {
     if (widget.showActivitySection && !widget.displayFeedback) {
       _startTimer();
     }
+
+    _fetchUserProgress().then((progressData) {
+      if (progressData != null) {
+        // Do something with progressData, e.g. setState or update UI
+        print('User progress: $progressData');
+      }
+    });
   }
 
   Future<void> _fetchLessonContentAndInitialize() async {
@@ -390,6 +400,28 @@ class _Lesson2_1State extends State<buildLesson2_1> {
         ...cards,
       ],
     );
+  }
+
+  Future<Map<String, dynamic>?> _fetchUserProgress() async {
+    // Get the current user (adjust as needed for your auth setup)
+    final FirebaseService firebaseService = FirebaseService();
+    final userId = firebaseService.userId; // This returns a String user ID
+
+    if (userId == null) return null;
+
+    try {
+      final prog = await FirebaseFirestore.instance
+          .collection('userProgress')
+          .doc(userId)
+          .get();
+
+      if (prog.exists) {
+        return prog.data();
+      }
+    } catch (e) {
+      print('Error fetching user progress: $e');
+    }
+    return null;
   }
 
   @override
@@ -801,8 +833,7 @@ class _Lesson2_1State extends State<buildLesson2_1> {
                           HtmlFormattedText(
                               // Defined at the bottom of this file
                               htmlString:
-                                  feedbackForThisPrompt['text'] as String? ??
-                                      'No feedback text.'),
+                                  feedbackForThisPrompt['text'] as String? ?? 'No feedback text provided'),
                         ] else
                           const Text('AI Feedback: Not available.',
                               style: TextStyle(color: Colors.grey)),
@@ -810,7 +841,7 @@ class _Lesson2_1State extends State<buildLesson2_1> {
                     ),
                   ),
                 );
-              }),
+              }).toList(),
               const SizedBox(height: 24),
               SizedBox(
                 width: double.infinity,
@@ -835,6 +866,7 @@ class _Lesson2_1State extends State<buildLesson2_1> {
     );
   }
 }
+
 
 // Definition of HtmlFormattedText (as provided in your original lesson2_1.dart and lesson2_3.dart)
 // If this is in common_widgets.dart and imported, you can remove this local definition.

@@ -17,6 +17,7 @@ import 'package:talkready_mobile/Teachers/TrainerDashboard.dart';
 import 'package:talkready_mobile/chooseUserType.dart';
 import 'onboarding_screen.dart';
 import 'package:talkready_mobile/all_notifications_page.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 // Assessment Page Imports
 import 'package:talkready_mobile/Teachers/Assessment/ClassAssessmentsListPage.dart';
@@ -59,19 +60,18 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
+  // Configure Firestore settings for better performance
+  FirebaseFirestore.instance.settings = const Settings(
+    persistenceEnabled: true,
+    cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+  );
+
   await FirebaseAppCheck.instance.activate(
     androidProvider: AndroidProvider.debug,
     appleProvider: AppleProvider.debug, // Add this for iOS debug
   );
 
   try {
-    await dotenv.load(fileName: ".env");
-    logger.i('Successfully loaded .env file');
-    if (dotenv.env['OPENAI_API_KEY'] == null || dotenv.env['OPENAI_API_KEY']!.isEmpty) {
-      logger.e('OPENAI_API_KEY is missing or empty in .env file');
-    } else {
-      logger.i('OPENAI_API_KEY loaded successfully');
-    }
   } catch (e) {
     logger.e('Failed to load .env file: $e');
   }

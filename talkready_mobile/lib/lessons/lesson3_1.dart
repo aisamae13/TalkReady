@@ -12,6 +12,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../lessons/common_widgets.dart';
 import '../StudentAssessment/AiFeedbackData.dart';
+import '../StudentAssessment/PreAssessment.dart';
 import '../widgets/parsed_feedback_card.dart';
 import '../firebase_service.dart';
 
@@ -694,117 +695,43 @@ class _Lesson3_1State extends State<BuildLesson3_1> with TickerProviderStateMixi
     final preAssessmentData = _lessonData?['preAssessmentData'];
     if (preAssessmentData == null) return const SizedBox.shrink();
 
-    return Card(
-      elevation: 4,
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const FaIcon(FontAwesomeIcons.infoCircle, color: Colors.blue),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    preAssessmentData['title'] ?? 'Pre-Assessment',
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              preAssessmentData['instruction'] ?? '',
-              style: const TextStyle(fontSize: 14, color: Colors.grey),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.grey.shade300),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    preAssessmentData['question'] ?? '',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      IconButton(
-                        onPressed: _isAudioLoading ? null : _playPreAssessmentAudio,
-                        icon: _isAudioLoading 
-                            ? const FaIcon(FontAwesomeIcons.spinner, size: 20)
-                            : const FaIcon(FontAwesomeIcons.volumeUp, size: 20),
-                        style: IconButton.styleFrom(
-                          backgroundColor: Colors.indigo,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.all(12),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextField(
-                          onChanged: (value) => setState(() => _preAssessmentAnswer = value),
-                          enabled: !_showPreAssessmentFeedback,
-                          decoration: const InputDecoration(
-                            hintText: 'Type your answer here...',
-                            border: OutlineInputBorder(),
-                            contentPadding: EdgeInsets.all(12),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            if (!_showPreAssessmentFeedback) ...[
-              Center(
-                child: ElevatedButton(
-                  onPressed: _preAssessmentAnswer.trim().isEmpty ? null : _handleCheckPreAssessment,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-                  ),
-                  child: const Text(
-                    'Check Answer',
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ),
-            ] else ...[
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: _preAssessmentResult == 'correct' ? Colors.green : Colors.red,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Center(
-                  child: Text(
-                    _preAssessmentResult == 'correct' 
-                        ? 'Correct! Getting you ready for the lesson...'
-                        : 'Not quite. The correct answer was "${preAssessmentData['correctAnswer']}". Let\'s review the material.',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
+    // Convert your data format to PreAssessment format
+    final assessmentData = {
+      'title': preAssessmentData['title'] ?? 'Pre-Assessment',
+      'instruction': preAssessmentData['instruction'] ?? '',
+      'columns': {
+        'sourceColumn': {
+          'name': 'Listen and Answer',
+          'items': [
+            {
+              'id': 'audio_item',
+              'content': preAssessmentData['question'] ?? '',
+              'correctColumn': 'answerColumn'
+            }
+          ]
+        },
+        'answerColumn': {
+          'name': 'Your Answer',
+          'items': []
+        }
+      },
+      'columnOrder': ['sourceColumn', 'answerColumn'],
+      'sourceColumnId': 'sourceColumn',
+      'feedback': {
+        'heading': 'Assessment Complete!',
+        'paragraph': 'Great! Now you\'re ready for the lesson.'
+      }
+    };
+
+    return PreAssessment(
+      assessmentData: assessmentData,
+      onComplete: () async {
+        await _markPreAssessmentAsComplete();
+        setState(() {
+          _isPreAssessmentComplete = true;
+          _hasStudied = true;
+        });
+      },
     );
   }
 

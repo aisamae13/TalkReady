@@ -1,4 +1,5 @@
 // lesson5_2.dart (Full Update)
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -576,6 +577,29 @@ class _Lesson5_2State extends State<Lesson5_2> {
     } finally {
       if (mounted) setState(() => _isLoadingAI = false);
     }
+  }
+
+  Future<Map<String, dynamic>?> _fetchUserProgress() async {
+    try {
+      final userId = _firebaseService.userId;
+      if (userId == null) {
+        _logger.w("L5.2: User not authenticated");
+        return null;
+      }
+      
+      final prog = await FirebaseFirestore.instance
+          .collection('userProgress')
+          .doc(userId)
+          .get();
+          
+      if (prog.exists) {
+        _logger.i('L5.2: User progress data fetched');
+        return prog.data();
+      }
+    } catch (e) {
+      _logger.e('L5.2: Error fetching user progress: $e');
+    }
+    return null;
   }
 
   @override

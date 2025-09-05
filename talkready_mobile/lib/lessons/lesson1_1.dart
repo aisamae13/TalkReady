@@ -12,7 +12,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../firebase_service.dart';
 import '../lessons/common_widgets.dart';
 import '../StudentAssessment/InteractiveText.dart'; // Add this import
-
+import '../StudentAssessment/InteractiveText.dart'; // Add this import
+import '../StudentAssessment/PreAssessment.dart';
 // NOTE: Public API kept identical to the ORIGINAL (only original required params)
 // so existing Module1Page code continues to compile.
 class buildLesson1_1 extends StatefulWidget {

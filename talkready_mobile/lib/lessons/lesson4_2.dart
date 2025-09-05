@@ -1,14 +1,18 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:carousel_slider/carousel_slider.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:logger/logger.dart';
 import 'package:http/http.dart' as http;
 import 'package:audioplayers/audioplayers.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import '../lessons/common_widgets.dart'; // For buildSlide, HtmlFormattedText, buildScenarioPromptWithInput
+import '../lessons/common_widgets.dart';
 import '../firebase_service.dart';
+import '../StudentAssessment/PreAssessment.dart'; // Changed from TypingPreAssessment to PreAssessment
 
 class SolutionFeedback {
   final String text;
@@ -18,6 +22,73 @@ class SolutionFeedback {
     return SolutionFeedback(
       text: json['text'] as String? ?? 'No feedback text.',
       score: (json['score'] as num?)?.toDouble(),
+    );
+  }
+}
+
+class InteractivePhrase extends StatefulWidget {
+  final String situation;
+  final String phrase;
+
+  const InteractivePhrase({
+    super.key,
+    required this.situation,
+    required this.phrase,
+  });
+
+  @override
+  _InteractivePhraseState createState() => _InteractivePhraseState();
+}
+
+class _InteractivePhraseState extends State<InteractivePhrase> {
+  bool _isExpanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            InkWell(
+              onTap: () => setState(() => _isExpanded = !_isExpanded),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      widget.situation,
+                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                    ),
+                  ),
+                  Icon(_isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down),
+                ],
+              ),
+            ),
+            if (_isExpanded) ...[
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Text(
+                  widget.phrase,
+                  style: TextStyle(
+                    fontStyle: FontStyle.italic,
+                    color: Colors.blue.shade800,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
@@ -197,75 +268,56 @@ class buildLesson4_2 extends StatefulWidget {
   _Lesson4_2State createState() => _Lesson4_2State();
 }
 
-class _Lesson4_2State extends State<buildLesson4_2> {
+class _Lesson4_2State extends State<buildLesson4_2> with TickerProviderStateMixin {
   final FirebaseService _firebaseService = FirebaseService();
   final Logger _logger = Logger();
   final AudioPlayer _audioPlayer = AudioPlayer();
 
+  // Study and Activity States
   bool _isStudied = false;
   bool _showActivityArea = false;
   bool _showResultsView = false;
   bool _isLoadingAI = false;
   bool _isSaveComplete = false;
 
+  // Pre-assessment state
+  bool _isPreAssessmentComplete = false;
+
+  // Timer and attempt tracking
   Timer? _timer;
   int _secondsElapsed = 0;
   late int _currentAttemptNumberForUI;
 
-  final Map<String, TextEditingController> _textControllers = {};
-  final List<Map<String, String>> _solutionPromptsFallback = [
-    {
-      "name": "solution1",
-      "customerProblem": "Customer: “I received the wrong item.”",
-      "task": "Politely acknowledge and propose sending the correct item."
-    },
-    {
-      "name": "solution2",
-      "customerProblem": "Customer: “My order hasn’t arrived yet, past estimated date.”",
-      "task": "Apologize, investigate, offer resolution."
-    },
-    {
-      "name": "solution3",
-      "customerProblem": "Customer: “My payment didn’t go through but I was charged.”",
-      "task": "Show empathy, check payment, outline steps."
-    },
-    {
-      "name": "solution4",
-      "customerProblem": "Customer: “I want to cancel my subscription.”",
-      "task": "Explain cancellation and implications or offer to cancel."
-    }
-  ];
+  // Current scenario tracking (like React's currentScenarioIndex)
+  int _currentScenarioIndex = 0;
+  bool _isScriptVisible = false;
+  bool _isAudioLoading = false;
 
+  // Form controllers and feedback
+  final Map<String, TextEditingController> _textControllers = {};
   Map<String, SolutionFeedback> _aiSolutionFeedback = {};
   double? _overallAIScore;
   final double _maxScorePerSolution = 5.0;
   final double _overallDisplayMaxScore = 10.0;
 
+  // Reflection states
   bool _showReflectionForm = false;
   bool _reflectionSubmitted = false;
   Map<String, String>? _submittedSolutionResponsesForDisplay;
 
-  // UI extras
+  // Activity log states
   bool _showActivityLog = false;
   bool _activityLogLoading = false;
   List<Map<String, dynamic>> _activityLog = [];
-  bool _isAudioLoading = false;
-  // Slides and lessonData (fetch optional)
-  final List<Map<String, dynamic>> _slidesFallback = [
-    {
-      'title': 'Objective: Providing Solutions',
-      'content':
-          '• Use polite, helpful phrases to offer solutions to customer concerns.\n• Respond professionally with empathy and confidence.\n• Practice resolving simple service-related scenarios.'
-    },
-    {
-      'title': 'Why Solution-Oriented Language Matters',
-      'content':
-          'Customers want reassurance that their issue is being handled. Clear solutions increase trust and satisfaction.'
-    },
-  ];
 
+  // Lesson data and loading
   Map<String, dynamic>? lessonData;
   bool loadingLesson = false;
+  final String firestoreLessonDocumentId = "lesson_4_2";
+
+  // Animation controllers
+  late AnimationController _fadeController;
+  late Animation<double> _fadeAnimation;
 
   @override
   void initState() {
@@ -274,30 +326,47 @@ class _Lesson4_2State extends State<buildLesson4_2> {
     _isStudied = widget.showActivityInitially;
     _showActivityArea = widget.showActivityInitially;
 
-    // Initialize controllers for fallback prompts
-    for (var p in _solutionPromptsFallback) {
-      _textControllers[p['name']!] = TextEditingController();
-    }
+    // Initialize animation controller
+    _fadeController = AnimationController(
+      duration: const Duration(milliseconds: 600),
+      vsync: this,
+    );
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _fadeController, curve: Curves.easeOut),
+    );
 
-    // Try fetching lesson document if present in Firestore via FirebaseService
     _fetchLessonData();
 
     if (_showActivityArea && !_showResultsView) _startTimer();
   }
 
   Future<void> _fetchLessonData() async {
-    // If your app uses a FirebaseService helper to get lesson JSON, integrate here.
-    // For now, attempt to load via FirebaseService.getLessonDocument if implemented.
-    // Fallback to null (we'll use the fallback in UI).
     try {
       setState(() => loadingLesson = true);
-      final doc = await _firebaseService.getLessonDocument?.call('lesson_4_2');
+      final doc = await _firebaseService.getLessonDocument?.call(firestoreLessonDocumentId);
       if (doc != null) {
         setState(() => lessonData = doc);
-        // initialize controllers using lessonData.activity if available
+        
+        // Check pre-assessment completion
+        final userId = _firebaseService.userId;
+        if (userId != null && lessonData?['lessonId'] != null) {
+          await _checkPreAssessmentStatus(userId, lessonData!['lessonId']);
+        }
+
+        // Initialize controllers using lessonData
         if (lessonData?['activity']?['solutionPrompts'] is List) {
           for (var p in List.from(lessonData!['activity']['solutionPrompts'])) {
             final name = p['name'] ?? p['id'] ?? '';
+            if (name.isNotEmpty && !_textControllers.containsKey(name)) {
+              _textControllers[name] = TextEditingController();
+            }
+          }
+        }
+
+        // Initialize reflection controllers
+        if (lessonData?['activity']?['reflectionQuestions'] is List) {
+          for (var q in List.from(lessonData!['activity']['reflectionQuestions'])) {
+            final name = q['name'] ?? '';
             if (name.isNotEmpty && !_textControllers.containsKey(name)) {
               _textControllers[name] = TextEditingController();
             }
@@ -309,6 +378,33 @@ class _Lesson4_2State extends State<buildLesson4_2> {
     } finally {
       if (mounted) setState(() => loadingLesson = false);
     }
+  }
+
+  Future<void> _checkPreAssessmentStatus(String userId, String lessonId) async {
+    try {
+      // Check if pre-assessment is completed via Firebase
+      final isComplete = await _firebaseService.getPreAssessmentStatus?.call(userId, lessonId) ?? false;
+      if (mounted) setState(() => _isPreAssessmentComplete = isComplete);
+    } catch (e) {
+      _logger.e('Error checking pre-assessment status: $e');
+    }
+  }
+
+  void _handlePreAssessmentComplete() async {
+    final userId = _firebaseService.userId;
+    final progressKey = lessonData?['lessonId'];
+    if (userId != null && progressKey != null) {
+      try {
+        _firebaseService.markPreAssessmentComplete(progressKey);
+      } catch (error) {
+        _logger.e("Failed to save pre-assessment status: $error");
+      }
+    }
+    setState(() {
+      _isPreAssessmentComplete = true;
+      _isStudied = true;
+    });
+    _fadeController.forward();
   }
 
   @override
@@ -336,6 +432,8 @@ class _Lesson4_2State extends State<buildLesson4_2> {
       _showReflectionForm = false;
       _reflectionSubmitted = false;
       _submittedSolutionResponsesForDisplay = null;
+      _currentScenarioIndex = 0;
+      _isScriptVisible = false;
       _startTimer();
     });
   }
@@ -361,18 +459,96 @@ class _Lesson4_2State extends State<buildLesson4_2> {
     return "${d.inMinutes.remainder(60).toString().padLeft(2, '0')}:${d.inSeconds.remainder(60).toString().padLeft(2, '0')}";
   }
 
-  List<Map<String, String>> get _solutionPrompts {
+  List<Map<String, dynamic>> get _solutionPrompts {
     if (lessonData != null && lessonData!['activity']?['solutionPrompts'] is List) {
-      return List<Map<String, String>>.from(lessonData!['activity']['solutionPrompts']);
+      return List<Map<String, dynamic>>.from(lessonData!['activity']['solutionPrompts']);
     }
-    return _solutionPromptsFallback;
+    return [];
   }
 
-  Future<void> _handleCheckSingleSolution(String key) async {
+  Future<void> _handlePlayScenarioAudio() async {
+    if (_isAudioLoading || lessonData == null) return;
+
+    final prompts = _solutionPrompts;
+    if (_currentScenarioIndex >= prompts.length) return;
+
+    final currentScenario = prompts[_currentScenarioIndex];
+    final parts = currentScenario['parts'] as List?;
+    
+    if (parts == null || parts.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Scenario audio data is missing.')),
+        );
+      }
+      return;
+    }
+
+    setState(() => _isAudioLoading = true);
+    try {
+      // CONFIGURATION: I-setup ang actual server address at port
+      final String serverAddress = "192.168.1.2"; // PALITAN NG ACTUAL IP NG SERVER
+      final int serverPort = 5001;
+      
+      final uri = Uri.parse('http://$serverAddress:$serverPort/synthesize-speech');
+      _logger.i('Connecting to TTS server at $uri');
+      
+      final resp = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'parts': parts}),
+      ).timeout(const Duration(seconds: 15)); // Dagdagan ang timeout
+    
+      if (resp.statusCode != 200) throw Exception('TTS failed: ${resp.statusCode}');
+      final bytes = resp.bodyBytes;
+      await _audioPlayer.stop();
+      await _audioPlayer.play(BytesSource(bytes));
+    } catch (e) {
+      _logger.e('Audio play error: $e');
+      _tryFallbackTTS(currentScenario);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Server unavailable. Using device TTS.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isAudioLoading = false);
+    }
+  }
+
+  // Fallback TTS method
+  void _tryFallbackTTS(Map<String, dynamic> scenario) async {
+    try {
+      final text = scenario['parts']?.map((p) => p['text']).join(' ') ?? 
+                   scenario['customerProblem'] ?? '';
+      
+      final FlutterTts flutterTts = FlutterTts();
+      await flutterTts.setLanguage("en-US");
+      await flutterTts.setPitch(1.0);
+      await flutterTts.setSpeechRate(0.5);
+      await flutterTts.setVolume(1.0);
+      await flutterTts.speak(text);
+    } catch (e) {
+      _logger.e('Fallback TTS failed: $e');
+    }
+  }
+
+  Future<void> _handleCheckSingleSolution() async {
     if (_isLoadingAI) return;
+    
+    final prompts = _solutionPrompts;
+    if (_currentScenarioIndex >= prompts.length) return;
+    
+    final currentScenario = prompts[_currentScenarioIndex];
+    final key = currentScenario['name'] as String;
     final answer = _textControllers[key]?.text.trim() ?? '';
+    
     if (answer.isEmpty) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please provide a solution for this scenario.')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please provide a solution for this scenario.')),
+        );
+      }
       return;
     }
 
@@ -386,63 +562,42 @@ class _Lesson4_2State extends State<buildLesson4_2> {
           if (mounted) setState(() => _aiSolutionFeedback[key] = parsed);
         }
       } else {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No feedback returned for this solution.')));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No feedback returned for this solution.')),
+          );
+        }
       }
     } catch (e) {
       _logger.e('Error checking single solution: $e');
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error getting feedback.')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error getting feedback.')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isLoadingAI = false);
     }
   }
 
-  Future<void> _playScenarioAudio(List<Map<String, dynamic>> parts) async {
-    if (parts.isEmpty) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No audio parts available.')));
-      return;
-    }
-    if (_isAudioLoading) return;
-    setState(() => _isAudioLoading = true);
-    try {
-      final uri = Uri.parse('http://localhost:5000/synthesize-speech');
-      final resp = await http.post(uri, headers: {'Content-Type': 'application/json'}, body: json.encode({'parts': parts}));
-      if (resp.statusCode != 200) throw Exception('TTS failed: ${resp.statusCode}');
-      final bytes = resp.bodyBytes;
-      await _audioPlayer.stop();
-      await _audioPlayer.play(BytesSource(bytes));
-    } catch (e) {
-      _logger.e('Audio play error: $e');
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not play scenario audio.')));
-    } finally {
-      if (mounted) setState(() => _isAudioLoading = false);
-    }
-  }
-
-  Future<void> _handleSubmitSolutions() async {
+  Future<void> _handleFinishAndSave() async {
     if (_isLoadingAI || _showResultsView) return;
-
-    final current = <String, String>{};
-    bool allFilled = true;
-    for (var p in _solutionPrompts) {
-      final key = p['name']!;
-      current[key] = _textControllers[key]?.text.trim() ?? '';
-      if (current[key]!.isEmpty) {
-        allFilled = false;
-        break;
-      }
-    }
-    if (!allFilled) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please provide a solution for all scenarios.')));
-      return;
-    }
 
     final userId = _firebaseService.userId;
     if (userId == null) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('User not authenticated.')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('User not authenticated.')),
+        );
+      }
       return;
     }
 
-    setState(() => _isLoadingAI = true);
+    final current = <String, String>{};
+    for (var p in _solutionPrompts) {
+      final key = p['name'] as String;
+      current[key] = _textControllers[key]?.text.trim() ?? '';
+    }
 
     List<dynamic> pastAttempts = [];
     try {
@@ -450,18 +605,23 @@ class _Lesson4_2State extends State<buildLesson4_2> {
     } catch (e) {
       _logger.e('Failed to fetch past attempts: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not verify past attempts.')));
-        setState(() => _isLoadingAI = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not verify past attempts.')),
+        );
       }
       return;
     }
+
     final actualNextAttemptNumber = pastAttempts.length + 1;
     if (mounted) setState(() => _submittedSolutionResponsesForDisplay = Map.from(current));
     _stopTimer();
 
+    setState(() => _isLoadingAI = true);
+
     try {
       final result = await widget.onEvaluateSolutions(solutionResponses: current);
       if (!mounted) return;
+      
       if (result != null && result['aiSolutionFeedback'] is Map) {
         final Map parsed = {};
         double rawTotal = 0;
@@ -483,7 +643,9 @@ class _Lesson4_2State extends State<buildLesson4_2> {
         }
 
         setState(() {
-          _aiSolutionFeedback = Map<String, SolutionFeedback>.from(parsed.map((k, v) => MapEntry(k as String, v as SolutionFeedback)));
+          _aiSolutionFeedback = Map<String, SolutionFeedback>.from(
+            parsed.map((k, v) => MapEntry(k as String, v as SolutionFeedback)),
+          );
           _overallAIScore = double.parse(scaledOverall.toStringAsFixed(1));
           _showResultsView = true;
           _showReflectionForm = true;
@@ -505,20 +667,28 @@ class _Lesson4_2State extends State<buildLesson4_2> {
             _currentAttemptNumberForUI = actualNextAttemptNumber;
             _isSaveComplete = true;
           });
-          Future.delayed(const Duration(seconds: 2), () {
-            if (mounted) setState(() => _isSaveComplete = false);
+          
+          // Navigate back after 3 seconds like in React
+          Timer(const Duration(seconds: 3), () {
+            if (mounted) {
+              Navigator.of(context).pushReplacementNamed('/courseoutline/intermediate/module4/landingpage');
+            }
           });
         }
       } else {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error evaluating solutions: ${result?['error'] ?? 'Unknown'}')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error evaluating solutions: ${result?['error'] ?? 'Unknown'}')),
+          );
           setState(() => _submittedSolutionResponsesForDisplay = null);
         }
       }
     } catch (e) {
       _logger.e('Exception evaluating solutions: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Exception: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Exception: $e')),
+        );
         setState(() => _submittedSolutionResponsesForDisplay = null);
       }
     } finally {
@@ -545,19 +715,14 @@ class _Lesson4_2State extends State<buildLesson4_2> {
         current[name] = val;
         if (val.isNotEmpty) any = true;
       }
-    } else {
-      // fallback keys
-      for (var k in _textControllers.keys) {
-        if (k.startsWith('reflection')) {
-          final v = _textControllers[k]!.text.trim();
-          current[k] = v;
-          if (v.isNotEmpty) any = true;
-        }
-      }
     }
 
     if (!any) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please fill at least one reflection or skip.')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please fill at least one reflection or skip.')),
+        );
+      }
       return;
     }
 
@@ -572,7 +737,9 @@ class _Lesson4_2State extends State<buildLesson4_2> {
         reflectionResponses: current,
       );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reflection submitted successfully!')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Reflection submitted successfully!')),
+        );
         setState(() {
           _reflectionSubmitted = true;
           _showReflectionForm = false;
@@ -580,7 +747,11 @@ class _Lesson4_2State extends State<buildLesson4_2> {
       }
     } catch (e) {
       _logger.e('Error submitting reflection: $e');
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isLoadingAI = false);
     }
@@ -620,351 +791,714 @@ class _Lesson4_2State extends State<buildLesson4_2> {
     }
   }
 
+  Future<Map<String, dynamic>?> _fetchUserProgress(String? userId) async {
+  try {
+    final user = _firebaseService.userId;
+    if (user == null) return null;
+    
+    final prog = await FirebaseFirestore.instance
+        .collection('userProgress')
+        .doc(userId)
+        .get();
+        
+    if (prog.exists) {
+      _logger.i('User progress fetched successfully');
+      return prog.data();
+    } else {
+      _logger.w('No user progress found');
+      return null;
+    }
+  } catch (e) {
+    _logger.e('Error fetching user progress: $e');
+    return null;
+  }
+}
+
   @override
   void dispose() {
     _textControllers.forEach((_, c) => c.dispose());
     _audioPlayer.dispose();
     _stopTimer();
+    _fadeController.dispose();
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final slides = (lessonData != null && lessonData!['slides'] is List) ? List<Map<String, dynamic>>.from(lessonData!['slides']) : _slidesFallback;
+  Widget _buildStudyView() {
+    if (loadingLesson) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    // Pre-assessment phase - Now using the full PreAssessment component
+    if (!_isPreAssessmentComplete && lessonData?['preAssessmentData'] != null) {
+      return PreAssessment(
+        onComplete: _handlePreAssessmentComplete,
+        assessmentData: lessonData!['preAssessmentData'],
+      );
+    }
+
+    return FadeTransition(
+      opacity: _fadeAnimation,
+      child: Column(children: [
+        // Objective Section
+        Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4, offset: const Offset(0, 2))],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                const FaIcon(FontAwesomeIcons.book, color: Colors.blue, size: 24),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    lessonData?['objective']?['heading'] ?? 'Objective',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: Colors.blue.shade700),
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 12),
+              if (lessonData?['objective']?['points'] is List)
+                ...List.from(lessonData!['objective']['points']).map<Widget>((point) => 
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('• ', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                        Expanded(child: Text(point, style: const TextStyle(fontSize: 14))),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+
+        // Introduction Section
+        Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                const FaIcon(FontAwesomeIcons.lightbulb, color: Colors.yellow, size: 24),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    lessonData?['introduction']?['heading'] ?? 'Why Solution-Oriented Language Matters',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: Colors.grey.shade700),
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 12),
+              Text(
+                lessonData?['introduction']?['paragraph'] ?? '',
+                style: const TextStyle(fontSize: 14, height: 1.5),
+              ),
+            ],
+          ),
+        ),
+
+        // Key Phrases Section
+        Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4, offset: const Offset(0, 2))],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                const FaIcon(FontAwesomeIcons.list, color: Colors.green, size: 24),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    lessonData?['keyPhrases']?['heading'] ?? 'Key Phrases',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: Colors.grey.shade700),
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 16),
+              if (lessonData?['keyPhrases']?['table'] is List)
+                ...List.from(lessonData!['keyPhrases']['table']).map<Widget>((row) => 
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: InteractivePhrase(
+                      situation: row['purpose'] ?? '',
+                      phrase: row['phrase'] ?? '',
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+
+        // Video Section
+        if (widget.youtubeController != null)
+          Container(
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4, offset: const Offset(0, 2))],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox(
+                height: 240,
+                child: YoutubePlayer(
+                  controller: widget.youtubeController!,
+                  showVideoProgressIndicator: true,
+                ),
+              ),
+            ),
+          ),
+
+        // Example Dialogues Section
+        Container(
+          margin: const EdgeInsets.only(bottom: 24),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                const FaIcon(FontAwesomeIcons.playCircle, color: Colors.grey, size: 24),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    lessonData?['exampleDialogues']?['heading'] ?? 'Example Dialogues',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: Colors.grey.shade700),
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 16),
+              if (lessonData?['exampleDialogues']?['dialogues'] is List)
+                ...List.from(lessonData!['exampleDialogues']['dialogues']).map<Widget>((dialogue) => 
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          dialogue['title'] ?? '',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(dialogue['customer'] ?? '', style: const TextStyle(fontSize: 13)),
+                        Text(dialogue['agent'] ?? '', style: const TextStyle(fontSize: 13)),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+
+        // Proceed to Activity Button
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: () {
+              setState(() {
+                _isStudied = true;
+                _showActivityArea = true;
+                widget.onShowActivitySection();
+                _prepareForNewAttempt();
+              });
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue.shade600,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text(
+              "I've Finished Studying – Proceed to Activity",
+              style: TextStyle(fontSize: 16, color: Colors.white),
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  Widget _buildActivityView() {
     final prompts = _solutionPrompts;
+    if (prompts.isEmpty) return const Center(child: Text('Loading scenarios...'));
 
-    Widget studyView = Column(children: [
-      CarouselSlider(
-        carouselController: widget.carouselController,
-        items: slides.map((s) => buildSlide(title: s['title'] as String, content: s['content'] as String, slideIndex: slides.indexOf(s))).toList(),
-        options: CarouselOptions(
-          height: 250,
-          enlargeCenterPage: false,
-          enableInfiniteScroll: false,
-          initialPage: widget.currentSlide,
-          onPageChanged: (idx, reason) => widget.onSlideChanged(idx),
-          viewportFraction: 0.95,
-        ),
-      ),
-      const SizedBox(height: 12),
-      if (widget.youtubeController != null)
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: SizedBox(height: 240, child: YoutubePlayer(controller: widget.youtubeController!, showVideoProgressIndicator: true)),
-        ),
-      const SizedBox(height: 12),
-      ElevatedButton(
-        onPressed: () {
-          setState(() {
-            _isStudied = true;
-            _showActivityArea = true;
-            widget.onShowActivitySection();
-            _prepareForNewAttempt();
-          });
-        },
-        child: const Text("I've Finished Studying – Proceed to Activity"),
-      ),
-    ])
-    ;
+    final currentScenario = prompts[_currentScenarioIndex];
+    final key = currentScenario['name'] as String;
+    final feedback = _aiSolutionFeedback[key];
+    final isFeedbackReceived = feedback != null;
+    final isLastScenario = _currentScenarioIndex == prompts.length - 1;
 
-    // Activity input view
-    Widget activityInput = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      // Header
       Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Text('Activity: Providing Solutions', style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: Theme.of(context).colorScheme.secondary)),
+        Text(
+          'Activity: Providing Solutions',
+          style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: Theme.of(context).colorScheme.secondary),
+        ),
         IconButton(icon: const Icon(Icons.list_alt), onPressed: _fetchActivityLog, tooltip: 'Activity Log'),
       ]),
       Text('Attempt Number: $_currentAttemptNumberForUI', style: Theme.of(context).textTheme.titleMedium),
       Text('Time Elapsed: ${_formatDuration(_secondsElapsed)}', style: Theme.of(context).textTheme.titleMedium),
-      const SizedBox(height: 14),
-      ...prompts.map((prompt) {
-        final key = prompt['name']!;
-        final customerProblem = prompt['customerProblem'] ?? '';
-        final task = prompt['task'] ?? '';
-        final feedback = _aiSolutionFeedback[key];
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8.0),
-          child: Card(
-            elevation: 2,
-            child: Padding(
+      const SizedBox(height: 16),
+
+      // Current Scenario Card
+      Card(
+        elevation: 2,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            // Scenario Header with Audio Button
+            Container(
               padding: const EdgeInsets.all(12),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [
-                  Expanded(child: Text(customerProblem, style: Theme.of(context).textTheme.titleSmall)),
-                  IconButton(
-                    icon: const Icon(Icons.volume_up),
-                    onPressed: () async {
-                      // If lessonData has parts for TTS, send them, otherwise send the text
-                      final parts = (prompt['parts'] is List)
-                          ? List<Map<String, dynamic>>.from(prompt['parts'] as List)
-                          : [{'text': customerProblem}];
-                      await _playScenarioAudio(parts);
-                    },
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: Row(children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Scenario ${_currentScenarioIndex + 1} of ${prompts.length}: Listen to the customer\'s problem.',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      if (_isScriptVisible) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            border: Border.all(color: Colors.grey.shade300),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            '"${currentScenario['parts']?.map((p) => p['text']).join(' ') ?? currentScenario['customerProblem']}"',
+                            style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey.shade800),
+                          ),
+                        ),
+                      ] else ...[
+                        const SizedBox(height: 4),
+                        GestureDetector(
+                          onTap: () => setState(() => _isScriptVisible = true),
+                          child: const Text(
+                            'Show Script',
+                            style: TextStyle(
+                              color: Colors.blue,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-                  ElevatedButton(
-                    onPressed: _isLoadingAI ? null : () => _handleCheckSingleSolution(key),
-                    child: const Text('Check'),
-                  ),
-                ]),
-                const SizedBox(height: 6),
-                Text(task, style: Theme.of(context).textTheme.bodySmall),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _textControllers[key],
-                  decoration: InputDecoration(hintText: 'Your solution response...', border: const OutlineInputBorder(), filled: true, fillColor: Colors.grey[50]),
-                  maxLines: 4,
-                  enabled: !_isLoadingAI,
                 ),
-                if (feedback != null) ...[
-                  const SizedBox(height: 8),
-                  FeedbackCardL4_2(scenarioFeedback: feedback, maxScore: _maxScorePerSolution),
-                ],
+                const SizedBox(width: 12),
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: _isAudioLoading ? Colors.indigo.shade300 : Colors.indigo,
+                    shape: BoxShape.circle,
+                  ),
+                  child: IconButton(
+                    onPressed: _isAudioLoading ? null : _handlePlayScenarioAudio,
+                    icon: _isAudioLoading 
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                          )
+                        : const FaIcon(FontAwesomeIcons.volumeUp, color: Colors.white, size: 20),
+                  ),
+                ),
               ]),
             ),
-          ),
-        );
-      }),
-      const SizedBox(height: 16),
-      _isLoadingAI ? const Center(child: CircularProgressIndicator()) : SizedBox(width: double.infinity, child: ElevatedButton(onPressed: _handleSubmitSolutions, child: const Text('Submit Solutions for Feedback'))),
-    ]);
+            const SizedBox(height: 8),
+            Text(
+              currentScenario['task'] ?? '',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            ),
+            const SizedBox(height: 12),
 
-    // Results & reflection view
-    Widget resultsView = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Feedback on Your Solutions', style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: Colors.green)),
-        if (_overallAIScore != null)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8.0),
-            child: Text("Overall AI Score: ${_overallAIScore?.toStringAsFixed(1)} / $_overallDisplayMaxScore", style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.purple)),
+            // Response TextField
+            TextField(
+              controller: _textControllers[key],
+              decoration: InputDecoration(
+                hintText: 'Your solution response...',
+                border: const OutlineInputBorder(),
+                filled: true,
+                fillColor: Colors.grey[50],
+              ),
+              maxLines: 4,
+              enabled: !_isLoadingAI && !isFeedbackReceived,
+            ),
+
+            // Feedback Display
+            if (feedback != null) ...[
+              const SizedBox(height: 12),
+              FeedbackCardL4_2(scenarioFeedback: feedback, maxScore: _maxScorePerSolution),
+            ],
+
+            // Navigation Buttons
+            const SizedBox(height: 16),
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              ElevatedButton(
+                onPressed: _currentScenarioIndex > 0 
+                    ? () => setState(() {
+                        _currentScenarioIndex--;
+                        _isScriptVisible = false;
+                      })
+                    : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.grey.shade200,
+                  foregroundColor: Colors.grey.shade700,
+                ),
+                child: const Text('Previous'),
+              ),
+              if (!isFeedbackReceived)
+                ElevatedButton(
+                  onPressed: _isLoadingAI ? null : _handleCheckSingleSolution,
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.shade600),
+                  child: _isLoadingAI 
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                        )
+                      : const Text('Check Solution', style: TextStyle(color: Colors.white)),
+                )
+              else if (isLastScenario)
+                ElevatedButton(
+                  onPressed: _handleFinishAndSave,
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade600),
+                  child: const Text('Finish & Save Attempt', style: TextStyle(color: Colors.white)),
+                )
+              else
+                ElevatedButton(
+                  onPressed: () => setState(() {
+                    _currentScenarioIndex++;
+                    _isScriptVisible = false;
+                  }),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo.shade600),
+                  child: const Text('Next Scenario', style: TextStyle(color: Colors.white)),
+                ),
+            ]),
+          ]),
+        ),
+      )
+    ]);
+    }
+
+    Widget _buildResultsView() {
+      final prompts = _solutionPrompts;
+      
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Feedback on Your Solutions',
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: Colors.green),
           ),
-        ...prompts.map((p) {
-          final key = p['name']!;
-          final fb = _aiSolutionFeedback[key];
-          return Card(
-            margin: const EdgeInsets.symmetric(vertical: 8),
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Recap for: "${p['customerProblem']}"', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
-                  Text('Your solution: "${_submittedSolutionResponsesForDisplay?[key] ?? _textControllers[key]?.text ?? ''}"', style: const TextStyle(fontStyle: FontStyle.italic)),
-                  if (fb != null)
-                    FeedbackCardL4_2(scenarioFeedback: fb, maxScore: _maxScorePerSolution)
-                  else
-                    const Text('Feedback not available.', style: TextStyle(fontStyle: FontStyle.italic)),
-                ],
+          if (_overallAIScore != null)
+            Container(
+              margin: const EdgeInsets.symmetric(vertical: 16),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                "Overall AI Score: ${_overallAIScore?.toStringAsFixed(1)} / $_overallDisplayMaxScore",
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.purple),
               ),
             ),
-          );
-        }),
-        if (_showReflectionForm && !_reflectionSubmitted) ...[
-          const SizedBox(height: 20),
-          Text('Discussion & Reflection (Optional)', style: Theme.of(context).textTheme.headlineSmall),
-          const SizedBox(height: 8),
-          // render reflection questions if present in lessonData
-          if (lessonData?['activity']?['reflectionQuestions'] is List)
-            ...List.from(lessonData!['activity']['reflectionQuestions']).map<Widget>((q) {
-              final name = q['name'];
-              final question = q['question'];
-              if (!_textControllers.containsKey(name)) _textControllers[name] = TextEditingController();
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8.0),
+          
+          // Solutions Recap
+          ...prompts.map((p) {
+            final key = p['name'] as String;
+            final fb = _aiSolutionFeedback[key];
+            return Card(
+              margin: const EdgeInsets.symmetric(vertical: 8),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(question ?? '', style: Theme.of(context).textTheme.titleSmall),
-                    const SizedBox(height: 6),
-                    TextField(controller: _textControllers[name], maxLines: 3, decoration: const InputDecoration(hintText: 'Your thoughts... (Optional)', border: OutlineInputBorder())),
+                    Text(
+                      'Recap for: "${p['customerProblem']}"',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Your solution: "${_submittedSolutionResponsesForDisplay?[key] ?? _textControllers[key]?.text ?? ''}"',
+                      style: const TextStyle(fontStyle: FontStyle.italic),
+                    ),
+                    if (fb != null)
+                      FeedbackCardL4_2(scenarioFeedback: fb, maxScore: _maxScorePerSolution)
+                    else
+                      const Text('Feedback not available.', style: TextStyle(fontStyle: FontStyle.italic)),
                   ],
                 ),
-              );
-            })
-        ] else if (_reflectionSubmitted) ...[
-          const SizedBox(height: 12),
-          Center(child: Text('Reflection saved or skipped for this attempt.', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold))),
-        ],
-        const SizedBox(height: 16),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            ElevatedButton(
-              onPressed: _showReflectionForm && !_reflectionSubmitted ? _handleSubmitReflections : null,
-              child: const Text('Submit Reflection'),
+              ),
+            );
+          }),
+
+          // Reflection Form
+          if (_showReflectionForm && !_reflectionSubmitted) ...[
+            const SizedBox(height: 20),
+            Text('Discussion & Reflection (Optional)', style: Theme.of(context).textTheme.headlineSmall),
+            const SizedBox(height: 8),
+            if (lessonData?['activity']?['reflectionQuestions'] is List)
+              ...List.from(lessonData!['activity']['reflectionQuestions']).map<Widget>((q) {
+                final name = q['name'];
+                final question = q['question'];
+                if (!_textControllers.containsKey(name)) _textControllers[name] = TextEditingController();
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(question ?? '', style: Theme.of(context).textTheme.titleSmall),
+                      const SizedBox(height: 6),
+                      TextField(
+                        controller: _textControllers[name],
+                        maxLines: 3,
+                        decoration: const InputDecoration(
+                          hintText: 'Your thoughts... (Optional)',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                ElevatedButton(
+                  onPressed: _showReflectionForm && !_reflectionSubmitted ? _handleSubmitReflections : null,
+                  child: const Text('Submit Reflection'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _reflectionSubmitted = true;
+                      _showReflectionForm = false;
+                    });
+                  },
+                  child: const Text('Skip Reflection'),
+                ),
+              ],
             ),
-            TextButton(
-              onPressed: () {
-                setState(() {
-                  _reflectionSubmitted = true;
-                  _showReflectionForm = false;
-                });
-              },
-              child: const Text('Skip Reflection'),
+          ] else if (_reflectionSubmitted) ...[
+            const SizedBox(height: 12),
+            Center(
+              child: Text(
+                'Reflection saved or skipped for this attempt.',
+                style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold),
+              ),
             ),
           ],
-        ),
-      ],
-    );
+        ],
+      );
+    }
 
-    // Return the widget tree directly
-    return Stack(
-      children: [
-        SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            children: [
-              // header/back link is handled by page that embeds this widget; keep content only
-              if (!_isStudied && !widget.showActivityInitially)
-                studyView
-              else if (_showActivityArea && !_showResultsView)
-                activityInput
-              else if (_showActivityArea && _showResultsView)
-                resultsView,
-              const SizedBox(height: 24),
-            ],
-          ),
-        ),
-        if (_isLoadingAI)
-          Positioned.fill(
-            child: Container(
-              color: Colors.black45,
-              child: const Center(child: CircularProgressIndicator()),
+    @override
+    Widget build(BuildContext context) {
+      return Stack(
+        children: [
+          SingleChildScrollView(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              children: [
+                // Main Content
+                if (!_isStudied && !widget.showActivityInitially)
+                  _buildStudyView()
+                else if (_showActivityArea && !_showResultsView)
+                  _buildActivityView()
+                else if (_showActivityArea && _showResultsView)
+                  _buildResultsView(),
+                const SizedBox(height: 24),
+              ],
             ),
           ),
-        if (_isSaveComplete)
-          Positioned.fill(
-            child: Container(
-              color: Colors.black54,
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: const [
-                      Icon(Icons.check_circle, color: Colors.green, size: 64),
-                      SizedBox(height: 12),
-                      Text('Attempt Saved Successfully!', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                      SizedBox(height: 6),
-                      Text('You may continue or review your activity log.')
-                    ],
-                  ),
-                ),
+
+          // Loading Overlay
+          if (_isLoadingAI)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black45,
+                child: const Center(child: CircularProgressIndicator()),
               ),
             ),
-          ),
-        if (_showActivityLog)
-          Positioned.fill(
-            child: Container(
-              color: Colors.black54,
-              child: Center(
-                child: Container(
-                  constraints: const BoxConstraints(maxWidth: 900),
-                  margin: const EdgeInsets.symmetric(horizontal: 16),
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text('Activity Log', style: Theme.of(context).textTheme.headlineSmall),
-                          ),
-                          IconButton(
-                            onPressed: () => setState(() => _showActivityLog = false),
-                            icon: const Icon(Icons.close),
-                          ),
-                        ],
-                      ),
-                      if (_activityLogLoading)
-                        const Center(child: CircularProgressIndicator())
-                      else
-                        Expanded(
-                          child: _activityLog.isEmpty
-                              ? const Center(child: Text('No activity recorded for this lesson yet.'))
-                              : ListView.builder(
-                                  itemCount: _activityLog.length,
-                                  itemBuilder: (ctx, i) {
-                                    final item = _activityLog[i];
-                                    final Map aiFb = item['aiFeedback'] ?? {};
-                                    final Map solResp = item['solutionResponses'] ?? {};
-                                    return Card(
-                                      margin: const EdgeInsets.symmetric(vertical: 8),
-                                      child: Padding(
-                                        padding: const EdgeInsets.all(12),
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Row(
-                                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                              children: [
-                                                Text('Attempt ${item['attemptNumber']}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                                                Column(
-                                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                                  children: [
-                                                    Text('Overall Score: ${item['score'] ?? 'N/A'}'),
-                                                    Text('Time: ${item['timeSpent'] ?? 'N/A'}s')
-                                                  ],
-                                                ),
-                                              ],
-                                            ),
-                                            const SizedBox(height: 8),
-                                            ...prompts.map((p) {
-                                              final name = p['name']!;
-                                              final userAns = solResp[name];
-                                              final fb = aiFb[name];
-                                              return Padding(
-                                                padding: const EdgeInsets.symmetric(vertical: 6),
-                                                child: Column(
-                                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                                  children: [
-                                                    Text('Prompt: "${p['customerProblem']}"', style: const TextStyle(fontWeight: FontWeight.w600)),
-                                                    const SizedBox(height: 4),
-                                                    Text('Your Answer:', style: const TextStyle(fontStyle: FontStyle.italic)),
-                                                    Container(
-                                                      width: double.infinity,
-                                                      padding: const EdgeInsets.all(8),
-                                                      color: Colors.grey[100],
-                                                      child: Text(userAns?.toString() ?? '(No answer)'),
-                                                    ),
-                                                    const SizedBox(height: 6),
-                                                    if (fb != null && fb['text'] != null)
-                                                      FeedbackCardL4_2(
-                                                        scenarioFeedback: SolutionFeedback.fromJson(Map<String, dynamic>.from(fb)),
-                                                        maxScore: _maxScorePerSolution,
-                                                      )
-                                                    else
-                                                      const Text('No AI feedback for this solution.', style: TextStyle(fontStyle: FontStyle.italic)),
-                                                  ],
-                                                ),
-                                              );
-                                            }),
-                                          ],
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
+
+          // Success Overlay
+          if (_isSaveComplete)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black54,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.check_circle, color: Colors.green, size: 64),
+                        SizedBox(height: 12),
+                        Text(
+                          'Attempt Saved Successfully!',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                         ),
-                      const SizedBox(height: 8),
-                      ElevatedButton(
-                        onPressed: () => setState(() => _showActivityLog = false),
-                        child: const Text('Close Log'),
-                      ),
-                    ],
+                        SizedBox(height: 6),
+                        Text('Redirecting you back to the module overview...')
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-      ],
-    );
+
+          // Activity Log Modal
+          if (_showActivityLog)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black54,
+                child: Center(
+                  child: Container(
+                    constraints: const BoxConstraints(maxWidth: 900),
+                    margin: const EdgeInsets.symmetric(horizontal: 16),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text('Activity Log', style: Theme.of(context).textTheme.headlineSmall),
+                            ),
+                            IconButton(
+                              onPressed: () => setState(() => _showActivityLog = false),
+                              icon: const Icon(Icons.close),
+                            ),
+                          ],
+                        ),
+                        if (_activityLogLoading)
+                          const Center(child: CircularProgressIndicator())
+                        else
+                          Expanded(
+                            child: _activityLog.isEmpty
+                                ? const Center(child: Text('No activity recorded for this lesson yet.'))
+                                : ListView.builder(
+                                    itemCount: _activityLog.length,
+                                    itemBuilder: (ctx, i) {
+                                      final item = _activityLog[i];
+                                      final Map aiFb = item['aiFeedback'] ?? {};
+                                      final Map solResp = item['solutionResponses'] ?? {};
+                                      return Card(
+                                        margin: const EdgeInsets.symmetric(vertical: 8),
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(12),
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                children: [
+                                                  Text('Attempt ${item['attemptNumber']}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                                  Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                                    children: [
+                                                      Text('Overall Score: ${item['score'] ?? 'N/A'}'),
+                                                      Text('Time: ${item['timeSpent'] ?? 'N/A'}s')
+                                                    ],
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 8),
+                                              ..._solutionPrompts.map((p) {
+                                                final name = p['name'] as String;
+                                                final userAns = solResp[name];
+                                                final fb = aiFb[name];
+                                                return Padding(
+                                                  padding: const EdgeInsets.symmetric(vertical: 6),
+                                                  child: Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    children: [
+                                                      Text('Prompt: "${p['customerProblem']}"', style: const TextStyle(fontWeight: FontWeight.w600)),
+                                                      const SizedBox(height: 4),
+                                                      Text('Your Answer:', style: const TextStyle(fontStyle: FontStyle.italic)),
+                                                      Container(
+                                                        width: double.infinity,
+                                                        padding: const EdgeInsets.all(8),
+                                                        color: Colors.grey[100],
+                                                        child: Text(userAns?.toString() ?? '(No answer)'),
+                                                      ),
+                                                      const SizedBox(height: 6),
+                                                      if (fb != null && fb['text'] != null)
+                                                        FeedbackCardL4_2(
+                                                          scenarioFeedback: SolutionFeedback.fromJson(Map<String, dynamic>.from(fb)),
+                                                          maxScore: _maxScorePerSolution,
+                                                        )
+                                                      else
+                                                        const Text('No AI feedback for this solution.', style: TextStyle(fontStyle: FontStyle.italic)),
+                                                    ],
+                                                  ),
+                                                );
+                                              }),
+                                            ],
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                          ),
+                        const SizedBox(height: 8),
+                        ElevatedButton(
+                          onPressed: () => setState(() => _showActivityLog = false),
+                          child: const Text('Close Log'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      );
+    }
   }
-}

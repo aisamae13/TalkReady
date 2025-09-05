@@ -11,6 +11,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../lessons/common_widgets.dart';
 import '../StudentAssessment/InteractiveText.dart'; // Add this import
+import '../StudentAssessment/PreAssessment.dart';
 
 class buildLesson1_3 extends StatefulWidget {
   // Study props (unchanged)

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
@@ -9,6 +10,7 @@ import '../lessons/common_widgets.dart';
 import '../widgets/parsed_feedback_card.dart';
 import '../firebase_service.dart';
 import '../StudentAssessment/AiFeedbackData.dart';
+import '../StudentAssessment/PreAssessment.dart';
 
 class BuildLesson2_3 extends StatefulWidget {
   final BuildContext parentContext;
@@ -678,7 +680,7 @@ class _Lesson2_3State extends State<BuildLesson2_3> with TickerProviderStateMixi
                           ),
                         ),
                       );
-                    }).toList(),
+                   }).toList(),
                   ],
                 ),
               );
@@ -841,6 +843,29 @@ class _Lesson2_3State extends State<BuildLesson2_3> with TickerProviderStateMixi
         ...cards,
       ],
     );
+  }
+
+  Future<Map<String, dynamic>?> _fetchUserProgress() async {
+    try {
+      final userId = _firebaseService.userId;
+      if (userId == null) {
+        _logger.w("L2.3: User not authenticated");
+        return null;
+      }
+      
+      final prog = await FirebaseFirestore.instance
+          .collection('userProgress')
+          .doc(userId)
+          .get();
+          
+      if (prog.exists) {
+        _logger.i('L2.3: User progress data fetched');
+        return prog.data();
+      }
+    } catch (e) {
+      _logger.e('L2.3: Error fetching user progress: $e');
+    }
+    return null;
   }
 
   @override
