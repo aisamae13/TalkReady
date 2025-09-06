@@ -17,7 +17,7 @@ class JournalEntriesPage extends StatefulWidget {
     required this.addEntry,
     required this.updateEntry,
     required this.deleteEntry,
-    required this.toggleFavorite,
+    required this.toggleFavorite, required void Function(int index) onToggleFavorite, required Future<void> Function(int index) onDeleteEntry, required Future<void> Function(int index, JournalEntry updatedEntry) onUpdateEntry,
   });
 
   @override

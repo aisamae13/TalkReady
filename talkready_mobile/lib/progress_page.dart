@@ -17,6 +17,7 @@ import 'homepage.dart';
 import 'courses_page.dart';
 import 'journal/journal_page.dart';
 import 'profile.dart';
+import 'package:talkready_mobile/MyEnrolledClasses.dart';
 
 // ... (COURSE_STRUCTURE_MOBILE and lessonPromptsDataMobile remain the same)
 const Map<String, Map<String, dynamic>> COURSE_STRUCTURE_MOBILE = {
@@ -428,7 +429,7 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage> {
   bool _isDownloadingFullHistoryPdf = false;
   String? _pdfMessage;
 
-  int _selectedIndex = 3; // Progress is index 3
+  int _selectedIndex = 4; // Progress is now index 4
 
   @override
   void initState() {
@@ -566,6 +567,38 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage> {
     return lessonIdFirestoreKey;
   }
 
+  // Add this method to build the app bar with logo
+  Widget _buildAppBarWithLogo() {
+    return Container(
+      padding: const EdgeInsets.only(top: 40, left: 16, right: 16, bottom: 10),
+      decoration: const BoxDecoration(
+        color: Color(0xFF0077B3),
+        borderRadius: BorderRadius.only(
+          bottomLeft: Radius.circular(20),
+          bottomRight: Radius.circular(20),
+        ),
+      ),
+      child: Row(
+        children: [
+          Image.asset(
+            'images/TR Logo.png',
+            height: 40,
+            width: 40,
+          ),
+          const SizedBox(width: 12),
+          const Text(
+            'Progress Tracker',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _onItemTapped(int index) {
     if (_selectedIndex == index) return;
     setState(() => _selectedIndex = index);
@@ -578,22 +611,32 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage> {
         nextPage = const CoursesPage();
         break;
       case 2:
-        nextPage = const JournalPage();
+        nextPage = const MyEnrolledClasses();
         break;
       case 3:
-        return;
+        nextPage = const JournalPage(); // Restore Journal
+        break;
       case 4:
+        // Already on ProgressTrackerPage
+        return;
+      case 5:
         nextPage = const ProfilePage();
         break;
       default:
         return;
     }
+
     Navigator.pushReplacement(
-        context,
-        PageRouteBuilder(
-            pageBuilder: (context, animation, secondaryAnimation) => nextPage,
-            transitionDuration: Duration.zero,
-            reverseTransitionDuration: Duration.zero));
+      context,
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) => nextPage,
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return child;
+        },
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+      ),
+    );
   }
 
   Widget _buildOverallStatsCard() {
@@ -754,118 +797,57 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage> {
         _assessmentSubmissions.isEmpty && !_isLoadingAssessments;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('My Reports'),
-        automaticallyImplyLeading: false,
-      ),
-      body: (_isLoading && _isLoadingAssessments) // Check both loading flags
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(
-                  child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Text(_error!,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: Colors.red, fontSize: 16)),
-                ))
-              : (noAiProgress && noTrainerAssessments)
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.bar_chart_rounded,
-                              size: 60, color: Colors.grey[400]),
-                          const SizedBox(height: 16),
-                          const Text('No progress data yet.',
-                              style:
-                                  TextStyle(fontSize: 18, color: Colors.grey)),
-                          const Text(
-                              'Complete lessons or assessments to see your reports!',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(color: Colors.grey)),
-                        ],
-                      ),
-                    )
-                  : RefreshIndicator(
-                      onRefresh: _fetchAllReportData,
-                      child: ListView(
-                        padding: const EdgeInsets.all(16.0),
-                        children: [
-                          if (_pdfMessage != null)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 10.0),
-                              child: Text(_pdfMessage!,
-                                  style: TextStyle(
-                                      color: Theme.of(context).primaryColor,
-                                      fontStyle: FontStyle.italic)),
+      backgroundColor: Colors.grey[50],
+      // Remove the appBar property
+      body: Column(
+        children: [
+          _buildAppBarWithLogo(), // Add the custom header
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(_error!, style: const TextStyle(color: Colors.red)),
+                            ElevatedButton(
+                              onPressed: _fetchAllReportData,
+                              child: const Text('Retry'),
                             ),
-                          // AI Lesson Progress Section
-                          if (!noAiProgress) ...[
-                            _buildOverallStatsCard(),
-                            const SizedBox(height: 20),
-                            Text("Detailed AI Lesson Performance",
-                                style: Theme.of(context).textTheme.titleLarge),
-                            const SizedBox(height: 10),
-                            ..._allUserAttempts.entries.map((entry) {
-                              final lessonId = entry.key;
-                              final attempts = entry.value;
-                              final lessonTitle = _getLessonTitle(lessonId);
-                              final isExpanded =
-                                  _expandedLesson[lessonId] ?? false;
-
-                              double highestScore = 0;
-                              if (attempts.isNotEmpty) {
-                                highestScore = attempts
-                                    .map((a) =>
-                                        (a['score'] as num?)?.toDouble() ?? 0.0)
-                                    .reduce((a, b) => a > b ? a : b);
-                              }
-
-                              return Card(
-                                elevation: 1,
-                                margin:
-                                    const EdgeInsets.symmetric(vertical: 6.0),
-                                child: ExpansionTile(
-                                  key: PageStorageKey(lessonId),
-                                  title: Text(lessonTitle,
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.w600)),
-                                  subtitle: Text(
-                                      "${attempts.length} attempt(s) - Highest: ${highestScore.toStringAsFixed(1)}%"),
-                                  initiallyExpanded: isExpanded,
-                                  onExpansionChanged: (expanded) {
-                                    setState(() =>
-                                        _expandedLesson[lessonId] = expanded);
-                                  },
-                                  children: attempts.map((attempt) {
-                                    return _buildAttemptDetails(
-                                        lessonId, attempt);
-                                  }).toList(),
-                                ),
-                              );
-                            }),
-                            const SizedBox(
-                                height: 24), // Spacer before next section
                           ],
-
-                          // Trainer Assessments History Section
-                          _buildTrainerAssessmentsSection(),
-                        ],
+                        ),
+                      )
+                    : SingleChildScrollView(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildOverallStatsCard(),
+                            const SizedBox(height: 16),
+                            _buildTrainerAssessmentsSection(),
+                            // Add your other sections here as needed
+                            // ...existing content...
+                          ],
+                        ),
                       ),
-                    ),
+          ),
+        ],
+      ),
       bottomNavigationBar: AnimatedBottomNavBar(
         currentIndex: _selectedIndex,
         onTap: _onItemTapped,
         items: [
           CustomBottomNavItem(icon: Icons.home, label: 'Home'),
           CustomBottomNavItem(icon: Icons.book, label: 'Courses'),
+          CustomBottomNavItem(icon: Icons.school, label: 'My Classes'), // Changed from Icons.class_ to Icons.school
           CustomBottomNavItem(icon: Icons.library_books, label: 'Journal'),
           CustomBottomNavItem(icon: Icons.trending_up, label: 'Progress'),
           CustomBottomNavItem(icon: Icons.person, label: 'Profile'),
         ],
         activeColor: Colors.white,
         inactiveColor: Colors.grey[600]!,
-        notchColor: Colors.blue,
+        notchColor: const Color(0xFF0077B3),
         backgroundColor: Colors.white,
         selectedIconSize: 28.0,
         iconSize: 25.0,
@@ -1056,7 +1038,7 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage> {
             ),
           ],
         ),
-      ),
+      )
     );
   }
 
@@ -1592,12 +1574,9 @@ class ReusableFeedbackCard extends StatelessWidget {
           if (scoreNum != null) ...[
             const SizedBox(height: 3),
             LinearProgressIndicator(
-              value: maxScore > 0
-                  ? scoreNum / maxScore
-                  : 0.0, // Avoid division by zero
-              backgroundColor: currentScoreColor.withOpacity(0.2),
-              color: currentScoreColor,
+              value: maxScore > 0 ? scoreNum / maxScore : 0,
               minHeight: 4,
+              backgroundColor: currentScoreColor.withOpacity(0.2),
               borderRadius: BorderRadius.circular(2),
             ),
             const SizedBox(height: 6),

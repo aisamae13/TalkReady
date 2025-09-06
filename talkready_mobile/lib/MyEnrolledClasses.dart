@@ -3,6 +3,14 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:logger/logger.dart';
+// Add these imports for navigation
+import 'package:talkready_mobile/custom_animated_bottom_bar.dart';
+import 'package:talkready_mobile/journal/journal_page.dart';
+import 'homepage.dart';
+import 'courses_page.dart';
+import 'progress_page.dart';
+import 'profile.dart';
+
 
 class MyEnrolledClasses extends StatefulWidget {
   const MyEnrolledClasses({super.key});
@@ -31,6 +39,9 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
   String joinError = '';
   String joinSuccess = '';
   bool isJoining = false;
+
+  // Add navigation state
+  int _selectedIndex = 2; // My Classes is index 2
 
   @override
   void initState() {
@@ -69,6 +80,83 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
     _slideController.dispose();
     _classCodeController.dispose();
     super.dispose();
+  }
+
+  // Update the navigation method
+  void _onItemTapped(int index) {
+    if (_selectedIndex == index) return;
+
+    setState(() {
+      _selectedIndex = index;
+    });
+
+    Widget nextPage;
+    switch (index) {
+      case 0:
+        nextPage = const HomePage();
+        break;
+      case 1:
+        nextPage = const CoursesPage();
+        break;
+      case 2:
+        // Already on MyEnrolledClasses
+        return;
+      case 3:
+        nextPage = const JournalPage(); // Restore Journal
+        break;
+      case 4:
+        nextPage = const ProgressTrackerPage();
+        break;
+      case 5:
+        nextPage = const ProfilePage();
+        break;
+      default:
+        return;
+    }
+
+    Navigator.pushReplacement(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) => nextPage,
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return child;
+        },
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+      ),
+    );
+  }
+
+  // Add the custom app bar with logo
+  Widget _buildAppBarWithLogo() {
+    return Container(
+      padding: const EdgeInsets.only(top: 40, left: 16, right: 16, bottom: 10),
+      decoration: const BoxDecoration(
+        color: Color(0xFF0077B3),
+        borderRadius: BorderRadius.only(
+          bottomLeft: Radius.circular(20),
+          bottomRight: Radius.circular(20),
+        ),
+      ),
+      child: Row(
+        children: [
+          Image.asset(
+            'images/TR Logo.png',
+            height: 40,
+            width: 40,
+          ),
+          const SizedBox(width: 12),
+          const Text(
+            'My Classes',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> fetchClasses() async {
@@ -261,300 +349,314 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
     
     return Scaffold(
       backgroundColor: Colors.grey[50],
-      appBar: AppBar(
-        title: const Text(
-          'My Enrolled Classes',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        backgroundColor: const Color(0xFF0077B3),
-        foregroundColor: Colors.white,
-        elevation: 0,
-      ),
-      body: FadeTransition(
-        opacity: _fadeAnimation,
-        child: SlideTransition(
-          position: _slideAnimation,
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Header
-                Container(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  decoration: const BoxDecoration(
-                    border: Border(
-                      bottom: BorderSide(color: Colors.grey, width: 0.5),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      const FaIcon(
-                        FontAwesomeIcons.chalkboardTeacher,
-                        color: Color(0xFF0077B3),
-                        size: 28,
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        'My Enrolled Classes',
-                        style: theme.textTheme.headlineMedium?.copyWith(
-                          color: const Color(0xFF0077B3),
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                
-                const SizedBox(height: 24),
-                
-                // Join Class Section
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.sky[50],
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.sky[200]!),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
+      // Remove the default AppBar and use custom header
+      body: Column(
+        children: [
+          _buildAppBarWithLogo(), // Add the custom header with logo
+          Expanded(
+            child: FadeTransition(
+              opacity: _fadeAnimation,
+              child: SlideTransition(
+                position: _slideAnimation,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16.0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // Join Class Section
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: Colors.blue[50],
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.blue[200]!),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 10,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                FaIcon(
+                                  FontAwesomeIcons.key,
+                                  color: Colors.blue[700],
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Join a New Class',
+                                  style: theme.textTheme.titleLarge?.copyWith(
+                                    color: Colors.blue[700],
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            
+                            // Join Form
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller: _classCodeController,
+                                    enabled: !isJoining,
+                                    textCapitalization: TextCapitalization.characters,
+                                    onChanged: (value) {
+                                      setState(() {
+                                        joinError = '';
+                                        joinSuccess = '';
+                                      });
+                                    },
+                                    decoration: InputDecoration(
+                                      hintText: 'Enter Class Code',
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                        borderSide: BorderSide(color: Colors.blue[600]!),
+                                      ),
+                                      filled: true,
+                                      fillColor: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                ElevatedButton.icon(
+                                  onPressed: isJoining || _classCodeController.text.trim().isEmpty
+                                      ? null
+                                      : handleJoinClass,
+                                  icon: isJoining
+                                      ? const SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(strokeWidth: 2),
+                                        )
+                                      : const FaIcon(FontAwesomeIcons.signInAlt, size: 16),
+                                  label: const Text('Join Class'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.blue[600],
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 20,
+                                      vertical: 16,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            
+                            // Error/Success Messages
+                            if (joinError.isNotEmpty) ...[
+                              const SizedBox(height: 12),
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.red[100],
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  joinError,
+                                  style: TextStyle(color: Colors.red[700], fontSize: 14),
+                                ),
+                              ),
+                            ],
+                            if (joinSuccess.isNotEmpty) ...[
+                              const SizedBox(height: 12),
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.green[100],
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  joinSuccess,
+                                  style: TextStyle(color: Colors.green[700], fontSize: 14),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      
+                      const SizedBox(height: 32),
+                      
+                      // Section Header
                       Row(
                         children: [
-                          FaIcon(
-                            FontAwesomeIcons.key,
-                            color: Colors.sky[700],
+                          const FaIcon(
+                            FontAwesomeIcons.chalkboardTeacher,
+                            color: Color(0xFF0077B3),
                             size: 20,
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            'Join a New Class',
+                            'My Enrolled Classes',
                             style: theme.textTheme.titleLarge?.copyWith(
-                              color: Colors.sky[700],
-                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF0077B3),
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
                         ],
                       ),
+                      
                       const SizedBox(height: 16),
                       
-                      // Join Form
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _classCodeController,
-                              enabled: !isJoining,
-                              textCapitalization: TextCapitalization.characters,
-                              onChanged: (value) {
-                                setState(() {
-                                  joinError = '';
-                                  joinSuccess = '';
-                                });
-                              },
-                              decoration: InputDecoration(
-                                hintText: 'Enter Class Code',
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                  borderSide: BorderSide(color: Colors.sky[600]!),
-                                ),
-                                filled: true,
-                                fillColor: Colors.white,
+                      // Content
+                      if (loading)
+                        const Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              CircularProgressIndicator(
+                                color: Color(0xFF0077B3),
                               ),
-                            ),
+                              SizedBox(height: 16),
+                              Text(
+                                'Loading your classes...',
+                                style: TextStyle(fontSize: 16, color: Colors.grey),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 12),
-                          ElevatedButton.icon(
-                            onPressed: isJoining || _classCodeController.text.trim().isEmpty
-                                ? null
-                                : handleJoinClass,
-                            icon: isJoining
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  )
-                                : const FaIcon(FontAwesomeIcons.signInAlt, size: 16),
-                            label: const Text('Join Class'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.sky[600],
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 20,
-                                vertical: 16,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      
-                      // Error/Success Messages
-                      if (joinError.isNotEmpty) ...[
-                        const SizedBox(height: 12),
+                        )
+                      else if (error.isNotEmpty)
                         Container(
-                          padding: const EdgeInsets.all(8),
+                          padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
                             color: Colors.red[100],
-                            borderRadius: BorderRadius.circular(6),
+                            borderRadius: BorderRadius.circular(8),
+                            border: const Border(
+                              left: BorderSide(color: Colors.red, width: 4),
+                            ),
                           ),
-                          child: Text(
-                            joinError,
-                            style: TextStyle(color: Colors.red[700], fontSize: 14),
-                          ),
-                        ),
-                      ],
-                      if (joinSuccess.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.green[100],
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            joinSuccess,
-                            style: TextStyle(color: Colors.green[700], fontSize: 14),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                
-                const SizedBox(height: 32),
-                
-                // Content
-                if (loading)
-                  const Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        CircularProgressIndicator(
-                          color: Color(0xFF0077B3),
-                        ),
-                        SizedBox(height: 16),
-                        Text(
-                          'Loading your classes...',
-                          style: TextStyle(fontSize: 16, color: Colors.grey),
-                        ),
-                      ],
-                    ),
-                  )
-                else if (error.isNotEmpty)
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.red[100],
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border(
-                        left: BorderSide(color: Colors.red, width: 4),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        const FaIcon(
-                          FontAwesomeIcons.exclamationTriangle,
-                          color: Colors.red,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          child: Row(
                             children: [
-                              const Text(
-                                'Error',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.red,
+                              const FaIcon(
+                                FontAwesomeIcons.exclamationTriangle,
+                                color: Colors.red,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Error',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.red,
+                                      ),
+                                    ),
+                                    Text(
+                                      error,
+                                      style: const TextStyle(color: Colors.red),
+                                    ),
+                                  ],
                                 ),
                               ),
+                            ],
+                          ),
+                        )
+                      else if (enrolledClasses.isNotEmpty)
+                        GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: MediaQuery.of(context).size.width > 1200
+                                ? 3
+                                : MediaQuery.of(context).size.width > 800
+                                    ? 2
+                                    : 1,
+                            crossAxisSpacing: 16,
+                            mainAxisSpacing: 16,
+                            childAspectRatio: 1.2,
+                          ),
+                          itemCount: enrolledClasses.length,
+                          itemBuilder: (context, index) {
+                            final cls = enrolledClasses[index];
+                            return _buildClassCard(cls, theme);
+                          },
+                        )
+                      else
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(40),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[50],
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Colors.grey[300]!,
+                              style: BorderStyle.solid,
+                              width: 2,
+                            ),
+                          ),
+                          child: Column(
+                            children: [
+                              FaIcon(
+                                FontAwesomeIcons.chalkboardTeacher,
+                                size: 48,
+                                color: Colors.grey[400],
+                              ),
+                              const SizedBox(height: 16),
                               Text(
-                                error,
-                                style: const TextStyle(color: Colors.red),
+                                'You are not currently enrolled in any classes by a trainer.',
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  color: Colors.grey[600],
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Once a trainer enrolls you, your classes will appear here.\nYou can also join a class using a code if provided by your trainer.',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: Colors.grey[500],
+                                ),
+                                textAlign: TextAlign.center,
                               ),
                             ],
                           ),
                         ),
-                      ],
-                    ),
-                  )
-                else if (enrolledClasses.isNotEmpty)
-                  GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: MediaQuery.of(context).size.width > 1200
-                          ? 3
-                          : MediaQuery.of(context).size.width > 800
-                              ? 2
-                              : 1,
-                      crossAxisSpacing: 16,
-                      mainAxisSpacing: 16,
-                      childAspectRatio: 1.2,
-                    ),
-                    itemCount: enrolledClasses.length,
-                    itemBuilder: (context, index) {
-                      final cls = enrolledClasses[index];
-                      return _buildClassCard(cls, theme);
-                    },
-                  )
-                else
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(40),
-                    decoration: BoxDecoration(
-                      color: Colors.slate[50],
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: Colors.grey[300]!,
-                        style: BorderStyle.solid,
-                        width: 2,
-                      ),
-                    ),
-                    child: Column(
-                      children: [
-                        FaIcon(
-                          FontAwesomeIcons.chalkboardTeacher,
-                          size: 48,
-                          color: Colors.grey[400],
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'You are not currently enrolled in any classes by a trainer.',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            color: Colors.grey[600],
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Once a trainer enrolls you, your classes will appear here.\nYou can also join a class using a code if provided by your trainer.',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: Colors.grey[500],
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
+                    ],
                   ),
-              ],
+                ),
+              ),
             ),
           ),
-        ),
+        ],
+      ),
+      // Update the bottom navigation bar
+      bottomNavigationBar: AnimatedBottomNavBar(
+        currentIndex: _selectedIndex,
+        onTap: _onItemTapped,
+        items: [
+          CustomBottomNavItem(icon: Icons.home, label: 'Home'),
+          CustomBottomNavItem(icon: Icons.book, label: 'Courses'),
+          CustomBottomNavItem(icon: Icons.school, label: 'My Classes'), // Changed from Icons.class_ to Icons.school
+          CustomBottomNavItem(icon: Icons.library_books, label: 'Journal'),
+          CustomBottomNavItem(icon: Icons.trending_up, label: 'Progress'),
+          CustomBottomNavItem(icon: Icons.person, label: 'Profile'),
+        ],
+        activeColor: Colors.white,
+        inactiveColor: Colors.grey[600]!,
+        notchColor: const Color(0xFF0077B3),
+        backgroundColor: Colors.white,
+        selectedIconSize: 28.0,
+        iconSize: 25.0,
+        barHeight: 55,
+        selectedIconPadding: 10,
+        animationDuration: const Duration(milliseconds: 300),
+        customNotchWidthFactor: 1.8,
       ),
     );
   }
@@ -597,7 +699,7 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
                 const FaIcon(
                   FontAwesomeIcons.chalkboardTeacher,
                   size: 14,
-                  color: Colors.sky,
+                  color: Colors.blue,
                 ),
                 const SizedBox(width: 6),
                 Expanded(
@@ -659,11 +761,12 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
               alignment: Alignment.centerRight,
               child: ElevatedButton.icon(
                 onPressed: () {
-                  // Navigate to class content
+                  // Navigate to class content - you can create a proper class content page
+                  // For now, let's navigate to courses page as a placeholder
                   Navigator.pushNamed(
                     context,
-                    '/student/class/${cls['id']}/content',
-                    arguments: cls,
+                    '/courses', // You can create a specific route for class content later
+                    arguments: {'classId': cls['id'], 'className': cls['className']},
                   );
                 },
                 icon: const FaIcon(FontAwesomeIcons.bookOpen, size: 14),

@@ -1,3 +1,5 @@
+// Course Page
+
 import 'package:flutter/material.dart';
 import 'package:logger/logger.dart';
 import 'firebase_service.dart';
@@ -10,9 +12,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:talkready_mobile/custom_animated_bottom_bar.dart';
 import 'homepage.dart';
-import 'journal/journal_page.dart';
 import 'progress_page.dart';
 import 'profile.dart';
+import 'package:talkready_mobile/MyEnrolledClasses.dart';
+import 'journal/journal_page.dart'; // Import for JournalPage
 
 // Helper function for creating a slide page route
 Route _createSlidingPageRoute({
@@ -217,7 +220,7 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
           'Initial previousModuleWasCompletedAndUnlocked: $previousModuleWasCompletedAndUnlocked');
 
       for (var moduleEntry in allModuleConfigurations) {
-        final moduleConfig = moduleEntry['config'] as Map<String, dynamic>;
+        // final moduleConfig = moduleEntry['config'] as Map<String, dynamic>; // Removed unused variable
         final moduleId = moduleEntry['id'] as String;
         final List<Map<String, dynamic>> moduleListRef =
             moduleEntry['listRef'] as List<Map<String, dynamic>>;
@@ -615,6 +618,39 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
     }
   }
 
+  // Add this method to build the app bar with logo
+  Widget _buildAppBarWithLogo() {
+    return Container(
+      padding: const EdgeInsets.only(top: 40, left: 16, right: 16, bottom: 10),
+      decoration: const BoxDecoration(
+        color: Color(0xFF0077B3),
+        borderRadius: BorderRadius.only(
+          bottomLeft: Radius.circular(20),
+          bottomRight: Radius.circular(20),
+        ),
+      ),
+      child: Row(
+        children: [
+          Image.asset(
+            'images/TR Logo.png',
+            height: 40,
+            width: 40,
+          ),
+          const SizedBox(width: 12),
+          const Text(
+            'Courses',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Update the _onItemTapped method to include My Classes navigation
   void _onItemTapped(int index) {
     if (_selectedIndex == index) return;
 
@@ -630,16 +666,17 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
         break;
       case 1:
         // Already on CoursesPage
-        nextPage =
-            const CoursesPage(); // Should not happen if check above is active
-        break;
+        return;
       case 2:
-        nextPage = const JournalPage();
+        nextPage = const MyEnrolledClasses();
         break;
       case 3:
-        nextPage = const ProgressTrackerPage();
+        nextPage = const JournalPage(); // Restore Journal
         break;
       case 4:
+        nextPage = const ProgressTrackerPage();
+        break;
+      case 5:
         nextPage = const ProfilePage();
         break;
       default:
@@ -652,8 +689,7 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
         page: nextPage,
         newIndex: index,
         oldIndex: oldNavIndex,
-        duration:
-            const Duration(milliseconds: 300), // This duration is now ignored
+        duration: const Duration(milliseconds: 300),
       ),
     );
   }
@@ -663,111 +699,113 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
     double progress = _calculateProgress();
 
     return Scaffold(
-      appBar: AppBar(
-        title:
-            const Text('Courses', style: TextStyle(color: Color(0xFF00568D))),
-        backgroundColor: Colors.white,
-        foregroundColor: const Color(0xFF00568D),
-        elevation: 0,
-        automaticallyImplyLeading: false,
-      ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: ScrollConfiguration(
-            behavior: const ScrollBehavior().copyWith(overscroll: false),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8.0, vertical: 8.0),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: LinearProgressIndicator(
-                        value: progress,
-                        backgroundColor: Colors.grey[300],
-                        color: const Color(0xFF2973B2),
-                        minHeight: 10,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Beginner',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF00568D),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Start your journey to master English communication skills step-by-step.',
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.black54,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  _buildModuleSection('Beginner', beginnerModules, 1),
+      backgroundColor: Colors.grey[50],
+      // Remove the appBar property
+      body: Column(
+        children: [
+          _buildAppBarWithLogo(), // Add the custom header
+          Expanded(
+            child: SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: ScrollConfiguration(
+                  behavior: const ScrollBehavior().copyWith(overscroll: false),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8.0, vertical: 8.0),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: LinearProgressIndicator(
+                              value: progress,
+                              backgroundColor: Colors.grey[300],
+                              color: const Color(0xFF2973B2),
+                              minHeight: 10,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Beginner',
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF00568D),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Start your journey to master English communication skills step-by-step.',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.black54,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        _buildModuleSection('Beginner', beginnerModules, 1),
 
-                  // Conditionally display Intermediate section if there are modules
-                  if (intermediateModules.isNotEmpty) ...[
-                    const SizedBox(height: 24),
-                    const Text(
-                      'Intermediate',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF00568D),
-                      ),
+                        // Conditionally display Intermediate section if there are modules
+                        if (intermediateModules.isNotEmpty) ...[
+                          const SizedBox(height: 24),
+                          const Text(
+                            'Intermediate',
+                            style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF00568D),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Challenge yourself with comprehensive reviews and assessments.',
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: Colors.black54,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          _buildModuleSection('Intermediate', intermediateModules,
+                              beginnerModules.length + 1),
+                        ],
+                        // Advanced section (if any in the future)
+                        if (advancedModules.isNotEmpty) ...[
+                          const SizedBox(height: 24),
+                          const Text(
+                            'Advanced',
+                            style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF00568D),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Master advanced concepts and refine your skills.',
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: Colors.black54,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          _buildModuleSection(
+                              'Advanced',
+                              advancedModules,
+                              beginnerModules.length +
+                                  intermediateModules.length +
+                                  1),
+                        ],
+                      ],
                     ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Challenge yourself with comprehensive reviews and assessments.',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.black54,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    _buildModuleSection('Intermediate', intermediateModules,
-                        beginnerModules.length + 1),
-                  ],
-                  // Advanced section (if any in the future)
-                  if (advancedModules.isNotEmpty) ...[
-                    const SizedBox(height: 24),
-                    const Text(
-                      'Advanced',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF00568D),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Master advanced concepts and refine your skills.',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.black54,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    _buildModuleSection(
-                        'Advanced',
-                        advancedModules,
-                        beginnerModules.length +
-                            intermediateModules.length +
-                            1),
-                  ],
-                ],
+                  ),
+                ),
               ),
             ),
           ),
-        ),
+        ],
       ),
       bottomNavigationBar: AnimatedBottomNavBar(
         currentIndex: _selectedIndex,
@@ -775,13 +813,14 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
         items: [
           CustomBottomNavItem(icon: Icons.home, label: 'Home'),
           CustomBottomNavItem(icon: Icons.book, label: 'Courses'),
+          CustomBottomNavItem(icon: Icons.school, label: 'My Classes'), // Changed from Icons.class_ to Icons.school
           CustomBottomNavItem(icon: Icons.library_books, label: 'Journal'),
           CustomBottomNavItem(icon: Icons.trending_up, label: 'Progress'),
           CustomBottomNavItem(icon: Icons.person, label: 'Profile'),
         ],
         activeColor: Colors.white,
         inactiveColor: Colors.grey[600]!,
-        notchColor: Colors.blue,
+        notchColor: const Color(0xFF0077B3),
         backgroundColor: Colors.white,
         selectedIconSize: 28.0,
         iconSize: 25.0,
@@ -796,7 +835,7 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
   Widget _buildModuleSection(String level,
       List<Map<String, dynamic>> modulesInLevel, int globalStartIndexOffset) {
     return Column(
-      children: modulesInLevel.asMap().entries.map((entry) {
+      children: modulesInLevel.asMap().entries.map<Widget>((entry) {
         final localIndex = entry.key;
         final moduleData = entry.value;
         final bool isLocked = moduleData['isLocked'] as bool? ?? true;
@@ -939,8 +978,7 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
                                       fontSize: 15,
                                       color: Colors.black87,
                                       decoration:
-                                          (lesson['completed'] as bool? ??
-                                                  false)
+                                          (lesson['completed'] as bool? ?? false)
                                               ? TextDecoration.lineThrough
                                               : TextDecoration.none,
                                     ),
@@ -964,7 +1002,7 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
                             ],
                           ),
                         );
-                      }),
+                      }).toList(),
                     ] else ...[
                       const Padding(
                         padding: EdgeInsets.only(top: 8.0, left: 8.0),

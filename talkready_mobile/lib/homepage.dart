@@ -14,6 +14,7 @@ import 'package:talkready_mobile/all_notifications_page.dart';
 import 'progress_page.dart';
 import 'package:talkready_mobile/custom_animated_bottom_bar.dart';
 import 'package:shimmer/shimmer.dart';
+import 'package:talkready_mobile/MyEnrolledClasses.dart';
 
 // Helper function for creating a slide page route
 Route _createSlidingPageRoute({
@@ -419,10 +420,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   void _onItemTapped(int index) {
     logger.d('Tapped navigation item. Index: $index, currentIndex: $_selectedIndex');
-    if (_selectedIndex == index) {
-      logger.d('Already on selected page, skipping navigation');
-      return;
-    }
+    if (_selectedIndex == index) return;
 
     final int oldNavIndex = _selectedIndex;
 
@@ -433,22 +431,23 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     Widget nextPage;
     switch (index) {
       case 0:
-        logger.d('Already on HomePage, skipping navigation');
-        return;
+        return; // Already on HomePage
       case 1:
         nextPage = const CoursesPage();
         break;
       case 2:
-        nextPage = const JournalPage();
+        nextPage = const MyEnrolledClasses();
         break;
       case 3:
-        nextPage = const ProgressTrackerPage();
+        nextPage = const JournalPage(); // Restore Journal
         break;
       case 4:
+        nextPage = const ProgressTrackerPage();
+        break;
+      case 5:
         nextPage = const ProfilePage();
         break;
       default:
-        logger.w('Unhandled navigation index: $index');
         return;
     }
 
@@ -511,63 +510,89 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     super.dispose();
   }
 
+  // Add this method to build the app bar with logo
+  Widget _buildAppBarWithLogo() {
+    return Container(
+      padding: const EdgeInsets.only(top: 40, left: 16, right: 16, bottom: 10),
+      decoration: const BoxDecoration(
+        color: Color(0xFF0077B3),
+        borderRadius: BorderRadius.only(
+          bottomLeft: Radius.circular(20),
+          bottomRight: Radius.circular(20),
+        ),
+      ),
+      child: Row(
+        children: [
+          Image.asset(
+            'images/TR Logo.png',
+            height: 40,
+            width: 40,
+          ),
+          const SizedBox(width: 12),
+          const Text(
+            'TalkReady',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const Spacer(),
+          IconButton(
+            icon: const Icon(Icons.notifications, color: Colors.white),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const AllNotificationsPage()),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
     final firstName = user?.displayName?.split(' ').first ?? 'User';
-    
-    return WillPopScope(
-      onWillPop: () async {
-        logger.i('Back button pressed on HomePage - prevented');
-        return false; // Prevent back navigation
-      },
-      child: Scaffold(
+
+    return Scaffold(
+      backgroundColor: Colors.grey[50],
+      // Remove the appBar property
+      body: Column(
+        children: [
+          _buildAppBarWithLogo(), // Add the custom header
+          Expanded(
+            child: _isLoading
+                ? _buildLoadingState()
+                : _hasError
+                    ? _buildErrorState()
+                    : _buildMainContent(firstName),
+          ),
+        ],
+      ),
+      bottomNavigationBar: AnimatedBottomNavBar(
+        currentIndex: _selectedIndex,
+        onTap: _onItemTapped,
+        items: [
+          CustomBottomNavItem(icon: Icons.home, label: 'Home'),
+          CustomBottomNavItem(icon: Icons.book, label: 'Courses'),
+          CustomBottomNavItem(icon: Icons.school, label: 'My Classes'), // Changed from Icons.class_ to Icons.school
+          CustomBottomNavItem(icon: Icons.library_books, label: 'Journal'),
+          CustomBottomNavItem(icon: Icons.trending_up, label: 'Progress'),
+          CustomBottomNavItem(icon: Icons.person, label: 'Profile'),
+        ],
+        activeColor: Colors.white,
+        inactiveColor: Colors.grey[600]!,
+        notchColor: const Color(0xFF0077B3),
         backgroundColor: Colors.white,
-        appBar: AppBar(
-          title: const Text('Student Dashboard'),
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          foregroundColor: const Color(0xFF00568D),
-          automaticallyImplyLeading: false,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.notifications),
-              tooltip: 'Notifications',
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const AllNotificationsPage()),
-                );
-              },
-            ),
-          ],
-        ),
-        body: _isLoading 
-          ? _buildLoadingState()
-          : _hasError 
-            ? _buildErrorState()
-            : _buildMainContent(firstName),
-        bottomNavigationBar: AnimatedBottomNavBar(
-          currentIndex: _selectedIndex,
-          onTap: _onItemTapped,
-          items: [
-            CustomBottomNavItem(icon: Icons.home, label: 'Home'),
-            CustomBottomNavItem(icon: Icons.book, label: 'Courses'),
-            CustomBottomNavItem(icon: Icons.library_books, label: 'Journal'),
-            CustomBottomNavItem(icon: Icons.trending_up, label: 'Progress'),
-            CustomBottomNavItem(icon: Icons.person, label: 'Profile'),
-          ],
-          activeColor: Colors.white,
-          inactiveColor: Colors.grey[600]!,
-          notchColor: Colors.blue,
-          backgroundColor: Colors.white,
-          selectedIconSize: 28.0,
-          iconSize: 25.0,
-          barHeight: 55,
-          selectedIconPadding: 10,
-          animationDuration: const Duration(milliseconds: 300),
-          customNotchWidthFactor: 1.8,
-        ),
+        selectedIconSize: 28.0,
+        iconSize: 25.0,
+        barHeight: 55,
+        selectedIconPadding: 10,
+        animationDuration: const Duration(milliseconds: 300),
+        customNotchWidthFactor: 1.8,
       ),
     );
   }
@@ -1201,11 +1226,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   Widget _buildQuickNavigation() {
     final quickNavItems = [
       {'icon': Icons.school, 'label': 'Courses', 'route': const CoursesPage()},
+      {'icon': Icons.class_, 'label': 'My Classes', 'route': const MyEnrolledClasses()},
+      {'icon': Icons.book, 'label': 'Journal', 'route': JournalPage()}, // Move Journal here
       {'icon': Icons.bar_chart, 'label': 'My Reports', 'route': const ProgressTrackerPage()},
       {'icon': Icons.mic, 'label': 'Practice Test', 'route': AIBotScreen(onBackPressed: () => Navigator.pop(context))},
       {'icon': Icons.person, 'label': 'Profile', 'route': const ProfilePage()},
-      {'icon': Icons.help, 'label': 'Help & FAQ', 'route': const CoursesPage()}, // Replace with actual FAQ page
-      {'icon': Icons.contact_support, 'label': 'Contact Us', 'route': const CoursesPage()}, // Replace with actual contact page
+      {'icon': Icons.help, 'label': 'Help & FAQ', 'route': const CoursesPage()},
+      {'icon': Icons.contact_support, 'label': 'Contact Us', 'route': const CoursesPage()},
     ];
 
     return Container(
@@ -1222,21 +1249,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         ],
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Quick Navigation',
-            style: TextStyle(
-              fontSize: 20,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
               fontWeight: FontWeight.bold,
-              color: Color(0xFF00568D),
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Easily access different features of TalkReady',
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.black54,
+              color: const Color(0xFF0077B3),
             ),
           ),
           const SizedBox(height: 16),
@@ -1245,9 +1264,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             physics: const NeverScrollableScrollPhysics(),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 3,
-              childAspectRatio: 1.0,
               crossAxisSpacing: 12,
               mainAxisSpacing: 12,
+              childAspectRatio: 1.0,
             ),
             itemCount: quickNavItems.length,
             itemBuilder: (context, index) {
@@ -1274,15 +1293,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       Icon(
                         item['icon'] as IconData,
                         size: 28,
-                        color: const Color(0xFF00568D),
+                        color: const Color(0xFF0077B3),
                       ),
                       const SizedBox(height: 8),
                       Text(
                         item['label'] as String,
                         style: const TextStyle(
                           fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF00568D),
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF0077B3),
                         ),
                         textAlign: TextAlign.center,
                         maxLines: 2,

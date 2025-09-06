@@ -10,6 +10,7 @@ import '../homepage.dart';
 import '../courses_page.dart';
 import '../progress_page.dart';
 import '../profile.dart';
+import 'package:talkready_mobile/MyEnrolledClasses.dart';
 
 final logger = Logger(
   printer: PrettyPrinter(
@@ -95,7 +96,7 @@ class JournalPage extends StatefulWidget {
 class _JournalPageState extends State<JournalPage> {
   final List<JournalEntry> _entries = [];
   bool _isLoading = true;
-  int _selectedIndex = 2; // Journal is index 2
+  int _selectedIndex = 3; // Journal is index 3 (updated to include My Classes)
 
   @override
   void initState() {
@@ -298,13 +299,15 @@ class _JournalPageState extends State<JournalPage> {
         nextPage = const CoursesPage();
         break;
       case 2:
-        // Already on JournalPage
-        nextPage = const JournalPage(); // Should not happen
+        nextPage = const MyEnrolledClasses(); // Include My Classes navigation
         break;
       case 3:
+        // Already on JournalPage
+        return;
+      case 4:
         nextPage = const ProgressTrackerPage();
         break;
-      case 4:
+      case 5:
         nextPage = const ProfilePage();
         break;
       default:
@@ -406,6 +409,9 @@ class _JournalPageState extends State<JournalPage> {
                         updateEntry: _updateEntry,
                         deleteEntry: _deleteEntry,
                         toggleFavorite: _toggleFavorite,
+                        onUpdateEntry: _updateEntry,
+                        onDeleteEntry: _deleteEntry,
+                        onToggleFavorite: _toggleFavorite,
                       ),
                     );
 
@@ -424,6 +430,7 @@ class _JournalPageState extends State<JournalPage> {
         items: [
           CustomBottomNavItem(icon: Icons.home, label: 'Home'),
           CustomBottomNavItem(icon: Icons.book, label: 'Courses'),
+          CustomBottomNavItem(icon: Icons.school, label: 'My Classes'), // Changed from Icons.class_ to Icons.school
           CustomBottomNavItem(icon: Icons.library_books, label: 'Journal'),
           CustomBottomNavItem(icon: Icons.trending_up, label: 'Progress'),
           CustomBottomNavItem(icon: Icons.person, label: 'Profile'),
@@ -437,8 +444,9 @@ class _JournalPageState extends State<JournalPage> {
         barHeight: 55,
         selectedIconPadding: 10,
         animationDuration: const Duration(milliseconds: 300),
-        customNotchWidthFactor: 1.8, // <-- Added this line
+        customNotchWidthFactor: 1.8,
       ),
     );
+
   }
 }

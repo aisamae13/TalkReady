@@ -19,6 +19,9 @@ import 'onboarding_screen.dart';
 import 'package:talkready_mobile/all_notifications_page.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+// Add this import for MyEnrolledClasses
+import 'package:talkready_mobile/MyEnrolledClasses.dart';
+
 // Assessment Page Imports
 import 'package:talkready_mobile/Teachers/Assessment/ClassAssessmentsListPage.dart';
 import 'package:talkready_mobile/Teachers/Assessment/CreateAssessmentPage.dart';
@@ -31,7 +34,7 @@ import 'package:talkready_mobile/Teachers/ClassManager/MyClassesPage.dart';
 import 'package:talkready_mobile/Teachers/ClassManager/EditClassPage.dart';
 import 'package:talkready_mobile/Teachers/ClassManager/ManageClassStudents.dart';
 import 'package:talkready_mobile/Teachers/ClassManager/ManageClassContent.dart';
-import 'package:talkready_mobile/Teachers/ClassManager/EditAssessmentPage.dart'; // Assuming this is the correct location
+import 'package:talkready_mobile/Teachers/ClassManager/EditAssessmentPage.dart';
 
 // Reports Page Import
 import 'package:talkready_mobile/Teachers/Reports/TrainerReports.dart';
@@ -42,6 +45,9 @@ import 'package:talkready_mobile/Teachers/Announcement/CreateAnnouncementPage.da
 // Content Page Imports
 import 'package:talkready_mobile/Teachers/Contents/QuickUploadMaterialPage.dart';
 import 'package:talkready_mobile/Teachers/Contents/SelectClassForContentPage.dart';
+
+// Add this import if not already present
+import 'package:talkready_mobile/progress_page.dart';
 
 final logger = Logger(
   printer: PrettyPrinter(
@@ -68,7 +74,7 @@ void main() async {
 
   await FirebaseAppCheck.instance.activate(
     androidProvider: AndroidProvider.debug,
-    appleProvider: AppleProvider.debug, // Add this for iOS debug
+    appleProvider: AppleProvider.debug,
   );
 
   try {
@@ -93,6 +99,8 @@ class MyApp extends StatelessWidget {
       '/forgot-password': (context) => const ForgotPasswordPage(),
       '/courses': (context) => CoursesPage(),
       '/journal': (context) => JournalPage(),
+      '/enrolled-classes': (context) => const MyEnrolledClasses(), // Add this line
+      '/progress': (context) => const ProgressTrackerPage(), // Add this if not present
       '/trainer-dashboard': (context) => const TrainerDashboard(),
       '/chooseUserType': (context) => const ChooseUserTypePage(),
       '/notifications': (context) => const AllNotificationsPage(),
@@ -200,18 +208,11 @@ class MyApp extends StatelessWidget {
               settings: settings,
             );
           case '/create-assessment':
-            // Ensure classId is passed as a String?
             final classId = (args is Map<String, dynamic> ? args['initialClassId'] as String? : null) ?? (args is String ? args : null);
             return MaterialPageRoute(
               builder: (_) => CreateAssessmentPage(initialClassId: classId),
               settings: settings,
             );
-          // Remove CreateAnnouncementPage from here if it was added previously, as it's now in staticRoutes
-          // case '/trainer/announcements/create': // Or whatever route name you used before
-          //   return MaterialPageRoute(
-          //     builder: (_) => const CreateAnnouncementPage(),
-          //     settings: settings,
-          //   );
           default:
             if (routeName != null && staticRoutes.containsKey(routeName)) {
               final WidgetBuilder? builder = staticRoutes[routeName];
