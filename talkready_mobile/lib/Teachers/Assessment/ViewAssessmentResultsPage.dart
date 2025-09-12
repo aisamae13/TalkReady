@@ -171,6 +171,16 @@ class _ViewAssessmentResultsPageState extends State<ViewAssessmentResultsPage> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         foregroundColor: Colors.white,
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF8B5CF6),
+              Color(0xFF6366F1)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+        ),
         actions: [
           IconButton(
           icon: const Icon(Icons.edit),
@@ -192,15 +202,6 @@ class _ViewAssessmentResultsPageState extends State<ViewAssessmentResultsPage> {
             tooltip: "Refresh results",
           )
         ],
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFF6D5DF6), Color(0xFF46C2CB)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-          ),
-        ),
       ),
       body: Container(
         decoration: const BoxDecoration(
