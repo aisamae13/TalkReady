@@ -822,7 +822,17 @@ class _EditAssessmentPageState extends State<EditAssessmentPage> {
       appBar: AppBar(
         title: const Text('Edit Assessment'),
         backgroundColor: theme.colorScheme.primary,
-        foregroundColor: theme.colorScheme.onPrimary,
+        foregroundColor: Colors.white,
+        flexibleSpace: Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFF8B5CF6),
+              Color(0xFF6366F1)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+          ),
         actions: [
           if (_assessmentType == 'speaking_assessment')
             IconButton(

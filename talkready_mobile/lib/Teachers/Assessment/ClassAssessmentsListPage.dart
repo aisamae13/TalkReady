@@ -250,11 +250,12 @@ class _ClassAssessmentsListPageState extends State<ClassAssessmentsListPage> {
       appBar: AppBar(
         title: Text(
           classDetails != null
-            ? 'Assessments: ${classDetails!['className'] ?? 'Class'}'
+            ? '${classDetails!['className'] ?? 'Class'}'
             : 'Assessments',
           style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.1),
         ),
         backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
         elevation: 0,
         actions: [
           IconButton(
@@ -266,7 +267,8 @@ class _ClassAssessmentsListPageState extends State<ClassAssessmentsListPage> {
         flexibleSpace: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
-              colors: [Color(0xFF6D5DF6), Color(0xFF46C2CB)],
+              colors: [Color(0xFF8B5CF6),
+              Color(0xFF6366F1)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
