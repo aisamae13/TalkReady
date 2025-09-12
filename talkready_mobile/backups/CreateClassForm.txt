@@ -89,14 +89,27 @@ class _CreateClassFormState extends State<CreateClassForm> with TickerProviderSt
         'createdAt': FieldValue.serverTimestamp(),
         'studentCount': 0,
       };
-
-      // Create the class using your FirebaseService (single source of truth)
+      
+      final docRef = await FirebaseFirestore.instance.collection('classes').add(classData);
+      
+      final createdDoc = await docRef.get();
+      final createdClassData = {
+        'id': docRef.id,
+        ...createdDoc.data() as Map<String, dynamic>,
+      };
+      
+      // New code block starts here
       final created = await FirebaseService().createClass(classData);
       final newId = created['id'] as String?;
       if (newId != null) {
-        FirebaseService().setActiveClass(newId);
+        FirebaseService().setActiveClass(newId); // start listening to assessments/materials for new class
       }
-
+      // New code block ends here
+      
+      if (widget.onClassCreated != null) {
+        widget.onClassCreated!(createdClassData);
+      }
+      
       setState(() {
         success = 'Class "${_classNameController.text.trim()}" created successfully!';
         _classNameController.clear();
@@ -126,14 +139,13 @@ class _CreateClassFormState extends State<CreateClassForm> with TickerProviderSt
           ),
         );
       }
-
-      // Just pop the page, let realtime update the list!
+      
       Future.delayed(const Duration(milliseconds: 1500), () {
         if (mounted) {
           Navigator.pop(context);
         }
       });
-
+      
     } catch (e) {
       setState(() => error = "Failed to create class. Please try again.");
     } finally {

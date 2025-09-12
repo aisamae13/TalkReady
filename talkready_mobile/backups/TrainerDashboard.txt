@@ -38,49 +38,34 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
   void initState() {
     super.initState();
     fetchUserFirstName();
-    _setupRealtimeDashboardListener();
+    fetchDashboardData();
+    _setupRealtimeListener(); // Add real-time listener
   }
 
-  void _setupRealtimeDashboardListener() {
+  // Add real-time listener for the most recent class
+  void _setupRealtimeListener() {
     if (currentUser == null) return;
-
+    
     FirebaseFirestore.instance
         .collection('classes')
         .where('trainerId', isEqualTo: currentUser!.uid)
+        .orderBy('createdAt', descending: true)
+        .limit(1)
         .snapshots()
         .listen((snapshot) {
-      int classCount = snapshot.docs.length;
-      int studentSum = 0;
-      int pendingSum = 0;
-      Map<String, dynamic>? recentClass;
-
-      for (var doc in snapshot.docs) {
-        final data = doc.data();
-        studentSum += (data['studentCount'] as int? ?? 0);
-        pendingSum += (data['pendingSubmissions'] as int? ?? 0); // Adjust field name if needed
-      }
-
       if (snapshot.docs.isNotEmpty) {
         final doc = snapshot.docs.first;
-        recentClass = {'id': doc.id, ...doc.data()};
+        setState(() {
+          mostRecentClass = {
+            'id': doc.id,
+            ...doc.data(),
+          };
+        });
+      } else {
+        setState(() {
+          mostRecentClass = null;
+        });
       }
-
-      setState(() {
-        activeClassesCount = classCount;
-        totalStudents = studentSum;
-        pendingSubmissions = pendingSum;
-        mostRecentClass = recentClass;
-        loading = false;
-        error = null;
-      });
-    }, onError: (e) {
-      setState(() {
-        error = "Could not load dashboard data. ${e.toString()}";
-        activeClassesCount = 0;
-        totalStudents = 0;
-        pendingSubmissions = 0;
-        loading = false;
-      });
     });
   }
 
