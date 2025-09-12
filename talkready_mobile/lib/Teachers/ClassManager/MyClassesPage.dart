@@ -1,5 +1,6 @@
 //Trainer
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -9,14 +10,32 @@ import 'ClassListItem.dart';
 import 'CreateClassForm.dart';
 import 'ManageClassContent.dart';
 
-// Keep your existing Firebase service functions unchanged
+// Keep your existing Firebase service functions unchanged as fallback
 Future<List<Map<String, dynamic>>> getTrainerClassesFromService(String trainerId) async {
   final snapshot = await FirebaseFirestore.instance
       .collection('classes')
       .where('trainerId', isEqualTo: trainerId)
       .orderBy('createdAt', descending: true)
       .get();
-  return snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
+  final list = snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
+  // Ensure we have a robust client-side sort fallback in case createdAt is missing or not comparable
+  list.sort((a, b) {
+    DateTime dateA = DateTime.fromMillisecondsSinceEpoch(0);
+    DateTime dateB = DateTime.fromMillisecondsSinceEpoch(0);
+    final ca = a['createdAt'];
+    final cb = b['createdAt'];
+    try {
+      if (ca is Timestamp) dateA = ca.toDate();
+      else if (ca is DateTime) dateA = ca;
+    } catch (_) {}
+    try {
+      if (cb is Timestamp) dateB = cb.toDate();
+      else if (cb is DateTime) dateB = cb;
+    } catch (_) {}
+    // newest first
+    return dateB.compareTo(dateA);
+  });
+  return list;
 }
 
 Future<void> deleteClassFromService(String classId) async {
@@ -34,6 +53,10 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
   final User? _currentUser = FirebaseAuth.instance.currentUser;
   final _searchController = TextEditingController();
 
+  // Use one shared FirebaseService instance for this page
+  final FirebaseService _firebaseService = FirebaseService();
+  StreamSubscription<List<Map<String, dynamic>>>? _classesSub;
+
   List<Map<String, dynamic>> _classes = [];
   List<Map<String, dynamic>> _filteredClasses = [];
   bool _loading = true;
@@ -47,7 +70,7 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
   @override
   void initState() {
     super.initState();
-    
+
     // Initialize animations
     _fadeController = AnimationController(
       duration: const Duration(milliseconds: 800),
@@ -57,7 +80,7 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
       duration: const Duration(milliseconds: 600),
       vsync: this,
     );
-    
+
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
     );
@@ -68,14 +91,58 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
       CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
     );
 
+    // Use realtime sync as primary source for logged-in trainers.
     if (_currentUser != null) {
-      _fetchClasses();
+      try {
+        // start realtime sync and subscribe to classes stream
+        _firebaseService.startRealtimeSync(trainerId: _currentUser!.uid);
+        _classesSub = _firebaseService.classesStream.listen((data) {
+          if (!mounted) return;
+          // robust client-side sort fallback (newest first)
+          data.sort((a, b) {
+            DateTime dateA = DateTime.fromMillisecondsSinceEpoch(0);
+            DateTime dateB = DateTime.fromMillisecondsSinceEpoch(0);
+            final ca = a['createdAt'];
+            final cb = b['createdAt'];
+            try {
+              if (ca is Timestamp) dateA = ca.toDate();
+              else if (ca is DateTime) dateA = ca;
+            } catch (_) {}
+            try {
+              if (cb is Timestamp) dateB = cb.toDate();
+              else if (cb is DateTime) dateB = cb;
+            } catch (_) {}
+            return dateB.compareTo(dateA);
+          });
+
+          setState(() {
+            _classes = List.from(data);
+            _filteredClasses = List.from(_classes);
+            _fadeController.forward();
+            _slideController.forward();
+            _error = null;
+            _loading = false;
+          });
+        }, onError: (e) {
+          if (mounted) setState(() => _error = "Failed to sync classes: $e");
+        });
+      } catch (e) {
+        // If realtime setup fails, fall back to one-shot fetch
+        if (mounted) {
+          setState(() {
+            _error = null;
+            _loading = true;
+          });
+          _fetchClasses();
+        }
+      }
     } else {
       setState(() {
         _loading = false;
         _error = "Please log in to view your classes.";
       });
     }
+
     _searchController.addListener(_filterClasses);
   }
 
@@ -85,9 +152,13 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
     _slideController.dispose();
     _searchController.removeListener(_filterClasses);
     _searchController.dispose();
+    // cancel realtime subscription and stop sync when leaving page
+    _classesSub?.cancel();
+    _firebaseService.stopRealtimeSync();
     super.dispose();
   }
 
+  // one-shot fetch (fallback) - still useful for refresh or when realtime fails
   Future<void> _fetchClasses() async {
     if (_currentUser == null) {
       setState(() {
@@ -101,44 +172,41 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
       _error = null;
     });
     try {
-  // _currentUser is promoted to non-null after the null check above
-  final classesData = await getTrainerClassesFromService(_currentUser.uid);
+      final classesData = await getTrainerClassesFromService(_currentUser.uid);
+      if (!mounted) return;
       setState(() {
         _classes = classesData;
-        _filterClasses();
-        // Trigger animations
+        _filteredClasses = List.from(_classes);
         _fadeController.forward();
         _slideController.forward();
+        _error = null;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = "Failed to load classes: ${e.toString()}";
         _classes = [];
         _filteredClasses = [];
       });
     } finally {
-      if (mounted) {
-        setState(() => _loading = false);
-      }
+      if (mounted) setState(() => _loading = false);
     }
   }
 
-  // Replace the _filterClasses method with this implementation
   void _filterClasses() {
     final query = _searchController.text.toLowerCase();
-    
-    // Don't use setState inside this method to prevent unnecessary triggers
+
     if (query.isEmpty) {
       _filteredClasses = List.from(_classes);
     } else {
       _filteredClasses = _classes.where((classItem) {
         final className = classItem['className']?.toString().toLowerCase() ?? '';
         final subject = classItem['subject']?.toString().toLowerCase() ?? '';
-        return className.contains(query) || subject.contains(query);
+        final description = classItem['description']?.toString().toLowerCase() ?? '';
+        return className.contains(query) || subject.contains(query) || description.contains(query);
       }).toList();
     }
-    
-    // Only update the state once after filtering is done
+
     if (mounted) setState(() {});
   }
 
@@ -213,37 +281,41 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
       setState(() => _loading = true);
       try {
         await deleteClassFromService(classId);
-        await _fetchClasses();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                Icon(FontAwesomeIcons.checkCircle, color: Colors.white),
-                const SizedBox(width: 12),
-                Text('Class "$className" deleted successfully.'),
-              ],
+        // Do NOT call _fetchClasses() here — the realtime listener will update the list automatically.
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  Icon(FontAwesomeIcons.checkCircle, color: Colors.white),
+                  const SizedBox(width: 12),
+                  Text('Class "$className" deleted successfully.'),
+                ],
+              ),
+              backgroundColor: const Color(0xFF10B981),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
-            backgroundColor: const Color(0xFF10B981),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        );
+          );
+        }
       } catch (e) {
-        setState(() => _error = "Failed to delete class: ${e.toString()}");
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                Icon(FontAwesomeIcons.xmark, color: Colors.white),
-                const SizedBox(width: 12),
-                Expanded(child: Text('Failed to delete class "$className": ${e.toString()}')),
-              ],
+        if (mounted) setState(() => _error = "Failed to delete class: ${e.toString()}");
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  Icon(FontAwesomeIcons.xmark, color: Colors.white),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text('Failed to delete class "$className": ${e.toString()}')),
+                ],
+              ),
+              backgroundColor: const Color(0xFFFF6B6B),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
-            backgroundColor: const Color(0xFFFF6B6B),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        );
+          );
+        }
       } finally {
         if (mounted) {
           setState(() => _loading = false);
@@ -378,7 +450,7 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
       child: TextField(
         controller: _searchController,
         decoration: InputDecoration(
-          hintText: "Search classes by name or subject...",
+          hintText: "Search classes by name, subject, or description...",
           hintStyle: TextStyle(
             color: const Color(0xFF64748B),
             fontSize: 15,
@@ -575,9 +647,8 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
                       Navigator.push(
                         context,
                         MaterialPageRoute(builder: (context) => const CreateClassForm()),
-                      ).then((_) {
-                        _fetchClasses();
-                      });
+                      );
+                      // No .then(_fetchClasses) -- let the realtime stream update the UI!
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.transparent,
@@ -794,9 +865,8 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
                 child: GestureDetector(
                   onTap: () {
                     final id = classData['id'] as String;
-                    // tell the service which class to follow (assessments/materials/class doc)
-                    FirebaseService().setActiveClass(id);
-                    // navigate to the existing ManageClassContentPage for this class
+                    // Use the same service instance to set active class
+                    _firebaseService.setActiveClass(id);
                     Navigator.push(
                       context,
                       MaterialPageRoute(
@@ -808,7 +878,7 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
                     classData: classData,
                     onDeleteClass: _handleDeleteClass,
                   ),
-                )
+                ),
               );
             },
           ),
@@ -849,9 +919,8 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
           Navigator.push(
             context,
             MaterialPageRoute(builder: (context) => const CreateClassForm()),
-          ).then((_) {
-            _fetchClasses();
-          });
+          );
+          // No .then(_fetchClasses) -- let the realtime stream update the UI!
         },
         backgroundColor: Colors.transparent,
         foregroundColor: Colors.white,
