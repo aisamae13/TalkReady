@@ -13,7 +13,7 @@ import 'ManageClassContent.dart';
 // Keep your existing Firebase service functions unchanged as fallback
 Future<List<Map<String, dynamic>>> getTrainerClassesFromService(String trainerId) async {
   final snapshot = await FirebaseFirestore.instance
-      .collection('classes')
+      .collection('trainerClass')
       .where('trainerId', isEqualTo: trainerId)
       .orderBy('createdAt', descending: true)
       .get();
@@ -39,7 +39,7 @@ Future<List<Map<String, dynamic>>> getTrainerClassesFromService(String trainerId
 }
 
 Future<void> deleteClassFromService(String classId) async {
-  await FirebaseFirestore.instance.collection('classes').doc(classId).delete();
+  await FirebaseFirestore.instance.collection('trainerClass').doc(classId).delete();
 }
 
 class MyClassesPage extends StatefulWidget {
@@ -855,7 +855,7 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
           color: const Color(0xFF8B5CF6),
           backgroundColor: Colors.white,
           child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 8),
             itemCount: _filteredClasses.length,
             itemBuilder: (context, index) {
               final classData = _filteredClasses[index];

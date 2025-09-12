@@ -7,7 +7,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 Future<List<Map<String, dynamic>>> getTrainerClasses(String trainerId) async {
   try {
     final snapshot = await FirebaseFirestore.instance
-        .collection('classes')
+        .collection('trainerClass')
         .where('trainerId', isEqualTo: trainerId)
         .orderBy('createdAt', descending: true) // Changed to createdAt, descending
         .get();

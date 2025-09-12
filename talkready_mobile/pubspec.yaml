@@ -67,6 +67,9 @@ dependencies:
   flutter_staggered_animations: ^1.1.1
   flutter_quill_extensions: ^11.0.0
   cloudinary_public: ^0.23.1
+  fluttertoast: ^8.2.4      # For better toast/snackbar messages
+  badges: ^3.1.2            # For notification count badges
+  dotted_border: ^3.1.0
 
 
   # Optional: For advanced audio processing (if needed for Azure Speech API)

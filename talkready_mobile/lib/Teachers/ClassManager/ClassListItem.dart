@@ -3,6 +3,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:ui';
+import 'package:flutter/services.dart';
 import 'ManageClassContent.dart';
 
 class ClassListItemWidget extends StatefulWidget {
@@ -162,12 +163,12 @@ class _ClassListItemWidgetState extends State<ClassListItemWidget>
                           onTap: () {
                             // Navigate to one of your existing routes that makes sense
                             Navigator.pushNamed(context, '/trainer/classes/${widget.classData['id']}/content');
-                            
+
                             // Or just show a snackbar instead of navigating
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
+                              const SnackBar(
                                 content: Text('Class dashboard coming soon!'),
-                                duration: const Duration(seconds: 2),
+                                duration: Duration(seconds: 2),
                               ),
                             );
                           },
@@ -184,6 +185,8 @@ class _ClassListItemWidgetState extends State<ClassListItemWidget>
                                   const SizedBox(height: 8),
                                   _buildSubject(subject),
                                 ],
+                                const SizedBox(height: 16),
+                                _buildClassCodeSection(),
                                 const SizedBox(height: 16),
                                 _buildDescription(description),
                                 const SizedBox(height: 16),
@@ -384,7 +387,7 @@ class _ClassListItemWidgetState extends State<ClassListItemWidget>
       builder: (context, constraints) {
         // Determine if we should use a single column layout for narrow screens
         final bool useColumnLayout = constraints.maxWidth < 500;
-        
+
         final List<Widget> buttons = [
           _buildActionButton(
             icon: FontAwesomeIcons.fileLines,
@@ -426,7 +429,7 @@ class _ClassListItemWidgetState extends State<ClassListItemWidget>
         if (useColumnLayout) {
           // Stack buttons vertically for narrow screens
           return Column(
-            children: buttons.map((button) => 
+            children: buttons.map((button) =>
               Container(
                 width: double.infinity,
                 margin: const EdgeInsets.only(bottom: 8),
@@ -444,6 +447,57 @@ class _ClassListItemWidgetState extends State<ClassListItemWidget>
           );
         }
       },
+    );
+  }
+
+  Widget _buildClassCodeSection() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const FaIcon(
+          FontAwesomeIcons.tag,
+          size: 14,
+          color: Color(0xFF64748B),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          'Code:',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Colors.grey[600],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          widget.classData['classCode'] ?? 'N/A',
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF1E293B),
+          ),
+        ),
+        const SizedBox(width: 8),
+        InkWell(
+          onTap: () async {
+            await Clipboard.setData(
+                ClipboardData(text: widget.classData['classCode']));
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Class code copied!'),
+                  duration: Duration(seconds: 1),
+                ),
+              );
+            }
+          },
+          child: const FaIcon(
+            FontAwesomeIcons.solidCopy,
+            size: 14,
+            color: Color(0xFF2563EB),
+          ),
+        ),
+      ],
     );
   }
 

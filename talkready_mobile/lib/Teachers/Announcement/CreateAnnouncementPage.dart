@@ -8,7 +8,7 @@ import '../TrainerDashboard.dart';
 Future<List<Map<String, dynamic>>> getTrainerClasses(String trainerId) async {
   try {
     final snapshot = await FirebaseFirestore.instance
-        .collection('classes')
+        .collection('trainerClass')
         .where('trainerId', isEqualTo: trainerId)
         .get();
     return snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
@@ -64,7 +64,7 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> with Ti
 
   bool _loadingClasses = true;
   String? _classesError;
-  
+
   bool _hasNavigated = false;
 
   late AnimationController _fadeController;
@@ -75,7 +75,7 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> with Ti
   @override
   void initState() {
     super.initState();
-    
+
     _fadeController = AnimationController(
       duration: const Duration(milliseconds: 800),
       vsync: this,
@@ -84,7 +84,7 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> with Ti
       duration: const Duration(milliseconds: 600),
       vsync: this,
     );
-    
+
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut)
     );
@@ -126,7 +126,7 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> with Ti
         }
         _loadingClasses = false;
       });
-      
+
       _fadeController.forward();
       _slideController.forward();
     } catch (e) {
@@ -185,12 +185,12 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> with Ti
           trainerId: _currentUser.uid,
           className: selectedClass['className'] as String?,
         );
-        
+
         if (mounted) {
           setState(() {
             _postSuccess = "Announcement posted successfully!";
           });
-          
+
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: const Row(
@@ -205,7 +205,7 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> with Ti
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
           );
-          
+
           if (!_hasNavigated) {
             _hasNavigated = true;
             Future.delayed(const Duration(milliseconds: 100), () {
@@ -248,7 +248,7 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> with Ti
 
   void _showSuccessDialog() {
     if (!mounted) return;
-    
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -712,7 +712,7 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> with Ti
       padding: const EdgeInsets.all(20),
       child: Column(
         children: [
-          const SizedBox(height: 20),
+          const SizedBox(height: 15),
           Container(
             constraints: const BoxConstraints(maxWidth: 400),
             decoration: BoxDecoration(
@@ -734,7 +734,7 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> with Ti
               ],
             ),
             child: Padding(
-              padding: const EdgeInsets.all(32),
+              padding: const EdgeInsets.all(22),
               child: Form(
                 key: _formKey,
                 child: Column(
@@ -1048,7 +1048,7 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> with Ti
           ),
         if (_postSuccess != null)
           Container(
-            margin: const EdgeInsets.only(bottom: 20),
+            margin: const EdgeInsets.only(bottom: 10),
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: const Color(0xFFF0FDF4),
@@ -1116,8 +1116,8 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> with Ti
       child: ElevatedButton(
         onPressed: (_isPosting || _trainerClasses.isEmpty) ? null : _handlePostAnnouncement,
         style: ElevatedButton.styleFrom(
-          backgroundColor: _isPosting 
-              ? const Color(0xFF94A3B8) 
+          backgroundColor: _isPosting
+              ? const Color(0xFF94A3B8)
               : const Color(0xFFFF8C00),
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 18),

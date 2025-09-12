@@ -70,7 +70,7 @@ class UserSearchResult {
 
 // --- Firebase Service Functions ---
 Future<ClassDetails> fetchClassDetailsFromService(String classId) async {
-  final doc = await FirebaseFirestore.instance.collection('classes').doc(classId).get();
+  final doc = await FirebaseFirestore.instance.collection('trainerClass').doc(classId).get();
   if (!doc.exists) throw Exception("Class not found");
   return ClassDetails.fromFirestore(doc);
 }
@@ -101,7 +101,7 @@ Future<DocumentReference> enrollStudentInClassService(String classId, String stu
     'trainerId': trainerId,
     'enrolledAt': FieldValue.serverTimestamp(),
   });
-  await FirebaseFirestore.instance.collection('classes').doc(classId).update({
+  await FirebaseFirestore.instance.collection('trainerClass').doc(classId).update({
     'studentCount': FieldValue.increment(1),
   });
   return enrollmentRef;
@@ -109,7 +109,7 @@ Future<DocumentReference> enrollStudentInClassService(String classId, String stu
 
 Future<void> removeStudentFromClassService(String enrollmentId, String classId) async {
   await FirebaseFirestore.instance.collection('enrollments').doc(enrollmentId).delete();
-  await FirebaseFirestore.instance.collection('classes').doc(classId).update({
+  await FirebaseFirestore.instance.collection('trainerClass').doc(classId).update({
     'studentCount': FieldValue.increment(-1),
   });
 }
@@ -148,7 +148,7 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> with 
     super.initState();
     _fadeController = AnimationController(duration: const Duration(milliseconds: 800), vsync: this);
     _slideController = AnimationController(duration: const Duration(milliseconds: 600), vsync: this);
-    
+
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut)
     );
@@ -301,7 +301,7 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> with 
     try {
       await removeStudentFromClassService(enrollment.id, widget.classId);
       await _fetchClassAndStudentData(showLoading: false);
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -447,7 +447,7 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> with 
       ),
     ) ?? false;
   }
-  
+
   String _formatTimestamp(Timestamp timestamp) {
     return DateFormat.yMMMd().add_jm().format(timestamp.toDate());
   }
@@ -864,15 +864,15 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> with 
                     ],
                   ),
                   child: ElevatedButton.icon(
-                    icon: _isSearching 
+                    icon: _isSearching
                         ? const SizedBox(
-                            width: 18, 
-                            height: 18, 
+                            width: 18,
+                            height: 18,
                             child: CircularProgressIndicator(
-                              strokeWidth: 2, 
+                              strokeWidth: 2,
                               color: Colors.white,
                             ),
-                          ) 
+                          )
                         : const Icon(FontAwesomeIcons.magnifyingGlass, size: 16),
                     label: const Text(
                       "Search",
@@ -937,7 +937,7 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> with 
           itemBuilder: (context, index) {
             final user = _searchResults[index];
             final bool isCurrentlyEnrolling = _enrollingStudentId == user.uid;
-            
+
             return Container(
               margin: const EdgeInsets.only(bottom: 12),
               decoration: BoxDecoration(
@@ -992,15 +992,15 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> with 
                     ],
                   ),
                   child: ElevatedButton.icon(
-                    icon: isCurrentlyEnrolling 
+                    icon: isCurrentlyEnrolling
                         ? const SizedBox(
-                            width: 16, 
-                            height: 16, 
+                            width: 16,
+                            height: 16,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
                               color: Colors.white,
                             ),
-                          ) 
+                          )
                         : const Icon(FontAwesomeIcons.userPlus, size: 14),
                     label: const Text(
                       "Enroll",
@@ -1120,7 +1120,7 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> with 
                 itemBuilder: (context, index) {
                   final student = _enrolledStudents[index];
                   final bool isCurrentlyRemoving = _removingEnrollmentId == student.id;
-                  
+
                   return Container(
                     margin: const EdgeInsets.only(bottom: 12),
                     decoration: BoxDecoration(
@@ -1186,18 +1186,18 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> with 
                           ),
                         ),
                         child: IconButton(
-                          icon: isCurrentlyRemoving 
+                          icon: isCurrentlyRemoving
                               ? const SizedBox(
-                                  width: 18, 
-                                  height: 18, 
+                                  width: 18,
+                                  height: 18,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2,
                                     color: Color(0xFFEF4444),
                                   ),
-                                ) 
+                                )
                               : const Icon(
-                                  FontAwesomeIcons.userMinus, 
-                                  color: Color(0xFFEF4444), 
+                                  FontAwesomeIcons.userMinus,
+                                  color: Color(0xFFEF4444),
                                   size: 18,
                                 ),
                           onPressed: isCurrentlyRemoving ? null : () => _handleRemoveStudent(student),

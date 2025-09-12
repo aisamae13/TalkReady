@@ -19,7 +19,7 @@ class _ClassAssessmentsListPageState extends State<ClassAssessmentsListPage> {
   String? error;
   List<Map<String, dynamic>> assessments = [];
   Map<String, dynamic>? classDetails;
-  
+
   // Add stream subscriptions for real-time updates
   late Stream<QuerySnapshot> _assessmentsStream;
   late Stream<DocumentSnapshot> _classStream;
@@ -41,7 +41,7 @@ class _ClassAssessmentsListPageState extends State<ClassAssessmentsListPage> {
 
     // Real-time stream for class details
     _classStream = FirebaseFirestore.instance
-        .collection('classes')
+        .collection('trainerClass')
         .doc(widget.classId)
         .snapshots();
   }
@@ -50,7 +50,7 @@ class _ClassAssessmentsListPageState extends State<ClassAssessmentsListPage> {
     setState(() { loading = true; error = null; });
     try {
       final classDoc = await FirebaseFirestore.instance
-          .collection('classes')
+          .collection('trainerClass')
           .doc(widget.classId)
           .get();
 
@@ -80,7 +80,7 @@ class _ClassAssessmentsListPageState extends State<ClassAssessmentsListPage> {
     try {
       // Fetch class details
       final classDoc = await FirebaseFirestore.instance
-          .collection('classes')
+          .collection('trainerClass')
           .doc(widget.classId)
           .get();
 
@@ -291,8 +291,8 @@ class _ClassAssessmentsListPageState extends State<ClassAssessmentsListPage> {
                     Padding(
                       padding: const EdgeInsets.all(16.0),
                       child: Text(
-                        error!, 
-                        style: TextStyle(color: theme.colorScheme.error, fontSize: 16), 
+                        error!,
+                        style: TextStyle(color: theme.colorScheme.error, fontSize: 16),
                         textAlign: TextAlign.center
                       ),
                     ),

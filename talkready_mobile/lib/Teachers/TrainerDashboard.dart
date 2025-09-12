@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:animations/animations.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -7,14 +9,15 @@ import 'TrainerProfile.dart';
 import 'Assessment/CreateAssessmentPage.dart';
 import 'ClassManager/MyClassesPage.dart';
 import 'ClassManager/CreateClassForm.dart';
-import '../custom_animated_bottom_bar.dart'; // <-- Import AnimatedBottomNavBar
-import 'Reports/TrainerReports.dart'; // <-- Import TrainerReportsPage
-import 'Announcement/CreateAnnouncementPage.dart'; // <-- Import CreateAnnouncementPage
+import '../custom_animated_bottom_bar.dart';
+import 'Reports/TrainerReports.dart';
+import 'Announcement/CreateAnnouncementPage.dart';
 import 'package:talkready_mobile/Teachers/Contents/QuickUploadMaterialPage.dart';
-import 'dart:ui'; // Add this import for BackdropFilter
-import 'ClassManager/ManageClassContent.dart'; // Add this import
+import 'dart:ui';
+import 'ClassManager/ManageClassContent.dart';
 import 'package:shimmer/shimmer.dart';
-import '../firebase_service.dart'; // ensure import
+import '../firebase_service.dart';
+import '../all_notifications_page.dart'; // Import the notifications page
 
 class TrainerDashboard extends StatefulWidget {
   const TrainerDashboard({super.key});
@@ -31,24 +34,36 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
   int activeClassesCount = 0;
   int totalStudents = 0;
   int pendingSubmissions = 0;
-  Map<String, dynamic>? mostRecentClass; // Changed from list to single class
+  Map<String, dynamic>? mostRecentClass;
   String? firstName;
+  int _unreadNotificationsCount = 0; // New state variable
+  StreamSubscription<QuerySnapshot>? _notificationSubscription; // New subscription
 
   @override
   void initState() {
     super.initState();
     fetchUserFirstName();
     _setupRealtimeDashboardListener();
+    _setupNotificationListener(); // Initialize the new listener
+  }
+
+  @override
+  void dispose() {
+    _notificationSubscription?.cancel();
+    super.dispose();
   }
 
   void _setupRealtimeDashboardListener() {
     if (currentUser == null) return;
 
     FirebaseFirestore.instance
-        .collection('classes')
+        .collection('trainerClass')
         .where('trainerId', isEqualTo: currentUser!.uid)
+        .orderBy('createdAt', descending: true)
         .snapshots()
         .listen((snapshot) {
+      if (!mounted) return;
+
       int classCount = snapshot.docs.length;
       int studentSum = 0;
       int pendingSum = 0;
@@ -57,7 +72,7 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
       for (var doc in snapshot.docs) {
         final data = doc.data();
         studentSum += (data['studentCount'] as int? ?? 0);
-        pendingSum += (data['pendingSubmissions'] as int? ?? 0); // Adjust field name if needed
+        pendingSum += (data['pendingSubmissions'] as int? ?? 0);
       }
 
       if (snapshot.docs.isNotEmpty) {
@@ -74,6 +89,8 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
         error = null;
       });
     }, onError: (e) {
+      if (!mounted) return;
+
       setState(() {
         error = "Could not load dashboard data. ${e.toString()}";
         activeClassesCount = 0;
@@ -84,62 +101,28 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
     });
   }
 
-  // Update fetchDashboardData to only get counts
-  Future<void> fetchDashboardData() async {
-    if (currentUser == null) {
-      setState(() {
-        error = "User not found. Please re-login.";
-        loading = false;
-      });
-      return;
-    }
+  void _setupNotificationListener() {
+    if (currentUser == null) return;
 
-    setState(() {
-      loading = true;
-      error = null;
-    });
-
-    try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('classes')
-          .where('trainerId', isEqualTo: currentUser!.uid)
-          .get();
-
-      final classes = snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
-
-      int currentTotalStudents = 0;
-      for (var cls in classes) {
-        currentTotalStudents += (cls['studentCount'] as int? ?? 0);
-      }
-
-      setState(() {
-        activeClassesCount = classes.length;
-        totalStudents = currentTotalStudents;
-      });
-    } catch (e) {
-      setState(() {
-        error = "Could not load dashboard data. ${e.toString()}";
-        activeClassesCount = 0;
-        totalStudents = 0;
-      });
-    } finally {
-      if(mounted){
-        setState(() => loading = false);
-      }
-    }
+    _notificationSubscription = FirebaseFirestore.instance
+        .collection('notifications')
+        .where('userId', isEqualTo: currentUser!.uid)
+        .where('isRead', isEqualTo: false)
+        .snapshots()
+        .listen(
+      (snapshot) {
+        if (mounted) {
+          setState(() {
+            _unreadNotificationsCount = snapshot.docs.length;
+          });
+        }
+      },
+      onError: (e) {
+        debugPrint('Error fetching notification count: $e');
+      },
+    );
   }
 
-  // Add callback for when a class is created
-  void _onClassCreated(Map<String, dynamic> newClass) {
-    setState(() {
-      mostRecentClass = newClass;
-      activeClassesCount++;
-      // Update total students if needed
-      totalStudents += (newClass['studentCount'] as int? ?? 0);
-    });
-  }
-
-  // Add this method to fetch firstName from Firestore:
   Future<void> fetchUserFirstName() async {
     if (currentUser == null) return;
     try {
@@ -148,24 +131,27 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
           .doc(currentUser!.uid)
           .get();
       if (doc.exists) {
-        setState(() {
-          firstName = doc.data()?['firstName'] ?? "Trainer";
-        });
+        if (mounted) {
+          setState(() {
+            firstName = doc.data()?['firstName'] ?? "Trainer";
+          });
+        }
       }
     } catch (e) {
-      setState(() {
-        firstName = "Trainer";
-      });
+      if (mounted) {
+        setState(() {
+          firstName = "Trainer";
+        });
+      }
     }
   }
 
   void _onItemTapped(int index) {
-    if (index == _selectedIndex) return; // Already on this page or same index
+    if (index == _selectedIndex) return;
 
     Widget nextPage;
     switch (index) {
       case 0:
-        // Should not happen if _selectedIndex is 0, but as a fallback:
         nextPage = const TrainerDashboard();
         break;
       case 1:
@@ -180,7 +166,7 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) => nextPage,
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          return child; // No page transition animation
+          return child;
         },
         transitionDuration: Duration.zero,
       ),
@@ -195,10 +181,11 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
       return _buildDashboardWithShimmer();
     }
     if (error != null) {
-      return errorScreen(error!, fetchDashboardData);
+      return errorScreen(error!, () {
+        _setupRealtimeDashboardListener();
+      });
     }
-    
-    // Your existing code for the loaded dashboard
+
     final displayName = firstName ?? "Trainer";
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
@@ -271,7 +258,6 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
             ),
           ),
           const SizedBox(height: 12),
-          // Show single most recent class or empty state
           if (mostRecentClass == null && !loading)
             Container(
               margin: const EdgeInsets.symmetric(vertical: 8),
@@ -345,7 +331,7 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) => CreateClassForm(onClassCreated: _onClassCreated),
+                            builder: (context) => const CreateClassForm(),
                           ),
                         );
                       },
@@ -366,9 +352,8 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
             )
           else if (mostRecentClass != null)
             _recentClassCard(context, mostRecentClass!),
-          
+
           const SizedBox(height: 20),
-          // Removed the "Manage All Classes" button entirely
         ],
       ),
     );
@@ -378,12 +363,7 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[100],
-      appBar: AppBar( // Added AppBar for context
-        title: const Text("Trainer Dashboard"),
-        backgroundColor: Colors.blue[700],
-        foregroundColor: Colors.white,
-        automaticallyImplyLeading: false, // No back button if this is a top-level tab
-      ),
+      appBar: _buildAppBar(),
       body: SafeArea(child: _buildDashboardContent()),
       bottomNavigationBar: AnimatedBottomNavBar(
         currentIndex: _selectedIndex,
@@ -392,21 +372,72 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
           CustomBottomNavItem(icon: Icons.dashboard_rounded, label: 'Dashboard'),
           CustomBottomNavItem(icon: Icons.person_rounded, label: 'Profile'),
         ],
-        activeColor: Colors.white, // Icon color on the notch
+        activeColor: Colors.white,
         inactiveColor: Colors.grey[600]!,
-        notchColor: Colors.blue[700]!, // Color of the notch (active item background)
+        notchColor: Colors.blue[700]!,
         backgroundColor: Colors.white,
         selectedIconSize: 28.0,
         iconSize: 25.0,
         barHeight: 55,
         selectedIconPadding: 10,
         animationDuration: const Duration(milliseconds: 300),
-        customNotchWidthFactor: 0.5, // <-- Added this line
+        customNotchWidthFactor: 0.5,
       ),
     );
   }
 
-  // Replace the loadingScreen method with this shimmer implementation
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      title: const Text("Trainer Dashboard"),
+      backgroundColor: Colors.blue[700],
+      foregroundColor: Colors.white,
+      automaticallyImplyLeading: false,
+      actions: [
+        if (currentUser != null)
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.notifications),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const AllNotificationsPage(),
+                    ),
+                  );
+                },
+              ),
+              if (_unreadNotificationsCount > 0)
+                Positioned(
+                  right: 11,
+                  top: 11,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 14,
+                      minHeight: 14,
+                    ),
+                    child: Text(
+                      '$_unreadNotificationsCount',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 8,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+      ],
+    );
+  }
+
   Widget loadingScreen(String message) {
     return _buildDashboardWithShimmer();
   }
@@ -460,14 +491,12 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
     );
   }
 
-  // Add this method for shimmer dashboard
   Widget _buildDashboardWithShimmer() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Welcome message shimmer
           Shimmer.fromColors(
             baseColor: Colors.grey[300]!,
             highlightColor: Colors.grey[100]!,
@@ -494,10 +523,7 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
               ],
             ),
           ),
-          
           const SizedBox(height: 24),
-          
-          // Stats cards shimmer
           Row(
             children: [
               Expanded(child: _buildStatCardShimmer()),
@@ -507,10 +533,7 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
               Expanded(child: _buildStatCardShimmer()),
             ],
           ),
-          
           const SizedBox(height: 32),
-          
-          // Quick Actions section shimmer
           Shimmer.fromColors(
             baseColor: Colors.grey[300]!,
             highlightColor: Colors.grey[100]!,
@@ -523,10 +546,7 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
               ),
             ),
           ),
-          
           const SizedBox(height: 12),
-          
-          // Quick actions grid shimmer
           GridView.count(
             crossAxisCount: 3,
             mainAxisSpacing: 14,
@@ -535,10 +555,7 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
             physics: const NeverScrollableScrollPhysics(),
             children: List.generate(6, (index) => _buildQuickActionShimmer()),
           ),
-          
           const SizedBox(height: 25),
-          
-          // Recent class section title shimmer
           Shimmer.fromColors(
             baseColor: Colors.grey[300]!,
             highlightColor: Colors.grey[100]!,
@@ -551,17 +568,13 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
               ),
             ),
           ),
-          
           const SizedBox(height: 12),
-          
-          // Recent class card shimmer
           _buildRecentClassCardShimmer(),
         ],
       ),
     );
   }
 
-  // Shimmer for stat cards
   Widget _buildStatCardShimmer() {
     return Shimmer.fromColors(
       baseColor: Colors.grey[300]!,
@@ -581,7 +594,6 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
     );
   }
 
-  // Shimmer for quick action buttons
   Widget _buildQuickActionShimmer() {
     return Shimmer.fromColors(
       baseColor: Colors.grey[300]!,
@@ -595,7 +607,6 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
     );
   }
 
-  // Shimmer for recent class card
   Widget _buildRecentClassCardShimmer() {
     return Shimmer.fromColors(
       baseColor: Colors.grey[300]!,
@@ -611,13 +622,11 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
     );
   }
 
-  // 1. Use a constant for border radius and padding
   static const double kCardRadius = 16.0;
   static const EdgeInsets kCardPadding = EdgeInsets.all(12.0);
   static const double kButtonRadius = 12.0;
   static const EdgeInsets kButtonPadding = EdgeInsets.symmetric(horizontal: 16, vertical: 12);
 
-  // 2. Update _buildStatCard for uniformity
   Widget _buildStatCard(
       String title, int value, IconData icon, Color color) {
     return Card(
@@ -625,8 +634,8 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       color: Colors.white,
       child: Container(
-        height: 150, // Increased height to fully prevent overflow
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6), // Slightly reduced padding
+        height: 150,
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(18),
           boxShadow: [
@@ -646,7 +655,7 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
               radius: 22,
               child: Icon(icon, color: color, size: 24),
             ),
-            const SizedBox(height: 4), // Reduced spacing
+            const SizedBox(height: 4),
             Text(
               title,
               textAlign: TextAlign.center,
@@ -669,7 +678,6 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
     );
   }
 
-  // Update _quickAction to pass the callback for Create Class
   Widget _quickAction(BuildContext context, String label, IconData icon,
       String route, Color color) {
     return OpenContainer(
@@ -690,7 +698,7 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
           case "/trainer/classes":
             return const MyClassesPage();
           case "/trainer/classes/create":
-            return CreateClassForm(onClassCreated: _onClassCreated); // Pass callback
+            return const CreateClassForm();
           case "/trainer/content/upload":
             return const QuickUploadMaterialPage();
           case "/create-assessment":
@@ -708,9 +716,9 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
     );
   }
 
-  // Replace the _recentClassCard method with this improved version:
   Widget _recentClassCard(BuildContext context, Map<String, dynamic> cls) {
     final className = cls['className'] ?? 'Untitled Class';
+    final classCode = cls['classCode'] ?? 'N/A';
     final studentCount = cls['studentCount'] ?? 0;
     final date = (cls['createdAt'] as Timestamp?)?.toDate();
     final classId = cls['id'] as String?;
@@ -722,7 +730,7 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 8),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20), // Reduced from 24
+        borderRadius: BorderRadius.circular(20),
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -735,14 +743,14 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
         boxShadow: [
           BoxShadow(
             color: Colors.blue.withOpacity(0.15),
-            blurRadius: 15, // Reduced from 20
-            offset: const Offset(0, 6), // Reduced from 8
-            spreadRadius: 1, // Reduced from 2
+            blurRadius: 15,
+            offset: const Offset(0, 6),
+            spreadRadius: 1,
           ),
           BoxShadow(
             color: Colors.white,
-            blurRadius: 6, // Reduced from 8
-            offset: const Offset(-2, -2), // Reduced from -4, -4
+            blurRadius: 6,
+            offset: const Offset(-2, -2),
           ),
         ],
         border: Border.all(
@@ -764,38 +772,37 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
             ),
           ),
           child: Padding(
-            padding: const EdgeInsets.all(16.0), // Reduced from 20
+            padding: const EdgeInsets.all(16.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min, // Added to prevent overflow
+              mainAxisSize: MainAxisSize.min,
               children: [
-                // Header with icon and class info
                 Row(
                   children: [
                     Container(
-                      padding: const EdgeInsets.all(10), // Reduced from 12
+                      padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [Colors.blue.shade400, Colors.purple.shade400],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
-                        borderRadius: BorderRadius.circular(14), // Reduced from 16
+                        borderRadius: BorderRadius.circular(14),
                         boxShadow: [
                           BoxShadow(
                             color: Colors.blue.withOpacity(0.3),
-                            blurRadius: 6, // Reduced from 8
-                            offset: const Offset(0, 3), // Reduced from 4
+                            blurRadius: 6,
+                            offset: const Offset(0, 3),
                           ),
                         ],
                       ),
                       child: const Icon(
                         FontAwesomeIcons.graduationCap,
                         color: Colors.white,
-                        size: 20, // Reduced from 24
+                        size: 20,
                       ),
                     ),
-                    const SizedBox(width: 12), // Reduced from 16
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -804,20 +811,20 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
                           Text(
                             className,
                             style: TextStyle(
-                              fontSize: 18, // Reduced from 20
+                              fontSize: 18,
                               fontWeight: FontWeight.bold,
                               color: Colors.blue[800],
                               letterSpacing: 0.5,
                             ),
-                            maxLines: 1, // Reduced from 2
+                            maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 4),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3), // Reduced padding
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                             decoration: BoxDecoration(
                               color: Colors.green.shade100,
-                              borderRadius: BorderRadius.circular(10), // Reduced from 12
+                              borderRadius: BorderRadius.circular(10),
                               border: Border.all(color: Colors.green.shade200),
                             ),
                             child: Row(
@@ -825,14 +832,14 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
                               children: [
                                 Icon(
                                   FontAwesomeIcons.users,
-                                  size: 10, // Reduced from 12
+                                  size: 10,
                                   color: Colors.green.shade700,
                                 ),
-                                const SizedBox(width: 3), // Reduced from 4
+                                const SizedBox(width: 3),
                                 Text(
                                   "$studentCount Student${studentCount == 1 ? '' : 's'}",
                                   style: TextStyle(
-                                    fontSize: 11, // Reduced from 12
+                                    fontSize: 11,
                                     fontWeight: FontWeight.w600,
                                     color: Colors.green.shade700,
                                   ),
@@ -845,46 +852,72 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
                     ),
                   ],
                 ),
-                
-                if (date != null) ...[
-                  const SizedBox(height: 8), // Reduced from 12
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), // Reduced padding
-                    decoration: BoxDecoration(
-                      color: Colors.orange.shade50,
-                      borderRadius: BorderRadius.circular(16), // Reduced from 20
-                      border: Border.all(color: Colors.orange.shade200),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          FontAwesomeIcons.calendar,
-                          size: 10, // Reduced from 12
-                          color: Colors.orange.shade600,
-                        ),
-                        const SizedBox(width: 4), // Reduced from 6
-                        Text(
-                          "Created: ${date.toLocal().toString().split(' ')[0]}",
-                          style: TextStyle(
-                            fontSize: 11, // Reduced from 12
-                            fontWeight: FontWeight.w500,
-                            color: Colors.orange.shade700,
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.orange.shade200),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            FontAwesomeIcons.calendar,
+                            size: 10,
+                            color: Colors.orange.shade600,
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 4),
+                          Text(
+                            "Created: ${date?.toLocal().toString().split(' ')[0] ?? 'N/A'}",
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.orange.shade700,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
-                
-                const SizedBox(height: 16), // Reduced from 20
-                
-                // Modern Action Buttons
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.cyan.shade50,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.cyan.shade200),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            FontAwesomeIcons.hashtag,
+                            size: 10,
+                            color: Colors.cyan.shade700,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            "Code: $classCode",
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.cyan.shade700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
                 Container(
-                  padding: const EdgeInsets.all(10), // Reduced from 12
+                  padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.7),
-                    borderRadius: BorderRadius.circular(14), // Reduced from 16
+                    borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: Colors.grey.shade200),
                   ),
                   child: Column(
@@ -894,12 +927,12 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
                       Text(
                         "Quick Actions",
                         style: TextStyle(
-                          fontSize: 12, // Reduced from 14
+                          fontSize: 12,
                           fontWeight: FontWeight.bold,
                           color: Colors.grey.shade700,
                         ),
                       ),
-                      const SizedBox(height: 8), // Reduced from 12
+                      const SizedBox(height: 8),
                       Row(
                         children: [
                           Expanded(
@@ -917,7 +950,7 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
                               },
                             ),
                           ),
-                          const SizedBox(width: 6), // Reduced from 8
+                          const SizedBox(width: 6),
                           Expanded(
                             child: _buildModernActionButton(
                               icon: FontAwesomeIcons.usersCog,
@@ -929,7 +962,7 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 6), // Reduced from 8
+                      const SizedBox(height: 6),
                       SizedBox(
                         width: double.infinity,
                         child: _buildModernActionButton(
@@ -952,7 +985,6 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
     );
   }
 
-  // Update the _buildModernActionButton method for smaller size:
   Widget _buildModernActionButton({
     required IconData icon,
     required String label,
@@ -964,9 +996,9 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(10), // Reduced from 12
+        borderRadius: BorderRadius.circular(10),
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12), // Reduced padding
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [
@@ -984,8 +1016,8 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
             boxShadow: [
               BoxShadow(
                 color: color.withOpacity(0.1),
-                blurRadius: 3, // Reduced from 4
-                offset: const Offset(0, 1), // Reduced from 2
+                blurRadius: 3,
+                offset: const Offset(0, 1),
               ),
             ],
           ),
@@ -994,25 +1026,25 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
             mainAxisSize: isFullWidth ? MainAxisSize.max : MainAxisSize.min,
             children: [
               Container(
-                padding: const EdgeInsets.all(4), // Reduced from 6
+                padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
                   color: color.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(6), // Reduced from 8
+                  borderRadius: BorderRadius.circular(6),
                 ),
                 child: Icon(
                   icon,
                   color: color,
-                  size: 14, // Reduced from 16
+                  size: 14,
                 ),
               ),
-              const SizedBox(width: 6), // Reduced from 8
-              Flexible( // Added Flexible to prevent overflow
+              const SizedBox(width: 6),
+              Flexible(
                 child: Text(
                   label,
                   style: TextStyle(
                     color: color,
                     fontWeight: FontWeight.w600,
-                    fontSize: 12, // Reduced from 14
+                    fontSize: 12,
                   ),
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
@@ -1156,7 +1188,7 @@ class _AnimatedQuickActionState extends State<AnimatedQuickAction> with SingleTi
                               child: Text(
                                 widget.label,
                                 textAlign: TextAlign.center,
-                                style: TextStyle(
+                                style: const TextStyle(
                                   color: Colors.black87,
                                   fontSize: 15,
                                   fontWeight: FontWeight.w700,

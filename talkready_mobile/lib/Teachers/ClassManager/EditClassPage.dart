@@ -2,17 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:flutter/services.dart';
 import 'dart:ui';
 
 // Firebase Service functions
 Future<Map<String, dynamic>> getClassDetails(String classId) async {
-  final doc = await FirebaseFirestore.instance.collection('classes').doc(classId).get();
+  final doc = await FirebaseFirestore.instance.collection('trainerClass').doc(classId).get();
   if (!doc.exists) throw Exception("Class not found");
   return {'id': doc.id, ...doc.data()!};
 }
 
 Future<void> updateTrainerClass(String classId, Map<String, dynamic> data) async {
-  await FirebaseFirestore.instance.collection('classes').doc(classId).update(data);
+  await FirebaseFirestore.instance.collection('trainerClass').doc(classId).update(data);
 }
 
 class EditClassPage extends StatefulWidget {
@@ -24,7 +25,7 @@ class EditClassPage extends StatefulWidget {
   State<EditClassPage> createState() => _EditClassPageState();
 }
 
-class _EditClassPageState extends State<EditClassPage> 
+class _EditClassPageState extends State<EditClassPage>
     with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final User? _currentUser = FirebaseAuth.instance.currentUser;
@@ -39,6 +40,7 @@ class _EditClassPageState extends State<EditClassPage>
   bool _isUpdating = false;
   String? _error;
   String? _success;
+  String? _classCode; // Added to store the class code
 
   // Animation controllers
   late AnimationController _slideController;
@@ -119,6 +121,7 @@ class _EditClassPageState extends State<EditClassPage>
         _classNameController.text = details['className'] as String? ?? '';
         _descriptionController.text = details['description'] as String? ?? '';
         _subjectController.text = details['subject'] as String? ?? '';
+        _classCode = details['classCode'] as String? ?? 'N/A';
         _initialLoading = false;
       });
 
@@ -158,7 +161,7 @@ class _EditClassPageState extends State<EditClassPage>
         setState(() {
           _success = 'Class "${_classNameController.text}" updated successfully!';
         });
-        
+
         Future.delayed(const Duration(seconds: 2), () {
           if (mounted) {
             Navigator.pop(context, true);
@@ -385,6 +388,8 @@ class _EditClassPageState extends State<EditClassPage>
                           icon: FontAwesomeIcons.tag,
                           isSmallScreen: isSmallScreen,
                         ),
+                        SizedBox(height: isSmallScreen ? 20 : 24),
+                        _buildClassCodeField(),
                         SizedBox(height: isSmallScreen ? 32 : 40),
                         _buildUpdateButton(isSmallScreen),
                       ],
@@ -439,6 +444,77 @@ class _EditClassPageState extends State<EditClassPage>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildClassCodeField() {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFFE2E8F0),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: TextFormField(
+        initialValue: _classCode, // Use the state variable
+        style: const TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w500,
+          color: Color(0xFF1E293B),
+        ),
+        decoration: InputDecoration(
+          labelText: 'Class Code',
+          labelStyle: const TextStyle(
+            color: Color(0xFF64748B),
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+          prefixIcon: Container(
+            margin: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF2563EB).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(
+              FontAwesomeIcons.hashtag,
+              color: Color(0xFF2563EB),
+              size: 18,
+            ),
+          ),
+          suffixIcon: IconButton(
+            icon: const Icon(
+              FontAwesomeIcons.solidCopy,
+              color: Color(0xFF2563EB),
+              size: 16,
+            ),
+            onPressed: () {
+              if (_classCode != null) {
+                Clipboard.setData(ClipboardData(text: _classCode!));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Class code copied to clipboard!'),
+                    duration: Duration(seconds: 1),
+                  ),
+                );
+              }
+            },
+          ),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
+        ),
+        readOnly: true, // Make it read-only
+        enabled: false, // Visually disable it
       ),
     );
   }
