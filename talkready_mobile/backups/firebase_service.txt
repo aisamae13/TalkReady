@@ -89,9 +89,6 @@ class FirebaseService {
     _currentTrainerId = trainerId;
     _activeClassId = activeClassId;
 
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    _logger.i('startRealtimeSync called — trainerId param=$trainerId, currentAuthUid=$uid');
-
     // classes
     _realtimeSubs['classes'] = listenToClasses(trainerId).listen((data) {
       _classesCache = data;
@@ -928,8 +925,6 @@ class FirebaseService {
               '[SERVICE] Raw lessonAttemptsMapFromFirestore: $lessonAttemptsMapFromFirestore');
           _logger.i(
               '[SERVICE] Keys in raw lessonAttemptsMapFromFirestore: ${lessonAttemptsMapFromFirestore?.keys.toList()}');
-          _logger.i(
-              '[SERVICE] Values in raw lessonAttemptsMapFromFirestore: ${lessonAttemptsMapFromFirestore?.values.toList()}'); // Log values
 
           if (lessonAttemptsMapFromFirestore != null) {
             final Map<String, List<Map<String, dynamic>>> typedAttemptsMap = {};

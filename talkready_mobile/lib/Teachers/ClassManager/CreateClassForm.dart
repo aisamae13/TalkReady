@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:talkready_mobile/firebase_service.dart';
+
+
 
 class CreateClassForm extends StatefulWidget {
   final Function(Map<String, dynamic>)? onClassCreated;
@@ -94,6 +97,14 @@ class _CreateClassFormState extends State<CreateClassForm> with TickerProviderSt
         'id': docRef.id,
         ...createdDoc.data() as Map<String, dynamic>,
       };
+      
+      // New code block starts here
+      final created = await FirebaseService().createClass(classData);
+      final newId = created['id'] as String?;
+      if (newId != null) {
+        FirebaseService().setActiveClass(newId); // start listening to assessments/materials for new class
+      }
+      // New code block ends here
       
       if (widget.onClassCreated != null) {
         widget.onClassCreated!(createdClassData);

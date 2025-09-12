@@ -1,0 +1,503 @@
+//rules3
+
+// Updated Firestore rules - integrated with your original rules and minimal owner-scoped fixes
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Rules for the users collection
+    match /users/{userId} {
+      // Rule 1: Allow users to create their own document.
+      allow create: if request.auth != null && request.auth.uid == userId;
+
+      // Rule 2: Allow users to read (get), update, and delete their OWN document.
+      allow update, delete: if request.auth != null && request.auth.uid == userId;
+      
+      allow get: if request.auth != null; 
+
+      // Rule 3: Allow users who are authenticated as 'teachers' to read 'student' user documents.
+      allow list: if request.auth != null &&
+                      get(/databases/$(database)/documents/users/$(request.auth.uid)).data.userType == 'teacher' &&
+                      resource.data.userType == 'student'; 
+
+      // Nested rules for subcollections remain scoped to the parent userId
+      match /progress/{document=**} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      match /vocabulary/{document=**} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      match /messages/{messageId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      match /journal_entries/{entryId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      match /tags/{tagId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+    
+    // Allow authenticated users to create certificates for themselves
+    match /certificates/{certificateId} {
+      allow read: if true; // Anyone can read certificates for verification
+      allow write: if request.auth != null && 
+                      request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null && 
+                       request.auth.uid == request.resource.data.userId;
+    }
+
+    match /audioRecordings/{recordingId} {
+      // Allow authenticated users to create their own recordings
+      allow create: if request.auth != null &&
+                       request.resource.data.userId == request.auth.uid &&
+                       request.resource.data.keys().hasAll(['userId', 'timestamp', 'audioData', 'fileName']);
+      
+      // Allow users to read their own recordings
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      
+      // Allow users to update or delete their own recordings (if needed)
+      allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
+
+    // --- REST OF YOUR EXISTING RULES ---
+    // (Make sure they are correctly placed and do not unintentionally override the /users/{userId} rules)
+
+    // Add this specific block for your lessons
+    match /lessons/{lessonId} {
+      allow read: if true; // Allows anyone to read lesson content
+      allow write: if true; // TEMPORARY: Allows your script to write
+    }
+    
+    // === ADD THIS NEW BLOCK FOR YOUR ASSESSMENTS ===
+    match /moduleAssessments/{assessmentId} {
+      allow read: if true; // Allows the app to read the assessment
+      allow write: if true; // TEMPORARY: Allows your script to write
+    }
+    // === END OF NEW BLOCK ===
+
+    // Rules for the userProgress collection
+    match /userProgress/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Rule for classMaterials
+    match /classMaterials/{materialDocId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null &&
+                     request.resource.data.trainerId == request.auth.uid;
+      allow update, delete: if request.auth != null && resource.data.trainerId == request.auth.uid;
+    }
+    
+    match /userLessonAudio/{userId}/{allPaths=**} {
+      allow write: if request.auth != null && request.auth.uid == userId;
+      // Allow public read for simplicity, or restrict if server fetches with admin/service account
+      allow read; 
+    }
+
+    // Rules for the trainerClass collection
+    match /trainerClass/{classDocId} {
+      // Trainers can create, update (all fields), and delete their own classes
+      allow create: if request.auth != null && request.resource.data.trainerId == request.auth.uid;
+      allow update, delete: if request.auth != null && resource.data.trainerId == request.auth.uid;
+
+      // Students and Trainers can read class details
+      // (This assumes your Option 1 for read access from before)
+      allow read: if request.auth != null;
+
+      // Rule to allow student to update studentCount when joining via code (Simplified - Use with Caution)
+      // This rule is very basic and for a production app, this update should be handled by a Cloud Function.
+      allow update: if request.auth != null &&
+                       // Allow if only studentCount is being changed
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['studentCount']) &&
+                       // Allow if studentCount is being incremented by 1
+                       request.resource.data.studentCount == resource.data.studentCount + 1 &&
+                       // Ensure the request is coming from an authenticated user (student)
+                       // A more robust check would verify they are actually being enrolled in THIS batch,
+                       // which is hard to do in rules alone.
+                       exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    // Rules for the enrollments collection
+    match /enrollments/{enrollmentId} {
+      // Students can read their own enrollments, Trainers can read enrollments for their classes
+      allow read: if request.auth != null &&
+                (
+                  resource.data.studentId == request.auth.uid ||
+                  (
+                    // Ensure this get() is allowed by trainerClass read rules
+                    get(/databases/$(database)/documents/trainerClass/$(resource.data.classId)).data.trainerId == request.auth.uid
+                  )
+                );
+
+      // Trainers can create enrollments for their own classes
+      allow create: if request.auth != null &&
+                     request.resource.data.trainerId == request.auth.uid &&
+                     get(/databases/$(database)/documents/trainerClass/$(request.resource.data.classId)).data.trainerId == request.auth.uid;
+
+      // Student can create their own enrollment document (Simplified - Use with Caution)
+      // This rule allows a student to create an enrollment for themselves.
+      // The `joinClassWithCode` function should perform the class code validation *before* this write.
+      // Ideally, a Cloud Function handles the code validation AND the creation.
+      allow create: if request.auth != null &&
+                     request.resource.data.studentId == request.auth.uid &&
+                     // Ensure they are providing necessary fields (like classId, studentName, studentEmail, trainerId from class)
+                     request.resource.data.keys().hasAll(['classId', 'studentId', 'studentName', 'studentEmail', 'trainerId', 'enrolledAt']);
+
+
+      // Trainers can delete enrollments from their classes
+      // (Or students could delete their own enrollment)
+      allow delete: if request.auth != null &&
+                     (
+                        resource.data.trainerId == request.auth.uid || // Trainer of the class
+                        resource.data.studentId == request.auth.uid    // Student can leave class
+                     );
+    }
+
+    // ... other rules (classMaterials, etc.)
+    // Ensure this placeholder function is defined or condition handled if used in enrollments
+    function defined_after_trainerClass_rules() {
+      return true; // This function is conceptual for rule ordering
+    }
+    
+    match /enrollments/{enrollmentDoc} {
+      // Allow LIST (query) if user is authenticated.
+      // Your `getEnrolledStudents` function queries by classId.
+      // This rule assumes your UI ensures students only try to fetch members
+      // for classes they are legitimately viewing.
+      allow list: if request.auth != null;
+
+      // Keep your existing granular `read` for specific doc access if needed,
+      // or broaden it if `list` covers the needs.
+      allow read: if request.auth != null &&
+                    (
+                      resource.data.studentId == request.auth.uid || // Student reads their own
+                      (exists(/databases/$(database)/documents/trainerClass/$(resource.data.classId)) && // Check class exists
+                       get(/databases/$(database)/documents/trainerClass/$(resource.data.classId)).data.trainerId == request.auth.uid) // Trainer
+                    );
+
+
+      // Your existing create/delete rules for enrollments:
+      allow create: if request.auth != null &&
+                      (
+                        // Trainer enrolling student
+                        (request.resource.data.trainerId == request.auth.uid &&
+                         exists(/databases/$(database)/documents/trainerClass/$(request.resource.data.classId)) &&
+                         get(/databases/$(database)/documents/trainerClass/$(request.resource.data.classId)).data.trainerId == request.auth.uid)
+                         ||
+                        // Student joining with code (ensure studentId is their own)
+                        (request.resource.data.studentId == request.auth.uid &&
+                         request.resource.data.keys().hasAll(['classId', 'studentId', 'studentName', 'studentEmail', 'trainerId', 'enrolledAt']))
+                      );
+
+      allow delete: if request.auth != null &&
+                      (
+                        (exists(/databases/$(database)/documents/trainerClass/$(resource.data.classId)) &&
+                         get(/databases/$(database)/documents/trainerClass/$(resource.data.classId)).data.trainerId == request.auth.uid) || // Trainer of the class
+                        resource.data.studentId == request.auth.uid // Student can leave class
+                      );
+      }
+    
+    // Rules for the Trainer Assessments
+    match /trainerAssessments/{assessmentId} {
+      // Trainers can create, update, and delete their own assessments
+      allow create: if request.auth != null && request.resource.data.trainerId == request.auth.uid;
+      allow update, delete: if request.auth != null && resource.data.trainerId == request.auth.uid;
+
+      // Allow any authenticated user (student or trainer) to read assessment details.
+      // Your application logic (StudentClassView.jsx calling getClassAssessments with a specific classId)
+      // ensures students only try to fetch assessments for classes they are viewing.
+      allow read: if request.auth != null;
+    }
+    
+    // Rules for Student Assessment Submissions
+    match /studentSubmissions/{submissionId} {
+      allow create: if request.auth != null
+                && request.resource.data.studentId == request.auth.uid
+                && (
+                  // Rule for Speaking Assessments
+                  (request.resource.data.assessmentType == 'speaking_assessment'
+                    && request.resource.data.score == null
+                    && request.resource.data.isReviewed == false)
+                  || // OR
+                  // Rule for Standard Quizzes
+                  (request.resource.data.assessmentType == 'standard_quiz'
+                    && request.resource.data.score is number
+                    && request.resource.data.isReviewed == true)
+                );
+                
+      allow read: if request.auth != null &&
+                   (
+                     resource.data.studentId == request.auth.uid || // Student owns submission
+                     ( // Trainer owns the assessment
+                       exists(/databases/$(database)/documents/trainerAssessments/$(resource.data.assessmentId)) &&
+                       get(/databases/$(database)/documents/trainerAssessments/$(resource.data.assessmentId)).data.trainerId == request.auth.uid
+                     ) ||
+                     ( // Trainer owns the class
+                       exists(/databases/$(database)/documents/trainerClass/$(resource.data.classId)) &&
+                       get(/databases/$(database)/documents/trainerClass/$(resource.data.classId)).data.trainerId == request.auth.uid
+                     ) ||
+                     // ALLOW: trainer querying by trainerId field (owner-scoped query)
+                     (resource.data.trainerId == request.auth.uid)
+                   );
+
+      // Generally, students should not update/delete submissions.
+      // Trainers might update (e.g., add feedback) — allow trainer-owner update
+      allow update: if request.auth != null &&
+                     (
+                       // Trainer owns the assessment for this submission
+                       (exists(/databases/$(database)/documents/trainerAssessments/$(resource.data.assessmentId)) &&
+                        get(/databases/$(database)/documents/trainerAssessments/$(resource.data.assessmentId)).data.trainerId == request.auth.uid)
+                       ||
+                       // Or trainer is set on the submission and is updating limited fields (dissociation/feedback)
+                       (resource.data.trainerId == request.auth.uid &&
+                        request.resource.data.keys().hasAny(['trainerId','trainerRemovedAt','trainerRemovedBy','feedback','score','isReviewed']))
+                     );
+      allow delete: if request.auth != null &&
+                     ( // Trainer owns the assessment for this submission
+                       exists(/databases/$(database)/documents/trainerAssessments/$(resource.data.assessmentId)) &&
+                       get(/databases/$(database)/documents/trainerAssessments/$(resource.data.assessmentId)).data.trainerId == request.auth.uid
+                     );
+    }
+    
+    
+    // Rules for the notifications collection
+    match /notifications/{notificationId} {
+      // allow read if addressed to the user or they are sender/receiver
+      allow read: if request.auth != null && (
+        resource.data.userId == request.auth.uid ||
+        resource.data.senderId == request.auth.uid ||
+        resource.data.receiverId == request.auth.uid
+      );
+
+      // UPDATED: Allow update for 'isRead' (to true or false) and 'readAt' by receiver
+      // Also allow sender to dissociate (set senderId -> null and set senderRemovedAt)
+      allow update: if request.auth != null &&
+                       (
+                         // receiver may update isRead/readAt
+                         (resource.data.receiverId == request.auth.uid &&
+                          request.resource.data.keys().hasAny(['isRead', 'readAt']) &&
+                          (request.resource.data.isRead == true || request.resource.data.isRead == false)
+                         )
+                         ||
+                         // sender (trainer) may dissociate themself by setting senderId -> null
+                         (resource.data.senderId == request.auth.uid &&
+                          request.resource.data.keys().hasAny(['senderId','senderRemovedAt']) &&
+                          request.resource.data.senderId == null
+                         )
+                       );
+
+      allow delete: if request.auth != null && (
+        resource.data.userId == request.auth.uid ||
+        resource.data.senderId == request.auth.uid ||
+        resource.data.receiverId == request.auth.uid
+      );
+
+      allow create: if request.auth != null &&
+                       exists(/databases/$(database)/documents/users/$(request.resource.data.userId)) &&
+                       request.resource.data.keys().hasAll(['userId', 'message', 'createdAt', 'isRead', 'type']);
+    }
+    
+  
+      // Rules for the classAnnouncements collection
+    match /classAnnouncements/{announcementId} {
+      // CREATE: Allow authenticated users to create announcements with required fields
+      allow create: if request.auth != null &&
+                       request.resource.data.trainerId == request.auth.uid &&
+                       request.resource.data.keys().hasAll(['trainerId', 'classId', 'title', 'content']) &&
+                       request.resource.data.content.size() > 0;
+
+      // Allow trainers to manage their own announcements
+      allow update, delete: if request.auth != null && resource.data.trainerId == request.auth.uid;
+      
+      // Allow anyone authenticated to read announcements
+      allow read: if request.auth != null;
+    }
+
+    
+    // Rules for the speaking_tests collection
+    match /speaking_tests/{testId} {
+      allow read, update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null;
+    }
+
+    // Rules for chat storage
+    match /chats/{chatId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Rules for chat sessions
+    match /chatSessions/{sessionId} {
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow read, update: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
+
+    // Rules for courses
+    match /courses/{courseId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == request.resource.data.userId; // Assuming 'userId' here refers to the course creator/owner
+    }
+
+    // Rules for customer service simulations
+    match /customer_service_simulations/{sessionId} {
+      allow read, write: if request.auth != null;
+      match /messages/{messageId} {
+        allow read, write: if request.auth != null;
+      }
+    }
+
+    // Rules for customer service vocabulary analysis
+    match /customer_serv_vocabulary_analysis/{docId} {
+      allow read, write: if request.auth != null && request.auth.uid == resource.data.userId;
+    }
+
+    // Rules for the classes collection (This seems like a different 'classes' collection than 'trainerClass')
+    // Review if this is intended or if it should be merged/clarified with 'trainerClass' rules.
+    match /classes/{classId} {
+      allow read: if request.auth != null && (
+        resource.data.trainerId == request.auth.uid ||
+        request.auth.uid in resource.data.students ||
+        true // This 'true' makes it world-readable for authenticated users, consider if intended.
+      );
+      allow create: if request.auth != null &&
+        request.resource.data.trainerId == request.auth.uid &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.userType == 'trainer'; // Note: This uses 'trainer', ensure consistency with 'teacher' if they are the same role.
+      allow update, delete: if request.auth != null && resource.data.trainerId == request.auth.uid;
+      // Complex update rule for students joining, review its necessity and correctness.
+      allow update: if request.auth != null &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['students']) &&
+        request.resource.data.students.size() == resource.data.students.size() + 1 &&
+        request.auth.uid in request.resource.data.students &&
+        !(request.auth.uid in resource.data.students);
+
+      match /modules/{moduleId} {
+        allow read: if request.auth != null && (
+          get(/databases/$(database)/documents/classes/$(classId)).data.trainerId == request.auth.uid ||
+          request.auth.uid in get(/databases/$(database)/documents/classes/$(classId)).data.students
+        );
+        allow write: if request.auth != null &&
+          get(/databases/$(database)/documents/classes/$(classId)).data.trainerId == request.auth.uid;
+
+        match /quizzes/{quizId} {
+          allow read: if request.auth != null && (
+            get(/databases/$(database)/documents/classes/$(classId)).data.trainerId == request.auth.uid ||
+            request.auth.uid in get(/databases/$(database)/documents/classes/$(classId)).data.students
+          );
+          allow write: if request.auth != null &&
+            get(/databases/$(database)/documents/classes/$(classId)).data.trainerId == request.auth.uid;
+        }
+      }
+    }
+
+    // Rules for student quiz results
+    match /student_quiz_results/{studentId} {
+      allow create: if request.auth != null && studentId == request.auth.uid;
+      allow read: if request.auth != null && studentId == request.auth.uid;
+      match /quizzes/{quizId} {
+        match /attempts/{attemptId} {
+          allow create: if request.auth != null && studentId == request.auth.uid;
+          allow read: if request.auth != null && (
+            studentId == request.auth.uid ||
+            (
+              resource.data.classId != null &&
+              exists(/databases/$(database)/documents/classes/$(resource.data.classId)) &&
+              get(/databases/$(database)/documents/classes/$(resource.data.classId)).data.trainerId == request.auth.uid
+            )
+          );
+        }
+      }
+    }
+    
+
+    // Rules for collection group queries on attempts
+    match /{path=**}/attempts/{attemptId} {
+      allow read: if request.auth != null && (
+        resource.data.classId != null &&
+        exists(/databases/$(database)/documents/classes/$(resource.data.classId)) &&
+        get(/databases/$(database)/documents/classes/$(resource.data.classId)).data.trainerId == request.auth.uid
+      );
+    }
+
+    // ---------------------------
+    // New / adjusted owner-scoped rules to allow trainer-side dissociation & queries
+    // (added to fix permission-denied errors seen in client logs)
+    // ---------------------------
+
+    // uploadedFiles - trainer can query/read/update/delete their own uploads
+    match /uploadedFiles/{fileId} {
+      allow read: if request.auth != null && resource.data.uploadedBy == request.auth.uid;
+      allow create: if request.auth != null && request.resource.data.uploadedBy == request.auth.uid;
+      allow update: if request.auth != null && resource.data.uploadedBy == request.auth.uid
+                     && request.resource.data.keys().hasOnly(['archived','archivedAt','archivedBy','fileName','metadata','uploadedBy']);
+      allow delete: if request.auth != null && resource.data.uploadedBy == request.auth.uid;
+    }
+
+    // progress collection - allow trainer to dissociate trainerId (owner-scoped)
+    match /progress/{docId} {
+      allow read: if request.auth != null && (
+        resource.data.trainerId == request.auth.uid ||
+        resource.data.userId == request.auth.uid
+      );
+      // allow trainer to set trainerId -> null when dissociating
+      allow update: if request.auth != null && resource.data.trainerId == request.auth.uid
+                     && request.resource.data.trainerId == null;
+      allow delete: if request.auth != null && resource.data.trainerId == request.auth.uid;
+    }
+
+    // reports - owner-scoped behavior
+    match /reports/{docId} {
+      allow read: if request.auth != null && (
+        resource.data.trainerId == request.auth.uid ||
+        resource.data.userId == request.auth.uid
+      );
+      allow update: if request.auth != null && resource.data.trainerId == request.auth.uid
+                     && request.resource.data.trainerId == null;
+      allow delete: if request.auth != null && resource.data.trainerId == request.auth.uid;
+    }
+
+    // lessonAttempts - allow user reads & trainer dissociation/archive updates
+    match /lessonAttempts/{docId} {
+      allow read: if request.auth != null && (
+        resource.data.userId == request.auth.uid ||
+        resource.data.trainerId == request.auth.uid
+      );
+      allow update: if request.auth != null && (
+        // user can update their own attempt
+        resource.data.userId == request.auth.uid ||
+        // trainer can archive/dissociate their trainerId
+        (resource.data.trainerId == request.auth.uid && request.resource.data.keys().hasAny(['archived','archivedAt','trainerRemovedAt']))
+      );
+      allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
+
+    // trainerData - owner-scoped removal
+    match /trainerData/{docId} {
+      allow read: if request.auth != null && resource.data.trainerId == request.auth.uid;
+      allow update: if request.auth != null && resource.data.trainerId == request.auth.uid;
+      allow delete: if request.auth != null && resource.data.trainerId == request.auth.uid;
+    }
+
+    // userProgress (top-level) - keep owner rule but allow trainer read if trainerId present on record
+    match /userProgress/{docId} {
+      allow read: if request.auth != null && (
+        resource.data.userId == request.auth.uid ||
+        resource.data.trainerId == request.auth.uid
+      );
+      allow update: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
+
+    // notifications adjustments already handled above (read/update/delete allow sender/receiver owner-scoped)
+
+    // studentSubmissions adjustments already handled above (added owner-scoped read/update)
+
+    // ---------------------------
+    // End adjustments
+    // ---------------------------
+
+  }
+}

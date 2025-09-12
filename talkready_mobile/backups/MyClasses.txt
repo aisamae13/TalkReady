@@ -1,13 +1,14 @@
+//MyClassesPage
+
 //Trainer
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:talkready_mobile/firebase_service.dart';
 import 'ClassListItem.dart';
 import 'CreateClassForm.dart';
-import 'ManageClassContent.dart';
+// Removed unused import: ManageClassContent.dart
 
 // Keep your existing Firebase service functions unchanged
 Future<List<Map<String, dynamic>>> getTrainerClassesFromService(String trainerId) async {
@@ -791,24 +792,10 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
               return AnimatedContainer(
                 duration: Duration(milliseconds: 200 + (index * 50)),
                 curve: Curves.easeOutCubic,
-                child: GestureDetector(
-                  onTap: () {
-                    final id = classData['id'] as String;
-                    // tell the service which class to follow (assessments/materials/class doc)
-                    FirebaseService().setActiveClass(id);
-                    // navigate to the existing ManageClassContentPage for this class
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ManageClassContentPage(classId: id),
-                      ),
-                    );
-                  },
-                  child: ClassListItemWidget(
-                    classData: classData,
-                    onDeleteClass: _handleDeleteClass,
-                  ),
-                )
+                child: ClassListItemWidget(
+                  classData: classData,
+                  onDeleteClass: _handleDeleteClass,
+                ),
               );
             },
           ),

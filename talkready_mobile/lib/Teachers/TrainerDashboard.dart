@@ -14,6 +14,7 @@ import 'package:talkready_mobile/Teachers/Contents/QuickUploadMaterialPage.dart'
 import 'dart:ui'; // Add this import for BackdropFilter
 import 'ClassManager/ManageClassContent.dart'; // Add this import
 import 'package:shimmer/shimmer.dart';
+import '../firebase_service.dart'; // ensure import
 
 class TrainerDashboard extends StatefulWidget {
   const TrainerDashboard({super.key});

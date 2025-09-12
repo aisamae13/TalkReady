@@ -1,3 +1,5 @@
+//sign_upAgain
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -43,142 +45,95 @@ class _SignUpPageState extends State<SignUpPage> {
   );
 
   Future<void> _signUpWithEmail() async {
-    final email = _emailController.text.trim();
-    final password = _passwordController.text;
-    final confirm = _confirmPasswordController.text;
-
-    if (email.isEmpty || password.isEmpty || confirm.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill in all fields')),
-      );
-      return;
-    }
-
-    if (!isValidEmail(email)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a valid email address')),
-      );
-      return;
-    }
-
-    if (password != confirm) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Passwords do not match')),
-      );
-      return;
-    }
-
     try {
-      // Check if this email already has sign-in methods (prevents duplicate accounts)
-      final providers = await _auth.fetchSignInMethodsForEmail(email);
-      if (providers.isNotEmpty) {
-        // If the account exists with Google, instruct to use Google sign-in (mobile will be able to reuse)
-        if (providers.contains('google.com')) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('An account exists for this email using Google Sign-In. Please sign in with Google.')),
-            );
-          }
-          return;
-        }
-
-        // If account exists with password (email/password), ask the user to sign in instead
-        if (providers.contains('password')) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('An account already exists for this email. Please sign in instead of creating a new account.')),
-            );
-            // Optional: navigate to login screen if you have a route
-            Navigator.pushReplacementNamed(context, '/login');
-          }
-          return;
-        }
-
-        // For any other provider, notify user to use the existing provider
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('An account already exists for this email. Please use the correct sign-in method.')),
-          );
-        }
+      if (_emailController.text.isEmpty ||
+          _passwordController.text.isEmpty ||
+          _confirmPasswordController.text.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please fill in all fields')),
+        );
         return;
       }
 
-      // No providers exist -> safe to create account
+      if (_passwordController.text != _confirmPasswordController.text) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Passwords do not match')),
+        );
+        return;
+      }
+
       showDialog(
         context: context,
         barrierDismissible: false,
         builder: (context) => const Center(child: CircularProgressIndicator(color: Color(0xFF00568D))),
       );
 
+      // Create user with email and password
       UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
-        email: email,
-        password: password,
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
       );
 
       final user = userCredential.user;
       if (user != null) {
-        // If there is already a user document in Firestore identified by email (maybe created by web under a different uid),
-        // prefer to reuse non-destructive fields like 'role' rather than overwriting them.
-        final query = await FirebaseFirestore.instance
-            .collection('users')
-            .where('email', isEqualTo: email)
-            .limit(1)
-            .get();
-
-        Map<String, dynamic> extraFields = {};
-        if (query.docs.isNotEmpty) {
-          final existing = query.docs.first.data();
-          if (existing.containsKey('role')) {
-            extraFields['role'] = existing['role'];
-          }
-          // copy any other safe fields you want to preserve (but avoid uid)
-        }
-
-        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        final userDoc = FirebaseFirestore.instance.collection('users').doc(user.uid);
+        await userDoc.set({
           'uid': user.uid,
           'email': user.email,
           'displayName': user.email?.split('@').first ?? '',
           'createdAt': FieldValue.serverTimestamp(),
+          'role': 'trainer', // or 'student' — set based on your flow
           'emailVerified': user.emailVerified,
-          // merge preserved fields from web if they exist
-          ...extraFields,
+          // add other default fields your web expects
         }, SetOptions(merge: true));
       }
 
       await _auth.currentUser?.sendEmailVerification();
 
       if (mounted) {
-        Navigator.pop(context); // remove loading
+        Navigator.pop(context);
+      }
+
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Verification email sent. Please verify before continuing.'), duration: Duration(seconds: 5)),
+          const SnackBar(
+            content: Text('Verification email sent. Please check your inbox.'),
+            duration: Duration(seconds: 5),
+          ),
         );
       }
 
-      // Optionally wait or check verification status; current code already has _checkEmailVerification
       await _checkEmailVerification(_auth.currentUser);
+      // After email verification, move to phone verification
       if (mounted) {
-        _pageController.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+        _pageController.nextPage(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+        );
       }
     } on FirebaseAuthException catch (e) {
       String message;
       if (e.code == 'weak-password') {
         message = 'The password provided is too weak.';
       } else if (e.code == 'email-already-in-use') {
-        // Defensive: should be handled via fetchSignInMethodsForEmail above, but keep fallback
-        message = 'An account already exists for that email. Please sign in.';
+        message = 'An account already exists for that email.';
       } else if (e.code == 'invalid-email') {
         message = 'The email address is not valid.';
       } else {
-        message = 'Sign-up failed: ${e.message ?? e.code}';
+        message = 'Sign-up failed: $e';
       }
       if (mounted) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
+        );
       }
     } catch (e) {
       if (mounted) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('An error occurred: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('An error occurred: $e')),
+        );
       }
     }
   }

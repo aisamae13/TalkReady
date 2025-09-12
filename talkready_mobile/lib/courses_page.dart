@@ -1110,3 +1110,5 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
     );
   }
 }
+
+//Can you adapt the layout of this? I mean, just the layout and placement, not the original design, and make sure the database (backend) isn't compromised.

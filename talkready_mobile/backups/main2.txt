@@ -1,3 +1,5 @@
+//main2
+
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -18,7 +20,6 @@ import 'package:talkready_mobile/chooseUserType.dart';
 import 'onboarding_screen.dart';
 import 'package:talkready_mobile/all_notifications_page.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'firebase_service.dart'; // add if missing
 
 // Add this import for MyEnrolledClasses
 import 'package:talkready_mobile/MyEnrolledClasses.dart';
@@ -77,9 +78,6 @@ void main() async {
     androidProvider: AndroidProvider.debug,
     appleProvider: AppleProvider.debug,
   );
-
-  // start auth listener once so FirebaseService manages realtime sync automatically
-  FirebaseService().initAuthListener();
 
   try {
   } catch (e) {

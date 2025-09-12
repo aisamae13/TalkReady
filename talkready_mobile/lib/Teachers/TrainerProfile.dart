@@ -1,3 +1,5 @@
+// TrainerProfile
+
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
@@ -364,7 +366,7 @@ class _TrainerProfileState extends State<TrainerProfile> {
 
           _logger.i('Profile picture saved as base64 for UID: ${user.uid}');
         } else {
-            setState(() => _isLoading = false);
+          setState(() => _isLoading = false);
         }
       }
     } catch (e) {
@@ -388,7 +390,7 @@ class _TrainerProfileState extends State<TrainerProfile> {
       if (mounted) {
         Navigator.pushNamedAndRemoveUntil(
           context,
-          '/', 
+          '/',
           (route) => false,
         );
       }
@@ -403,153 +405,447 @@ class _TrainerProfileState extends State<TrainerProfile> {
   }
 
   Future<void> _deleteAccount(BuildContext context) async {
+    // Show initial info dialog before typed confirmation
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (context) => _buildCustomDialog(
+        context: context,
+        title: 'Delete Account',
+        content:
+            'This will mark your account as deleted and archive or dissociate most associated data. This action cannot be undone.\n\nTo confirm, you will be asked to type "confirm".',
+        cancelText: 'Cancel',
+        confirmText: 'Continue',
+        onConfirm: () => Navigator.of(context).pop(true),
+      ),
+    );
+
+    if (proceed != true) return;
+
+    // Show typed confirmation dialog
+    bool confirmed = false;
+    String inputText = '';
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return StatefulBuilder(builder: (context, setState) {
+          return AlertDialog(
+            title: const Text('Final Confirmation'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Type "confirm" (without quotes) below to permanently proceed with account deletion.',
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  autofocus: true,
+                  onChanged: (v) {
+                    setState(() {
+                      inputText = v;
+                    });
+                  },
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    hintText: 'Type confirm to enable Delete',
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                },
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: inputText.trim().toLowerCase() == 'confirm'
+                    ? () {
+                        confirmed = true;
+                        Navigator.of(context).pop();
+                      }
+                    : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: inputText.trim().toLowerCase() == 'confirm'
+                      ? Colors.red.shade700
+                      : Colors.grey,
+                ),
+                child: const Text('Delete'),
+              ),
+            ],
+          );
+        });
+      },
+    );
+
+    if (!confirmed) return;
+
+    // Proceed with safe deletion (no password re-auth)
+    await _deleteAccountSafely(context);
+  }
+
+  Future<void> _deleteAccountSafely(BuildContext context) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final uid = user.uid;
+    final firestore = FirebaseFirestore.instance;
+
+    // Show loading dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    List<String> successfulOperations = [];
+    List<String> failedOperations = [];
+
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null) {
-        final initialConfirmation = await showDialog<bool>(
-          context: context,
-          builder: (context) => _buildCustomDialog(
-            context: context,
-            title: 'Delete Account',
-            content:
-                'Are you sure you want to permanently delete your account? This action cannot be undone.',
-            cancelText: 'Cancel',
-            confirmText: 'Continue',
-            onConfirm: () => Navigator.pop(context, true),
+      // 0) Soft-delete the user profile document
+      try {
+        await firestore.collection('users').doc(uid).set({
+          'deletedAt': FieldValue.serverTimestamp(),
+          'deletedByUser': true,
+          'deletedReason': 'user_requested_account_removal_safe_flow',
+        }, SetOptions(merge: true));
+        successfulOperations.add('User profile marked as deleted');
+      } catch (e) {
+        _logger.w('Failed to soft-delete user profile: $e');
+        failedOperations.add('User profile soft-delete (${e.toString()})');
+      }
+
+      // 1) Archive classes created by trainer
+      try {
+        await _archiveOrDissociateQueryInBatches(
+          firestore.collection('classes').where('trainerId', isEqualTo: uid),
+          updateData: {
+            'archived': true,
+            'trainerId': null,
+            'archivedAt': FieldValue.serverTimestamp(),
+            'archivedBy': uid,
+          },
+        );
+        successfulOperations.add('Classes archived');
+      } catch (e) {
+        _logger.w('Failed to archive classes: $e');
+        failedOperations.add('Classes archiving (${e.toString()})');
+      }
+
+      // 2) For assessments and materials that are strictly owned by trainer and small in count we can delete.
+      try {
+        await _deleteQueryInBatches(
+          firestore.collection('trainerAssessments').where('trainerId', isEqualTo: uid),
+          batchSize: 300,
+          maxDocsBeforeFallback: 1500, // safety threshold
+          onTooLargeFallback: (count) async {
+            // If too many docs, mark them as 'ownerDeleted' instead of deleting
+            await _archiveOrDissociateQueryInBatches(
+              firestore.collection('trainerAssessments').where('trainerId', isEqualTo: uid),
+              updateData: {
+                'ownerDeleted': true,
+                'archivedBy': uid,
+                'archivedAt': FieldValue.serverTimestamp(),
+              },
+            );
+          },
+        );
+        successfulOperations.add('Trainer assessments processed');
+      } catch (e) {
+        _logger.w('Failed to process trainer assessments: $e');
+        failedOperations.add('Trainer assessments (${e.toString()})');
+      }
+
+      // 3) Class materials and uploadedFiles: delete small sets, otherwise mark as archived
+      try {
+        await _deleteQueryInBatches(
+          firestore.collection('classMaterials').where('uploadedBy', isEqualTo: uid),
+          batchSize: 300,
+          maxDocsBeforeFallback: 1200,
+          onTooLargeFallback: (count) async {
+            await _archiveOrDissociateQueryInBatches(
+              firestore.collection('classMaterials').where('uploadedBy', isEqualTo: uid),
+              updateData: {
+                'archived': true,
+                'archivedBy': uid,
+                'archivedAt': FieldValue.serverTimestamp(),
+              },
+            );
+          },
+        );
+        successfulOperations.add('Class materials processed');
+      } catch (e) {
+        _logger.w('Failed to process class materials: $e');
+        failedOperations.add('Class materials (${e.toString()})');
+      }
+
+      try {
+        await _deleteQueryInBatches(
+          firestore.collection('uploadedFiles').where('uploadedBy', isEqualTo: uid),
+          batchSize: 300,
+          maxDocsBeforeFallback: 1000,
+          onTooLargeFallback: (count) async {
+            await _archiveOrDissociateQueryInBatches(
+              firestore.collection('uploadedFiles').where('uploadedBy', isEqualTo: uid),
+              updateData: {
+                'archived': true,
+                'archivedBy': uid,
+                'archivedAt': FieldValue.serverTimestamp(),
+              },
+            );
+          },
+        );
+        successfulOperations.add('Uploaded files processed');
+      } catch (e) {
+        _logger.w('Failed to process uploaded files: $e');
+        failedOperations.add('Uploaded files (${e.toString()})');
+      }
+
+      // 4) For student submissions, notifications, progress — dissociate trainer references to avoid data loss
+      try {
+        await _archiveOrDissociateQueryInBatches(
+          firestore.collection('studentSubmissions').where('trainerId', isEqualTo: uid),
+          updateData: {
+            'trainerId': null,
+            'trainerRemovedAt': FieldValue.serverTimestamp(),
+            'trainerRemovedBy': uid,
+          },
+        );
+        successfulOperations.add('Student submissions dissociated');
+      } catch (e) {
+        _logger.w('Failed to dissociate student submissions: $e');
+        failedOperations.add('Student submissions (${e.toString()})');
+      }
+
+      try {
+        await _archiveOrDissociateQueryInBatches(
+          firestore.collection('notifications').where('senderId', isEqualTo: uid),
+          updateData: {
+            'senderId': null,
+            'senderRemovedAt': FieldValue.serverTimestamp(),
+          },
+        );
+        await _archiveOrDissociateQueryInBatches(
+          firestore.collection('notifications').where('receiverId', isEqualTo: uid),
+          updateData: {
+            'receiverId': null,
+            'receiverRemovedAt': FieldValue.serverTimestamp(),
+          },
+        );
+        successfulOperations.add('Notifications dissociated');
+      } catch (e) {
+        _logger.w('Failed to dissociate notifications: $e');
+        failedOperations.add('Notifications (${e.toString()})');
+      }
+
+      // 5) Progress, reports, enrollments: dissociate or archive
+      try {
+        await _archiveOrDissociateQueryInBatches(
+          firestore.collection('progress').where('trainerId', isEqualTo: uid),
+          updateData: {
+            'trainerId': null,
+            'trainerRemovedAt': FieldValue.serverTimestamp(),
+          },
+        );
+        successfulOperations.add('Progress records dissociated');
+      } catch (e) {
+        _logger.w('Failed to dissociate progress records: $e');
+        failedOperations.add('Progress records (${e.toString()})');
+      }
+
+      try {
+        await _archiveOrDissociateQueryInBatches(
+          firestore.collection('reports').where('trainerId', isEqualTo: uid),
+          updateData: {
+            'trainerId': null,
+            'trainerRemovedAt': FieldValue.serverTimestamp(),
+          },
+        );
+        successfulOperations.add('Reports dissociated');
+      } catch (e) {
+        _logger.w('Failed to dissociate reports: $e');
+        failedOperations.add('Reports (${e.toString()})');
+      }
+
+      try {
+        await _archiveOrDissociateQueryInBatches(
+          firestore.collection('enrollments').where('trainerId', isEqualTo: uid),
+          updateData: {
+            'trainerId': null,
+            'trainerRemovedAt': FieldValue.serverTimestamp(),
+          },
+        );
+        successfulOperations.add('Enrollments dissociated');
+      } catch (e) {
+        _logger.w('Failed to dissociate enrollments: $e');
+        failedOperations.add('Enrollments (${e.toString()})');
+      }
+
+      // 6) Optionally remove user-specific small collections (lessonAttempts, trainerData, userProgress)
+      try {
+        await _deleteQueryInBatches(
+          firestore.collection('lessonAttempts').where('userId', isEqualTo: uid),
+          batchSize: 300,
+          maxDocsBeforeFallback: 800,
+          onTooLargeFallback: (count) async {
+            await _archiveOrDissociateQueryInBatches(
+              firestore.collection('lessonAttempts').where('userId', isEqualTo: uid),
+              updateData: {'archived': true, 'archivedAt': FieldValue.serverTimestamp()},
+            );
+          },
+        );
+        successfulOperations.add('Lesson attempts processed');
+      } catch (e) {
+        _logger.w('Failed to process lesson attempts: $e');
+        failedOperations.add('Lesson attempts (${e.toString()})');
+      }
+
+      try {
+        await _deleteQueryInBatches(
+          firestore.collection('trainerData').where('trainerId', isEqualTo: uid),
+          batchSize: 300,
+        );
+        successfulOperations.add('Trainer data removed');
+      } catch (e) {
+        _logger.w('Failed to remove trainer data: $e');
+        failedOperations.add('Trainer data (${e.toString()})');
+      }
+
+      try {
+        await _deleteQueryInBatches(
+          firestore.collection('userProgress').where('userId', isEqualTo: uid),
+          batchSize: 300,
+        );
+        successfulOperations.add('User progress removed');
+      } catch (e) {
+        _logger.w('Failed to remove user progress: $e');
+        failedOperations.add('User progress (${e.toString()})');
+      }
+
+      // 7) Delete the Firebase Auth account directly (no re-auth)
+      try {
+        await user.delete();
+        successfulOperations.add('Firebase Auth account deleted');
+      } catch (e) {
+        _logger.w('Failed to delete Firebase Auth account: $e');
+        failedOperations.add('Firebase Auth deletion (${e.toString()})');
+      }
+
+      if (mounted) {
+        Navigator.pop(context); // close loading
+        Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+        // Show summary message
+        String message = 'Account deletion completed.\n\n';
+        if (successfulOperations.isNotEmpty) {
+          message += 'Successful operations:\n${successfulOperations.map((op) => '• $op').join('\n')}\n\n';
+        }
+        if (failedOperations.isNotEmpty) {
+          message += 'Some operations had permission issues:\n${failedOperations.map((op) => '• $op').join('\n')}';
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: failedOperations.isEmpty ? Colors.green : Colors.orange,
+            duration: const Duration(seconds: 8),
           ),
         );
-
-        if (initialConfirmation == true) {
-          final finalConfirmation = await showDialog<bool>(
-            context: context,
-            builder: (context) {
-              String inputText = '';
-              return StatefulBuilder(
-                builder: (context, setStateDialog) {
-                  return Dialog(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(15),
-                    ),
-                    elevation: 5,
-                    backgroundColor: Colors.white,
-                    child: Padding(
-                      padding: const EdgeInsets.all(20.0),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Final Confirmation',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF00568D),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          const Text(
-                            'To confirm account deletion, please type "confirm" below. This action cannot be undone.',
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: Colors.grey
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          TextField(
-                            onChanged: (value) {
-                              setStateDialog(() {
-                                inputText = value;
-                              });
-                            },
-                            decoration: const InputDecoration(
-                              border: OutlineInputBorder(),
-                              labelText: 'Type "confirm"',
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              ElevatedButton(
-                                onPressed: () => Navigator.pop(context, false),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.grey[300],
-                                  foregroundColor: Colors.grey[800],
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 20, vertical: 10),
-                                ),
-                                child: const Text(
-                                  'Cancel',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              ElevatedButton(
-                                onPressed: inputText.toLowerCase() == 'confirm'
-                                    ? () => Navigator.pop(context, true)
-                                    : null,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: inputText.toLowerCase() == 'confirm'
-                                      ? Colors.red.shade700 // Changed to Colors.red.shade700
-                                      : Colors.grey,
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 20, vertical: 10),
-                                ),
-                                child: const Text(
-                                  'Delete',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              );
-            },
-          );
-
-          if (finalConfirmation == true) {
-            _logger.i('Attempting to delete account for UID: ${user.uid}');
-            await FirebaseFirestore.instance
-                .collection('users')
-                .doc(user.uid)
-                .delete();
-            _logger.i('Firestore data deleted for UID: ${user.uid}');
-            await user.delete();
-            _logger.i('User account deleted successfully');
-            if (mounted) {
-              Navigator.pushNamedAndRemoveUntil(
-                context,
-                '/', 
-                (route) => false,
-              );
-            }
-          }
-        }
       }
     } catch (e) {
-      _logger.e('Error deleting account: $e');
+      _logger.e('Unexpected error in safe delete flow: $e');
       if (mounted) {
+        Navigator.pop(context); // close loading dialog
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error deleting account: $e')),
+          SnackBar(
+            content: Text('Unexpected error during deletion: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
+    }
+  }
+
+  /// Confirm and delete the Firebase Auth account (tries email/password re-auth)
+  Future<void> _confirmAndDeleteAuthAccount(BuildContext context, User user) async {
+    // Confirm dialog
+    final shouldDeleteAuth = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Authentication Account'),
+        content: const Text(
+            'Do you also want to permanently delete your authentication account (this will remove your ability to sign in)? This is irreversible.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete Account'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldDeleteAuth != true) return;
+
+    // Check provider(s) and attempt re-auth with password if available
+    final providers = user.providerData.map((p) => p.providerId).toList();
+
+    if (providers.contains('password')) {
+      // prompt for password
+      final password = await _showPasswordDialog(context);
+      if (password == null || password.isEmpty) {
+        throw Exception('Password required for re-authentication.');
+      }
+
+      try {
+        final cred = EmailAuthProvider.credential(email: user.email!, password: password);
+        await user.reauthenticateWithCredential(cred);
+      } on FirebaseAuthException catch (e) {
+        if (e.code == 'wrong-password') {
+          throw Exception('Incorrect password.');
+        } else if (e.code == 'user-mismatch' || e.code == 'user-not-found' || e.code == 'invalid-credential') {
+          throw Exception('Reauthentication failed: ${e.message ?? e.code}');
+        } else if (e.code == 'requires-recent-login') {
+          throw Exception('Reauthentication required. Please sign in again and try deleting.');
+        } else {
+          throw Exception('Reauthentication error: ${e.message ?? e.code}');
+        }
+      }
+    } else {
+      // Non-password provider (Google/Facebook). Recommend user re-sign in through provider.
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Re-authentication Required'),
+          content: const Text(
+              'Your account uses a third-party sign-in (Google/Facebook). Please sign in again with that provider in the app to proceed with account deletion.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('OK')),
+          ],
+        ),
+      );
+      throw Exception('Third-party provider requires re-authentication via provider sign-in.');
+    }
+
+    // If we reach here, re-auth succeeded — attempt delete
+    try {
+      await user.delete();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Authentication account deleted successfully.'), backgroundColor: Colors.green),
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'requires-recent-login') {
+        throw Exception('Recent authentication required. Please re-login and try again.');
+      } else {
+        throw Exception('Failed to delete auth account: ${e.message ?? e.code}');
+      }
+    } catch (e) {
+      throw Exception('Failed to delete auth account: ${e.toString()}');
     }
   }
 
@@ -601,8 +897,7 @@ class _TrainerProfileState extends State<TrainerProfile> {
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                   ),
                   child: Text(
                     cancelText,
@@ -621,8 +916,7 @@ class _TrainerProfileState extends State<TrainerProfile> {
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                   ),
                   child: Text(
                     confirmText,
@@ -812,7 +1106,7 @@ class _TrainerProfileState extends State<TrainerProfile> {
                   // Profile header
                   Container(
                     decoration: const BoxDecoration(
-                      color: Color(0xFF2973B2), 
+                      color: Color(0xFF2973B2),
                       borderRadius: BorderRadius.only(
                         bottomLeft: Radius.circular(30),
                         bottomRight: Radius.circular(30),
@@ -1082,11 +1376,11 @@ class _TrainerProfileState extends State<TrainerProfile> {
                                                     ),
                                                   ),
                                                 ),
-                                              ),
+                                              )
                                             );
-                                          },
-                                        );
-                                      },
+                                            },
+                                          );
+                                        },
                                     ),
                                   ],
                                 ),
@@ -1210,19 +1504,19 @@ class _TrainerProfileState extends State<TrainerProfile> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10.0),
       child: InkWell(
-        borderRadius: BorderRadius.circular(8.0), 
+        borderRadius: BorderRadius.circular(8.0),
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16), 
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(8.0), 
-            border: Border.all(color: Colors.grey.shade200), 
+            borderRadius: BorderRadius.circular(8.0),
+            border: Border.all(color: Colors.grey.shade200),
           ),
           child: Row(
             children: [
-              Icon(icon, color: iconColor, size: 22), 
-              const SizedBox(width: 12), 
+              Icon(icon, color: iconColor, size: 22),
+              const SizedBox(width: 12),
               Expanded(
                 child: Text(
                   title,
@@ -1233,7 +1527,7 @@ class _TrainerProfileState extends State<TrainerProfile> {
                   ),
                 ),
               ),
-              Icon(Icons.arrow_forward_ios, color: tileColor, size: 16), 
+              Icon(Icons.arrow_forward_ios, color: tileColor, size: 16),
             ],
           ),
         ),
@@ -1246,7 +1540,7 @@ class _TrainerProfileState extends State<TrainerProfile> {
     required IconData icon,
     required Widget Function(BuildContext) openPageBuilder,
   }) {
-    const double borderRadius = 8.0; 
+    const double borderRadius = 8.0;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10.0),
       child: OpenContainer(
@@ -1267,16 +1561,16 @@ class _TrainerProfileState extends State<TrainerProfile> {
             onTap: openContainer,
             borderRadius: BorderRadius.circular(borderRadius),
             child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16), 
+              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(borderRadius),
-                border: Border.all(color: Colors.grey.shade200), 
+                border: Border.all(color: Colors.grey.shade200),
               ),
               child: Row(
                 children: [
-                  Icon(icon, color: const Color(0xFF00568D), size: 22), 
-                  const SizedBox(width: 12), 
+                  Icon(icon, color: const Color(0xFF00568D), size: 22),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Text(
                       title,
@@ -1287,7 +1581,7 @@ class _TrainerProfileState extends State<TrainerProfile> {
                       ),
                     ),
                   ),
-                  const Icon(Icons.arrow_forward_ios, color: Color(0xFF00568D), size: 16), 
+                  const Icon(Icons.arrow_forward_ios, color: Color(0xFF00568D), size: 16),
                 ],
               ),
             ),
@@ -1307,7 +1601,7 @@ class _TrainerProfileState extends State<TrainerProfile> {
           labelText: label,
           labelStyle: const TextStyle(color: Color(0xFF00568D), fontWeight: FontWeight.w500),
           filled: true,
-          fillColor: const Color(0xFFF4F8FE), 
+          fillColor: const Color(0xFFF4F8FE),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
             borderSide: const BorderSide(color: Color(0xFFBFD7ED)),
@@ -1321,5 +1615,65 @@ class _TrainerProfileState extends State<TrainerProfile> {
         style: const TextStyle(fontSize: 16),
       ),
     );
+  }
+
+  Future<String?> _showPasswordDialog(BuildContext context) async {
+    TextEditingController passwordController = TextEditingController();
+
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Enter Password'),
+        content: TextField(
+          controller: passwordController,
+          obscureText: true,
+          decoration: const InputDecoration(
+            labelText: 'Password',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, null), child: const Text('Cancel')),
+          ElevatedButton(onPressed: () => Navigator.pop(context, passwordController.text), child: const Text('Confirm')),
+        ],
+      ),
+    );
+  }
+
+  /// Helper to update documents in batches (archive/dissociate)
+  Future<void> _archiveOrDissociateQueryInBatches(Query query, {required Map<String, dynamic> updateData, int batchSize = 300}) async {
+    final snapshots = await query.get();
+    final docs = snapshots.docs;
+    for (var i = 0; i < docs.length; i += batchSize) {
+      final batch = FirebaseFirestore.instance.batch();
+      for (var j = i; j < i + batchSize && j < docs.length; j++) {
+        batch.update(docs[j].reference, updateData);
+      }
+      await batch.commit();
+    }
+  }
+
+  /// Helper to delete documents in batches, with fallback if too many docs
+  Future<void> _deleteQueryInBatches(
+    Query query, {
+    int batchSize = 300,
+    int? maxDocsBeforeFallback,
+    Future<void> Function(int count)? onTooLargeFallback,
+  }) async {
+    final snapshots = await query.get();
+    final docs = snapshots.docs;
+    if (maxDocsBeforeFallback != null && docs.length > maxDocsBeforeFallback) {
+      if (onTooLargeFallback != null) {
+        await onTooLargeFallback(docs.length);
+      }
+      return;
+    }
+    for (var i = 0; i < docs.length; i += batchSize) {
+      final batch = FirebaseFirestore.instance.batch();
+      for (var j = i; j < i + batchSize && j < docs.length; j++) {
+        batch.delete(docs[j].reference);
+      }
+      await batch.commit();
+    }
   }
 }

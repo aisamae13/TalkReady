@@ -98,41 +98,38 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> _navigateAfterLogin(User user) async {
     try {
-      final docRef = _firestore.collection('users').doc(user.uid);
-      final doc = await docRef.get();
-      final Map<String, dynamic>? userData = doc.data() as Map<String, dynamic>?;
+      DocumentSnapshot doc = await _firestore.collection('users').doc(user.uid).get();
+      Map<String, dynamic>? userData = doc.data() as Map<String, dynamic>?;
 
-      // Prefer any explicit role field set by web or mobile (may be 'role' or 'userType').
-      String? role;
-      if (userData != null) {
-        role = (userData['role'] ?? userData['userType'] ?? userData['type'])?.toString().toLowerCase();
-      }
+      String? userType = userData?['userType']?.toString().toLowerCase();
 
-      // If role exists, route immediately based on role (skip onboarding prompts).
-      if (role != null && role.isNotEmpty) {
-        if (!mounted) return;
-        if (role == 'trainer') {
-          Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => TrainerDashboard()));
-        } else {
-          Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const HomePage()));
-        }
-        return;
-      }
-
-      // No explicit role found => fall back to onboarding checks (existing behavior)
       bool hasOnboardingData = await _hasCompletedOnboarding(user.uid);
       if (!mounted) return;
 
       if (!hasOnboardingData) {
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const WelcomePage()));
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const WelcomePage()),
+        );
         return;
       }
 
-      // If onboarding exists but role still missing, default to HomePage (or you can decide a safer fallback)
-      Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const HomePage()));
+      if (userType == 'trainer') {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => TrainerDashboard()),
+        );
+      } else {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const HomePage()),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Login error: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Login error: $e')),
+      );
       logger.e('Navigation error after login: $e');
     }
   }
@@ -141,10 +138,15 @@ class _LoginPageState extends State<LoginPage> {
     try {
       await _googleSignIn.signOut();
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-      if (googleUser == null) return;
+      if (googleUser == null) {
+        logger.w('Google Sign-In cancelled by user');
+        return;
+      }
 
-      if (!mounted) return;
-      Navigator.push(context, MaterialPageRoute(builder: (context) => const LoadingScreen()));
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const LoadingScreen()),
+      );
 
       final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
       final OAuthCredential credential = GoogleAuthProvider.credential(
@@ -153,98 +155,99 @@ class _LoginPageState extends State<LoginPage> {
       );
 
       final UserCredential userCredential = await _auth.signInWithCredential(credential);
-      if (!mounted) { Navigator.pop(context); return; }
 
-      final user = userCredential.user;
-      if (user == null) {
+      if (!mounted) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Google sign-in failed. Please try again.')));
         return;
       }
 
-      final userDocRef = _firestore.collection('users').doc(user.uid);
-      final docSnapshot = await userDocRef.get();
+      if (userCredential.user != null) {
+        if (userCredential.additionalUserInfo?.isNewUser ?? false) {
+          await _auth.signOut();
+          await _googleSignIn.signOut();
+          Navigator.pop(context);
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No account found. Please sign up first!'),
+              duration: Duration(seconds: 3),
+              backgroundColor: Colors.orange,
+            ),
+          );
+          Navigator.pushNamed(context, '/', arguments: {'fromLogin': true});
+          return;
+        }
 
-      if (!docSnapshot.exists) {
-        // Create/merge a minimal profile using info from Google.
-        // IMPORTANT: do NOT set `role` or `onboardingCompleted` here — let existing web settings win.
-        await userDocRef.set({
-          'uid': user.uid,
-          'email': user.email,
-          'displayName': user.displayName ?? googleUser.email.split('@').first,
-          'photoURL': user.photoURL ?? googleUser.photoUrl,
-          'createdAt': FieldValue.serverTimestamp(),
-          'emailVerified': user.emailVerified,
-        }, SetOptions(merge: true));
-      } else {
-        // Merge non-destructive fields only; do not overwrite role/onboarding flags.
-        final existing = docSnapshot.data() as Map<String, dynamic>? ?? {};
-        await userDocRef.set({
-          'email': user.email,
-          'displayName': user.displayName ?? existing['displayName'],
-          'photoURL': user.photoURL ?? existing['photoURL'],
-          'emailVerified': user.emailVerified,
-        }, SetOptions(merge: true));
+        final userDoc = _firestore.collection('users').doc(userCredential.user!.uid);
+        final docSnapshot = await userDoc.get();
+        if (!docSnapshot.exists) {
+          await _auth.signOut();
+          await _googleSignIn.signOut();
+          Navigator.pop(context);
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Account not found. Please sign up first!'),
+              duration: Duration(seconds: 3),
+              backgroundColor: Colors.orange,
+            ),
+          );
+          Navigator.pushNamed(context, '/', arguments: {'fromLogin': true});
+          return;
+        }
+
+        Navigator.pop(context);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Login successful!')),
+        );
+        await _navigateAfterLogin(userCredential.user!);
       }
-
-      Navigator.pop(context);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Login successful!')));
-
-      await _navigateAfterLogin(user);
     } catch (e) {
-      try { Navigator.pop(context); } catch (_) {}
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Google Sign-In error: $e')));
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
       logger.e('Google Sign-In error: $e');
     }
   }
 
   Future<void> _signInWithEmailPassword() async {
     try {
-      final email = _emailController.text.trim();
-      final password = _passwordController.text;
-      if (email.isEmpty || password.isEmpty) {
+      if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please fill in all fields')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please fill in all fields')),
+        );
         return;
       }
 
-      Navigator.push(context, MaterialPageRoute(builder: (context) => const LoadingScreen()));
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const LoadingScreen()),
+      );
 
-      // If the email is associated only with a non-password provider, show suggestion
-      final providers = await _auth.fetchSignInMethodsForEmail(email);
-      if (providers.isNotEmpty && !providers.contains('password')) {
-        Navigator.pop(context);
-        final suggestion = providers.contains('google.com') ? 'Google Sign-In' : providers.join(', ');
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Please sign in using: $suggestion')));
-        return;
-      }
+      // Configure reCAPTCHA settings
+      await _configureAuthSettings();
 
-      final UserCredential userCredential = await _auth.signInWithEmailAndPassword(email: email, password: password);
+      final UserCredential userCredential = await _auth.signInWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+      );
+
       if (!mounted) return;
       Navigator.pop(context);
 
-      final user = userCredential.user;
-      if (user != null) {
-        // Ensure a users/{uid} doc exists but don't overwrite role/onboarding flags.
-        final userDocRef = _firestore.collection('users').doc(user.uid);
-        final doc = await userDocRef.get();
-        if (!doc.exists) {
-          await userDocRef.set({
-            'uid': user.uid,
-            'email': user.email,
-            'displayName': user.email?.split('@').first ?? '',
-            'emailVerified': user.emailVerified,
-            'createdAt': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
-        }
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Login successful!')));
-        await _navigateAfterLogin(user);
+      if (userCredential.user != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Login successful!')),
+        );
+        await _navigateAfterLogin(userCredential.user!);
       }
     } on FirebaseAuthException catch (e) {
-      try { Navigator.pop(context); } catch (_) {}
       if (!mounted) return;
+      Navigator.pop(context);
       String message;
       switch (e.code) {
         case 'user-not-found':
@@ -253,15 +256,28 @@ class _LoginPageState extends State<LoginPage> {
         case 'wrong-password':
           message = 'Incorrect password.';
           break;
+        case 'invalid-email':
+          message = 'The email address is not valid.';
+          break;
+        case 'too-many-requests':
+          message = 'Too many attempts. Please try again later.';
+          break;
+        case 'invalid-credential':
+          message = 'The supplied auth credential is incorrect, malformed, or has expired. Check your internet connection or credentials.';
+          break;
         default:
-          message = e.message ?? 'Login failed.';
+          message = 'Login failed: ${e.message}';
       }
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
       logger.e('FirebaseAuthException: ${e.code} - ${e.message}');
     } catch (e) {
-      try { Navigator.pop(context); } catch (_) {}
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('An error occurred: $e')));
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('An error occurred: $e')),
+      );
       logger.e('Unexpected error during email/password sign-in: $e');
     }
   }
