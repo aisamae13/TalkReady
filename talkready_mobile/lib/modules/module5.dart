@@ -1,19 +1,10 @@
-import 'package:flutter/material.dart'
-    hide
-        CarouselController; // Hide to avoid conflict if CarouselController is also defined elsewhere
-import 'package:carousel_slider/carousel_slider.dart';
+// lib/modules/module5.dart
+import 'package:flutter/material.dart';
 import 'package:logger/logger.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-
-import '../firebase_service.dart';
-import '../lessons/lesson5_1.dart'; // Assuming this is your refactored Lesson5_1
-import '../lessons/lesson5_2.dart'; // Assuming this will be your refactored Lesson5_2
+import '../services/unified_progress_service.dart';
 
 class Module5Page extends StatefulWidget {
-  final String? targetLessonKey; // e.g., "lesson1", "lesson2"
-  const Module5Page({super.key, this.targetLessonKey});
+  const Module5Page({super.key});
 
   @override
   State<Module5Page> createState() => _Module5PageState();
@@ -21,538 +12,713 @@ class Module5Page extends StatefulWidget {
 
 class _Module5PageState extends State<Module5Page> {
   final Logger _logger = Logger();
-  final FirebaseService _firebaseService = FirebaseService();
+  final UnifiedProgressService _progressService = UnifiedProgressService();
 
-  int currentLesson = 1; // 1 for L5.1, 2 for L5.2
-  bool showActivity =
-      false; // Controls if the activity part of a lesson is shown
-  int _currentSlide = 0; // For study material carousel within lessons
-  final CarouselSliderController _carouselController =
-      CarouselSliderController();
+  bool _isLoading = true;
+  Map<String, List<Map<String, dynamic>>> _lessonAttempts = {};
+  List<Map<String, dynamic>> _assessmentAttempts = [];
+  bool _allLessonsCompleted = false;
 
-  // Progress and state
-  Map<String, bool> _lessonCompletion = {'lesson1': false, 'lesson2': false};
-  late Map<String, int> _lessonAttemptCounts;
-  bool _isContentLoaded = false;
-  bool _isLoading =
-      false; // General loading for module-level actions (e.g., fetching API)
-
-  final Map<int, bool> _showSummaryAfterCompletion = {1: false, 2: false};
-
-  final Map<int, Map<String, dynamic>?> _lastAttemptDataForSummary = {
-    1: null,
-    2: null
-  };
-  final Map<int, bool> _triggerSummaryDisplay = {1: false, 2: false};
-
-  // Firestore keys for lessons in Module 5
-  final Map<int, String> _lessonNumericToFirestoreKey = {
-    1: "Lesson 5.1", // Matches what Lesson5.1.jsx would use
-    2: "Lesson 5.2", // Matches what Lesson5.2.jsx would use
-  };
-  // Module key for Firebase progress structure
-  final String _moduleIdFirebase = "module5";
+  // Configuration for Module 5 lessons
+  final List<Map<String, dynamic>> _lessonConfigs = [
+    {
+      'id': 'Lesson 5.1',
+      'title': 'Lesson 5.1: Basic Simulation - Info Request',
+      'description':
+          'Practice handling information request calls with professional customer service skills.',
+      'color': const Color(0xFF00BCD4), // Cyan color for Module 5
+      'firestoreId': 'Lesson-5-1',
+      'totalQuestions': 100, // Adjusted for call center simulation scoring
+    },
+    {
+      'id': 'Lesson 5.2',
+      'title': 'Lesson 5.2: Advanced Simulation - Problem Resolution',
+      'description':
+          'Handle complex customer problems with professional communication techniques.',
+      'color': const Color(0xFF00BCD4),
+      'firestoreId': 'Lesson-5-2',
+      'totalQuestions': 100,
+    },
+  ];
 
   @override
   void initState() {
     super.initState();
-    _lessonAttemptCounts = {'lesson1': 0, 'lesson2': 0};
-    _performAsyncInit();
+    _loadModuleProgress();
   }
 
-  Future<void> _performAsyncInit() async {
-    setState(() => _isContentLoaded = false);
-    try {
-      await _loadLessonProgress();
-      // No top-level YouTube controller for Module 5 based on JSX structure
-      if (mounted) {
-        setState(() {
-          showActivity = _lessonCompletion['lesson$currentLesson'] ?? false;
-          _isContentLoaded = true;
-        });
-      }
-    } catch (error) {
-      _logger.e("Error during Module 5 initState loading: $error");
-      if (mounted) {
-        setState(() {
-          // Consider adding an error message display if needed
-          _isContentLoaded = true; // Allow UI to build even if error
-        });
-      }
-    }
-  }
-
-  Future<void> _loadLessonProgress() async {
-    try {
-      final progress =
-          await _firebaseService.getModuleProgress(_moduleIdFirebase);
-      final lessonsData = progress['lessons'] as Map<String, dynamic>? ?? {};
-      final attemptData = progress['attempts'] as Map<String, dynamic>? ?? {};
-
-      _lessonCompletion = {
-        'lesson1': lessonsData['lesson1'] ?? false,
-        'lesson2': lessonsData['lesson2'] ?? false,
-      };
-      _lessonAttemptCounts = {
-        'lesson1': attemptData['lesson1'] as int? ?? 0,
-        'lesson2': attemptData['lesson2'] as int? ?? 0,
-      };
-
-      if (widget.targetLessonKey != null) {
-        switch (widget.targetLessonKey) {
-          case 'lesson1':
-            currentLesson = 1;
-            break;
-          case 'lesson2':
-            currentLesson = 2;
-            break;
-          default:
-            _determineInitialLesson();
-        }
-      } else {
-        _determineInitialLesson();
-      }
-      _logger.i(
-          'Module 5: Progress loaded. Current Lesson: $currentLesson, Completion: $_lessonCompletion, Attempts: $_lessonAttemptCounts');
-    } catch (e) {
-      _logger.e('Module 5: Error loading lesson progress: $e');
-      _determineInitialLesson(); // Fallback
-      rethrow;
-    }
-  }
-
-  void _determineInitialLesson() {
-    if (!(_lessonCompletion['lesson1'] ?? false)) {
-      currentLesson = 1;
-    } else if (!(_lessonCompletion['lesson2'] ?? false))
-      currentLesson = 2;
-    else
-      currentLesson = 2; // Default to last lesson if all complete
-  }
-
-  Future<void> _saveLessonProgressAndUpdateCompletion(int lessonNumberInModule,
-      {required int newAttemptCount}) async {
-    final lessonKeyString = 'lesson$lessonNumberInModule';
-    _lessonAttemptCounts[lessonKeyString] = newAttemptCount;
-
-    await _firebaseService.updateLessonProgress(
-      _moduleIdFirebase,
-      lessonKeyString,
-      true, // Mark lesson as completed (or "touched")
-      attempts: _lessonAttemptCounts,
-    );
-    if (mounted) {
-      setState(() {
-        _lessonCompletion[lessonKeyString] = true;
-      });
-    }
-  }
-
-  // --- Handler for Lesson 5.1 & 5.2: Process Agent's Spoken Turn ---
-  Future<Map<String, dynamic>?> _handleProcessAgentTurn({
-    required String turnId,
-    required String localAudioPath,
-    required String originalText, // Model answer/script for the agent's turn
-    // required String lessonContext, // e.g., "L5.1" or "L5.2" - if needed by backend or for logging
-  }) async {
-    if (!mounted) return null;
+  Future<void> _loadModuleProgress() async {
     setState(() => _isLoading = true);
-    _logger.i(
-        "Processing Agent Turn: $turnId, AudioPath: $localAudioPath, Script: \"$originalText\"");
-
-    final String apiBaseUrl =
-        dotenv.env['API_BASE_URL'] ?? 'http://192.168.208.38:5000';
-    String? audioStorageUrl;
-    String lessonIdForFirebase = _lessonNumericToFirestoreKey[currentLesson]!;
-
     try {
-      // Step 1: Upload audio to Firebase Storage
-      // The promptId for Firebase Storage can be the turnId for uniqueness within the lesson attempt
-      audioStorageUrl = await _firebaseService.uploadLessonAudio(
-          localAudioPath, lessonIdForFirebase, turnId);
-      if (audioStorageUrl == null) {
-        throw Exception("Failed to upload audio to Firebase Storage.");
+      final results = await Future.wait([
+        _progressService.getModuleAssessmentAttempts('module_5_final'),
+        ..._lessonConfigs.map(
+          (c) => _progressService.getLessonAttempts(c['firestoreId'] as String),
+        ),
+      ]);
+
+      final assessmentAttempts = results[0] as List<Map<String, dynamic>>;
+      Map<String, List<Map<String, dynamic>>> lessonAttempts = {};
+      for (int i = 0; i < _lessonConfigs.length; i++) {
+        final lessonId = _lessonConfigs[i]['firestoreId'] as String;
+        lessonAttempts[lessonId] = results[i + 1] as List<Map<String, dynamic>>;
       }
-      _logger.i("Audio uploaded for turn $turnId: $audioStorageUrl");
 
-      // Step 2: Call backend for Azure Speech Evaluation
-      _logger.i("Sending to Azure for turn $turnId via backend...");
-      final azureResponse = await http
-          .post(
-            Uri.parse(
-                '$apiBaseUrl/evaluate-speech-with-azure'), // Endpoint from server.js
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'audioUrl': audioStorageUrl,
-              'originalText': originalText,
-              'language': 'en-US',
-            }),
-          )
-          .timeout(const Duration(seconds: 120));
-
-      if (!mounted) return null;
-      if (azureResponse.statusCode != 200) {
-        final errorBody = jsonDecode(azureResponse.body);
-        throw Exception(
-            "Azure evaluation failed: ${errorBody['error'] ?? azureResponse.reasonPhrase}");
-      }
-      final azureResult =
-          jsonDecode(azureResponse.body) as Map<String, dynamic>;
-      if (azureResult['success'] != true) {
-        throw Exception(
-            "Azure evaluation unsuccessful: ${azureResult['error'] ?? 'Unknown Azure error'}");
-      }
-      _logger.i(
-          "Azure feedback received for turn $turnId: Accuracy ${azureResult['accuracyScore']}");
-
-      // Step 3: Call backend for OpenAI Coach's Explanation
-      _logger.i("Sending to OpenAI for explanation for turn $turnId...");
-      final openAiResponse = await http
-          .post(
-            Uri.parse(
-                '$apiBaseUrl/explain-azure-feedback-with-openai'), // Endpoint from server.js
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'azureFeedback': azureResult, // Pass the full Azure result
-              'originalText': originalText,
-            }),
-          )
-          .timeout(const Duration(seconds: 60));
-
-      if (!mounted) return null;
-      if (openAiResponse.statusCode != 200) {
-        final errorBody = jsonDecode(openAiResponse.body);
-        throw Exception(
-            "OpenAI explanation failed: ${errorBody['error'] ?? openAiResponse.reasonPhrase}");
-      }
-      final openAiResult = jsonDecode(openAiResponse.body);
-      if (openAiResult['success'] != true) {
-        throw Exception(
-            "OpenAI explanation unsuccessful: ${openAiResult['error'] ?? 'Unknown OpenAI error'}");
-      }
-      _logger.i("OpenAI feedback received for turn $turnId.");
-
-      return {
-        'audioStorageUrl': audioStorageUrl,
-        'transcription': azureResult['textRecognized'],
-        'azureAiFeedback': azureResult, // Full Azure result
-        'openAiDetailedFeedback':
-            openAiResult['detailedFeedback'], // HTML string
-        'error': null,
-      };
-    } catch (e) {
-      _logger.e("Error processing agent turn $turnId: $e");
-      return {
-        'audioStorageUrl':
-            audioStorageUrl, // Might be null if upload failed early
-        'transcription': null,
-        'azureAiFeedback': null,
-        'openAiDetailedFeedback': null,
-        'error': e.toString(),
-      };
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  // --- Handler for Lesson 5.1 & 5.2: Save Lesson Attempt ---
-  Future<void> _handleSaveLessonAttempt({
-    required String
-        lessonIdFirestoreKey, // e.g., "Lesson 5.1" from the lesson widget
-    required int
-        attemptNumber, // This is the new total attempt count for this lesson
-    required int timeSpent,
-    required double overallLessonScore,
-    required List<Map<String, dynamic>> turnDetails,
-  }) async {
-    if (!mounted) return;
-    setState(() => _isLoading = true);
-
-    // Determine the lesson number (1 or 2) from the lessonIdFirestoreKey ("Lesson 5.1" -> 1)
-    int lessonNumberInModule = _lessonNumericToFirestoreKey.entries
-        .firstWhere((entry) => entry.value == lessonIdFirestoreKey,
-            orElse: () => const MapEntry(0, ""))
-        .key;
-
-    if (lessonNumberInModule == 0) {
-      _logger.e(
-          "Could not determine lesson number for Firestore key: $lessonIdFirestoreKey during save.");
-      if (mounted) setState(() => _isLoading = false);
-      // Optionally show a user-facing error
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content:
-              Text("Internal error: Could not identify lesson for saving.")));
-      return;
-    }
-
-    // This is the key used within module5.attempts and module5.lessons (e.g., "lesson1", "lesson2")
-    final String lessonKeyForModuleProgress = 'lesson$lessonNumberInModule';
-
-    try {
-      final detailedResponsesPayload = {
-        'overallScore': overallLessonScore,
-        'timeSpent': timeSpent,
-        'promptDetails':
-            turnDetails, // These are the individual turns from the simulation
-      };
-
-      // Step 1: Save the detailed attempt data to the specific lesson's attempt collection
-      // This writes to: userProgress/{uid}/lessonAttempts/{lessonIdFirestoreKey} (e.g., "lessonAttempts/Lesson 5.1")
-      await _firebaseService.saveSpecificLessonAttempt(
-        lessonIdKey: lessonIdFirestoreKey, // e.g., "Lesson 5.1"
-        score: overallLessonScore.round(),
-        attemptNumberToSave:
-            attemptNumber, // The current attempt number for this specific lesson
-        timeSpent: timeSpent,
-        detailedResponsesPayload: detailedResponsesPayload,
-        isUpdate:
-            false, // Assuming this is always a new attempt, not an update to an existing one
-      );
-      _logger.i(
-          "Detailed attempt #$attemptNumber for $lessonIdFirestoreKey saved to its collection.");
-
-      // Step 2: Update the local state in module5.dart
-      // This ensures _lessonAttemptCounts and _lessonCompletion are up-to-date before sending to Firestore
-      // and for the UI to react.
-      Map<String, int> newAttemptCountsState = Map.from(_lessonAttemptCounts);
-      newAttemptCountsState[lessonKeyForModuleProgress] = attemptNumber;
-
-      Map<String, bool> newLessonCompletionState = Map.from(_lessonCompletion);
-      newLessonCompletionState[lessonKeyForModuleProgress] = true;
-
-      if (mounted) {
-        setState(() {
-          _lessonAttemptCounts = newAttemptCountsState;
-          _lessonCompletion = newLessonCompletionState;
-
-          // For displaying summary view in the lesson widget
-          _triggerSummaryDisplay[lessonNumberInModule] = true;
-          _lastAttemptDataForSummary[lessonNumberInModule] = {
-            'overallLessonScore': overallLessonScore,
-            'turnDetails': turnDetails,
-            'timeSpent': timeSpent,
-            'attemptNumber': attemptNumber, // The attempt number just completed
-          };
-          // This flag seems related to UI flow within the lesson for showing summary
-          if (lessonNumberInModule > 0) {
-            // Check to prevent index out of bounds if lessonNumberInModule was 0
-            _showSummaryAfterCompletion[lessonNumberInModule] = true;
-          }
-        });
-      }
-      _logger.i(
-          "Local state in Module5Page updated for $lessonKeyForModuleProgress: attempts=$attemptNumber, completed=true.");
-
-      // Step 3: Update the module-level progress in Firestore.
-      // This updates: userProgress/{uid}/module5/attempts and userProgress/{uid}/module5/lessons/{lessonKey}
-      await _firebaseService.updateLessonProgress(
-        _moduleIdFirebase, // "module5"
-        lessonKeyForModuleProgress, // "lesson1" or "lesson2"
-        true, // Mark this lesson as completed in module5.lessons
-        attempts:
-            _lessonAttemptCounts, // Pass the updated _lessonAttemptCounts map
-        // e.g., {'lesson1': 1, 'lesson2': 0}
+      final allDone = _lessonConfigs.every(
+        (c) => (lessonAttempts[c['firestoreId']]?.isNotEmpty ?? false),
       );
 
-      _logger.i(
-          "'$lessonIdFirestoreKey' (lesson $lessonKeyForModuleProgress) attempt #$attemptNumber fully processed. Module '$_moduleIdFirebase' progress (attempts and lesson completion) updated in Firestore.");
-    } catch (e) {
-      _logger.e(
-          "Error during _handleSaveLessonAttempt for '$lessonIdFirestoreKey': $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Error saving progress: ${e.toString()}")));
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  @override
-  void dispose() {
-    // _youtubeController?.dispose(); // No top-level YouTube controller in M5
-    super.dispose();
-  }
-
-  void _goToNextLesson() async {
-    if (currentLesson < 2) {
-      // Assuming 2 lessons for Module 5
-      setState(() => _isLoading = true);
-      // You can keep a small delay if you want the loading spinner to be visible briefly
-      await Future.delayed(const Duration(milliseconds: 100));
-
       if (mounted) {
         setState(() {
-          currentLesson++;
-          _currentSlide =
-              0; // Reset slide index for the new lesson's study material
-          showActivity = _lessonCompletion['lesson$currentLesson'] ?? false;
-          // No _initializeYoutubeController needed as per module5 structure
+          _assessmentAttempts = assessmentAttempts;
+          _lessonAttempts = lessonAttempts;
+          _allLessonsCompleted = allDone;
           _isLoading = false;
-
-          // REMOVED: _carouselController.jumpToPage(0);
-          // We will rely on the initialPage property of the CarouselSlider
-          // in Lesson5_1 / Lesson5_2 which uses widget.currentSlide (now set to 0).
         });
-        _logger.i(
-            "Module5: Switched to Lesson $currentLesson. Carousel should initialize to slide 0 via initialPage prop.");
       }
-    } else {
-      _logger.i("Module 5 completed or last lesson reached.");
-      if (mounted) Navigator.pop(context); // Go back after finishing module
+    } catch (e) {
+      _logger.e('Error loading Module 5 progress: $e');
+      if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  bool _isLessonUnlocked(int lessonIndex) {
+    if (lessonIndex == 0) return true; // First lesson always unlocked
+    final prevLessonId =
+        _lessonConfigs[lessonIndex - 1]['firestoreId'] as String;
+    return (_lessonAttempts[prevLessonId]?.isNotEmpty ?? false);
+  }
+
+  void _navigateToLesson(String lessonId) {
+    String? routeName;
+    switch (lessonId) {
+      case 'Lesson 5.1':
+        routeName = '/lesson5_1';
+        break;
+      case 'Lesson 5.2':
+        routeName = '/lesson5_2';
+        break;
+    }
+
+    if (routeName != null) {
+      Navigator.pushNamed(context, routeName);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Navigation for $lessonId not implemented yet.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
+  }
+
+  void _showAssessmentLog() {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Container(
+          constraints: const BoxConstraints(maxHeight: 500, maxWidth: 400),
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF00BCD4),
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(16),
+                    topRight: Radius.circular(16),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.assessment, color: Colors.white, size: 24),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'Assessment Log: Module 5',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close, color: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: _assessmentAttempts.isEmpty
+                    ? const Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.headset, size: 64, color: Colors.grey),
+                            SizedBox(height: 16),
+                            Text(
+                              'No assessment attempts found.',
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: _assessmentAttempts.length,
+                        itemBuilder: (context, index) {
+                          final attempt = _assessmentAttempts[index];
+                          final timestamp =
+                              attempt['attemptTimestamp'] as DateTime?;
+
+                          final scoreValue = attempt['score'];
+                          final maxScoreValue = attempt['maxScore'];
+
+                          final int score = (scoreValue is num)
+                              ? scoreValue.toInt()
+                              : 0;
+                          final int maxScore = (maxScoreValue is num)
+                              ? maxScoreValue.toInt()
+                              : 25; // Default for Module 5 assessments
+
+                          final double percentageDouble = maxScore > 0
+                              ? (score / maxScore) * 100
+                              : 0.0;
+                          final int percentage = percentageDouble.round();
+
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            elevation: 2,
+                            child: ListTile(
+                              leading: CircleAvatar(
+                                backgroundColor: percentage >= 70
+                                    ? Colors.green
+                                    : percentage >= 50
+                                    ? Colors.orange
+                                    : Colors.red,
+                                child: Text(
+                                  '${index + 1}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              title: Text(
+                                'Attempt ${index + 1}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Score: $score / $maxScore ($percentage%)',
+                                  ),
+                                  if (timestamp != null)
+                                    Text(
+                                      'Date: ${timestamp.toLocal().toString().substring(0, 16)}',
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!_isContentLoaded) {
-      return Scaffold(
-        appBar: AppBar(title: Text('Module 5: Lesson $currentLesson')),
-        body: const Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    bool isModuleCompleted =
-        _lessonCompletion.values.every((completed) => completed);
-    int initialAttemptForChildLesson =
-        (_lessonAttemptCounts['lesson$currentLesson'] ?? 0);
-
-    if (_triggerSummaryDisplay[currentLesson] == true) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _logger.i(
-              "Module5: Attempting to jumpToPage(0) for lesson $currentLesson's carousel.");
-          try {
-            _carouselController.jumpToPage(0);
-          } catch (e) {
-            _logger.e(
-                "Module5: Error in jumpToPage(0) for lesson $currentLesson: $e");
-            // This might still error if the controller isn't attached quickly enough
-            // or if the CarouselSlider in the new lesson isn't built yet.
-            // A more robust solution might involve a key or ensuring the controller is truly ready.
-          }
-        }
-      });
-    }
-
     return Scaffold(
+      backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        title: Text('Module 5: Basic Call Simulations'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
+        title: const Text(
+          'Module 5',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
+        backgroundColor: const Color(0xFF00BCD4),
+        elevation: 4,
+        iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: SafeArea(
-        child: Stack(
+      body: _isLoading
+          ? const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(color: Color(0xFF00BCD4)),
+                  SizedBox(height: 16),
+                  Text('Loading module progress...'),
+                ],
+              ),
+            )
+          : RefreshIndicator(
+              onRefresh: _loadModuleProgress,
+              color: const Color(0xFF00BCD4),
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    _buildModuleHeader(),
+                    const SizedBox(height: 24),
+                    _buildLessonsSection(),
+                    _buildAssessmentCard(),
+                  ],
+                ),
+              ),
+            ),
+    );
+  }
+
+  Widget _buildModuleHeader() {
+    final completed = _lessonConfigs
+        .where((c) => (_lessonAttempts[c['firestoreId']]?.isNotEmpty ?? false))
+        .length;
+    final total = _lessonConfigs.length;
+    final progress = total > 0 ? completed / total : 0.0;
+
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [const Color(0xFF00BCD4), const Color(0xFF0097A7)],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF00BCD4).withOpacity(0.3),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.headset,
+                    size: 32,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Module 5',
+                        style: TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      Text(
+                        'Basic Call Simulation Practice',
+                        style: TextStyle(
+                          fontSize: 18,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Practice real-world customer service scenarios through interactive call simulations with AI-powered feedback.',
+              style: TextStyle(fontSize: 16, color: Colors.white, height: 1.4),
+            ),
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white.withOpacity(0.3)),
+              ),
               child: Column(
                 children: [
-                  Text(
-                    'Lesson $currentLesson of 2', // Module 5 has 2 lessons based on JSX
-                    style: const TextStyle(fontSize: 16, color: Colors.grey),
-                  ),
-                  const SizedBox(height: 16),
-                  // No top-level YouTube error for Module 5 based on current structure
-
-                  _buildLessonContentWidget(initialAttemptForChildLesson),
-
-                  // Navigation to next lesson or finish module
-                  if (showActivity &&
-                      (_lessonCompletion['lesson$currentLesson'] ?? false)) ...[
-                    const SizedBox(height: 24),
-                    if (currentLesson < 2) // Max 2 lessons in M5
-                      ElevatedButton(
-                        onPressed: _isLoading ? null : _goToNextLesson,
-                        child: _isLoading
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2))
-                            : const Text('Next Lesson'),
-                      )
-                    else // Current lesson is 2 (last lesson in M5)
-                      ElevatedButton(
-                        onPressed: () => Navigator.pop(context),
-                        style: ElevatedButton.styleFrom(
-                            backgroundColor: isModuleCompleted
-                                ? Colors.green
-                                : Theme.of(context).primaryColor),
-                        child: Text(isModuleCompleted
-                            ? 'Module Completed - Return'
-                            : 'Finish Module & Return'),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Progress',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                  ],
+                      Text(
+                        '${(progress * 100).toInt()}%',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  LinearProgressIndicator(
+                    value: progress,
+                    minHeight: 8,
+                    backgroundColor: Colors.white.withOpacity(0.3),
+                    valueColor: const AlwaysStoppedAnimation<Color>(
+                      Colors.white,
+                    ),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '$completed of $total lessons completed',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.9),
+                      fontSize: 14,
+                    ),
+                  ),
                 ],
               ),
             ),
-            if (_isLoading) // Global loading overlay for API calls
-              Container(
-                color: Colors.black.withOpacity(0.3),
-                child: const Center(child: CircularProgressIndicator()),
-              ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildLessonContentWidget(int initialAttemptNumberFromModule) {
-    onShowActivityCallback() {
-      if (mounted) {
-        setState(() {
-          showActivity = true;
-          // Lesson widget will handle its internal state reset (e.g., _isStudied)
-        });
-      }
-    }
+  Widget _buildLessonsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.school, color: Colors.grey[700], size: 24),
+            const SizedBox(width: 8),
+            Text(
+              'Lessons',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey[800],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        ..._lessonConfigs.asMap().entries.map(
+          (e) => _buildLessonCard(e.value, e.key),
+        ),
+      ],
+    );
+  }
 
-    final int lessonNum = currentLesson;
+  Widget _buildLessonCard(Map<String, dynamic> config, int index) {
+    final attempts = _lessonAttempts[config['firestoreId']] ?? [];
+    final isCompleted = attempts.isNotEmpty;
+    final isUnlocked = _isLessonUnlocked(index);
 
-    switch (currentLesson) {
-      case 1:
-        return Lesson5_1(
-          key: ValueKey(
-              'lesson5_1_attempt_${_lessonAttemptCounts["lesson1"]}'), // Ensure re-render on new attempt
-          passToShowSummary:
-              _triggerSummaryDisplay[lessonNum] ?? false, // <<< NEW PROP
-          summaryData: _lastAttemptDataForSummary[lessonNum], // <<< NEW PROP
-          currentSlide: _currentSlide,
-          carouselController: _carouselController,
-          onSlideChanged: (index) {
-            if (mounted) setState(() => _currentSlide = index);
-          },
-          initialAttemptNumber: initialAttemptNumberFromModule,
-          showActivityInitially: showActivity, // From module state
-          onShowActivitySection: onShowActivityCallback,
-          onProcessAgentTurn: _handleProcessAgentTurn,
-          onSaveLessonAttempt: _handleSaveLessonAttempt,
-        );
-      case 2:
-        return Lesson5_2(
-          key: ValueKey('lesson5_2_attempt_${_lessonAttemptCounts["lesson2"]}'),
-          passToShowSummary:
-              _triggerSummaryDisplay[lessonNum] ?? false, // <<< NEW PROP
-          summaryData: _lastAttemptDataForSummary[lessonNum], // <<< NEW PROP
-          currentSlide: _currentSlide,
-          carouselController: _carouselController,
-          onSlideChanged: (index) {
-            if (mounted) setState(() => _currentSlide = index);
-          },
-          initialAttemptNumber: initialAttemptNumberFromModule,
-          showActivityInitially: showActivity,
-          onShowActivitySection: onShowActivityCallback,
-          // Assuming L5.2 uses similar processing, adjust if handlers are different
-          onProcessAgentTurn: _handleProcessAgentTurn,
-          onSaveLessonAttempt: _handleSaveLessonAttempt,
-        );
-      default:
-        _logger.w(
-            'Module 5: Invalid lesson number in _buildLessonContentWidget: $currentLesson');
-        return Center(child: Text('Error: Invalid lesson $currentLesson'));
-    }
+    // For call simulations, we show percentage scores instead of raw scores
+    final lastScore = isCompleted
+        ? ((attempts.last['score'] as num?)?.toDouble() ?? 0.0)
+        : 0.0;
+
+    return Opacity(
+      opacity: isUnlocked ? 1.0 : 0.6,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(
+              color: isCompleted
+                  ? const Color(0xFF00BCD4).withOpacity(0.3)
+                  : Colors.grey.withOpacity(0.2),
+              width: 1,
+            ),
+          ),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: isUnlocked ? () => _navigateToLesson(config['id']) : null,
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Row(
+                children: [
+                  Container(
+                    width: 60,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      color: isCompleted
+                          ? const Color(0xFF00BCD4)
+                          : (isUnlocked
+                                ? const Color(0xFF00BCD4).withOpacity(0.1)
+                                : Colors.grey.withOpacity(0.1)),
+                      borderRadius: BorderRadius.circular(30),
+                      border: Border.all(
+                        color: isCompleted
+                            ? const Color(0xFF00BCD4)
+                            : (isUnlocked
+                                  ? const Color(0xFF00BCD4).withOpacity(0.3)
+                                  : Colors.grey.withOpacity(0.3)),
+                        width: 2,
+                      ),
+                    ),
+                    child: Icon(
+                      isCompleted
+                          ? Icons.check_circle
+                          : (isUnlocked ? Icons.headset : Icons.lock),
+                      color: isCompleted
+                          ? Colors.white
+                          : (isUnlocked
+                                ? const Color(0xFF00BCD4)
+                                : Colors.grey),
+                      size: 28,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          config['title'],
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF2C3E50),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          config['description'],
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[600],
+                            height: 1.3,
+                          ),
+                        ),
+                        if (isUnlocked && isCompleted) ...[
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF00BCD4).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              'Attempts: ${attempts.length} | Call Center Readiness: ${lastScore.toStringAsFixed(1)}%',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF00BCD4),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  if (isUnlocked)
+                    Icon(
+                      Icons.arrow_forward_ios,
+                      size: 16,
+                      color: Colors.grey[400],
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAssessmentCard() {
+    final isAssessmentTaken = _assessmentAttempts.isNotEmpty;
+
+    return Container(
+      margin: const EdgeInsets.only(top: 24),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: _allLessonsCompleted
+                ? const Color(0xFF00BCD4).withOpacity(0.2)
+                : Colors.grey.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Card(
+        elevation: 0,
+        color: _allLessonsCompleted
+            ? const Color(0xFF00BCD4).withOpacity(0.05)
+            : Colors.grey[50],
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: _allLessonsCompleted
+                ? const Color(0xFF00BCD4).withOpacity(0.3)
+                : Colors.grey.withOpacity(0.2),
+            width: 1,
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: _allLessonsCompleted
+                          ? const Color(0xFF00BCD4).withOpacity(0.1)
+                          : Colors.grey.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      Icons.assignment_turned_in,
+                      color: _allLessonsCompleted
+                          ? const Color(0xFF00BCD4)
+                          : Colors.grey,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Module 5 Final Assessment',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF2C3E50),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _allLessonsCompleted
+                              ? 'Test your call center simulation skills'
+                              : 'Complete all lessons to unlock',
+                          style: TextStyle(
+                            color: _allLessonsCompleted
+                                ? const Color(0xFF00BCD4)
+                                : Colors.grey[600],
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (!_allLessonsCompleted)
+                    Icon(Icons.lock, color: Colors.grey[400]),
+                ],
+              ),
+              const SizedBox(height: 16),
+              if (_allLessonsCompleted)
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () => Navigator.pushNamed(
+                          context,
+                          '/assessment',
+                          arguments: 'module_5_final',
+                        ),
+                        icon: Icon(
+                          isAssessmentTaken ? Icons.refresh : Icons.play_arrow,
+                          size: 20,
+                        ),
+                        label: Text(
+                          isAssessmentTaken
+                              ? 'Practice Again'
+                              : 'Take Assessment',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: isAssessmentTaken
+                              ? Colors.blue
+                              : const Color(0xFF00BCD4),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          elevation: 0,
+                        ),
+                      ),
+                    ),
+                    if (isAssessmentTaken) ...[
+                      const SizedBox(width: 12),
+                      OutlinedButton.icon(
+                        onPressed: _showAssessmentLog,
+                        icon: const Icon(Icons.history, size: 18),
+                        label: const Text('View Log'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF00BCD4),
+                          side: const BorderSide(color: Color(0xFF00BCD4)),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

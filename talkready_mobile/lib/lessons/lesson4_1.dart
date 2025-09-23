@@ -1,1571 +1,333 @@
-import 'dart:io';
-
-import 'package:cloud_firestore/cloud_firestore.dart';
+// lib/lessons/lesson4_1.dart
 import 'package:flutter/material.dart';
-import 'package:carousel_slider/carousel_slider.dart';
-import 'package:flutter_tts/flutter_tts.dart';
-import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:logger/logger.dart';
-import '../lessons/common_widgets.dart';
-import 'dart:async';
-import '../firebase_service.dart';
-import 'package:http/http.dart' as http;
-import 'package:audioplayers/audioplayers.dart';
-import 'dart:convert';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-// Add these imports for the assessment components
-import '../StudentAssessment/TypingPreAssessment.dart';
-import '../StudentAssessment/PreAssessment.dart';
-import '../widgets/parsed_feedback_card.dart';
+import 'package:youtube_player_flutter/youtube_player_flutter.dart';
+import '../services/unified_progress_service.dart';
+import '../widgets/typing_pre_assessment_widget.dart';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
+import 'package:just_audio/just_audio.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
-// Data structure for AI feedback for a single scenario
-class ScenarioFeedback {
-  final String text;
-  final double? score;
-
-  ScenarioFeedback({required this.text, this.score});
-
-  factory ScenarioFeedback.fromJson(Map<String, dynamic> json) {
-    return ScenarioFeedback(
-      text: json['text'] as String? ?? 'No feedback text.',
-      score: (json['score'] as num?)?.toDouble(),
-    );
-  }
-}
-
-// Interactive Phrase Widget (similar to React InteractivePhrase)
-class InteractivePhrase extends StatefulWidget {
-  final String situation;
-  final String phrase;
-
-  const InteractivePhrase({
-    Key? key,
-    required this.situation,
-    required this.phrase,
-  }) : super(key: key);
+class Lesson4_1Page extends StatefulWidget {
+  const Lesson4_1Page({super.key});
 
   @override
-  _InteractivePhraseState createState() => _InteractivePhraseState();
+  State<Lesson4_1Page> createState() => _Lesson4_1PageState();
 }
 
-class _InteractivePhraseState extends State<InteractivePhrase>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _scaleAnimation;
-  bool _isPressed = false;
+class _Lesson4_1PageState extends State<Lesson4_1Page> {
+  final Logger _logger = Logger();
+  final UnifiedProgressService _progressService = UnifiedProgressService();
+  final String _lessonId = "Lesson-4-1";
+  final String _firestoreDocId = "lesson_4_1";
+
+  bool _isLoading = true;
+  Map<String, dynamic>? _lessonData;
+  bool _isPreAssessmentComplete = false;
+  late YoutubePlayerController _videoController;
+  List<Map<String, dynamic>> _activityLog = [];
+  int _attemptNumber = 0;
+
+  // Audio recording and playback
+  final AudioRecorder _audioRecorder = AudioRecorder();
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  bool _isPlaying = false;
+  Map<String, String> _phraseRecordings =
+      {}; // Store recordings for each phrase
+  Map<String, Map<String, dynamic>> _speechFeedback = {}; // Store AI feedback
+  Map<String, bool> _isPlayingPhrase =
+      {}; // Track playing state for each phrase
+  Map<String, bool> _isRecordingPhrase =
+      {}; // Track recording state for each phrase
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 150),
-      vsync: this,
-    );
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
+    _videoController = YoutubePlayerController(initialVideoId: '');
+    _loadInitialData();
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _audioRecorder.dispose();
+    _audioPlayer.dispose();
+    _videoController.dispose();
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: (_) {
-        setState(() => _isPressed = true);
-        _controller.forward();
-      },
-      onTapUp: (_) {
-        setState(() => _isPressed = false);
-        _controller.reverse();
-      },
-      onTapCancel: () {
-        setState(() => _isPressed = false);
-        _controller.reverse();
-      },
-      child: AnimatedBuilder(
-        animation: _scaleAnimation,
-        builder: (context, child) {
-          return Transform.scale(
-            scale: _scaleAnimation.value,
-            child: Container(
-              margin: const EdgeInsets.symmetric(vertical: 4),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: _isPressed ? Colors.blue[100] : Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: _isPressed ? Colors.blue[300]! : Colors.grey[300]!,
-                  width: 2,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: Text(
-                      widget.situation,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                        color: Colors.black87,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    flex: 3,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.blue[50],
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.blue[200]!),
-                      ),
-                      child: Text(
-                        widget.phrase,
-                        style: TextStyle(
-                          fontStyle: FontStyle.italic,
-                          fontSize: 13,
-                          color: Colors.blue[800],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
+  Future<void> _loadInitialData() async {
+    setState(() => _isLoading = true);
+    try {
+      final results = await Future.wait([
+        _progressService.getFullLessonContent(_firestoreDocId),
+        _progressService.isPreAssessmentCompleted(_lessonId),
+        _progressService.getLessonAttempts(_lessonId),
+      ]);
 
-// Enhanced feedback card
-class FeedbackCardL4_1 extends StatelessWidget {
-  final ScenarioFeedback scenarioFeedback;
-  final double maxScore;
+      if (mounted) {
+        final lessonData = results[0] as Map<String, dynamic>?;
+        final isPreAssessmentDone = results[1] as bool;
+        final attempts = results[2] as List<Map<String, dynamic>>;
 
-  const FeedbackCardL4_1({
-    Key? key,
-    required this.scenarioFeedback,
-    required this.maxScore,
-  }) : super(key: key);
+        setState(() {
+          _lessonData = lessonData;
+          _isPreAssessmentComplete = isPreAssessmentDone;
+          _activityLog = attempts;
+          _attemptNumber = attempts.length;
 
-  List<Map<String, dynamic>> _parseFeedbackSections(String rawText) {
-    final sections = <Map<String, dynamic>>[];
-    
-    final categories = [
-      {
-        'title': 'Effectiveness of Clarification',
-        'icon': FontAwesomeIcons.bullseye,
-        'color': Colors.blue[600]!
-      },
-      {
-        'title': 'Politeness and Professionalism',
-        'icon': FontAwesomeIcons.handshake,
-        'color': Colors.green[600]!
-      },
-      {
-        'title': 'Clarity and Conciseness',
-        'icon': FontAwesomeIcons.search,
-        'color': Colors.orange[600]!
-      },
-      {
-        'title': 'Grammar and Phrasing',
-        'icon': FontAwesomeIcons.spellCheck,
-        'color': Colors.purple[600]!
-      },
-      {
-        'title': 'Suggestion for Improvement',
-        'icon': FontAwesomeIcons.star,
-        'color': Colors.amber[600]!
-      },
-    ];
-
-    // Parse the text for each category
-    for (var category in categories) {
-      final titlePattern = '**${category['title']}:**';
-      if (rawText.contains(titlePattern)) {
-        final startIndex = rawText.indexOf(titlePattern) + titlePattern.length;
-        int endIndex = rawText.length;
-        
-        // Find the next category if it exists
-        for (var nextCat in categories) {
-          if (nextCat == category) continue;
-          final nextPattern = '**${nextCat['title']}:**';
-          final nextIndex = rawText.indexOf(nextPattern, startIndex);
-          if (nextIndex != -1 && nextIndex < endIndex) {
-            endIndex = nextIndex;
+          final videoUrl = lessonData?['video']?['url'] as String?;
+          if (videoUrl != null) {
+            final videoId = YoutubePlayer.convertUrlToId(videoUrl) ?? '';
+            _videoController = YoutubePlayerController(
+              initialVideoId: videoId,
+              flags: const YoutubePlayerFlags(autoPlay: false),
+            );
           }
-        }
-        
-        final sectionText = rawText.substring(startIndex, endIndex).trim();
-        if (sectionText.isNotEmpty) {
-          sections.add({
-            'icon': category['icon'],
-            'title': category['title'],
-            'color': category['color'],
-            'text': sectionText,
-          });
-        }
+          _isLoading = false;
+        });
       }
+    } catch (e) {
+      _logger.e('Error loading initial data for Lesson 4.1: $e');
+      if (mounted) setState(() => _isLoading = false);
     }
+  }
 
-    // If no sections found, add the raw text
-    if (sections.isEmpty && rawText.trim().isNotEmpty) {
-      sections.add({
-        'icon': FontAwesomeIcons.infoCircle,
-        'title': 'General Feedback',
-        'color': Colors.grey.shade700,
-        'text': rawText.trim(),
+  void _onPreAssessmentComplete() async {
+    try {
+      await _progressService.markPreAssessmentAsComplete(_lessonId);
+      setState(() {
+        _isPreAssessmentComplete = true;
       });
+      _logger.i('Pre-assessment completed for $_lessonId');
+    } catch (e) {
+      _logger.e('Error marking pre-assessment as complete: $e');
     }
-    return sections;
+  }
+
+  void _showActivityLogDialog() {
+    Navigator.pushNamed(
+      context,
+      '/lesson_activity_log',
+      arguments: {
+        'lessonId': _lessonId,
+        'lessonData': _lessonData,
+        'activityLog': _activityLog,
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final score = scenarioFeedback.score ?? 0.0;
-    final percentage = maxScore > 0 ? (score / maxScore) * 100 : 0.0;
-    Color scoreColor = Colors.red.shade700;
-    if (percentage >= 80) {
-      scoreColor = Colors.green.shade700;
-    } else if (percentage >= 50) scoreColor = Colors.orange.shade700;
-
-    final sections = _parseFeedbackSections(scenarioFeedback.text);
-
-    return Container(
-      margin: const EdgeInsets.only(top: 8.0),
-      padding: const EdgeInsets.all(12.0),
-      decoration: BoxDecoration(
-        color: Colors.grey[50],
-        border: Border.all(color: Colors.grey[300]!),
-        borderRadius: BorderRadius.circular(8.0),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 3, offset: const Offset(0, 1))],
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Text("AI Score: ${score.toStringAsFixed(1)} / ${maxScore.toStringAsFixed(1)}",
-              style: TextStyle(fontWeight: FontWeight.bold, color: scoreColor, fontSize: 15)),
-        ]),
-        const SizedBox(height: 6),
-        LinearProgressIndicator(value: percentage / 100, backgroundColor: Colors.grey[300], color: scoreColor, minHeight: 6),
-        const SizedBox(height: 12),
-        if (sections.isEmpty)
-          Text("No feedback available.", style: TextStyle(color: Colors.grey[600], fontStyle: FontStyle.italic)),
-        ...sections.map((section) {
-          return Container(
-            margin: const EdgeInsets.only(top: 8),
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: section['color'] == Colors.grey.shade700 ? Colors.grey.shade50 : Colors.grey.shade50,
-              borderRadius: BorderRadius.circular(8),
-              border: Border(
-                left: BorderSide(color: section['color'] as Color, width: 4),
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    FaIcon(section['icon'] as IconData, color: section['color'] as Color, size: 16),
-                    const SizedBox(width: 8),
-                    Text(section['title'] as String,
-                        style: TextStyle(fontWeight: FontWeight.bold, color: section['color'] as Color, fontSize: 14)),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(section['text'] as String, style: const TextStyle(fontSize: 13, height: 1.4)),
-              ],
-            ),
-          );
-        }).toList(),
-      ]),
-    );
-  }
-}
-
-// Main lesson class
-class buildLesson4_1 extends StatefulWidget {
-  final int currentSlide;
-  final CarouselSliderController carouselController;
-  final YoutubePlayerController? youtubeController;
-  final Key? youtubePlayerKey;
-  final int initialAttemptNumber;
-  final Function(int) onSlideChanged;
-  final bool showActivityInitially;
-  final VoidCallback onShowActivitySection;
-
-  final Future<Map<String, dynamic>?> Function({
-    required Map<String, String> scenarioAnswers,
-    required String lessonId,
-  }) onEvaluateScenarios;
-
-  final Future<void> Function({
-    required String lessonIdFirestoreKey,
-    required int attemptNumber,
-    required int timeSpent,
-    required Map<String, String> scenarioResponses,
-    required Map<String, dynamic> aiFeedbackForScenarios,
-    required double overallAIScore,
-    Map<String, String>? reflectionResponses,
-    required bool isUpdate,
-  }) onSaveAttempt;
-
-  const buildLesson4_1({
-    Key? key,
-    required this.currentSlide,
-    required this.carouselController,
-    this.youtubeController,
-    this.youtubePlayerKey,
-    required this.initialAttemptNumber,
-    required this.onSlideChanged,
-    required this.showActivityInitially,
-    required this.onShowActivitySection,
-    required this.onEvaluateScenarios,
-    required this.onSaveAttempt, required Future<void> Function({required Map<String, dynamic> aiFeedbackForScenarios, required int attemptNumber, required String lessonIdFirestoreKey, required double originalOverallAIScore, required Map<String, String> reflectionResponses, required Map<String, String> submittedScenarioResponses}) onSaveReflection,
-  }) : super(key: key);
-
-  @override
-  _Lesson4_1State createState() => _Lesson4_1State();
-}
-
-class _Lesson4_1State extends State<buildLesson4_1> with TickerProviderStateMixin {
-  final FirebaseService _firebaseService = FirebaseService();
-  final Logger _logger = Logger();
-  
-  // Animation controllers
-  late AnimationController _fadeController;
-  late Animation<double> _fadeAnimation;
-
-  // State variables
-  bool _isStudied = false;
-  bool _isActivityVisible = false;
-  bool _showResults = false;
-  bool _isLoadingAI = false;
-  bool _isSaveComplete = false;
-  Timer? _timer;
-  int _secondsElapsed = 0;
-  late int _currentAttemptNumberForUI;
-
-  // Step-by-step navigation state
-  int _currentScenarioIndex = 0;
-  bool _isScriptVisible = false;
-  bool _isAudioLoading = false;
-
-  // UI state
-  bool _showActivityLog = false;
-  List<Map<String, dynamic>> _activityLog = [];
-  bool _isActivityLogLoading = false;
-
-  // Enhanced pre-assessment state
-  bool _isPreAssessmentComplete = false;
-  Map<String, dynamic>? _lessonData;
-  bool _loadingLesson = true;
-  
-  // Response controllers and data
-  final Map<String, TextEditingController> _textControllers = {};
-  
-  // AI feedback state
-  Map<String, ScenarioFeedback> _aiFeedbackForScenarios = {};
-  double? _overallAIScore;
-  final double _maxPossibleAIScorePerScenario = 2.5;
-
-  Map<String, String>? _submittedScenarioResponsesForDisplay;
-
-  final AudioPlayer _audioPlayer = AudioPlayer();
-
-  // Interactive phrases data
-  final List<Map<String, String>> _interactivePhrases = [
-    {
-      'situation': 'Didn\'t catch what was said',
-      'phrase': '"Sorry, can you say that again?"'
-    },
-    {
-      'situation': 'Didn\'t understand fully',
-      'phrase': '"I didn\'t quite get that. Could you repeat it?"'
-    },
-    {
-      'situation': 'Need spelling confirmation',
-      'phrase': '"Could you spell that for me, please?"'
-    },
-    {
-      'situation': 'Need to confirm details',
-      'phrase': '"Just to confirm, did you say [repeat info]?"'
-    },
-    {
-      'situation': 'Need more information',
-      'phrase': '"Could you explain that a little more?"'
-    },
-    {
-      'situation': 'Need clarification on meaning',
-      'phrase': '"Could you clarify what you meant by...?"'
-    },
-  ];
-
-  final List<Map<String, dynamic>> _rolePlayScenarios = [
-    {
-      'id': 'scenario1',
-      'text': '"Yes, my order was… [muffled] … and I need to change the delivery."',
-      'instruction': 'The customer\'s speech is unclear due to audio issues. Ask for clarification politely.'
-    },
-    {
-      'id': 'scenario2',
-      'text': '"My email is zlaytsev_b12@yahoo.com."',
-      'instruction': 'Confirm the spelling of this complex email address to ensure accuracy.'
-    },
-    {
-      'id': 'scenario3',
-      'text': '"The item number is 47823A."',
-      'instruction': 'This alphanumeric code needs to be verified. Ask the customer to confirm.'
-    },
-    {
-      'id': 'scenario4',
-      'text': '"Yeah I called yesterday and they said it\'d be fixed in two days but it\'s not."',
-      'instruction': 'The customer is frustrated. Ask for clarification while showing empathy.'
-    },
-  ];
-
-  @override
-  void initState() {
-    super.initState();
-    _initializeAnimations();
-    _currentAttemptNumberForUI = widget.initialAttemptNumber + 1;
-    _isStudied = widget.showActivityInitially;
-    _isActivityVisible = widget.showActivityInitially;
-
-    // Initialize controllers
-    _initializeControllers();
-    
-    // Load lesson data
-    _loadLessonData();
-
-    if (_isActivityVisible && !_showResults) {
-      _startTimer();
-    }
-  }
-
-  void _initializeAnimations() {
-    _fadeController = AnimationController(
-      duration: const Duration(milliseconds: 800),
-      vsync: this,
-    );
-    
-    _fadeAnimation = CurvedAnimation(
-      parent: _fadeController,
-      curve: Curves.easeInOut,
-    );
-
-    _fadeController.forward();
-  }
-
-  void _initializeControllers() {
-    for (var scenario in _rolePlayScenarios) {
-      _textControllers[scenario['id']!] = TextEditingController();
-    }
-  }
-
-  Future<void> _loadLessonData() async {
-    setState(() => _loadingLesson = true);
-    
-    try {
-      // In a real app, fetch from Firestore here
-      await Future.delayed(const Duration(milliseconds: 800));
-      
-      setState(() {
-        _loadingLesson = false;
-        _isPreAssessmentComplete = false;
-      });
-    } catch (e) {
-      _logger.e('Error loading lesson data: $e');
-      setState(() => _loadingLesson = false);
-    }
-  }
-
-  // Handle pre-assessment completion
-  void _handlePreAssessmentComplete() {
-    setState(() {
-      _isPreAssessmentComplete = true;
-    });
-  }
-
-  @override
-  void didUpdateWidget(covariant buildLesson4_1 oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.initialAttemptNumber != oldWidget.initialAttemptNumber) {
-      _currentAttemptNumberForUI = widget.initialAttemptNumber + 1;
-      if (widget.showActivityInitially && !_showResults) {
-        _prepareForNewAttempt();
-      }
-    }
-    if (widget.showActivityInitially && !oldWidget.showActivityInitially) {
-      _logger.i("L4.1: showActivitySectionInitially became true. Preparing new attempt.");
-      _isStudied = true;
-      _isActivityVisible = true;
-      _prepareForNewAttempt();
-    }
-  }
-
-  void _prepareForNewAttempt() {
-    _textControllers.forEach((key, controller) => controller.clear());
-    if (mounted) {
-      setState(() {
-        _aiFeedbackForScenarios = {};
-        _overallAIScore = null;
-        _showResults = false;
-        _secondsElapsed = 0;
-        _submittedScenarioResponsesForDisplay = null;
-        _currentScenarioIndex = 0; // Reset to first scenario
-        _isScriptVisible = false;
-        _startTimer();
-      });
-    }
-  }
-
-  void _startTimer() {
-    _stopTimer();
-    _secondsElapsed = 0;
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-      setState(() => _secondsElapsed++);
-    });
-  }
-
-  void _stopTimer() {
-    _timer?.cancel();
-  }
-
-  String _formatDuration(int totalSeconds) {
-    final duration = Duration(seconds: totalSeconds);
-    final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return '$minutes:$seconds';
-  }
-
-  Future<void> _loadActivityLog() async {
-    if (_firebaseService.userId == null) return;
-
-    setState(() => _isActivityLogLoading = true);
-    try {
-      final userProgress = await _firebaseService.getUserProgress(_firebaseService.userId!, 'Lesson-4-1');
-      final formattedLog = userProgress.attempts.map((a) {
-        final scenarioResponses = a.detailedResponses?['scenarioResponses'] ?? {};
-        final aiFeedback = a.detailedResponses?['aiFeedbackForScenarios'] ?? {};
-        return {
-          'attemptNumber': a.attemptNumber,
-          'score': a.score,
-          'timeSpent': a.timeSpent,
-          'attemptTimestamp': a.attemptTimestamp,
-          'scenarioResponses': scenarioResponses,
-          'aiFeedbackForScenarios': aiFeedback,
-        };
-      }).toList();
-
-      setState(() {
-        _activityLog = formattedLog;
-        _isActivityLogLoading = false;
-      });
-    } catch (e) {
-      _logger.e('Error loading activity log: $e');
-      setState(() {
-        _activityLog = [];
-        _isActivityLogLoading = false;
-      });
-    }
-  }
-
-  Future<void> _handleCheckSingleScenario(String scenarioKey) async {
-    if (_isLoadingAI) return;
-    final answer = _textControllers[scenarioKey]?.text.trim() ?? '';
-    if (answer.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please provide an answer for this scenario.')),
-      );
-      return;
-    }
-
-    setState(() => _isLoadingAI = true);
-    try {
-      final res = await widget.onEvaluateScenarios(
-        scenarioAnswers: {scenarioKey: answer},
-        lessonId: '4.1',
-      );
-      if (res != null && res['aiFeedbackForScenarios'] is Map) {
-        final Map feedbackMap = res['aiFeedbackForScenarios'];
-        if (feedbackMap[scenarioKey] is Map) {
-          final parsed = ScenarioFeedback.fromJson(
-              Map<String, dynamic>.from(feedbackMap[scenarioKey]));
-          setState(() => _aiFeedbackForScenarios[scenarioKey] = parsed);
-        }
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No feedback returned for this scenario.')),
-        );
-      }
-    } catch (e) {
-      _logger.e('Error checking single scenario: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error getting feedback for this scenario.')),
-      );
-    } finally {
-      if (mounted) setState(() => _isLoadingAI = false);
-    }
-  }
-
-  Future<void> _playScenarioAudio() async {
-  if (_isAudioLoading) return;
-  
-  final currentScenario = _rolePlayScenarios[_currentScenarioIndex];
-  setState(() => _isAudioLoading = true);
-  
-  try {
-    // Check for network connectivity first
-    bool hasNetwork = false;
-    try {
-      final result = await InternetAddress.lookup('google.com')
-          .timeout(const Duration(seconds: 3));
-      hasNetwork = result.isNotEmpty && result[0].rawAddress.isNotEmpty;
-    } catch (_) {
-      hasNetwork = false;
-    }
-    
-    if (!hasNetwork) {
-      // Skip server attempt if no connectivity
-      throw Exception('No internet connection detected');
-    }
-    
-    // CONFIGURATION: I-setup ang actual server address at port
-    final String serverAddress = "192.168.1.2"; // PALITAN NG ACTUAL IP NG SERVER
-    final int serverPort = 5001;
-    
-    final uri = Uri.parse('http://$serverAddress:$serverPort/synthesize-speech');
-    _logger.i('Connecting to TTS server at $uri');
-    
-    final resp = await http.post(
-      uri,
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({
-        'parts': [{'text': currentScenario['text']}]
-      }),
-    ).timeout(const Duration(seconds: 10)); // Shorter timeout - fail faster
-  
-    if (resp.statusCode != 200) {
-      throw Exception('TTS failed: ${resp.statusCode}');
-    }
-    
-    final bytes = resp.bodyBytes;
-    await _audioPlayer.stop();
-    await _audioPlayer.play(BytesSource(bytes));
-    
-  } catch (e) {
-    _logger.e('Error playing audio: $e');
-    // Always use fallback TTS when server is unreachable
-    _tryFallbackTTS(currentScenario['text'] as String);
-    
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Using device text-to-speech instead of server'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-    }
-  } finally {
-    if (mounted) setState(() => _isAudioLoading = false);
-  }
-}
-
-  // New fallback method that uses Flutter's built-in TTS
-  void _tryFallbackTTS(String text) async {
-    try {
-      final FlutterTts flutterTts = FlutterTts();
-      await flutterTts.setLanguage("en-US");
-      await flutterTts.setPitch(1.0);
-      await flutterTts.setSpeechRate(0.5);
-      await flutterTts.speak(text);
-    } catch (e) {
-      _logger.e('Fallback TTS failed: $e');
-    }
-  }
-
-  Future<void> _handleSubmitToAIAndFirestore() async {
-    if (_firebaseService.userId == null || _isLoadingAI) return;
-    
-    setState(() {
-      _isLoadingAI = true;
-      _stopTimer();
-    });
-    
-    try {
-      // Prepare scenario responses
-      final Map<String, String> scenarioResponses = {};
-      for (var scenario in _rolePlayScenarios) {
-        final controller = _textControllers[scenario['id']];
-        if (controller != null) {
-          scenarioResponses[scenario['id']] = controller.text.trim();
-        }
-      }
-      
-      // Calculate overall score
-      double calculatedAIScore = 0;
-      for (var feedback in _aiFeedbackForScenarios.values) {
-        if (feedback.score != null) {
-          calculatedAIScore += feedback.score!;
-        }
-      }
-      
-      final newAttemptNumber = _currentAttemptNumberForUI;
-      final timeSpent = _secondsElapsed;
-      
-      // Create detailed response payload
-      final detailedResponsesPayload = {
-        'scenarioResponses': scenarioResponses,
-        'aiFeedbackForScenarios': _aiFeedbackForScenarios,
-      };
-      
-      // Save to Firestore
-      await widget.onSaveAttempt(
-        lessonIdFirestoreKey: 'Lesson-4-1',
-        attemptNumber: newAttemptNumber,
-        timeSpent: timeSpent,
-        scenarioResponses: scenarioResponses,
-        aiFeedbackForScenarios: _aiFeedbackForScenarios,
-        overallAIScore: calculatedAIScore,
-        isUpdate: false,
-      );
-      
-      setState(() {
-        _overallAIScore = calculatedAIScore;
-        _showResults = true;
-        _submittedScenarioResponsesForDisplay = Map.from(scenarioResponses);
-        _isLoadingAI = false;
-        _isSaveComplete = true;
-      });
-      
-      // Show success message briefly before auto-navigating
-      Timer(const Duration(seconds: 3), () {
-        if (mounted) {
-          Navigator.pop(context); // Return to module overview
-        }
-      });
-    } catch (e) {
-      _logger.e('Error submitting to AI and Firestore: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error submitting your responses. Please try again.')),
-      );
-      setState(() => _isLoadingAI = false);
-    }
-  }
-
-  Future<Map<String, dynamic>?> _fetchUserProgress() async {
-  try {
-    final userId = _firebaseService.userId;
-    if (userId == null) {
-      _logger.w("L4.1: User not authenticated");
-      return null;
-    }
-    
-    final prog = await FirebaseFirestore.instance
-        .collection('userProgress')
-        .doc(userId)
-        .get();
-        
-    if (prog.exists) {
-      _logger.i('L4.1: User progress data fetched');
-      return prog.data();
-    }
-  } catch (e) {
-    _logger.e('L4.1: Error fetching user progress: $e');
-  }
-  return null;
-}
-
-  @override
-  Widget build(BuildContext context) {
-    if (_loadingLesson) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    
-    return FadeTransition(
-      opacity: _fadeAnimation,
-      child: Stack(
-        children: [
-          SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Remove debug info section and only keep the title
-                Text(
-                  'Lesson 4.1: Asking for Clarification',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    color: const Color(0xFF3066be),
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                
-                // Activity Log Button (only when activity not visible)
-                if (!_isActivityVisible && _firebaseService.userId != null) ...[
-                  Center(
-                    child: OutlinedButton.icon(
-                      onPressed: _loadActivityLog,
-                      icon: const FaIcon(FontAwesomeIcons.book, size: 16),
-                      label: const Text('View Your Activity Log'),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                ],
-                
-                // Pre-assessment or main content based on completion state
-                if (!_isPreAssessmentComplete && !_isActivityVisible) ...[
-                  _buildPreAssessmentView(),
-                ] else if (!_isActivityVisible) ...[
-                  _buildStudyContent(),
-                ] else ...[
-                  _buildActivityContent(),
-                ],
-              ],
-            ),
-          ),
-          
-          // Activity Log Overlay
-          if (_showActivityLog)
-            _buildActivityLogOverlay(),
-          
-          // Loading overlay during submission
-          if (_isLoadingAI)
-            Container(
-              color: Colors.black54,
-              child: const Center(
-                child: CircularProgressIndicator(color: Colors.white),
-              ),
-            ),
-            
-          // Save complete overlay
-          if (_isSaveComplete)
-            _buildSaveCompleteOverlay(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPreAssessmentView() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(20),
-            margin: const EdgeInsets.only(bottom: 24),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF3066be), Color(0xFF4080ce)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Column(
-              children: [
-                Text(
-                  'Pre-Assessment: Customer Service Response',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                SizedBox(height: 8),
-                Text(
-                  'Let\'s assess your current knowledge before beginning',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.white70,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          ),
-          
-          // Pre-assessment content - replace with your actual pre-assessment widget
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade50,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.grey.shade200),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Scenario:',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'A customer calls and says: "I\'m having trouble with my recent order, but I can\'t remember the exact details." The line quality is poor and you can barely hear them.',
-                  style: TextStyle(fontSize: 14),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'How would you professionally ask for clarification in this situation?',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  decoration: InputDecoration(
-                    hintText: 'Type your response here...',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  maxLines: 4,
-                ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _handlePreAssessmentComplete,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF3066be),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    child: const Text(
-                      'Submit Pre-Assessment',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStudyContent() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Acknowledgment of pre-assessment completion
-        if (_isPreAssessmentComplete)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            margin: const EdgeInsets.only(bottom: 24),
-            decoration: BoxDecoration(
-              color: Colors.green[50],
-              border: Border.all(color: Colors.green[200]!),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.check_circle, color: Colors.green[600], size: 24),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Great job on the pre-assessment! Now let\'s build on that knowledge.',
-                    style: TextStyle(
-                      color: Colors.green[800],
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        
-        // Objective section
-        _buildStudyCard(
-          icon: Icons.flag,
-          iconColor: Colors.blue,
-          title: '🎯 Learning Objectives',
-          child: const Text(
-            'By the end of this lesson, you will be able to:\n\n• Use polite and professional phrases to ask customers to repeat or clarify information\n• Respond naturally when you don\'t understand a customer during a call\n• Practice these skills in simulated role-play conversations\n• Build confidence in handling unclear communication',
-            style: TextStyle(fontSize: 16, height: 1.5),
-          ),
-        ),
-        
-        const SizedBox(height: 20),
-        
-        // Why Clarification Matters section
-        _buildStudyCard(
-          icon: Icons.lightbulb,
-          iconColor: Colors.orange,
-          title: '💡 Why Clarification Matters',
-          child: const Text(
-            'In call center environments, clear communication is essential for success. Background noise, unclear speech, technical issues, or unfamiliar accents can create barriers to understanding.\n\n🔹 **Ensures accurate problem resolution**\n🔹 **Prevents costly mistakes and misunderstandings**\n🔹 **Builds customer trust through respectful communication**\n🔹 **Demonstrates professionalism and attention to detail**',
-            style: TextStyle(fontSize: 16, height: 1.5),
-          ),
-        ),
-        
-        const SizedBox(height: 20),
-        
-        // Key Phrases section
-        _buildStudyCard(
-          icon: Icons.chat_bubble,
-          iconColor: Colors.green,
-          title: '📝 Key Phrases for Clarification',
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Text(
-                'Master these essential clarification phrases for different situations:',
-                style: TextStyle(fontSize: 16, height: 1.5),
-              ),
-              const SizedBox(height: 16),
-              ..._interactivePhrases.map((phrase) => Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                child: InteractivePhrase(
-                  situation: phrase['situation']!,
-                  phrase: phrase['phrase']!,
-                ),
-              )),
+              CircularProgressIndicator(color: Color(0xFF9C27B0)),
+              SizedBox(height: 16),
+              Text('Loading lesson content...'),
             ],
           ),
         ),
-        
-        const SizedBox(height: 20),
-        
-        // Call Center Examples section
-        _buildStudyCard(
-          icon: Icons.theater_comedy,
-          iconColor: Colors.purple,
-          title: '🎭 Call Center Examples',
-          child: const Text(
-            'See these phrases in action:\n\n**Example 1:**\n👤 Customer: "I\'m calling about the problem with my serv—"\n🎧 Agent: "I\'m sorry, could you repeat that last part?"\n\n**Example 2:**\n👤 Customer: "My email is jen_matsuba87@gmail.com."\n🎧 Agent: "Could you spell that for me to make sure I got it right?"\n\n**Example 3:**\n👤 Customer: "I placed the order on the 15th."\n🎧 Agent: "Just to confirm — you placed the order on March 15th, correct?"',
-            style: TextStyle(fontSize: 16, height: 1.5),
-          ),
-        ),
-        
-        const SizedBox(height: 20),
-        
-        // Lesson Summary section
-        _buildStudyCard(
-          icon: Icons.emoji_events,
-          iconColor: Colors.amber,
-          title: '🎉 Lesson Summary',
-          child: const Text(
-            '**Key Takeaways:**\n\n✅ Asking for clarification shows professionalism\n✅ Polite phrases build customer rapport\n✅ Confirmation prevents misunderstandings\n✅ Practice makes these responses natural\n\nWith consistent practice, these clarification techniques will become second nature, enhancing your confidence and communication effectiveness in any call center environment.',
-            style: TextStyle(fontSize: 16, height: 1.5),
-          ),
-        ),
-        
-        const SizedBox(height: 32),
-        
-        // Practice button
-        Center(
-          child: ElevatedButton.icon(
-            onPressed: () {
-              setState(() {
-                _isStudied = true;
-                _isActivityVisible = true;
-              });
-              widget.onShowActivitySection();
-            },
-            icon: const Icon(Icons.play_arrow, size: 24),
-            label: const Text(
-              'Start Practice Activities',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF3066be),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              elevation: 4,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStudyCard({
-    required IconData icon,
-    required Color iconColor,
-    required String title,
-    required Widget child,
-  }) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[200]!),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, color: iconColor, size: 24),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          child,
-        ],
-      ),
-    );
-  }
-
-  Widget _buildActivityContent() {
-    // Helper to get the current scenario
-    final currentScenario = _rolePlayScenarios.length > _currentScenarioIndex ? 
-                           _rolePlayScenarios[_currentScenarioIndex] : null;
-    final scenarioId = currentScenario?['id'] as String?;
-    final isFeedbackReceived = scenarioId != null && 
-                              _aiFeedbackForScenarios.containsKey(scenarioId);
-    final isLastScenario = _currentScenarioIndex == _rolePlayScenarios.length - 1;
-    
-    if (currentScenario == null) {
-      return const Center(child: Text('No scenarios available'));
+      );
     }
 
-    if (_showResults) {
-      return _buildResultsView();
+    if (_lessonData == null) {
+      return const Scaffold(
+        body: Center(child: Text('Failed to load lesson content')),
+      );
     }
-    
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header section - Remove debug info
-          Text(
-            'Activity: Clarification Role-Play',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              color: const Color(0xFF3066be),
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          
-          // Only show attempt number, not as debug info
-          Text(
-            'Attempt Number: $_currentAttemptNumberForUI',
-            style: const TextStyle(fontSize: 14, color: Colors.grey),
-          ),
-          
-          if (_timer != null)
-            Text(
-              'Time Elapsed: ${_formatDuration(_secondsElapsed)}',
-              style: const TextStyle(fontSize: 14, color: Colors.grey),
-            ),
-          
-          const SizedBox(height: 20),
-          
-          // Scenario prompt
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.blue.shade50,
-              borderRadius: BorderRadius.circular(8),
-              border: Border(left: BorderSide(color: Colors.blue.shade400, width: 4)),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Scenario ${_currentScenarioIndex + 1} of ${_rolePlayScenarios.length}: Listen to the customer\'s statement.',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                      
-                      // Either show script or button to reveal it
-                      if (_isScriptVisible)
-                        Container(
-                          margin: const EdgeInsets.only(top: 8),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.grey.shade200),
-                          ),
-                          child: Text(
-                            currentScenario['text'] as String,
-                            style: TextStyle(
-                              fontStyle: FontStyle.italic,
-                              color: Colors.blue.shade800,
-                            ),
-                          ),
-                        )
-                      else
-                        TextButton(
-                          onPressed: () => setState(() => _isScriptVisible = true),
-                          style: TextButton.styleFrom(
-                            padding: EdgeInsets.zero,
-                            minimumSize: const Size(0, 30),
-                            alignment: Alignment.centerLeft,
-                          ),
-                          child: const Text('Show Script'),
-                        ),
-                    ],
-                  ),
-                ),
-                
-                const SizedBox(width: 16),
-                
-                // Audio play button
-                ElevatedButton(
-                  onPressed: _isAudioLoading ? null : _playScenarioAudio,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.indigo.shade500,
-                    shape: const CircleBorder(),
-                    padding: const EdgeInsets.all(16),
-                  ),
-                  child: _isAudioLoading
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const FaIcon(FontAwesomeIcons.volumeUp),
-                ),
-              ],
-            ),
-          ),
-          
-          const SizedBox(height: 16),
-          
-          // Instruction
-          Text(
-            currentScenario['instruction'] as String,
-            style: TextStyle(
-              fontSize: 15,
-              fontStyle: FontStyle.italic,
-              color: Colors.grey.shade700,
-            ),
-          ),
-          
-          const SizedBox(height: 16),
-          
-          // Response textarea
-          TextField(
-            controller: _textControllers[currentScenario['id']],
-            decoration: InputDecoration(
-              hintText: 'Type your clarification response here...',
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              filled: true,
-              fillColor: Colors.grey.shade50,
-            ),
-            maxLines: 4,
-            enabled: !_isLoadingAI && !isFeedbackReceived,
-          ),
-          
-          const SizedBox(height: 16),
-          
-          // Feedback display if available
-          if (isFeedbackReceived)
-            FeedbackCardL4_1(
-              scenarioFeedback: _aiFeedbackForScenarios[scenarioId!]!,
-              maxScore: _maxPossibleAIScorePerScenario,
-            ),
-          
-          const SizedBox(height: 24),
-          
-          // Navigation buttons
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              // Previous button
-              ElevatedButton(
-                onPressed: _currentScenarioIndex > 0
-                    ? () => setState(() => _currentScenarioIndex--)
-                    : null,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.grey.shade200,
-                  foregroundColor: Colors.black87,
-                ),
-                child: const Text('Previous'),
-              ),
-              
-              // Check/Next/Finish button
-              if (!isFeedbackReceived)
-                ElevatedButton(
-                  onPressed: _isLoadingAI
-                      ? null
-                      : () => _handleCheckSingleScenario(currentScenario['id'] as String),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue.shade600,
-                  ),
-                  child: _isLoadingAI
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : const Text('Check Answer'),
-                )
-              else if (isLastScenario)
-                ElevatedButton(
-                  onPressed: _handleSubmitToAIAndFirestore,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green.shade600,
-                  ),
-                  child: const Text('Finish & Submit'),
-                )
-              else
-                ElevatedButton(
-                  onPressed: () => setState(() {
-                    _currentScenarioIndex++;
-                    _isScriptVisible = false;
-                  }),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.indigo.shade500,
-                  ),
-                  child: const Text('Next Scenario'),
-                ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
 
-  Widget _buildResultsView() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.green.shade50,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.green.shade200!),
-      ),
-      child: Column(
-        children: [
-          const FaIcon(FontAwesomeIcons.checkCircle, color: Colors.green, size: 40),
-          const SizedBox(height: 16),
-          const Text(
-            'Results Submitted Successfully!',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.green,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Your score: ${_overallAIScore?.toStringAsFixed(1) ?? "N/A"} / 10',
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            'You will be redirected to the module overview shortly...',
-            style: TextStyle(
-              fontSize: 14,
-              fontStyle: FontStyle.italic,
-              color: Colors.grey,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildActivityLogOverlay() {
-    return Container(
-      color: Colors.black.withOpacity(0.7),
-      child: Center(
-        child: Container(
-          margin: const EdgeInsets.all(16),
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.2),
-                blurRadius: 10,
-                offset: const Offset(0, 5),
-              ),
-            ],
-          ),
-          constraints: const BoxConstraints(maxWidth: 700, maxHeight: 600),
+    if (!_isPreAssessmentComplete) {
+      return Scaffold(
+        appBar: AppBar(
+          title: Text(_lessonData?['lessonTitle'] ?? 'Lesson 4.1'),
+          backgroundColor: const Color(0xFF9C27B0),
+          foregroundColor: Colors.white,
+        ),
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.all(16.0),
           child: Column(
             children: [
-              Row(
+              _buildHeader(),
+              const SizedBox(height: 20),
+              TypingPreAssessmentWidget(
+                lessonKey: _lessonId,
+                onComplete: _onPreAssessmentComplete,
+                // The red underline on 'assessmentData' is now fixed
+                assessmentData: _lessonData?['preAssessmentData'],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    // Show main lesson content
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_lessonData?['lessonTitle'] ?? 'Lesson 4.1'),
+        backgroundColor: const Color(0xFF9C27B0),
+        foregroundColor: Colors.white,
+        elevation: 4,
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            _buildHeader(),
+            const SizedBox(height: 16),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                icon: const Icon(Icons.history, color: Color(0xFF9C27B0)),
+                label: const Text(
+                  'View Your Activity Log',
+                  style: TextStyle(color: Color(0xFF9C27B0)),
+                ),
+                onPressed: _showActivityLogDialog,
+              ),
+            ),
+            const SizedBox(height: 10),
+            _buildSectionCard(
+              icon: Icons.flag,
+              title: _lessonData?['objective']?['heading'] ?? 'Objective',
+              color: const Color(0xFF9C27B0),
+              content: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Expanded(
-                    child: Text(
-                      'Activity Log - Lesson 4.1',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF3066be),
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => setState(() => _showActivityLog = false),
-                  ),
-                ],
-              ),
-              const Divider(),
-              Expanded(
-                child: _isActivityLogLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : _activityLog.isEmpty
-                        ? const Center(
-                            child: Text(
-                              'No activities recorded yet.',
-                              style: TextStyle(
-                                color: Colors.grey,
-                                fontStyle: FontStyle.italic,
+                  if (_lessonData?['objective']?['points'] != null)
+                    ...List<String>.from(
+                      _lessonData!['objective']['points'],
+                    ).map(
+                      (point) => Padding(
+                        padding: const EdgeInsets.only(bottom: 8.0),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(
+                              Icons.check_circle,
+                              color: Color(0xFF9C27B0),
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                point,
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  height: 1.3,
+                                ),
                               ),
                             ),
-                          )
-                        : ListView.builder(
-                            itemCount: _activityLog.length,
-                            itemBuilder: (context, index) {
-                              final log = _activityLog[index];
-                              return Card(
-                                margin: const EdgeInsets.symmetric(vertical: 8),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(16),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Attempt ${log['attemptNumber']}',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 16,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        'Score: ${log['score']?.toStringAsFixed(1) ?? 'N/A'} / 10',
-                                      ),
-                                      Text(
-                                        'Time Spent: ${log['timeSpent'] ?? 'N/A'} seconds',
-                                      ),
-                                      if (log['attemptTimestamp'] != null)
-                                        Text(
-                                          'Date: ${log['attemptTimestamp'].toDate().toString()}',
-                                          style: const TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.grey,
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
               ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSaveCompleteOverlay() {
-    return Container(
-      color: Colors.black.withOpacity(0.5),
-      child: const Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(color: Colors.white),
-            SizedBox(height: 16),
-            Text(
-              'Saving progress...',
-              style: TextStyle(color: Colors.white, fontSize: 16),
+            ),
+            _buildSectionCard(
+              icon: Icons.info_outline,
+              title:
+                  _lessonData?['introduction']?['heading'] ??
+                  'Why Clarification Matters',
+              color: const Color(0xFF9C27B0),
+              content: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_lessonData?['introduction']?['paragraph'] != null)
+                    Text(
+                      _lessonData!['introduction']['paragraph'],
+                      style: const TextStyle(fontSize: 16, height: 1.4),
+                    ),
+                  const SizedBox(height: 8),
+                  ...[
+                    'Ensures accurate understanding of the issue.',
+                    'Prevents costly mistakes.',
+                    'Builds trust through respectful communication.',
+                  ].map(
+                    (s) => Padding(
+                      padding: const EdgeInsets.only(bottom: 6.0),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.circle,
+                            size: 8,
+                            color: Color(0xFF9C27B0),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              s,
+                              style: const TextStyle(fontSize: 14),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            _buildKeyPhrasesSection(),
+            _buildCallCenterExamplesSection(),
+            _buildVideoSection(),
+            _buildLessonSummarySection(),
+            const SizedBox(height: 32),
+            Center(
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF9C27B0), Color(0xFF7B1FA2)],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF9C27B0).withOpacity(0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.pushNamed(
+                      context,
+                      '/lesson4_1_activity',
+                      arguments: {
+                        'lessonId': _lessonId,
+                        'lessonTitle':
+                            _lessonData?['lessonTitle'] ??
+                            'Advanced Customer Service Activity',
+                        'lessonData': _lessonData,
+                        'attemptNumber': _attemptNumber + 1,
+                      },
+                    );
+                  },
+                  icon: const Icon(Icons.play_arrow, size: 24),
+                  label: const Text(
+                    'Start the Activity',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.transparent,
+                    foregroundColor: Colors.white,
+                    shadowColor: Colors.transparent,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 32,
+                      vertical: 16,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
             ),
           ],
         ),
@@ -1573,12 +335,807 @@ class _Lesson4_1State extends State<buildLesson4_1> with TickerProviderStateMixi
     );
   }
 
-  @override
-  void dispose() {
-    _textControllers.forEach((_, controller) => controller.dispose());
-    _fadeController.dispose();
-    _stopTimer();
-    _audioPlayer.dispose();
-    super.dispose();
+  Widget _buildHeader() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF9C27B0), Color(0xFF7B1FA2)],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF9C27B0).withOpacity(0.3),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.business_center,
+                  size: 28,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _lessonData?['moduleTitle'] ?? 'Module 4',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.white70,
+                      ),
+                    ),
+                    Text(
+                      _lessonData?['lessonTitle'] ??
+                          'Lesson 4.1: Advanced Customer Service Scenarios',
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (_lessonData?['lessonDescription'] != null) ...[
+            const SizedBox(height: 16),
+            Text(
+              _lessonData!['lessonDescription'],
+              style: const TextStyle(
+                fontSize: 16,
+                color: Colors.white,
+                height: 1.4,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionCard({
+    required IconData icon,
+    required String title,
+    required Widget content,
+    required Color color,
+  }) {
+    return Card(
+      elevation: 4,
+      margin: const EdgeInsets.only(bottom: 20),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withOpacity(0.2)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(icon, color: color, size: 24),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: color,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              content,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildKeyPhrasesSection() {
+    final keyPhrases =
+        _lessonData?['keyPhrases']?['table'] as List<dynamic>? ?? [];
+
+    // Fallback key phrases if not found in lesson data
+    final defaultKeyPhrases = [
+      {
+        'situation': "Didn't catch what was said",
+        'phrase': "Sorry, can you say that again?",
+      },
+      {
+        'situation': "Didn't understand fully",
+        'phrase': "I didn't quite get that. Could you repeat it?",
+      },
+      {
+        'situation': "Need spelling",
+        'phrase': "Could you spell that for me, please?",
+      },
+      {
+        'situation': "Need to confirm detail",
+        'phrase': "Just to confirm, did you say [repeat info]?",
+      },
+      {
+        'situation': "Need more info",
+        'phrase': "Could you explain that a little more?",
+      },
+      {
+        'situation': "Heard multiple things",
+        'phrase': "Could you clarify what you meant by...?",
+      },
+    ];
+
+    final phrasesToUse = keyPhrases.isNotEmpty ? keyPhrases : defaultKeyPhrases;
+
+    return _buildSectionCard(
+      icon: Icons.list,
+      title: 'Key Phrases for Clarification',
+      color: const Color(0xFF009688),
+      content: Column(
+        children: phrasesToUse.map<Widget>((row) {
+          final phraseId = 'phrase_${phrasesToUse.indexOf(row)}';
+          final situation = row['situation'] ?? '';
+          final phrase = row['phrase'] ?? '';
+
+          return _buildInteractivePhraseCard(
+            phraseId: phraseId,
+            situation: situation,
+            phrase: phrase,
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildInteractivePhraseCard({
+    required String phraseId,
+    required String situation,
+    required String phrase,
+  }) {
+    final isRecording = _isRecordingPhrase[phraseId] ?? false;
+    final isPlayingTTS = _isPlayingPhrase[phraseId] ?? false;
+    final hasRecording = _phraseRecordings.containsKey(phraseId);
+    final hasFeedback = _speechFeedback.containsKey(phraseId);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE0F2F1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF009688).withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Situation and Phrase
+          Text(
+            situation,
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF00796B),
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey.shade300),
+            ),
+            child: Text(
+              '"$phrase"',
+              style: const TextStyle(
+                fontSize: 16,
+                color: Color(0xFF009688),
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Action Buttons Row 1
+          Row(
+            children: [
+              // Listen Button
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: isPlayingTTS
+                      ? null
+                      : () => _playTTSAudio(phrase, phraseId),
+                  icon: Icon(
+                    isPlayingTTS ? Icons.volume_up : Icons.volume_up_outlined,
+                    size: 18,
+                  ),
+                  label: Text(isPlayingTTS ? 'Playing...' : 'Listen'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    textStyle: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+
+              // Practice Button (Record)
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: isRecording
+                      ? () => _stopRecording(phraseId)
+                      : () => _startRecording(phraseId),
+                  icon: Icon(isRecording ? Icons.stop : Icons.mic, size: 18),
+                  label: Text(isRecording ? 'Stop' : 'Practice'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isRecording ? Colors.red : Colors.green,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    textStyle: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          // Action Buttons Row 2 (shown only if has recording)
+          if (hasRecording) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                // Playback Button
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () => _playUserRecording(phraseId),
+                    icon: const Icon(Icons.play_arrow, size: 18),
+                    label: const Text('Playback'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+
+                // Get Feedback Button
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: hasFeedback
+                        ? null
+                        : () => _getAIFeedback(phraseId, phrase),
+                    icon: const Icon(Icons.psychology, size: 18),
+                    label: Text(hasFeedback ? 'Done' : 'Get Feedback'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: hasFeedback
+                          ? Colors.grey
+                          : Colors.purple,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+
+          // AI Feedback Display
+          if (hasFeedback) _buildFeedbackDisplay(phraseId),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFeedbackDisplay(String phraseId) {
+    final feedback = _speechFeedback[phraseId];
+    if (feedback == null) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.indigo.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.indigo.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.analytics, color: Colors.indigo, size: 20),
+              SizedBox(width: 8),
+              Text(
+                'Speech Analysis',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.indigo,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Progress bars for different metrics
+          _buildMetricBar(
+            'Accuracy',
+            (feedback['accuracy'] ?? 0.0).toDouble(),
+            Colors.green,
+          ),
+          const SizedBox(height: 8),
+          _buildMetricBar(
+            'Fluency',
+            (feedback['fluency'] ?? 0.0).toDouble(),
+            Colors.blue,
+          ),
+          const SizedBox(height: 8),
+          _buildMetricBar(
+            'Completeness',
+            (feedback['completeness'] ?? 0.0).toDouble(),
+            Colors.orange,
+          ),
+          const SizedBox(height: 8),
+          _buildMetricBar(
+            'Prosody',
+            (feedback['prosody'] ?? 0.0).toDouble(),
+            Colors.purple,
+          ),
+
+          if (feedback['feedback'] != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              feedback['feedback'],
+              style: const TextStyle(fontSize: 14, height: 1.4),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMetricBar(String label, double value, Color color) {
+    final percentage = (value * 100).round();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+            ),
+            Text(
+              '$percentage%',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        LinearProgressIndicator(
+          value: value,
+          backgroundColor: Colors.grey.shade200,
+          valueColor: AlwaysStoppedAnimation<Color>(color),
+          minHeight: 6,
+        ),
+      ],
+    );
+  }
+
+  // Audio Methods
+  Future<void> _playTTSAudio(String text, String phraseId) async {
+    try {
+      setState(() => _isPlayingPhrase[phraseId] = true);
+
+      // Call your backend TTS service
+      final audioBytes = await _progressService.synthesizeSpeech(text);
+
+      if (audioBytes != null) {
+        // Save to temporary file and play
+        final tempDir = await getTemporaryDirectory();
+        final audioFile = File(
+          '${tempDir.path}/tts_${DateTime.now().millisecondsSinceEpoch}.wav',
+        );
+        await audioFile.writeAsBytes(audioBytes);
+
+        await _audioPlayer.setFilePath(audioFile.path);
+        await _audioPlayer.play();
+
+        // Listen for completion
+        _audioPlayer.playerStateStream.listen((state) {
+          if (state.processingState == ProcessingState.completed) {
+            if (mounted) {
+              setState(() => _isPlayingPhrase[phraseId] = false);
+            }
+          }
+        });
+      } else {
+        setState(() => _isPlayingPhrase[phraseId] = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('TTS service unavailable')),
+        );
+      }
+    } catch (e) {
+      _logger.e('Error playing TTS audio: $e');
+      setState(() => _isPlayingPhrase[phraseId] = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Error playing audio')));
+    }
+  }
+
+  Future<void> _startRecording(String phraseId) async {
+    try {
+      // Request microphone permission
+      final permission = await Permission.microphone.request();
+      if (permission != PermissionStatus.granted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Microphone permission required')),
+        );
+        return;
+      }
+
+      final tempDir = await getTemporaryDirectory();
+      final recordingPath =
+          '${tempDir.path}/recording_${phraseId}_${DateTime.now().millisecondsSinceEpoch}.wav';
+
+      // FIXED: Updated recording method
+      await _audioRecorder.start(
+        RecordConfig(
+          encoder: AudioEncoder.wav,
+          bitRate: 16000,
+          sampleRate: 16000,
+        ),
+        path: recordingPath,
+      );
+
+      setState(() {
+        _isRecordingPhrase[phraseId] = true;
+      });
+
+      _logger.i('Started recording for phrase: $phraseId');
+    } catch (e) {
+      _logger.e('Error starting recording: $e');
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Error starting recording')));
+    }
+  }
+
+  Future<void> _stopRecording(String phraseId) async {
+    try {
+      final recordingPath = await _audioRecorder.stop();
+
+      setState(() {
+        _isRecordingPhrase[phraseId] = false;
+        if (recordingPath != null) {
+          _phraseRecordings[phraseId] = recordingPath;
+        }
+      });
+
+      _logger.i(
+        'Stopped recording for phrase: $phraseId, path: $recordingPath',
+      );
+
+      if (recordingPath != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Recording saved! You can now play it back or get feedback.',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      _logger.e('Error stopping recording: $e');
+      setState(() => _isRecordingPhrase[phraseId] = false);
+    }
+  }
+
+  Future<void> _playUserRecording(String phraseId) async {
+    final recordingPath = _phraseRecordings[phraseId];
+    if (recordingPath == null) return;
+
+    try {
+      await _audioPlayer.setFilePath(recordingPath);
+      await _audioPlayer.play();
+    } catch (e) {
+      _logger.e('Error playing user recording: $e');
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Error playing recording')));
+    }
+  }
+
+  Future<void> _getAIFeedback(String phraseId, String originalText) async {
+    final recordingPath = _phraseRecordings[phraseId];
+    if (recordingPath == null) return;
+
+    try {
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Analyzing your pronunciation...'),
+              SizedBox(height: 8),
+              Text(
+                'This may take a few seconds...',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      // Upload file to get URL
+      final audioUrl = await _uploadAudioFile(recordingPath);
+      _logger.i('Audio uploaded. URL: $audioUrl');
+
+      if (audioUrl != null) {
+        // Get Azure speech analysis
+        final azureResult = await _progressService.evaluateAzureSpeech(
+          audioUrl,
+          originalText,
+        );
+
+        _logger.i('Azure result: $azureResult');
+
+        if (azureResult != null && azureResult['success'] == true) {
+          _logger.i('Azure data: ${azureResult['data']}');
+
+          // Get OpenAI explanation
+          final openaiResult = await _progressService.getOpenAICoachExplanation(
+            azureResult,
+            originalText,
+          );
+
+          _logger.i('OpenAI result: $openaiResult');
+
+          // ✅ FIXED: Extract scores directly from azureResult (root level)
+          double accuracy = 0.0;
+          double fluency = 0.0;
+          double completeness = 0.0;
+          double prosody = 0.0;
+
+          // ✅ The scores are at the ROOT level of azureResult, not in a nested 'data' object
+          if (azureResult['accuracyScore'] != null) {
+            accuracy =
+                (azureResult['accuracyScore'] as num).toDouble() /
+                100; // Convert to 0-1 range
+          }
+
+          if (azureResult['fluencyScore'] != null) {
+            fluency =
+                (azureResult['fluencyScore'] as num).toDouble() /
+                5; // Convert 0-5 to 0-1 range
+          }
+
+          if (azureResult['completenessScore'] != null) {
+            completeness =
+                (azureResult['completenessScore'] as num).toDouble() /
+                100; // Convert to 0-1 range
+          }
+
+          if (azureResult['prosodyScore'] != null) {
+            prosody =
+                (azureResult['prosodyScore'] as num).toDouble() /
+                100; // Convert to 0-1 range
+          }
+
+          _logger.i(
+            'Parsed scores - Accuracy: $accuracy, Fluency: $fluency, Completeness: $completeness, Prosody: $prosody',
+          );
+
+          // ✅ REMOVED: All the fallback hardcoded logic
+
+          // Combine results
+          final combinedFeedback = {
+            'accuracy': accuracy,
+            'fluency': fluency,
+            'completeness': completeness,
+            'prosody': prosody,
+            'feedback':
+                openaiResult?['explanation'] ??
+                'Analysis completed successfully.',
+          };
+
+          setState(() {
+            _speechFeedback[phraseId] = combinedFeedback;
+          });
+
+          _logger.i('AI feedback received successfully for phrase: $phraseId');
+        } else {
+          throw Exception(
+            'Azure speech analysis failed: ${azureResult?['error'] ?? 'Unknown error'}',
+          );
+        }
+      } else {
+        throw Exception('Failed to upload audio file');
+      }
+
+      // Close loading dialog
+      if (mounted) Navigator.of(context).pop();
+    } catch (e) {
+      _logger.e('Error getting AI feedback: $e');
+      if (mounted) Navigator.of(context).pop();
+
+      // Show error message to user
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to analyze pronunciation: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
+  }
+
+  Future<String?> _uploadAudioFile(String filePath) async {
+    try {
+      final uId = FirebaseAuth.instance.currentUser?.uid;
+      if (uId == null) {
+        _logger.e('User not authenticated for audio upload.');
+        return null;
+      }
+
+      File audioFile = File(filePath);
+      if (!await audioFile.exists()) {
+        _logger.e("Audio file does not exist at path: $filePath");
+        return null;
+      }
+
+      // Upload to Firebase Storage
+      String fileName = filePath.split('/').last;
+      String timestamp = DateTime.now().millisecondsSinceEpoch.toString();
+      String storagePath = 'speechAnalysis/$uId/${timestamp}_$fileName';
+
+      final storageRef = FirebaseStorage.instance.ref().child(storagePath);
+      UploadTask uploadTask = storageRef.putFile(audioFile);
+
+      final TaskSnapshot snapshot = await uploadTask;
+      final String downloadUrl = await snapshot.ref.getDownloadURL();
+
+      _logger.i("Audio uploaded successfully! Download URL: $downloadUrl");
+      return downloadUrl;
+    } catch (e) {
+      _logger.e("Error uploading audio file: $e");
+      return null;
+    }
+  }
+
+  Widget _buildCallCenterExamplesSection() {
+    return _buildSectionCard(
+      icon: Icons.play_circle,
+      title: 'Call Center Examples',
+      color: Colors.blueGrey,
+      content: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildCallCenterExample(
+            customer: '"I\'m calling about the problem with my serv—"',
+            agent: '"I\'m sorry, could you repeat that last part?"',
+          ),
+          _buildCallCenterExample(
+            customer: '"My email is jen_matsuba87@gmail.com."',
+            agent: '"Could you spell that for me to make sure I got it right?"',
+          ),
+          _buildCallCenterExample(
+            customer: '"I placed the order on the 15th."',
+            agent:
+                '"Just to confirm — you placed the order on March 15th, correct?"',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCallCenterExample({
+    required String customer,
+    required String agent,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Customer: $customer',
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+          ),
+          Text(
+            'Agent: $agent',
+            style: const TextStyle(fontSize: 15, color: Colors.indigo),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVideoSection() {
+    if (_videoController.initialVideoId.isEmpty) return const SizedBox.shrink();
+    return _buildSectionCard(
+      icon: Icons.videocam,
+      title:
+          _lessonData?['video']?['heading'] ??
+          'Watch: Asking for Clarification',
+      color: const Color(0xFF9C27B0),
+      content: Column(
+        children: [
+          YoutubePlayer(
+            controller: _videoController,
+            showVideoProgressIndicator: true,
+          ),
+          if (_lessonData?['video']?['description'] != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              _lessonData!['video']['description'],
+              style: const TextStyle(fontSize: 14, color: Colors.grey),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLessonSummarySection() {
+    final summary = _lessonData?['summary'];
+    if (summary == null) return const SizedBox.shrink();
+    return _buildSectionCard(
+      icon: Icons.check_circle,
+      title: summary['heading'] ?? 'Lesson Summary',
+      color: Colors.green,
+      content: Text(
+        summary['paragraph'] ?? '',
+        style: const TextStyle(fontSize: 16, color: Colors.black87),
+      ),
+    );
   }
 }

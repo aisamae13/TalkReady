@@ -1,1148 +1,1980 @@
-// lesson5_1.dart (Revised for robust HTML display and previous fixes)
-import 'package:cloud_firestore/cloud_firestore.dart';
+// lib/lessons/lesson5_1.dart
 import 'package:flutter/material.dart';
-import 'package:carousel_slider/carousel_slider.dart';
-import 'package:flutter_tts/flutter_tts.dart';
-import 'package:record/record.dart';
-import 'package:audioplayers/audioplayers.dart';
-import 'package:flutter_html/flutter_html.dart'; // For OpenAI HTML feedback
 import 'package:logger/logger.dart';
-import 'package:path_provider/path_provider.dart';
+import '../services/unified_progress_service.dart';
+import '../widgets/skill_pill_widget.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
-import '../lessons/common_widgets.dart'; // For buildSlide
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import '../firebase_service.dart';
+import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../widgets/ai_feedback_display_card.dart';
 
-// TurnDataL5 Class (same as before)
-class TurnDataL5 {
-  final String id;
-  final String character;
-  final String text;
-  final String? voice;
-  String? localAudioPath;
-  String? audioStorageUrl;
-  String? transcription;
-  Map<String, dynamic>? azureAiFeedback;
-  String? openAiDetailedFeedback; // Expected to be HTML
-  bool isProcessed;
-  bool isPlayingCustomerAudio;
+class Lesson5_1Page extends StatefulWidget {
+  final String lessonId;
+  final String lessonTitle;
+  final Map<String, dynamic> lessonData;
+  final int attemptNumber;
 
-  TurnDataL5({
-    required this.id,
-    required this.character,
-    required this.text,
-    this.voice,
-    this.localAudioPath,
-    this.audioStorageUrl,
-    this.transcription,
-    this.azureAiFeedback,
-    this.openAiDetailedFeedback,
-    this.isProcessed = false,
-    this.isPlayingCustomerAudio = false,
-  });
-
-  TurnDataL5 copyWith({
-    String? localAudioPath,
-    String? audioStorageUrl,
-    String? transcription,
-    Map<String, dynamic>? azureAiFeedback,
-    String? openAiDetailedFeedback,
-    bool? isProcessed,
-    bool? isPlayingCustomerAudio,
-  }) {
-    return TurnDataL5(
-      id: id,
-      character: character,
-      text: text,
-      voice: voice,
-      localAudioPath: localAudioPath ?? this.localAudioPath,
-      audioStorageUrl: audioStorageUrl ?? this.audioStorageUrl,
-      transcription: transcription ?? this.transcription,
-      azureAiFeedback: azureAiFeedback ?? this.azureAiFeedback,
-      openAiDetailedFeedback:
-          openAiDetailedFeedback ?? this.openAiDetailedFeedback,
-      isProcessed: isProcessed ?? this.isProcessed,
-      isPlayingCustomerAudio:
-          isPlayingCustomerAudio ?? this.isPlayingCustomerAudio,
-    );
-  }
-}
-
-// Lesson5_1 StatefulWidget (same props as before)
-class Lesson5_1 extends StatefulWidget {
-  final int currentSlide;
-  final CarouselSliderController carouselController;
-  final Function(int) onSlideChanged;
-  final int initialAttemptNumber;
-  final bool showActivityInitially;
-  final VoidCallback onShowActivitySection;
-  final bool passToShowSummary;
-  final Map<String, dynamic>? summaryData;
-  final Future<Map<String, dynamic>?> Function({
-    required String turnId,
-    required String localAudioPath,
-    required String originalText,
-  }) onProcessAgentTurn;
-  final Future<void> Function({
-    required String lessonIdFirestoreKey,
-    required int attemptNumber,
-    required int timeSpent,
-    required double overallLessonScore,
-    required List<Map<String, dynamic>> turnDetails,
-  }) onSaveLessonAttempt;
-
-  const Lesson5_1({
+  const Lesson5_1Page({
     super.key,
-    required this.currentSlide,
-    required this.carouselController,
-    required this.onSlideChanged,
-    required this.initialAttemptNumber,
-    required this.showActivityInitially,
-    required this.onShowActivitySection,
-    required this.passToShowSummary,
-    this.summaryData,
-    required this.onProcessAgentTurn,
-    required this.onSaveLessonAttempt,
+    required this.lessonId,
+    required this.lessonTitle,
+    required this.lessonData,
+    required this.attemptNumber,
   });
 
   @override
-  _Lesson5_1State createState() => _Lesson5_1State();
+  State<Lesson5_1Page> createState() => _Lesson5_1PageState();
 }
 
-class _Lesson5_1State extends State<Lesson5_1> {
-  final FirebaseService _firebaseService = FirebaseService();
-  // Logger, TTS, AudioRecorder, AudioPlayer (same as before)
-  final Logger _logger = Logger(
-      printer: PrettyPrinter(
-          methodCount: 1,
-          errorMethodCount: 5,
-          lineLength: 120,
-          colors: true,
-          printEmojis: true,
-          printTime: false));
-  FlutterTts flutterTts = FlutterTts();
-  final AudioRecorder _audioRecorder = AudioRecorder();
-  final AudioPlayer _audioPlayer = AudioPlayer();
+class _Lesson5_1PageState extends State<Lesson5_1Page>
+    with TickerProviderStateMixin {
+  final Logger _logger = Logger();
+  final UnifiedProgressService _progressService = UnifiedProgressService();
 
-  // State variables (same as before)
-  bool _isStudied = false;
-  bool _isActivityVisible = false;
-  bool _showFinalSummary = false;
-  int _currentTurnIndex = 0;
-  Map<String, TurnDataL5> _turnDataStateMap = {};
-  bool _isRecording = false;
-  bool _isProcessingTurn = false;
-  bool _isLoadingAI = false;
-  int? _completedAttemptNumberForSummary;
-  Timer? _timer;
-  int _secondsElapsed = 0;
-  late int _currentAttemptNumberForUI;
-  double? _overallLessonScore;
+  List<Map<String, dynamic>> _activityLog = [];
+  int _attemptNumber = 0;
 
-  // _callSimulationTurns and _studySlides (same as before)
-  final List<TurnDataL5> _callSimulationTurns = [
-    TurnDataL5(
-        id: 'turn1_customer_complex',
-        text:
-            "Hi there, I was hoping to find out your opening hours today, and also, are you open this Saturday? I usually work weekdays, so Saturdays are better for me.",
-        character: "Customer",
-        voice: "US English Female"),
-    TurnDataL5(
-        id: 'turn2_agent_complex',
-        text:
-            "Good morning! Our standard hours are Monday to Friday, 9 a.m. to 5 p.m. Regarding Saturdays, we are unfortunately closed. However, our online support portal is available 24/7.",
-        character: "Agent - Your Turn"),
-    TurnDataL5(
-        id: 'turn3_customer_complex',
-        text:
-            "Oh, closed on Saturdays? That's a bit inconvenient. Is there any way to reach support or get specific account help outside of those weekday hours?",
-        character: "Customer",
-        voice: "US English Female"),
-    TurnDataL5(
-        id: 'turn4_agent_complex',
-        text:
-            "I understand that can be inconvenient. While our live phone support is available during weekday hours, you can send us an email anytime, and we typically respond within 24 hours. Our website also has a comprehensive FAQ section. Would you like the email address for support?",
-        character: "Agent - Your Turn"),
-    TurnDataL5(
-        id: 'turn5_customer_complex',
-        text: "Okay, yes, the email address would be helpful. Thank you.",
-        character: "Customer",
-        voice: "US English Female"),
-    TurnDataL5(
-        id: 'turn6_agent_complex',
-        text:
-            "Certainly, our support email is support@talkready.ai. Is there anything else I can assist you with today?",
-        character: "Agent - Your Turn"),
-  ];
+  late AnimationController _fadeController;
+  late AnimationController _slideController;
+  late Animation<double> _fadeAnimation;
+  late Animation<Offset> _slideAnimation;
 
-  final List<Map<String, String>> _studySlides = [
-    {
-      'title': 'Lesson Objective',
-      'content':
-          'To practice handling a simulated call where a customer asks for straightforward information, requiring a basic greeting, understanding the request, providing a simple answer, and concluding the call politely.'
-    },
-    {
-      'title': 'Key Skills Integrated',
-      'content':
-          '• Module 1 (Grammar): Using basic sentence structures and correct present simple tense.\n• Module 2 (Vocabulary & Conversation): Applying standard greetings, using vocabulary for numbers/dates/times, and using basic closing phrases.\n• Module 3 (Listening & Speaking): Listening for a simple, clear request; speaking clearly and at a basic, understandable pace; maintaining basic fluency and pronunciation.\n• Module 4 (Basic Handling): Providing simple, direct information.'
-    },
-    {
-      'title': 'Interactive Activity: Basic Call Simulation',
-      'content':
-          'Participate in a short, multi-turn simulated call. Listen to the customer, then speak your response using the recording feature.'
-    },
-    {
-      'title': 'Scenario Example: Handling a Multi-Part Inquiry',
-      'content':
-          '<strong>Customer:</strong> "Hi there, I was hoping to find out your opening hours today, and also, are you open this Saturday? I usually work weekdays, so Saturdays are better for me."<br><strong>Your Goal (Agent):</strong> Clearly provide weekday hours, address the Saturday query, and offer an alternative if closed on Saturdays (e.g., "Good morning! Our standard hours are Monday to Friday, 9 a.m. to 5 p.m. Regarding Saturdays, we are unfortunately closed. However, our online support portal is available 24/7.").'
-    },
-    {
-      'title': 'Evaluation Focus',
-      'content':
-          'Your performance will be evaluated on:\n• Listening accuracy (addressing the simple request).\n• Pronunciation and basic fluency.\n• Correct basic grammar and vocabulary.\n• Appropriateness of basic greeting and closing.\n• Overall successful completion of the simple call flow.'
-    },
-  ];
+  bool _isLoading = true;
+  bool _hasStudied = false;
+  bool _isPreAssessmentComplete = false;
+  bool _showPreAssessment = false;
 
-  // initState with logging (same as last full update)
+  // Pre-assessment drag and drop state
+  Map<String, Map<String, dynamic>> _columns = {};
+  String? _draggedItemId;
+  bool _preAssessmentSubmitted = false;
+  bool _showPreAssessmentResults = false;
+  Map<String, bool> _itemResults = {};
+  Timer? _progressTimer;
+  double _progressValue = 0.0;
+
+  // Lesson content
+  final Map<String, dynamic> _lessonContent = {
+    'objective': {
+      'heading': 'Lesson Objective',
+      'paragraph':
+          'To practice handling a simulated call where a customer asks for straightforward information, requiring a basic greeting, understanding the request, providing a simple answer, and concluding the call politely.',
+    },
+    'introduction': {
+      'heading': 'Key Skills Integrated',
+      'points': [
+        {
+          'skill': 'Module 1 (Grammar)',
+          'description':
+              'Using basic sentence structures and correct present simple tense.',
+        },
+        {
+          'skill': 'Module 2 (Conversation)',
+          'description':
+              'Applying standard greetings and polite closing phrases.',
+        },
+        {
+          'skill': 'Module 3 (Speaking)',
+          'description':
+              'Speaking clearly and at an understandable pace, maintaining basic fluency and pronunciation.',
+        },
+        {
+          'skill': 'Module 4 (Handling)',
+          'description':
+              'Providing simple, direct information and asking clarification questions to resolve the inquiry.',
+        },
+      ],
+    },
+    'callFlow': {
+      'heading': 'Breaking Down the Call Flow',
+      'steps': [
+        {
+          'title': '1. The Opening',
+          'text': 'Greet the customer professionally and state your name.',
+        },
+        {
+          'title': '2. Verification',
+          'text':
+              'Listen to their request and ask for a key piece of information (like an order number) to verify their account.',
+        },
+        {
+          'title': '3. Information Delivery',
+          'text':
+              'Politely inform the customer you have the information they need and deliver it clearly.',
+        },
+        {
+          'title': '4. The Closing',
+          'text':
+              'Ask if they need any more help and end the call with a polite closing phrase.',
+        },
+      ],
+    },
+    'preAssessment': {
+      'title': 'Pre-Lesson Check-in: Scenario Matching',
+      'instruction':
+          'Drag each customer request into the box that describes the correct first action for an agent to take.',
+      'columns': {
+        'requests': {
+          'name': 'Customer Requests',
+          'items': [
+            {
+              'id': 'item-1',
+              'content': '"What are your store hours on Sunday?"',
+              'correctColumn': 'col_direct',
+            },
+            {
+              'id': 'item-2',
+              'content':
+                  '"Can you tell me if I have any loyalty points on my account?"',
+              'correctColumn': 'col_verify',
+            },
+            {
+              'id': 'item-3',
+              'content': '"What is the status of my order #55123?"',
+              'correctColumn': 'col_verify',
+            },
+            {
+              'id': 'item-4',
+              'content': '"Do you ship to my area, in Cebu City?"',
+              'correctColumn': 'col_direct',
+            },
+          ],
+        },
+        'col_verify': {
+          'name': 'Requires Account Verification',
+          'items': <Map<String, dynamic>>[],
+        },
+        'col_direct': {
+          'name': 'Can Be Answered Directly',
+          'items': <Map<String, dynamic>>[],
+        },
+      },
+      'feedback': {
+        'heading': 'Excellent!',
+        'paragraph':
+            'You\'ve got a good sense of how to categorize customer needs. Let\'s put it into practice in a full simulation.',
+      },
+    },
+  };
+
   @override
   void initState() {
     super.initState();
-    _logger.i("L5.1 initState: START");
-    _logger.d(
-        "L5.1 initState: widget.passToShowSummary=${widget.passToShowSummary}, widget.summaryData isNotNull=${widget.summaryData != null}, widget.initialAttemptNumber=${widget.initialAttemptNumber}, widget.showActivityInitially=${widget.showActivityInitially}");
-    if (widget.summaryData != null) {
-      _logger.d(
-          "L5.1 initState: summaryData content: attemptNumber=${widget.summaryData!['attemptNumber']}, overallScore=${widget.summaryData!['overallLessonScore']}");
-    }
-
-    _currentAttemptNumberForUI = widget.initialAttemptNumber + 1;
-    _initializeTts();
-
-    if (widget.passToShowSummary && widget.summaryData != null) {
-      _logger.i("L5.1 initState: Conditions met for WILL SHOW SUMMARY.");
-      _isStudied = true;
-      _isActivityVisible = true;
-      _showFinalSummary = true;
-
-      _overallLessonScore =
-          widget.summaryData!['overallLessonScore'] as double?;
-      _secondsElapsed = widget.summaryData!['timeSpent'] as int;
-      _completedAttemptNumberForSummary =
-          widget.summaryData!['attemptNumber'] as int;
-      _logger.i(
-          "L5.1 initState: Summary state set. Overall Score: $_overallLessonScore, Completed Attempt: $_completedAttemptNumberForSummary");
-    } else {
-      _logger.i(
-          "L5.1 initState: Conditions for summary NOT met. Setting up for STUDY or ACTIVITY.");
-      _isStudied = widget.showActivityInitially;
-      _isActivityVisible = widget.showActivityInitially;
-      _showFinalSummary = false;
-
-      if (_isActivityVisible) {
-        _logger.i(
-            "L5.1 initState: Activity is visible, calling _startNewLessonAttempt for attempt #$_currentAttemptNumberForUI.");
-        _startNewLessonAttempt();
-      } else {
-        _logger.i(
-            "L5.1 initState: Activity not visible, will go to study phase. _isStudied=$_isStudied");
-      }
-    }
-    _logger.i(
-        "L5.1 initState: END. _showFinalSummary=$_showFinalSummary, _isActivityVisible=$_isActivityVisible, _isStudied=$_isStudied");
+    _initializeAnimations();
+    _initializePreAssessment();
+    _checkUserProgress();
   }
 
-  // All other methods (_initializeTts, _startNewLessonAttempt, _playCurrentCustomerTurnAudio,
-  // _startTimer, _stopTimer, _formatDuration, _handleStartRecording, _handleStopRecordingAndProcess,
-  // _playLocalRecording, _processCurrentAgentTurn, _handleNextTurn, _calculateAndSaveLessonScore)
-  // remain IDENTICAL to the "full update" I provided in the response before you sent the web files.
-  // For brevity, I am not repeating them here but assume they are present and correct from that version.
-  // Make sure the copyWith method in TurnDataL5 is used in those methods. I've put placeholders below.
+  void _initializeAnimations() {
+    _fadeController = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    );
+    _slideController = AnimationController(
+      duration: const Duration(milliseconds: 600),
+      vsync: this,
+    );
 
-  Future<void> _initializeTts() async {
-    /* ...as before... */ await flutterTts.setLanguage("en-US");
-    await flutterTts.setSpeechRate(0.5);
-    flutterTts.setCompletionHandler(() {
-      if (_currentTurnIndex >= _callSimulationTurns.length) return;
-      final currentTurnId = _callSimulationTurns[_currentTurnIndex].id;
-      if (mounted &&
-          _turnDataStateMap.containsKey(currentTurnId) &&
-          _turnDataStateMap[currentTurnId]!.isPlayingCustomerAudio == true) {
-        setState(() {
-          _turnDataStateMap[currentTurnId] = _turnDataStateMap[currentTurnId]!
-              .copyWith(isPlayingCustomerAudio: false);
-        });
-      }
-    });
+    _fadeAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _fadeController, curve: Curves.easeIn));
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0.3),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _slideController, curve: Curves.easeOut));
+
+    _fadeController.forward();
+    _slideController.forward();
   }
 
-  void _startNewLessonAttempt() {
-    /* ...as before... */ _logger.i(
-        "L5.1 _startNewLessonAttempt: Starting for attempt #$_currentAttemptNumberForUI");
-    if (mounted) {
-      setState(() {
-        _currentTurnIndex = 0;
-        _turnDataStateMap = {};
-        for (var turn in _callSimulationTurns) {
-          _turnDataStateMap[turn.id] = turn;
+  void _initializePreAssessment() {
+    final preAssessmentData =
+        _lessonContent['preAssessment'] as Map<String, dynamic>;
+    final columns = preAssessmentData['columns'] as Map<String, dynamic>;
+
+    // Get the requests column data
+    final requestsColumn = columns['requests'] as Map<String, dynamic>;
+    final requestsItems = requestsColumn['items'] as List;
+
+    // Get other column data
+    final verifyColumn = columns['col_verify'] as Map<String, dynamic>;
+    final directColumn = columns['col_direct'] as Map<String, dynamic>;
+
+    _columns = {
+      'requests': {
+        'name': requestsColumn['name'] as String,
+        'items': requestsItems
+            .map((item) => Map<String, dynamic>.from(item as Map))
+            .toList(),
+      },
+      'col_verify': {
+        'name': verifyColumn['name'] as String,
+        'items': <Map<String, dynamic>>[],
+      },
+      'col_direct': {
+        'name': directColumn['name'] as String,
+        'items': <Map<String, dynamic>>[],
+      },
+    };
+  }
+
+  Future<void> _checkUserProgress() async {
+    setState(() => _isLoading = true);
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        // --- THIS IS THE FIX ---
+        // We now fetch the entire progress document at once, which is more efficient.
+        final progress = await _progressService.getUserProgress();
+
+        // Get pre-assessment status
+        final preAssessmentsCompleted =
+            progress['preAssessmentsCompleted'] as Map<String, dynamic>? ?? {};
+        final isPreAssessmentDone =
+            preAssessmentsCompleted[widget.lessonId] == true;
+
+        // Get lesson attempts for the activity log
+        final allLessonAttempts =
+            progress['lessonAttempts'] as Map<String, dynamic>? ?? {};
+        final attempts = List<Map<String, dynamic>>.from(
+          allLessonAttempts[widget.lessonId] ?? [],
+        );
+        // --- END OF FIX ---
+
+        if (mounted) {
+          setState(() {
+            _isPreAssessmentComplete = isPreAssessmentDone;
+            _hasStudied =
+                isPreAssessmentDone; // User can study if pre-assessment is done
+            _activityLog = attempts; // Store the fetched attempts
+            _attemptNumber = attempts.length; // Update the attempt count
+          });
         }
-        _isRecording = false;
-        _isProcessingTurn = false;
-        _showFinalSummary = false;
-        _completedAttemptNumberForSummary = null;
-        _overallLessonScore = null;
-        _secondsElapsed = 0;
-        _startTimer();
-      });
-      _playCurrentCustomerTurnAudio();
-    }
-  }
-
-  void _playCurrentCustomerTurnAudio() async {
-    /* ...as before... */ if (_currentTurnIndex < _callSimulationTurns.length) {
-      final currentTurn = _callSimulationTurns[_currentTurnIndex];
-      if (currentTurn.character == "Customer") {
-        final turnId = currentTurn.id;
-        if (!_turnDataStateMap.containsKey(turnId)) {
-          _turnDataStateMap[turnId] = currentTurn;
-        }
-        setState(() {
-          _turnDataStateMap[turnId] =
-              _turnDataStateMap[turnId]!.copyWith(isPlayingCustomerAudio: true);
-        });
-        await flutterTts.speak(currentTurn.text);
-      }
-    }
-  }
-
-  void _startTimer() {
-    /* ...as before... */ _stopTimer();
-    _secondsElapsed = 0;
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-      setState(() => _secondsElapsed++);
-    });
-  }
-
-  void _stopTimer() {
-    /* ...as before... */ _timer?.cancel();
-  }
-
-  String _formatDuration(int totalSeconds) {
-    /* ...as before... */ final d = Duration(seconds: totalSeconds);
-    return "${d.inMinutes.remainder(60).toString().padLeft(2, '0')}:${d.inSeconds.remainder(60).toString().padLeft(2, '0')}";
-  }
-
-  Future<void> _handleStartRecording() async {
-    /* ...as before... */ final hasPermission =
-        await _audioRecorder.hasPermission();
-    if (!hasPermission) {
-      _logger.w("L5.1: Mic permission denied.");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Mic permission required.')));
-      }
-      return;
-    }
-    final currentTurn = _callSimulationTurns[_currentTurnIndex];
-    if (_turnDataStateMap[currentTurn.id]?.isProcessed == true ||
-        _isProcessingTurn) {
-      return;
-    }
-    final tempDir = await getTemporaryDirectory();
-    final path =
-        '${tempDir.path}/turn_${currentTurn.id}_${DateTime.now().millisecondsSinceEpoch}.m4a';
-    try {
-      await _audioRecorder
-          .start(const RecordConfig(encoder: AudioEncoder.aacLc), path: path);
-      setState(() {
-        _isRecording = true;
-        _turnDataStateMap[currentTurn.id] =
-            (_turnDataStateMap[currentTurn.id] ?? currentTurn).copyWith(
-                localAudioPath: null,
-                audioStorageUrl: null,
-                transcription: null,
-                azureAiFeedback: null,
-                openAiDetailedFeedback: null,
-                isProcessed: false);
-      });
-      _logger.i("L5.1: Recording started. Path: $path");
-    } catch (e) {
-      _logger.e("L5.1: Error starting recording: $e");
-    }
-  }
-
-  Future<void> _handleStopRecordingAndProcess() async {
-    /* ...as before... */ if (!_isRecording) return;
-    final currentTurn = _callSimulationTurns[_currentTurnIndex];
-    try {
-      final path = await _audioRecorder.stop();
-      setState(() => _isRecording = false);
-      if (path != null) {
-        _logger.i("L5.1: Recording stopped. File: $path");
-        setState(() {
-          _turnDataStateMap[currentTurn.id] =
-              (_turnDataStateMap[currentTurn.id] ?? currentTurn)
-                  .copyWith(localAudioPath: path);
-        });
-        _processCurrentAgentTurn(currentTurn.id, path, currentTurn.text);
       }
     } catch (e) {
-      _logger.e("L5.1: Error stopping recording: $e");
-    }
-  }
-
-  Future<void> _playLocalRecording(String? path) async {
-    /* ...as before... */ if (path == null || path.isEmpty) return;
-    try {
-      await _audioPlayer.play(DeviceFileSource(path));
-    } catch (e) {
-      _logger.e("L5.1: Error playing local recording: $e");
-    }
-  }
-
-  Future<void> _processCurrentAgentTurn(
-      String turnId, String localAudioPath, String originalScriptText) async {
-    /* ...as before... */ if (!mounted) return;
-    setState(() => _isProcessingTurn = true);
-    try {
-      final result = await widget.onProcessAgentTurn(
-          turnId: turnId,
-          localAudioPath: localAudioPath,
-          originalText: originalScriptText);
-      if (!mounted) return;
-      final currentTurnObject = _turnDataStateMap[turnId] ??
-          _callSimulationTurns.firstWhere((t) => t.id == turnId);
-      if (result != null && result['error'] == null) {
-        setState(() {
-          _turnDataStateMap[turnId] = currentTurnObject.copyWith(
-              audioStorageUrl: result['audioStorageUrl'] as String?,
-              transcription: result['transcription'] as String?,
-              azureAiFeedback:
-                  result['azureAiFeedback'] as Map<String, dynamic>?,
-              openAiDetailedFeedback:
-                  result['openAiDetailedFeedback'] as String?,
-              isProcessed: true);
-        });
-      } else {
-        setState(() {
-          _turnDataStateMap[turnId] = currentTurnObject.copyWith(
-              isProcessed: true,
-              openAiDetailedFeedback:
-                  "Error: ${result?['error'] ?? 'Unknown'}");
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _turnDataStateMap[turnId] = (_turnDataStateMap[turnId] ??
-                  _callSimulationTurns.firstWhere((t) => t.id == turnId))
-              .copyWith(
-                  isProcessed: true, openAiDetailedFeedback: "Exception: $e");
-        });
-      }
+      _logger.e('Error checking user progress: $e');
     } finally {
-      if (mounted) setState(() => _isProcessingTurn = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
-  Future<void> _handleNextTurn() async {
-    /* ...as before... */ if (_isProcessingTurn || _isRecording) return;
-    final currentTurnId = _callSimulationTurns[_currentTurnIndex].id;
-    final currentTurnData = _turnDataStateMap[currentTurnId];
-    if (_callSimulationTurns[_currentTurnIndex].character ==
-            "Agent - Your Turn" &&
-        (currentTurnData == null || currentTurnData.isProcessed != true)) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text("Please record/submit your response.")));
-      }
-      return;
-    }
-    if (_currentTurnIndex < _callSimulationTurns.length - 1) {
-      if (mounted) {
-        setState(() => _currentTurnIndex++);
-        _playCurrentCustomerTurnAudio();
-      }
-    } else {
-      _logger.i("L5.1: Call simulation ended.");
-      _stopTimer();
-      _completedAttemptNumberForSummary = _currentAttemptNumberForUI;
-      setState(() => _showFinalSummary = true);
-      await _calculateAndSaveLessonScore();
-    }
+  void _showActivityLogDialog() {
+    Navigator.pushNamed(
+      context,
+      '/lesson_activity_log', // This route uses your shared log page
+      arguments: {
+        'lessonId': widget.lessonId,
+        'lessonData': widget.lessonData,
+        'activityLog': _activityLog,
+      },
+    );
   }
 
-  Future<void> _calculateAndSaveLessonScore() async {
-    /* ...as before... */ if (!mounted) return;
-    setState(() => _isLoadingAI = true);
-    double totalAccuracyScore = 0;
-    int agentTurnsProcessed = 0;
-    _turnDataStateMap.forEach((turnId, data) {
-      if (data.character == "Agent - Your Turn" &&
-          data.isProcessed &&
-          data.azureAiFeedback != null) {
-        final accuracy = data.azureAiFeedback!['accuracyScore'] as num?;
-        if (accuracy != null) {
-          totalAccuracyScore += accuracy;
-          agentTurnsProcessed++;
+  void _startPreAssessment() {
+    setState(() {
+      _showPreAssessment = true;
+      _initializePreAssessment(); // Reset the assessment
+    });
+  }
+
+  void _onDragStarted(Map<String, dynamic> item) {
+    setState(() {
+      _draggedItemId = item['id'];
+    });
+  }
+
+  void _onDragEnd() {
+    setState(() {
+      _draggedItemId = null;
+    });
+  }
+
+  bool _onWillAccept(String columnId, Map<String, dynamic> item) {
+    return columnId != 'requests' && !_preAssessmentSubmitted;
+  }
+
+  void _onAccept(String columnId, Map<String, dynamic> item) {
+    if (_preAssessmentSubmitted) return;
+
+    setState(() {
+      // Remove item from all columns first
+      _columns.forEach((key, value) {
+        final items = value['items'] as List<Map<String, dynamic>>;
+        items.removeWhere((existingItem) => existingItem['id'] == item['id']);
+      });
+
+      // Add item to the target column
+      final targetItems =
+          _columns[columnId]!['items'] as List<Map<String, dynamic>>;
+      targetItems.add(item);
+    });
+  }
+
+  void _checkPreAssessment() {
+    if (_preAssessmentSubmitted) return;
+
+    setState(() => _preAssessmentSubmitted = true);
+
+    // Check answers
+    Map<String, bool> results = {};
+    _columns.forEach((columnId, columnData) {
+      if (columnId != 'requests') {
+        final items = columnData['items'] as List<Map<String, dynamic>>;
+        for (var item in items) {
+          final itemId = item['id'] as String;
+          final correctColumn = item['correctColumn'] as String;
+          results[itemId] = correctColumn == columnId;
         }
       }
     });
-    final double averageAccuracy = agentTurnsProcessed > 0
-        ? (totalAccuracyScore / agentTurnsProcessed)
-        : 0.0;
-    if (mounted) {
-      setState(() => _overallLessonScore =
-          double.parse(averageAccuracy.toStringAsFixed(1)));
-    }
-    final List<Map<String, dynamic>> turnDetailsForFirebase =
-        _callSimulationTurns.map((turn) {
-      final data = _turnDataStateMap[turn.id];
-      return {
-        'id': turn.id,
-        'text': turn.text,
-        'character': turn.character,
-        'audioUrl': data?.audioStorageUrl,
-        'transcription': data?.transcription,
-        'score': (data?.azureAiFeedback?['accuracyScore'] as num?)?.toDouble(),
-        'azureAiFeedback': data?.azureAiFeedback,
-        'openAiDetailedFeedback': data?.openAiDetailedFeedback
-      };
-    }).toList();
 
-    // >>> START OF NEW LOGIC TO DETERMINE CORRECT ATTEMPT NUMBER <<<
-    String? userId = _firebaseService.userId;
-    if (userId == null) {
+    setState(() => _itemResults = results);
+
+    // Show results for 3 seconds, then show feedback
+    Timer(const Duration(seconds: 3), () {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('User not authenticated.')));
-        setState(() => _isLoadingAI = false);
+        setState(() => _showPreAssessmentResults = true);
+        _startProgressAnimation();
       }
-      return;
-    }
-
-    final String lessonIdFirestoreKey = "Lesson 5.1"; // Specific for this file
-    List<Map<String, dynamic>> pastDetailedAttempts = [];
-    try {
-      pastDetailedAttempts = await _firebaseService
-          .getDetailedLessonAttempts(lessonIdFirestoreKey);
-    } catch (e) {
-      _logger.e(
-          "Error fetching past detailed attempts for $lessonIdFirestoreKey: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content:
-                Text('Could not verify past attempts. Please try again.')));
-        setState(() => _isLoadingAI = false);
-      }
-      return;
-    }
-
-    final int actualNextAttemptNumber = pastDetailedAttempts.length + 1;
-    // >>> END OF NEW LOGIC <<<
-
-    // Determine the attempt number to save. Use the newly calculated one.
-    final attemptNumberToSave = actualNextAttemptNumber;
-
-    try {
-      await widget.onSaveLessonAttempt(
-          lessonIdFirestoreKey: lessonIdFirestoreKey, // e.g., "Lesson 5.1"
-          attemptNumber: attemptNumberToSave, // <<< USE THE CORRECTED NUMBER
-          timeSpent: _secondsElapsed,
-          overallLessonScore: _overallLessonScore ?? 0.0,
-          turnDetails: turnDetailsForFirebase);
-
-      // Update UI state for the current attempt number display
-      if (mounted) {
-        setState(() {
-          _currentAttemptNumberForUI = attemptNumberToSave;
-          _completedAttemptNumberForSummary =
-              attemptNumberToSave; // If you use this for summary display
-        });
-      }
-      _logger.i("L5.1: Attempt #$attemptNumberToSave saved successfully.");
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text("Error saving progress: $e")));
-      }
-      _logger.e("L5.1: Error in onSaveLessonAttempt: $e");
-    } finally {
-      if (mounted) setState(() => _isLoadingAI = false);
-    }
+    });
   }
 
-  Future<Map<String, dynamic>?> _fetchUserProgress() async {
-    try {
-      final userId = _firebaseService.userId;
-      if (userId == null) {
-        _logger.w("L5.1: User not authenticated");
-        return null;
+  void _startProgressAnimation() {
+    _progressTimer = Timer.periodic(const Duration(milliseconds: 40), (timer) {
+      setState(() {
+        _progressValue += 0.025;
+        if (_progressValue >= 1.0) {
+          _progressValue = 1.0;
+          timer.cancel();
+          _completePreAssessment();
+        }
+      });
+    });
+  }
+
+  void _completePreAssessment() {
+    Timer(const Duration(milliseconds: 500), () async {
+      try {
+        final user = FirebaseAuth.instance.currentUser;
+        if (user != null) {
+          await _progressService.markPreAssessmentAsComplete('Lesson-5-1');
+        }
+      } catch (e) {
+        _logger.e('Error marking pre-assessment complete: $e');
       }
-      
-      final prog = await FirebaseFirestore.instance
-          .collection('userProgress')
-          .doc(userId)
-          .get();
-          
-      if (prog.exists) {
-        _logger.i('L5.1: User progress data fetched');
-        return prog.data();
+
+      if (mounted) {
+        setState(() {
+          _isPreAssessmentComplete = true;
+          _hasStudied = true;
+          _showPreAssessment = false;
+        });
       }
-    } catch (e) {
-      _logger.e('L5.1: Error fetching user progress: $e');
-    }
-    return null;
+    });
+  }
+
+  void _handleStudyComplete() {
+    setState(() => _hasStudied = true);
+  }
+
+  void _navigateToActivity() {
+    Navigator.pushNamed(
+      context,
+      '/lesson5_1_activity',
+      arguments: {
+        'lessonId': 'Lesson-5-1',
+        'lessonTitle': 'Lesson 5.1: Basic Simulation - Info Request',
+        'lessonData': widget.lessonData,
+        'attemptNumber': widget.attemptNumber,
+      },
+    );
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
-    _audioRecorder.dispose();
-    _audioPlayer.dispose();
-    flutterTts.stop();
+    _fadeController.dispose();
+    _slideController.dispose();
+    _progressTimer?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    _logger.i(
-        "L5.1 build: Building UI. _showFinalSummary=$_showFinalSummary, widget.passToShowSummary=${widget.passToShowSummary}, _isActivityVisible=$_isActivityVisible, _isStudied=$_isStudied, widget.showActivityInitially=${widget.showActivityInitially}");
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF5F7FA),
+        appBar: AppBar(
+          title: Text(widget.lessonTitle),
+          backgroundColor: const Color(0xFF00BCD4),
+          foregroundColor: Colors.white,
+          elevation: 4,
+        ),
+        body: const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(color: Color(0xFF00BCD4)),
+              SizedBox(height: 16),
+              Text('Loading lesson...'),
+            ],
+          ),
+        ),
+      );
+    }
 
-    Widget content;
-    final currentSimulationTurn =
-        (_currentTurnIndex < _callSimulationTurns.length &&
-                _currentTurnIndex >= 0)
-            ? _callSimulationTurns[_currentTurnIndex]
-            : null;
-    final currentTurnProcessedData = (currentSimulationTurn != null &&
-            _turnDataStateMap.containsKey(currentSimulationTurn.id))
-        ? _turnDataStateMap[currentSimulationTurn.id]
-        : null;
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F7FA),
+      appBar: AppBar(
+        title: Text(
+          widget.lessonTitle,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        backgroundColor: const Color(0xFF00BCD4),
+        foregroundColor: Colors.white,
+        elevation: 4,
+      ),
+      body: FadeTransition(
+        opacity: _fadeAnimation,
+        child: SlideTransition(
+          position: _slideAnimation,
+          child: _showPreAssessment
+              ? _buildPreAssessment()
+              : _buildMainContent(),
+        ),
+      ),
+    );
+  }
 
-    if (_showFinalSummary &&
-        widget.passToShowSummary &&
-        widget.summaryData != null) {
-      _logger.i("L5.1 build: Rendering SUMMARY phase.");
-      final List<dynamic>? turnDetailsList =
-          widget.summaryData!['turnDetails'] as List<dynamic>?;
-      content = Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+  Widget _buildMainContent() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16.0),
-              child: Text('Call Simulation Complete!',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      color: Colors.green, fontWeight: FontWeight.bold))),
-          if (_overallLessonScore != null &&
-              _completedAttemptNumberForSummary != null)
-            Padding(
-                padding: const EdgeInsets.only(bottom: 8.0),
-                child: Text(
-                    "Overall Score for Attempt #$_completedAttemptNumberForSummary: ${_overallLessonScore?.toStringAsFixed(1)}%",
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleLarge
-                        ?.copyWith(fontWeight: FontWeight.bold))),
-          const Divider(height: 20, thickness: 1),
-          Text("Detailed Review:",
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          (turnDetailsList == null || turnDetailsList.isEmpty)
-              ? const Center(
-                  child: Padding(
-                      padding: EdgeInsets.all(16.0),
-                      child:
-                          Text("No detailed turn data available for review.")))
-              : ListView.builder(
-                  shrinkWrap: true, // Fix for Expanded in SingleChildScrollView
-                  physics:
-                      const NeverScrollableScrollPhysics(), // Fix for Expanded in SingleChildScrollView
-                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                  itemCount: turnDetailsList.length,
-                  itemBuilder: (ctx, index) {
-                    final turnData =
-                        turnDetailsList[index] as Map<String, dynamic>;
-                    final String character = turnData['character'] ?? 'Unknown';
-                    final String text = turnData['text'] ?? 'No script.';
-                    final String? transcription =
-                        turnData['transcription'] as String?;
-                    final Map<String, dynamic>? azureFeedback =
-                        turnData['azureAiFeedback'] as Map<String, dynamic>?;
-                    final String? openAiFeedbackHtml =
-                        turnData['openAiDetailedFeedback'] as String?;
-
-                    return Card(
-                      margin: const EdgeInsets.symmetric(vertical: 6.0),
-                      elevation: 2,
-                      child: Padding(
-                        padding: const EdgeInsets.all(12.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text("${index + 1}. $character:",
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleMedium
-                                    ?.copyWith(
-                                        fontWeight: FontWeight.bold,
-                                        color: character == "Customer"
-                                            ? Colors.blueGrey
-                                            : Theme.of(context)
-                                                .colorScheme
-                                                .primary)),
-                            const SizedBox(height: 6),
-                            Text(text,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodyLarge
-                                    ?.copyWith(fontStyle: FontStyle.italic)),
-                            if (character == "Agent - Your Turn") ...[
-                              if (transcription != null &&
-                                  transcription.isNotEmpty) ...[
-                                const SizedBox(height: 10),
-                                const Text("Your Transcription:",
-                                    style:
-                                        TextStyle(fontWeight: FontWeight.bold)),
-                                Padding(
-                                    padding: const EdgeInsets.only(
-                                        top: 4.0, left: 8.0),
-                                    child: Text(transcription,
-                                        style: const TextStyle(
-                                            color: Colors.black87))),
-                              ],
-                              if (azureFeedback != null) ...[
-                                const SizedBox(height: 10),
-                                _buildAzureFeedbackDisplay(
-                                    azureFeedback, context)
-                              ],
-                              if (openAiFeedbackHtml != null &&
-                                  openAiFeedbackHtml.isNotEmpty) ...[
-                                const SizedBox(height: 10),
-                                _buildOpenAICoachFeedbackDisplay(
-                                    openAiFeedbackHtml)
-                              ], // Using corrected HTML display
-                            ],
-                          ],
+          // ✅ ADD: Module and Lesson Title Section
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF00BCD4), Color(0xFF0097A7)],
+              ),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF00BCD4).withOpacity(0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Module 5: Practical Simulation &',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.white70,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.headset_mic,
+                        color: Colors.white,
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'Lesson 5.1: Basic Simulation - Info Request',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
                         ),
                       ),
-                    );
-                  },
+                    ),
+                  ],
                 ),
-          const SizedBox(height: 10),
-          Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-            child: ElevatedButton.icon(
-              icon: const Icon(Icons.refresh),
-              label: Text(
-                  "Try Another Simulation (Attempt #$_currentAttemptNumberForUI)"),
-              onPressed: _isLoadingAI ? null : _startNewLessonAttempt,
-              style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 12)),
+              ],
+            ),
+          ),
+          // ✅ END OF ADDITION
+
+          // Activity Log Button
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              icon: const Icon(Icons.history, color: Color(0xFF00BCD4)),
+              label: const Text(
+                'View Your Activity Log',
+                style: TextStyle(color: Color(0xFF00BCD4)),
+              ),
+              onPressed: _showActivityLogDialog,
+            ),
+          ),
+
+          const SizedBox(height: 8),
+
+          _buildObjectiveSection(),
+          const SizedBox(height: 24),
+          _buildSkillsSection(),
+          const SizedBox(height: 24),
+          _buildCallFlowSection(),
+          const SizedBox(height: 32),
+          _buildStartButton(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPreAssessmentPrompt() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF00BCD4), Color(0xFF0097A7)],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF00BCD4).withOpacity(0.3),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          const Icon(Icons.quiz, size: 48, color: Colors.white),
+          const SizedBox(height: 16),
+          const Text(
+            'Pre-Lesson Check-in',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Before we start the call simulation, let\'s check your understanding of customer service scenarios.',
+            style: TextStyle(fontSize: 16, color: Colors.white, height: 1.4),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 20),
+          ElevatedButton(
+            onPressed: _startPreAssessment,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: const Color(0xFF00BCD4),
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(25),
+              ),
+            ),
+            child: const Text(
+              'Start Pre-Assessment',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
           ),
         ],
-      );
-    } else if (!_isStudied && !widget.showActivityInitially) {
-      _logger.i("L5.1 build: Rendering STUDY phase.");
-      content = Column(
-        /* ... Study phase UI as before ... */
+      ),
+    );
+  }
+
+  Widget _buildPreAssessment() {
+    if (_showPreAssessmentResults) {
+      return _buildPreAssessmentResults();
+    }
+
+    final preAssessmentData =
+        _lessonContent['preAssessment'] as Map<String, dynamic>;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      child: Column(
         children: [
-          if (_studySlides.isNotEmpty)
-            CarouselSlider(
-                carouselController: widget.carouselController,
-                items: _studySlides
-                    .map((slide) => buildSlide(
-                        title: slide['title']!,
-                        content: slide['content']!,
-                        slideIndex: _studySlides.indexOf(slide)))
-                    .toList(),
-                options: CarouselOptions(
-                    height: 300.0,
-                    enlargeCenterPage: false,
-                    enableInfiniteScroll: false,
-                    initialPage: widget.currentSlide,
-                    onPageChanged: (index, reason) =>
-                        widget.onSlideChanged(index),
-                    viewportFraction: 0.95)),
-          Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: _studySlides
-                  .asMap()
-                  .entries
-                  .map((entry) => GestureDetector(
-                      onTap: () =>
-                          widget.carouselController.animateToPage(entry.key),
-                      child: Container(
-                          width: 8,
-                          height: 8,
-                          margin: const EdgeInsets.symmetric(
-                              vertical: 10, horizontal: 2),
-                          decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: widget.currentSlide == entry.key
-                                  ? Theme.of(context).primaryColor
-                                  : Colors.grey))))
-                  .toList()),
+          // Header Section
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.grey.withOpacity(0.1),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.lightbulb, color: Colors.amber, size: 28),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        preAssessmentData['title'],
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF00BCD4),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  preAssessmentData['instruction'],
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.grey[700],
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
           const SizedBox(height: 20),
-          ElevatedButton.icon(
-            icon: const Icon(Icons.school),
-            label: const Text("I've Reviewed Material – Start Simulation"),
-            onPressed: () {
-              setState(() {
-                _isStudied = true;
-                _isActivityVisible = true;
-              });
-              widget.onShowActivitySection();
-              _startNewLessonAttempt();
+
+          // ✅ NEW: Horizontal Row-Based Layout
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  // Instructions Box
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    margin: const EdgeInsets.only(bottom: 20),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.blue.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.drag_indicator,
+                          color: Colors.blue.shade600,
+                          size: 24,
+                        ),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Text(
+                            'Drag each customer request into the correct category.',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.blue,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // First Category: Requires Account Verification
+                  _buildHorizontalDropZone('col_verify'),
+                  const SizedBox(height: 20),
+
+                  // Source Section: Customer Requests
+                  _buildHorizontalSourceSection(),
+                  const SizedBox(height: 20),
+
+                  // Second Category: Can Be Answered Directly
+                  _buildHorizontalDropZone('col_direct'),
+                  const SizedBox(height: 20),
+
+                  // Helper Tip
+                  if (!_preAssessmentSubmitted)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.amber.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.info,
+                            color: Colors.amber.shade700,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'Tip: Tap and hold an item, then drag it to the correct category.',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.black87,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          // Submit Button
+          if ((_columns['requests']!['items'] as List).isEmpty &&
+              !_preAssessmentSubmitted)
+            Container(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _checkPreAssessment,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF00BCD4),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  elevation: 2,
+                ),
+                child: const Text(
+                  'Submit Answers',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ NEW: Horizontal source section (like "Questions" in your image)
+  Widget _buildHorizontalSourceSection() {
+    final requestsItems =
+        _columns['requests']!['items'] as List<Map<String, dynamic>>;
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          // Header
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF00BCD4),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(12),
+                topRight: Radius.circular(12),
+              ),
+            ),
+            child: const Text(
+              'Customer Requests',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+
+          // Content Area
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.only(
+                bottomLeft: Radius.circular(12),
+                bottomRight: Radius.circular(12),
+              ),
+            ),
+            child: requestsItems.isEmpty
+                ? Container(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.check_circle_outline,
+                          color: Colors.green.shade400,
+                          size: 48,
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'All requests sorted!',
+                          style: TextStyle(
+                            color: Colors.green,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : Column(
+                    children: requestsItems.map((item) {
+                      final itemContent = item['content'] as String;
+                      final isCorrect = _itemResults[item['id']];
+
+                      return Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(bottom: 12),
+                        child: Draggable<Map<String, dynamic>>(
+                          data: item,
+                          onDragStarted: () => _onDragStarted(item),
+                          onDragEnd: (_) => _onDragEnd(),
+                          feedback: Material(
+                            elevation: 8,
+                            borderRadius: BorderRadius.circular(12),
+                            child: Container(
+                              width: 320,
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF00BCD4).withOpacity(0.9),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                itemContent,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                          childWhenDragging: Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade200,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: Colors.grey.shade300,
+                                style: BorderStyle.solid,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.drag_handle,
+                                  color: Colors.grey.shade400,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    itemContent,
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.grey.shade500,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          child: Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color:
+                                  _preAssessmentSubmitted && isCorrect != null
+                                  ? (isCorrect
+                                        ? Colors.green.shade50
+                                        : Colors.red.shade50)
+                                  : Colors.grey.shade50,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color:
+                                    _preAssessmentSubmitted && isCorrect != null
+                                    ? (isCorrect ? Colors.green : Colors.red)
+                                    : Colors.grey.shade300,
+                                width:
+                                    _preAssessmentSubmitted && isCorrect != null
+                                    ? 2
+                                    : 1,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.drag_handle,
+                                  color: Colors.grey.shade600,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    itemContent,
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                                if (_preAssessmentSubmitted &&
+                                    isCorrect != null)
+                                  Icon(
+                                    isCorrect
+                                        ? Icons.check_circle
+                                        : Icons.cancel,
+                                    color: isCorrect
+                                        ? Colors.green
+                                        : Colors.red,
+                                    size: 20,
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ NEW: Horizontal drop zone (like "Open-Ended" and "Closed-Ended" in your image)
+  Widget _buildHorizontalDropZone(String columnId) {
+    final column = _columns[columnId]!;
+    final items = column['items'] as List<Map<String, dynamic>>;
+    final columnName = column['name'] as String;
+
+    Color headerColor;
+    Color backgroundColor;
+    IconData categoryIcon;
+
+    if (columnId == 'col_verify') {
+      headerColor = Colors.orange.shade600;
+      backgroundColor = Colors.orange.shade50;
+      categoryIcon = Icons.verified_user;
+    } else {
+      headerColor = Colors.green.shade600;
+      backgroundColor = Colors.green.shade50;
+      categoryIcon = Icons.help_center;
+    }
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          // Header
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: headerColor,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(12),
+                topRight: Radius.circular(12),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(categoryIcon, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  columnName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Drop Area
+          DragTarget<Map<String, dynamic>>(
+            onWillAccept: (item) => _onWillAccept(columnId, item!),
+            onAccept: (item) => _onAccept(columnId, item),
+            builder: (context, candidateData, rejectedData) {
+              return Container(
+                width: double.infinity,
+                constraints: const BoxConstraints(minHeight: 100),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: candidateData.isNotEmpty
+                      ? headerColor.withOpacity(0.1)
+                      : backgroundColor,
+                  borderRadius: const BorderRadius.only(
+                    bottomLeft: Radius.circular(12),
+                    bottomRight: Radius.circular(12),
+                  ),
+                  border: candidateData.isNotEmpty
+                      ? Border.all(color: headerColor, width: 2)
+                      : null,
+                ),
+                child: items.isEmpty
+                    ? Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (candidateData.isNotEmpty) ...[
+                            Icon(Icons.touch_app, color: headerColor, size: 32),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Drop here!',
+                              style: TextStyle(
+                                color: headerColor,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ] else ...[
+                            Icon(
+                              Icons.inbox,
+                              color: Colors.grey.shade400,
+                              size: 32,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Empty - Drag items here',
+                              style: TextStyle(
+                                color: Colors.grey.shade600,
+                                fontSize: 14,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ],
+                        ],
+                      )
+                    : Column(
+                        children: items.map((item) {
+                          final itemContent = item['content'] as String;
+                          final itemId = item['id'] as String;
+                          final isCorrect = _itemResults[itemId];
+
+                          return Container(
+                            width: double.infinity,
+                            margin: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color:
+                                  _preAssessmentSubmitted && isCorrect != null
+                                  ? (isCorrect
+                                        ? Colors.green.shade100
+                                        : Colors.red.shade100)
+                                  : Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color:
+                                    _preAssessmentSubmitted && isCorrect != null
+                                    ? (isCorrect ? Colors.green : Colors.red)
+                                    : Colors.grey.shade300,
+                                width:
+                                    _preAssessmentSubmitted && isCorrect != null
+                                    ? 2
+                                    : 1,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    itemContent,
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
+                                ),
+                                if (_preAssessmentSubmitted &&
+                                    isCorrect != null) ...[
+                                  const SizedBox(width: 8),
+                                  Icon(
+                                    isCorrect
+                                        ? Icons.check_circle
+                                        : Icons.cancel,
+                                    color: isCorrect
+                                        ? Colors.green
+                                        : Colors.red,
+                                    size: 18,
+                                  ),
+                                ],
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ),
+              );
             },
           ),
         ],
-      );
-    } else if (_isActivityVisible) {
-      _logger.i(
-          "L5.1 build: Rendering ACTIVITY phase for attempt #$_currentAttemptNumberForUI.");
-      content = Column(
-        /* ... Activity phase UI as before ... */
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      ),
+    );
+  }
+
+  Widget _buildDropColumn(String columnId) {
+    final column = _columns[columnId]!;
+    final isSourceColumn = columnId == 'requests';
+    final items = column['items'] as List<Map<String, dynamic>>;
+    final columnName = column['name'] as String;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: isSourceColumn ? Colors.blue.shade50 : Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isSourceColumn ? Colors.blue.shade200 : Colors.grey.shade300,
+          width: 2,
+        ),
+      ),
+      child: Column(
         children: [
-          Text(
-              'Basic Call Simulation: Scenario 1 - Attempt $_currentAttemptNumberForUI',
-              style: Theme.of(context).textTheme.headlineSmall),
-          Text('Time: ${_formatDuration(_secondsElapsed)}',
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 16),
-          if (currentSimulationTurn != null) ...[
-            Card(
-                elevation: 2,
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                child: Padding(
-                    padding: const EdgeInsets.all(12.0),
-                    child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text("${currentSimulationTurn.character}:",
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleMedium
-                                  ?.copyWith(fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 4),
-                          Text(currentSimulationTurn.text,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodyLarge
-                                  ?.copyWith(fontStyle: FontStyle.italic)),
-                          if (currentSimulationTurn.character == "Customer")
-                            Padding(
-                                padding: const EdgeInsets.only(top: 8.0),
-                                child: ElevatedButton.icon(
-                                    icon: FaIcon(
-                                        currentTurnProcessedData
-                                                    ?.isPlayingCustomerAudio ==
-                                                true
-                                            ? FontAwesomeIcons.volumeMute
-                                            : FontAwesomeIcons.volumeUp,
-                                        size: 16),
-                                    label: Text(currentTurnProcessedData
-                                                ?.isPlayingCustomerAudio ==
-                                            true
-                                        ? "Stop Audio"
-                                        : "Listen to Customer"),
-                                    onPressed: () {
-                                      if (currentTurnProcessedData
-                                              ?.isPlayingCustomerAudio ==
-                                          true) {
-                                        flutterTts.stop();
-                                        setState(() {
-                                          _turnDataStateMap[
-                                                  currentSimulationTurn.id] =
-                                              (_turnDataStateMap[
-                                                          currentSimulationTurn
-                                                              .id] ??
-                                                      currentSimulationTurn)
-                                                  .copyWith(
-                                                      isPlayingCustomerAudio:
-                                                          false);
-                                        });
-                                      } else {
-                                        _playCurrentCustomerTurnAudio();
-                                      }
-                                    })),
-                        ]))),
-            if (currentSimulationTurn.character == "Agent - Your Turn") ...[
-              const SizedBox(height: 10),
-              Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-                ElevatedButton.icon(
-                    icon: FaIcon(_isRecording
-                        ? FontAwesomeIcons.stopCircle
-                        : FontAwesomeIcons.microphoneAlt),
-                    label: Text(_isRecording ? "Stop" : "Record"),
-                    onPressed: (_isProcessingTurn ||
-                            (currentTurnProcessedData?.isProcessed ?? false))
-                        ? null
-                        : (_isRecording
-                            ? _handleStopRecordingAndProcess
-                            : _handleStartRecording),
-                    style: ElevatedButton.styleFrom(
-                        backgroundColor:
-                            _isRecording ? Colors.redAccent : Colors.green)),
-                if (currentTurnProcessedData?.localAudioPath != null &&
-                    !_isRecording)
-                  IconButton(
-                      icon: const FaIcon(FontAwesomeIcons.playCircle),
-                      onPressed: () => _playLocalRecording(
-                          currentTurnProcessedData?.localAudioPath),
-                      tooltip: "Play My Recording"),
-              ]),
-              if (_isProcessingTurn)
-                const Padding(
-                    padding: EdgeInsets.all(16.0),
-                    child: Center(child: CircularProgressIndicator())),
-              if (currentTurnProcessedData?.isProcessed == true &&
-                  !_isProcessingTurn) ...[
-                if (currentTurnProcessedData?.transcription != null)
-                  Padding(
-                      padding: const EdgeInsets.only(top: 8.0),
-                      child: Text(
-                          "Transcription: ${currentTurnProcessedData!.transcription}",
-                          style: const TextStyle(fontWeight: FontWeight.w500))),
-                if (currentTurnProcessedData?.azureAiFeedback != null)
-                  _buildAzureFeedbackDisplay(
-                      currentTurnProcessedData!.azureAiFeedback!, context),
-                if (currentTurnProcessedData?.openAiDetailedFeedback != null)
-                  _buildOpenAICoachFeedbackDisplay(currentTurnProcessedData!
-                      .openAiDetailedFeedback!), // Using HTML renderer for activity phase too
-              ],
-            ],
-            const SizedBox(height: 20),
-            if ((currentSimulationTurn.character == "Customer" ||
-                    (currentTurnProcessedData?.isProcessed == true)) &&
-                !_isRecording &&
-                !_isProcessingTurn)
-              ElevatedButton.icon(
-                  icon: const FaIcon(FontAwesomeIcons.arrowRight),
-                  label: Text(
-                      _currentTurnIndex < _callSimulationTurns.length - 1
-                          ? "Next Turn"
-                          : "End Call & View Summary"),
-                  onPressed: _handleNextTurn),
-          ] else
-            const Text("Loading turn...")
-        ],
-      );
-    } else {
-      _logger.w(
-          "L5.1 build: Reached FALLBACK content. State: _isStudied=$_isStudied, _isActivityVisible=$_isActivityVisible, _showFinalSummary=$_showFinalSummary");
-      content = const Center(
-          child: Text(
-              "Loading lesson content or please start from study material."));
-    }
-
-    return SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: _isLoadingAI
-            ? const Center(child: CircularProgressIndicator())
-            : content);
-  }
-
-  // _buildAzureFeedbackDisplay (Detailed version - same as last full update)
-  Widget _buildAzureFeedbackDisplay(
-      Map<String, dynamic> azureFeedback, BuildContext context) {
-    final accuracy = (azureFeedback['accuracyScore'] as num?)?.toDouble();
-    final fluency = (azureFeedback['fluencyScore'] as num?)?.toDouble();
-    final completeness =
-        (azureFeedback['completenessScore'] as num?)?.toDouble();
-    final prosody = (azureFeedback['prosodyScore'] as num?)?.toDouble();
-    final words = (azureFeedback['words'] as List<dynamic>?)
-        ?.map((w) => w as Map<String, dynamic>)
-        .toList();
-
-    Color getWordChipColor(Map<String, dynamic> wordData) {
-      final errorType = wordData['errorType'] as String?;
-      final wordAcc = (wordData['accuracyScore'] as num?)?.toDouble();
-      if (errorType == "Mispronunciation") return Colors.orange.shade200;
-      if (errorType == "Omission") return Colors.red.shade200;
-      if (errorType == "Insertion") return Colors.purple.shade200;
-      if (wordAcc == null) return Colors.grey.shade300;
-      if (wordAcc >= 90) return Colors.green.shade100;
-      if (wordAcc >= 70) return Colors.yellow.shade100;
-      return Colors.red.shade100;
-    }
-
-    String getWordDisplayText(Map<String, dynamic> wordData) {
-      final wordText = wordData['word'] as String? ?? '';
-      final errorType = wordData['errorType'] as String?;
-      if (errorType == "Omission" &&
-          (wordText.isEmpty || wordText == "omitted")) {
-        return "omitted";
-      }
-      return wordText;
-    }
-
-    return Card(
-        /* ... same detailed card structure as before ... */
-        elevation: 1,
-        color: Colors.indigo[50],
-        margin: const EdgeInsets.symmetric(vertical: 8.0),
-        child: Padding(
-            padding: const EdgeInsets.all(12.0),
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text("Azure AI Speech Analysis",
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: Colors.indigo[700], fontWeight: FontWeight.bold)),
-              const Divider(),
-              if (accuracy != null)
-                ListTile(
-                    dense: true,
-                    leading: const FaIcon(FontAwesomeIcons.percentage,
-                        color: Colors.indigo, size: 18),
-                    title: Text(
-                        "Accuracy Score: ${accuracy.toStringAsFixed(1)}%")),
-              if (fluency != null)
-                ListTile(
-                    dense: true,
-                    leading: const FaIcon(FontAwesomeIcons.tachometerAlt,
-                        color: Colors.indigo, size: 18),
-                    title:
-                        Text("Fluency Score: ${fluency.toStringAsFixed(1)}")),
-              if (completeness != null)
-                ListTile(
-                    dense: true,
-                    leading: const FaIcon(FontAwesomeIcons.clipboardCheck,
-                        color: Colors.indigo, size: 18),
-                    title: Text(
-                        "Completeness Score: ${completeness.toStringAsFixed(1)}%")),
-              if (prosody != null)
-                ListTile(
-                    dense: true,
-                    leading: const FaIcon(FontAwesomeIcons.theaterMasks,
-                        color: Colors.indigo, size: 18),
-                    title:
-                        Text("Prosody Score: ${prosody.toStringAsFixed(1)}")),
-              if (words != null && words.isNotEmpty)
-                ExpansionTile(
-                    title: const Text("Word-by-Word Pronunciation Details",
-                        style: TextStyle(fontWeight: FontWeight.w600)),
-                    tilePadding: EdgeInsets.zero,
-                    childrenPadding:
-                        const EdgeInsets.only(top: 8.0, bottom: 4.0),
-                    children: [
-                      Padding(
-                          padding: const EdgeInsets.only(bottom: 8.0),
-                          child: Wrap(
-                              spacing: 8.0,
-                              runSpacing: 4.0,
-                              alignment: WrapAlignment.center,
-                              children: [
-                                Chip(
-                                    label: const Text('High (≥90%)'),
-                                    backgroundColor: Colors.green.shade100,
-                                    padding: EdgeInsets.zero),
-                                Chip(
-                                    label: const Text('Medium (70-89%)'),
-                                    backgroundColor: Colors.yellow.shade100,
-                                    padding: EdgeInsets.zero),
-                                Chip(
-                                    label: const Text('Low (<70%)'),
-                                    backgroundColor: Colors.red.shade100,
-                                    padding: EdgeInsets.zero),
-                                Chip(
-                                    label: const Text('Mispronounced'),
-                                    backgroundColor: Colors.orange.shade200,
-                                    padding: EdgeInsets.zero),
-                                Chip(
-                                    label: const Text('Insertion'),
-                                    backgroundColor: Colors.purple.shade200,
-                                    padding: EdgeInsets.zero)
-                              ])),
-                      Wrap(
-                          spacing: 6.0,
-                          runSpacing: 4.0,
-                          children: words.map((wordData) {
-                            final wordText = getWordDisplayText(wordData);
-                            final wordAcc =
-                                (wordData['accuracyScore'] as num?)?.toDouble();
-                            final errorType = wordData['errorType'] as String?;
-                            String displayLabel = wordText;
-                            if (wordAcc != null && errorType != "Insertion") {
-                              displayLabel +=
-                                  " (${wordAcc.toStringAsFixed(0)}%)";
-                            } else if (errorType == "Insertion") {
-                              displayLabel = "+$wordText";
-                            }
-                            return Chip(
-                                label: Text(displayLabel,
-                                    style: const TextStyle(fontSize: 13)),
-                                backgroundColor: getWordChipColor(wordData),
-                                materialTapTargetSize:
-                                    MaterialTapTargetSize.shrinkWrap,
-                                visualDensity: VisualDensity.compact,
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 6, vertical: 0));
-                          }).toList())
-                    ]),
-            ])));
-  }
-
-  // REVISED _buildOpenAICoachFeedbackDisplay to use Html widget with simpler styling first
-  Widget _buildOpenAICoachFeedbackDisplay(String htmlFeedback) {
-    return Card(
-        elevation: 1,
-        color: Colors.lightBlue[50],
-        margin: const EdgeInsets.symmetric(vertical: 8.0),
-        child: Padding(
-            padding: const EdgeInsets.all(12.0),
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text("Coach's Playbook",
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: Colors.lightBlue[800],
-                      fontWeight: FontWeight.bold)),
-              const Divider(),
-              Html(
-                data: htmlFeedback,
-                style: {
-                  // Start with a very simple style map, similar to lesson3_2.dart
-                  "body": Style(
-                    fontSize: FontSize.medium, // flutter_html FontSize
-                    lineHeight: LineHeight.normal, // flutter_html LineHeight
-                  ),
-                  // You can cautiously add more specific styles for h4, ul, li, p, strong later
-                  // if the basic rendering works. Example (KEEP THIS COMMENTED OUT INITIALLY):
-                  /*
-                  "h4": Style(
-                    fontSize: FontSize.large,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.lightBlue[700],
-                    margin: Margins.only(top: Length(10.0), bottom: Length(5.0)),
-                  ),
-                  "ul": Style(
-                    listStyleType: ListStyleType.none,
-                    padding: Padding(),
-                  ),
-                  "li": Style(
-                    margin: Margins.only(bottom: Length(6.0)),
-                    padding: Padding.all(Length(6.0)),
-                    backgroundColor: Colors.white,
-                    borderRadius: BorderRadius.circular(4.0),
-                  ),
-                  "p": Style(
-                    margin: Margins.symmetric(vertical: Length(4.0)),
-                  ),
-                  "strong": Style(
-                    fontWeight: FontWeight.w600,
-                  ),
-                  */
-                },
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isSourceColumn
+                  ? Colors.blue.shade100
+                  : Colors.grey.shade100,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(10),
+                topRight: Radius.circular(10),
               ),
-            ])));
+            ),
+            child: Text(
+              columnName,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          Expanded(
+            child: DragTarget<Map<String, dynamic>>(
+              onWillAccept: (item) => _onWillAccept(columnId, item!),
+              onAccept: (item) => _onAccept(columnId, item),
+              builder: (context, candidateData, rejectedData) {
+                return Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    children: [
+                      ...items.map<Widget>((item) {
+                        final itemId = item['id'] as String;
+                        final itemContent = item['content'] as String;
+                        final isCorrect = _itemResults[itemId];
+                        Color? backgroundColor;
+                        Color? borderColor;
+
+                        if (_preAssessmentSubmitted && isCorrect != null) {
+                          backgroundColor = isCorrect
+                              ? Colors.green.shade100
+                              : Colors.red.shade100;
+                          borderColor = isCorrect ? Colors.green : Colors.red;
+                        }
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          child: isSourceColumn
+                              ? Draggable<Map<String, dynamic>>(
+                                  data: item,
+                                  onDragStarted: () => _onDragStarted(item),
+                                  onDragEnd: (_) => _onDragEnd(),
+                                  feedback: Material(
+                                    child: Container(
+                                      width: 200,
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: Colors.blue.shade200,
+                                        borderRadius: BorderRadius.circular(8),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black.withOpacity(
+                                              0.2,
+                                            ),
+                                            blurRadius: 8,
+                                            offset: const Offset(0, 4),
+                                          ),
+                                        ],
+                                      ),
+                                      child: Text(
+                                        itemContent,
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          color: Colors.black,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  childWhenDragging: Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey.shade300,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: Colors.grey.shade400,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      itemContent,
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.grey.shade600,
+                                      ),
+                                    ),
+                                  ),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: backgroundColor ?? Colors.white,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color:
+                                            borderColor ?? Colors.grey.shade400,
+                                        width: borderColor != null ? 2 : 1,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withOpacity(0.1),
+                                          blurRadius: 4,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Text(
+                                      itemContent,
+                                      style: const TextStyle(fontSize: 14),
+                                    ),
+                                  ),
+                                )
+                              : Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: backgroundColor ?? Colors.white,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color:
+                                          borderColor ?? Colors.grey.shade400,
+                                      width: borderColor != null ? 2 : 1,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.1),
+                                        blurRadius: 4,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Text(
+                                    itemContent,
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
+                                ),
+                        );
+                      }).toList(),
+                      if (candidateData.isNotEmpty && !isSourceColumn)
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade100,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: Colors.blue.shade300,
+                              width: 2,
+                            ),
+                          ),
+                          child: const Text('Drop here'),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ CORRECTED: Results feedback method
+  Widget _buildPreAssessmentResults() {
+    final feedbackData =
+        _lessonContent['preAssessment']['feedback'] as Map<String, dynamic>;
+
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.all(32),
+        margin: const EdgeInsets.all(32),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 16,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.check_circle, size: 64, color: Colors.green),
+            const SizedBox(height: 24),
+            Text(
+              feedbackData['heading'],
+              style: const TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                color: Colors.green,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              feedbackData['paragraph'],
+              style: const TextStyle(
+                fontSize: 18,
+                color: Colors.black87,
+                height: 1.4,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 32),
+            Column(
+              children: [
+                const Text(
+                  'Loading lesson...',
+                  style: TextStyle(fontSize: 16, color: Colors.grey),
+                ),
+                const SizedBox(height: 16),
+                LinearProgressIndicator(
+                  value: _progressValue,
+                  backgroundColor: Colors.grey.shade200,
+                  valueColor: const AlwaysStoppedAnimation<Color>(
+                    Color(0xFF00BCD4),
+                  ),
+                  minHeight: 8,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '${(_progressValue * 100).toInt()}%',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF00BCD4),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ✅ NEW: Source items section (draggable items)
+  Widget _buildSourceSection() {
+    final requestsItems =
+        _columns['requests']!['items'] as List<Map<String, dynamic>>;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.blue.shade200, width: 2),
+      ),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade100,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Text(
+              'Customer Requests',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                color: Colors.blue,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          if (requestsItems.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.green.shade200),
+              ),
+              child: const Text(
+                '✅ All items have been sorted!',
+                style: TextStyle(
+                  color: Colors.green,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            )
+          else
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: requestsItems.map((item) {
+                final itemContent = item['content'] as String;
+                final isCorrect = _itemResults[item['id']];
+
+                return Draggable<Map<String, dynamic>>(
+                  data: item,
+                  onDragStarted: () => _onDragStarted(item),
+                  onDragEnd: (_) => _onDragEnd(),
+                  feedback: Material(
+                    elevation: 8,
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      width: 280,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade200,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        itemContent,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ),
+                  ),
+                  childWhenDragging: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.shade400),
+                    ),
+                    child: Text(
+                      itemContent,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: _preAssessmentSubmitted && isCorrect != null
+                          ? (isCorrect
+                                ? Colors.green.shade100
+                                : Colors.red.shade100)
+                          : Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: _preAssessmentSubmitted && isCorrect != null
+                            ? (isCorrect ? Colors.green : Colors.red)
+                            : Colors.grey.shade400,
+                        width: _preAssessmentSubmitted && isCorrect != null
+                            ? 2
+                            : 1,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            itemContent,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Icon(
+                          Icons.drag_indicator,
+                          color: Colors.grey,
+                          size: 16,
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ NEW: Drop zones section (vertical layout)
+  Widget _buildDropZonesSection() {
+    return Column(
+      children: [
+        _buildMobileDropZone('col_verify'),
+        const SizedBox(height: 16),
+        _buildMobileDropZone('col_direct'),
+      ],
+    );
+  }
+
+  // ✅ NEW: Mobile-friendly drop zone
+  Widget _buildMobileDropZone(String columnId) {
+    final column = _columns[columnId]!;
+    final items = column['items'] as List<Map<String, dynamic>>;
+    final columnName = column['name'] as String;
+
+    Color zoneColor;
+    Color borderColor;
+    IconData zoneIcon;
+
+    if (columnId == 'col_verify') {
+      zoneColor = Colors.orange.shade50;
+      borderColor = Colors.orange.shade300;
+      zoneIcon = Icons.verified_user;
+    } else {
+      zoneColor = Colors.green.shade50;
+      borderColor = Colors.green.shade300;
+      zoneIcon = Icons.help_center;
+    }
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: zoneColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: borderColor, width: 2),
+      ),
+      child: Column(
+        children: [
+          // Header
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: borderColor.withOpacity(0.3),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(10),
+                topRight: Radius.circular(10),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(zoneIcon, color: borderColor, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    columnName,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: borderColor,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Drop area
+          DragTarget<Map<String, dynamic>>(
+            onWillAccept: (item) => _onWillAccept(columnId, item!),
+            onAccept: (item) => _onAccept(columnId, item),
+            builder: (context, candidateData, rejectedData) {
+              return Container(
+                width: double.infinity,
+                constraints: const BoxConstraints(minHeight: 120),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: candidateData.isNotEmpty
+                      ? borderColor.withOpacity(0.1)
+                      : Colors.transparent,
+                  borderRadius: const BorderRadius.only(
+                    bottomLeft: Radius.circular(10),
+                    bottomRight: Radius.circular(10),
+                  ),
+                ),
+                child: items.isEmpty
+                    ? Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.touch_app,
+                            color: Colors.grey.shade400,
+                            size: 32,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            candidateData.isNotEmpty
+                                ? 'Drop here!'
+                                : 'Drag items here',
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      )
+                    : Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: items.map((item) {
+                          final itemContent = item['content'] as String;
+                          final itemId = item['id'] as String;
+                          final isCorrect = _itemResults[itemId];
+
+                          return Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color:
+                                  _preAssessmentSubmitted && isCorrect != null
+                                  ? (isCorrect
+                                        ? Colors.green.shade100
+                                        : Colors.red.shade100)
+                                  : Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color:
+                                    _preAssessmentSubmitted && isCorrect != null
+                                    ? (isCorrect ? Colors.green : Colors.red)
+                                    : Colors.grey.shade400,
+                                width:
+                                    _preAssessmentSubmitted && isCorrect != null
+                                    ? 2
+                                    : 1,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.1),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    itemContent,
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
+                                ),
+                                if (_preAssessmentSubmitted &&
+                                    isCorrect != null) ...[
+                                  const SizedBox(width: 8),
+                                  Icon(
+                                    isCorrect
+                                        ? Icons.check_circle
+                                        : Icons.cancel,
+                                    color: isCorrect
+                                        ? Colors.green
+                                        : Colors.red,
+                                    size: 16,
+                                  ),
+                                ],
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildObjectiveSection() {
+    final objective = _lessonContent['objective'] as Map<String, dynamic>;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.flag, color: Colors.blue, size: 24),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                objective['heading'],
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF00BCD4),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            objective['paragraph'],
+            style: const TextStyle(
+              fontSize: 16,
+              color: Colors.black87,
+              height: 1.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSkillsSection() {
+    final introduction = _lessonContent['introduction'] as Map<String, dynamic>;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.purple.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.integration_instructions,
+                  color: Colors.purple,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                introduction['heading'],
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF7B1FA2),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Hover over each skill to see what it covers.',
+            style: TextStyle(fontSize: 14, color: Colors.grey),
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: (introduction['points'] as List<dynamic>)
+                .map(
+                  (point) => SkillPillWidget(
+                    skill: point['skill'],
+                    description: point['description'],
+                  ),
+                )
+                .toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCallFlowSection() {
+    final callFlow = _lessonContent['callFlow'] as Map<String, dynamic>;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment:
+                CrossAxisAlignment.start, // Align items to the top
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.route, color: Colors.green, size: 24),
+              ),
+              const SizedBox(width: 12),
+              // --- THIS IS THE FIX ---
+              // The Expanded widget allows the Text to wrap onto multiple lines
+              // if it's too long, preventing the overflow.
+              Expanded(
+                child: Text(
+                  callFlow['heading'],
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF388E3C),
+                  ),
+                ),
+              ),
+              // --- END OF FIX ---
+            ],
+          ),
+          const SizedBox(height: 20),
+          ...(callFlow['steps'] as List<dynamic>).map((step) {
+            return Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    step['title'],
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF2E7D32),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    step['text'],
+                    style: const TextStyle(
+                      fontSize: 16,
+                      color: Colors.black87,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStartButton() {
+    return Center(
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        child: ElevatedButton.icon(
+          onPressed: _navigateToActivity,
+          icon: const Icon(Icons.headset, size: 24),
+          label: const Text(
+            'Start Call Simulation',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.green,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 32),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(30),
+            ),
+            elevation: 4,
+            shadowColor: Colors.green.withOpacity(0.4),
+          ),
+        ),
+      ),
+    );
   }
 }

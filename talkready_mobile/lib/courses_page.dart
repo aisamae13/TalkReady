@@ -1,648 +1,238 @@
-// Course Page
-
+// lib/pages/courses_page.dart
 import 'package:flutter/material.dart';
 import 'package:logger/logger.dart';
-import 'firebase_service.dart';
-import 'modules/module1.dart';
-import 'modules/module2.dart';
-import 'modules/module3.dart'; // Added import for Module3Page
-import 'modules/module4.dart'; // <-- Add this import
-import 'modules/module5.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:talkready_mobile/custom_animated_bottom_bar.dart';
-import 'homepage.dart';
-import 'progress_page.dart';
-import 'profile.dart';
-import 'package:talkready_mobile/MyEnrolledClasses.dart';
-import 'journal/journal_page.dart'; // Import for JournalPage
-
-// Helper function for creating a slide page route
-Route _createSlidingPageRoute({
-  required Widget page,
-  required int newIndex,
-  required int oldIndex,
-  required Duration duration, // duration will be ignored
-}) {
-  return PageRouteBuilder(
-    pageBuilder: (context, animation, secondaryAnimation) => page,
-    transitionsBuilder: (context, animation, secondaryAnimation, child) {
-      return child; // Return child directly for no animation
-    },
-    transitionDuration: Duration.zero, // Instant transition
-    reverseTransitionDuration: Duration.zero, // Instant reverse transition
-  );
-}
+import '../services/unified_progress_service.dart';
+import '../custom_animated_bottom_bar.dart';
+import '../services/certificate_service.dart';
 
 class CoursesPage extends StatefulWidget {
   const CoursesPage({super.key});
 
   @override
-  _CoursesPageState createState() => _CoursesPageState();
+  State<CoursesPage> createState() => _CoursesPageState();
 }
 
-class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
-  final Logger logger = Logger();
-  final FirebaseService firebaseService = FirebaseService();
-  List<Map<String, dynamic>> beginnerModules = [
+class _CoursesPageState extends State<CoursesPage> {
+  final Logger _logger = Logger();
+  final UnifiedProgressService _progressService = UnifiedProgressService();
+  final TextEditingController _searchController = TextEditingController();
+
+  // This will hold all progress data, including lesson attempts and pre-assessments
+  Map<String, dynamic> _userProgress = {};
+  bool _isLoading = true;
+  bool _showCertificateBanner = false;
+  final CertificateService _certificateService = CertificateService();
+  int _selectedIndex = 1; // Courses tab is index 1
+  String _searchQuery = '';
+
+  // This structure should ideally come from a shared configuration file
+  final List<Map<String, dynamic>> _moduleConfigs = [
     {
-      'module': 'Module 1: Basic English Grammar',
-      'color': Colors.red,
+      'id': 'module1',
+      'title': 'Module 1: Basic English Grammar',
+      'description': 'Build a solid foundation in English grammar...',
+      'color': const Color(0xFFFF6347),
       'icon': Icons.book,
-      'lessons': <Map<String, dynamic>>[
-        {
-          'title': 'Lesson 1.1: Nouns and Pronouns',
-          'completed': false,
-          'firebaseKey': 'lesson1'
-        },
-        {
-          'title': 'Lesson 1.2: Simple Sentences',
-          'completed': false,
-          'firebaseKey': 'lesson2'
-        },
-        {
-          'title': 'Lesson 1.3: Verb and Tenses (Present Simple)',
-          'completed': false,
-          'firebaseKey': 'lesson3'
-        },
-      ],
-      'isLocked': false,
-      'isCompleted': false,
+      'level': 'Beginner',
+      'route': '/module1',
+      'lessons': ['Lesson-1-1', 'Lesson-1-2', 'Lesson-1-3'],
+      'assessmentId': 'module_1_final',
     },
     {
-      'module': 'Module 2: Vocabulary & Everyday Conversations',
-      'color': Colors.orange,
-      'icon': Icons.chat,
-      'lessons': <Map<String, dynamic>>[
-        {
-          'title': 'Lesson 2.1: Greetings and Introductions',
-          'completed': false,
-          'firebaseKey': 'lesson1'
-        },
-        {
-          'title': 'Lesson 2.2: Asking for Information',
-          'completed': false,
-          'firebaseKey': 'lesson2'
-        },
-        {
-          'title': 'Lesson 2.3: Numbers and Dates',
-          'completed': false,
-          'firebaseKey': 'lesson3'
-        },
-      ],
-      'isLocked': true,
-      'isCompleted': false,
+      'id': 'module2',
+      'title': 'Module 2: Vocabulary & Everyday Conversations',
+      'description':
+          'Learn essential vocabulary and phrases for common interactions like greetings and asking for information.',
+      'color': const Color(0xFFFF9900),
+      'icon': Icons.chat_bubble,
+      'level': 'Beginner',
+      'route': '/module2',
+      'lessons': ['Lesson-2-1', 'Lesson-2-2', 'Lesson-2-3'],
+      'assessmentId': 'module_2_final',
+      'prerequisite': 'module1',
     },
     {
-      'module': 'Module 3: Listening & Speaking Practice',
-      'color': Colors.green,
-      'icon': Icons.mic,
-      'lessons': <Map<String, dynamic>>[
-        {
-          'title': 'Lesson 3.1: Listening Comprehension',
-          'completed': false,
-          'firebaseKey': 'lesson1'
-        },
-        {
-          'title': 'Lesson 3.2: Speaking Practice',
-          'completed': false,
-          'firebaseKey': 'lesson2'
-        },
-      ],
-      'isLocked': true,
-      'isCompleted': false,
+      'id': 'module3',
+      'title': 'Module 3: Listening & Speaking Practice',
+      'description':
+          'Develop crucial listening comprehension by identifying key information in customer calls and improve speaking clarity through practice.',
+      'color': const Color(0xFF32CD32),
+      'icon': Icons.headphones,
+      'level': 'Intermediate',
+      'route': '/module3',
+      'lessons': ['Lesson-3-1', 'Lesson-3-2'],
+      'assessmentId': 'module_3_final',
+      'prerequisite': 'module2',
     },
     {
-      'module': 'Module 4: Practical Grammar & Customer Service Scenarios',
-      'color': Colors.purple,
-      'icon': Icons.support_agent,
-      'lessons': <Map<String, dynamic>>[
-        {
-          'title': 'Lesson 4.1: Asking for Clarification',
-          'completed': false,
-          'firebaseKey': 'lesson1'
-        },
-        {
-          'title': 'Lesson 4.2: Providing Solutions',
-          'completed': false,
-          'firebaseKey': 'lesson2'
-        },
-      ],
-      'isLocked': true,
-      'isCompleted': false,
+      'id': 'module4',
+      'title': 'Module 4: Advanced Customer Service',
+      'description':
+          'Master complex customer scenarios and professional communication techniques for challenging business situations.',
+      'color': const Color(0xFF9C27B0),
+      'icon': Icons.business_center,
+      'level': 'Intermediate',
+      'route': '/module4',
+      'lessons': ['Lesson-4-1', 'Lesson-4-2'],
+      'assessmentId': 'module_4_final',
+      'prerequisite': 'module3',
     },
-    // Module 5 was here, now moved to intermediateModules
-  ];
-
-  // Module 5 is now in intermediateModules
-  final List<Map<String, dynamic>> intermediateModules = [
     {
-      'module': 'Module 5: Basic Call Simulation Practice',
-      'color': Colors.pink,
-      'icon': Icons.edit,
-      'lessons': <Map<String, dynamic>>[
-        {
-          'title': 'Lesson 5.1: Basic Simulation - Info Request',
-          'completed': false,
-          'firebaseKey': 'lesson1'
-        },
-        {
-          'title':
-              'Final Test: Lesson 5.2 Basic Simulation - Action Confirmations',
-          'completed': false,
-          'firebaseKey': 'lesson2'
-        },
-      ],
-      'isLocked': true, // This will be unlocked based on Module 4 completion
-      'isCompleted': false,
+      'id': 'module5',
+      'title': 'Module 5: Professional Communication',
+      'description':
+          'Perfect your professional communication skills with advanced techniques and real-world business scenarios.',
+      'color': const Color(0xFF00BCD4),
+      'icon': Icons.stars,
+      'level': 'Intermediate',
+      'route': '/module5',
+      'lessons': ['Lesson-5-1', 'Lesson-5-2'],
+      'assessmentId': 'module_5_final',
+      'prerequisite': 'module4',
+    },
+    {
+      'id': 'module6',
+      'title': 'Module 6: Advanced Call Simulation',
+      'description':
+          'Master real-world call center skills through live AI conversations and receive comprehensive performance analysis.',
+      'color': const Color(0xFF7C3AED), // Purple color for advanced level
+      'icon': Icons.headset_mic,
+      'level': 'Advanced', // Add this new level
+      'route': '/module6',
+      'lessons': ['Lesson-6-1'], // Only one lesson in Module 6
+      'assessmentId': 'module_6_final',
+      'prerequisite': 'module5',
     },
   ];
-  final List<Map<String, dynamic>> advancedModules = [];
-
-  int _selectedIndex = 1; // Courses is index 1
-
-  List<Map<String, dynamic>> _getAllModuleEntries() {
-    final List<Map<String, dynamic>> allEntries = [];
-    int globalModuleIndex = 1;
-
-    void addModulesToList(List<Map<String, dynamic>> moduleList) {
-      for (int i = 0; i < moduleList.length; i++) {
-        allEntries.add({
-          'config': moduleList[i],
-          'id': 'module$globalModuleIndex',
-          'listRef': moduleList,
-          'originalIndex': i,
-        });
-        globalModuleIndex++;
-      }
-    }
-
-    addModulesToList(beginnerModules);
-    addModulesToList(intermediateModules);
-    addModulesToList(advancedModules);
-    return allEntries;
-  }
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    _checkModuleStatus();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      logger.i("App resumed, re-checking module status.");
-      _checkModuleStatus();
-    }
+    _loadProgress();
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
+    _searchController.dispose();
     super.dispose();
   }
 
-  Future<void> _checkModuleStatus() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      logger.w('No authenticated user, cannot check module status.');
-      return;
-    }
-    logger.i('Starting _checkModuleStatus for user ${user.uid}');
-
+  Future<void> _loadProgress() async {
+    setState(() => _isLoading = true);
     try {
-      final List<Map<String, dynamic>> allModuleConfigurations =
-          _getAllModuleEntries();
-      bool previousModuleWasCompletedAndUnlocked = true;
-      logger.d(
-          'Initial previousModuleWasCompletedAndUnlocked: $previousModuleWasCompletedAndUnlocked');
+      final progress = await _progressService.getUserProgress();
 
-      for (var moduleEntry in allModuleConfigurations) {
-        // final moduleConfig = moduleEntry['config'] as Map<String, dynamic>; // Removed unused variable
-        final moduleId = moduleEntry['id'] as String;
-        final List<Map<String, dynamic>> moduleListRef =
-            moduleEntry['listRef'] as List<Map<String, dynamic>>;
-        final int originalIndexInList = moduleEntry['originalIndex'] as int;
-
-        logger.i('Processing $moduleId...');
-        final progress = await firebaseService.getModuleProgress(moduleId);
-        final lessonsFromFirestore =
-            (progress['lessons'] as Map<dynamic, dynamic>?)
-                    ?.cast<String, bool>() ??
-                {};
-        final isCompletedFromFirestore =
-            progress['isCompleted'] as bool? ?? false;
-        bool isUnlockedFromFirestore =
-            progress['isUnlocked'] as bool? ?? (moduleId == 'module1');
-
-        logger.d(
-            '$moduleId - Firestore Data: isCompleted=$isCompletedFromFirestore, isUnlocked=$isUnlockedFromFirestore, lessons=${lessonsFromFirestore.entries.where((e) => e.value == true).length}/${lessonsFromFirestore.length}');
-        logger.d(
-            '$moduleId - Before lock check: previousModuleWasCompletedAndUnlocked=$previousModuleWasCompletedAndUnlocked');
-
-        bool currentModuleShouldBeLocked;
-        if (moduleId == 'module1') {
-          currentModuleShouldBeLocked = !isUnlockedFromFirestore;
-          logger.d(
-              '$moduleId (module1) - currentModuleShouldBeLocked based on its own isUnlocked: $currentModuleShouldBeLocked');
-        } else {
-          currentModuleShouldBeLocked = !previousModuleWasCompletedAndUnlocked;
-          logger.d(
-              '$moduleId - currentModuleShouldBeLocked based on previous: $currentModuleShouldBeLocked');
-        }
-
-        if (!currentModuleShouldBeLocked && !isUnlockedFromFirestore) {
-          logger.i(
-              'Condition MET to unlock $moduleId: currentModuleShouldBeLocked=false, isUnlockedFromFirestore=false. Calling unlockModule...');
-          await firebaseService.unlockModule(moduleId);
-          isUnlockedFromFirestore = true;
-          logger.i(
-              '$moduleId has been unlocked. isUnlockedFromFirestore is now true for this iteration.');
-        } else {
-          if (currentModuleShouldBeLocked) {
-            logger.d(
-                'Condition NOT MET to unlock $moduleId because currentModuleShouldBeLocked is true.');
-          } else if (isUnlockedFromFirestore) {
-            logger.d(
-                'Condition NOT MET to unlock $moduleId because isUnlockedFromFirestore is already true.');
-          }
-        }
-
-        if (mounted) {
-          setState(() {
-            final moduleToUpdate = moduleListRef[originalIndexInList];
-            moduleToUpdate['isLocked'] = currentModuleShouldBeLocked;
-            moduleToUpdate['isCompleted'] = isCompletedFromFirestore;
-            logger.d(
-                '$moduleId - UI Update: isLocked=${moduleToUpdate['isLocked']}, isCompleted (Firestore)=${moduleToUpdate['isCompleted']}');
-
-            final uiLessons =
-                moduleToUpdate['lessons'] as List<Map<String, dynamic>>;
-            for (int i = 0; i < uiLessons.length; i++) {
-              String firestoreLessonKey =
-                  uiLessons[i]['firebaseKey'] as String? ?? 'lesson${i + 1}';
-              uiLessons[i]['completed'] =
-                  lessonsFromFirestore[firestoreLessonKey] ?? false;
-            }
-          });
-        }
-        previousModuleWasCompletedAndUnlocked =
-            isCompletedFromFirestore && isUnlockedFromFirestore;
-        logger.i(
-            '$moduleId - At end of its processing, setting previousModuleWasCompletedAndUnlocked for NEXT module to: $previousModuleWasCompletedAndUnlocked (isCompletedFromFirestore=$isCompletedFromFirestore && isUnlockedFromFirestore=$isUnlockedFromFirestore)');
-      }
-
-      logger.i('Module status and unlock check complete.');
-      if (mounted) {
-        setState(() {});
-      }
-    } catch (e, stacktrace) {
-      logger.e('Error checking module status: $e',
-          error: e, stackTrace: stacktrace);
-    }
-  }
-
-  double _calculateProgress() {
-    int totalLessons = 0;
-    int completedLessons = 0;
-
-    for (var moduleList in [
-      beginnerModules,
-      intermediateModules,
-      advancedModules
-    ]) {
-      for (var module in moduleList) {
-        final lessons = module['lessons'] as List<Map<String, dynamic>>;
-        totalLessons += lessons.length;
-        completedLessons += lessons
-            .where((lesson) => lesson['completed'] as bool? ?? false)
-            .length;
-      }
-    }
-    return totalLessons > 0 ? completedLessons / totalLessons : 0.0;
-  }
-
-  String _formatLessonTitle(String lessonId) {
-    return lessonId.replaceAll(': ', ':\n').replaceAll(' - ', '\n');
-  }
-
-  Future<void> _showActivityLog(
-      String moduleId, String lessonTitleForLog, Color moduleColor) async {
-    try {
-      logger.i(
-          'Fetching activity logs for moduleId: $moduleId, lessonTitleForLog: $lessonTitleForLog');
-      final List<Map<String, dynamic>> activityLogs =
-          await firebaseService.getActivityLogs(moduleId, lessonTitleForLog);
-      logger.i(
-          'Found ${activityLogs.length} activity logs for $lessonTitleForLog');
-
-      showDialog(
-        context: context,
-        builder: (context) => Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          elevation: 8,
-          backgroundColor: Colors.transparent,
-          child: Container(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 0.6,
-              maxWidth: 400,
-            ),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  Colors.white,
-                  moduleColor.withOpacity(0.1),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.2),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                  decoration: BoxDecoration(
-                    color: moduleColor.withOpacity(0.9),
-                    borderRadius:
-                        const BorderRadius.vertical(top: Radius.circular(16)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.history,
-                        color: Colors.white,
-                        size: 24,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Activity Log for\n${_formatLessonTitle(lessonTitleForLog)}',
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                          softWrap: true,
-                          maxLines: null,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Flexible(
-                  child: activityLogs.isEmpty
-                      ? Container(
-                          padding: const EdgeInsets.all(16),
-                          margin: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.05),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Center(
-                            child: Text(
-                              'No activity logs found for this lesson.',
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.black54,
-                                fontStyle: FontStyle.italic,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                        )
-                      : SingleChildScrollView(
-                          child: Column(
-                            children: activityLogs.map((logData) {
-                              final data = logData;
-                              final score = data['score'] as int? ?? 0;
-                              final totalScore =
-                                  data['totalScore'] as int? ?? 8;
-                              final attemptNumber =
-                                  data['attemptNumber'] as int? ?? 0;
-                              final timeSpent = data['timeSpent'] as int? ?? 0;
-                              final timestampValue = data['attemptTimestamp'];
-                              DateTime timestamp;
-                              if (timestampValue is Timestamp) {
-                                timestamp = timestampValue.toDate();
-                              } else if (timestampValue is String) {
-                                timestamp = DateTime.tryParse(timestampValue) ??
-                                    DateTime.now();
-                              } else {
-                                timestamp = DateTime.now();
-                              }
-
-                              return Container(
-                                margin: const EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 8),
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(8),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.grey.withOpacity(0.1),
-                                      blurRadius: 4,
-                                      offset: const Offset(0, 2),
-                                    ),
-                                  ],
-                                ),
-                                child: Row(
-                                  children: [
-                                    CircleAvatar(
-                                      radius: 20,
-                                      backgroundColor:
-                                          moduleColor.withOpacity(0.1),
-                                      child: Text(
-                                        '#$attemptNumber', // <-- This already shows the attempt number
-                                        style: TextStyle(
-                                          color: moduleColor,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text('Attempt: $attemptNumber',
-                                              style: const TextStyle(
-                                                  fontWeight: FontWeight
-                                                      .bold)), // <-- Add this line for clarity
-                                          Text('Score: $score / $totalScore',
-                                              style: const TextStyle(
-                                                  fontWeight: FontWeight.bold)),
-                                          Text(
-                                              'Time Spent: $timeSpent seconds'),
-                                          Text(
-                                              'Date: ${timestamp.toLocal().toString().substring(0, 16)}'),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            }).toList(),
-                          ),
-                        ),
-                ),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: const BoxDecoration(
-                    borderRadius:
-                        BorderRadius.vertical(bottom: Radius.circular(16)),
-                  ),
-                  child: Center(
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: moduleColor,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 24, vertical: 12),
-                        elevation: 2,
-                      ),
-                      child: const Text(
-                        'Close',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    } catch (e, stacktrace) {
-      logger.e(
-          'Error showing activity logs for $moduleId/$lessonTitleForLog: $e',
-          error: e,
-          stackTrace: stacktrace);
-      if (mounted) {
-        showDialog(
-          context: context,
-          builder: (context) => Dialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            elevation: 8,
-            backgroundColor: Colors.transparent,
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.white,
-                    moduleColor.withOpacity(0.1),
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.2),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Error',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: moduleColor,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Failed to load activity logs. Please try again later.',
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.black54,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () => Navigator.pop(context),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: moduleColor,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 24, vertical: 12),
-                      elevation: 2,
-                    ),
-                    child: const Text(
-                      'OK',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+      // Check if user can claim certificate
+      final userId = _progressService.userId;
+      if (userId != null) {
+        final canClaim = await _certificateService.hasCompletedAllModules(
+          userId,
         );
+        _logger.i('Certificate eligibility: $canClaim');
+
+        setState(() {
+          _showCertificateBanner = canClaim;
+        });
       }
+
+      if (mounted) {
+        setState(() {
+          _userProgress = progress;
+          _isLoading = false;
+        });
+      }
+      _logger.i('Loaded user progress successfully on courses page.');
+    } catch (e) {
+      _logger.e('Error loading progress on courses page: $e');
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  // Add this method to build the app bar with logo
-  Widget _buildAppBarWithLogo() {
+  void _testCertificateBanner() {
+    setState(() {
+      _showCertificateBanner = true;
+    });
+  }
+
+  // Add this method to build the certificate banner
+  Widget _buildCertificateBanner() {
+    if (!_showCertificateBanner) return const SizedBox.shrink();
+
     return Container(
-      padding: const EdgeInsets.only(top: 40, left: 16, right: 16, bottom: 10),
-      decoration: const BoxDecoration(
-        color: Color(0xFF0077B3),
-        borderRadius: BorderRadius.only(
-          bottomLeft: Radius.circular(20),
-          bottomRight: Radius.circular(20),
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Colors.green.withOpacity(0.1), Colors.blue.withOpacity(0.1)],
         ),
-      ),
-      child: Row(
-        children: [
-          Image.asset(
-            'images/TR Logo.png',
-            height: 40,
-            width: 40,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.green.withOpacity(0.3)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.green.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
-          const SizedBox(width: 12),
-          const Text(
-            'Courses',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withOpacity(0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.emoji_events,
+                  size: 32,
+                  color: Colors.amber,
+                ),
+              ),
+              const SizedBox(width: 16),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Congratulations! 🎉',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1E293B),
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'You\'ve completed all modules in the TalkReady course!',
+                      style: TextStyle(fontSize: 14, color: Color(0xFF64748B)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                Navigator.pushNamed(context, '/certificate');
+              },
+              icon: const Icon(Icons.card_membership),
+              label: const Text('Claim Your Certificate'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
             ),
           ),
         ],
@@ -650,465 +240,454 @@ class _CoursesPageState extends State<CoursesPage> with WidgetsBindingObserver {
     );
   }
 
-  // Update the _onItemTapped method to include My Classes navigation
-  void _onItemTapped(int index) {
-    if (_selectedIndex == index) return;
+  // Helper to determine if a module is unlocked
+  bool _isModuleUnlocked(String moduleId) {
+    if (moduleId == 'module1') return true;
 
-    final int oldNavIndex = _selectedIndex;
-    setState(() {
-      _selectedIndex = index;
-    });
+    int moduleNum = int.tryParse(moduleId.replaceAll('module', '')) ?? 0;
+    if (moduleNum <= 1) return true;
 
-    Widget nextPage;
-    switch (index) {
-      case 0:
-        nextPage = const HomePage();
-        break;
-      case 1:
-        // Already on CoursesPage
-        return;
-      case 2:
-        nextPage = const MyEnrolledClasses();
-        break;
-      case 3:
-        nextPage = const JournalPage(); // Restore Journal
-        break;
-      case 4:
-        nextPage = const ProgressTrackerPage();
-        break;
-      case 5:
-        nextPage = const ProfilePage();
-        break;
-      default:
-        return;
-    }
-
-    Navigator.pushReplacement(
-      context,
-      _createSlidingPageRoute(
-        page: nextPage,
-        newIndex: index,
-        oldIndex: oldNavIndex,
-        duration: const Duration(milliseconds: 300),
-      ),
+    String prevModuleId = 'module${moduleNum - 1}';
+    final prevModuleConfig = _moduleConfigs.firstWhere(
+      (m) => m['id'] == prevModuleId,
+      orElse: () => {},
     );
+
+    if (prevModuleConfig.isEmpty) return false;
+
+    final lessonAttempts =
+        _userProgress['lessonAttempts'] as Map<String, dynamic>? ?? {};
+    final assessmentAttempts =
+        _userProgress['moduleAssessmentAttempts'] as Map<String, dynamic>? ??
+        {};
+
+    final prevLessons = prevModuleConfig['lessons'] as List<String>? ?? [];
+    final allPrevLessonsDone = prevLessons.every(
+      (lessonId) => (lessonAttempts[lessonId] as List?)?.isNotEmpty ?? false,
+    );
+
+    final prevAssessmentId = prevModuleConfig['assessmentId'] as String?;
+    final prevAssessmentDone =
+        prevAssessmentId == null ||
+        (assessmentAttempts[prevAssessmentId] as List?)?.isNotEmpty == true;
+
+    return allPrevLessonsDone && prevAssessmentDone;
+  }
+
+  // Filter modules based on search query
+  List<Map<String, dynamic>> _getFilteredModules() {
+    if (_searchQuery.isEmpty) return _moduleConfigs;
+
+    return _moduleConfigs.where((module) {
+      final title = (module['title'] as String).toLowerCase();
+      final description = (module['description'] as String).toLowerCase();
+      final level = (module['level'] as String).toLowerCase();
+      final query = _searchQuery.toLowerCase();
+
+      return title.contains(query) ||
+          description.contains(query) ||
+          level.contains(query);
+    }).toList();
   }
 
   @override
   Widget build(BuildContext context) {
-    double progress = _calculateProgress();
-
     return Scaffold(
       backgroundColor: Colors.grey[50],
-      // Remove the appBar property
-      body: Column(
-        children: [
-          _buildAppBarWithLogo(), // Add the custom header
-          Expanded(
-            child: SafeArea(
-              top: false,
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: ScrollConfiguration(
-                  behavior: const ScrollBehavior().copyWith(overscroll: false),
-                  child: SingleChildScrollView(
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: _loadProgress,
+              child: CustomScrollView(
+                slivers: [
+                  _buildSliverAppBar(),
+                  SliverToBoxAdapter(
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8.0, vertical: 8.0),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(10),
-                            child: LinearProgressIndicator(
-                              value: progress,
-                              backgroundColor: Colors.grey[300],
-                              color: const Color(0xFF2973B2),
-                              minHeight: 10,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        const Text(
-                          'Beginner',
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF00568D),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Start your journey to master English communication skills step-by-step.',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.black54,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        _buildModuleSection('Beginner', beginnerModules, 1),
-
-                        // Conditionally display Intermediate section if there are modules
-                        if (intermediateModules.isNotEmpty) ...[
-                          const SizedBox(height: 24),
-                          const Text(
-                            'Intermediate',
-                            style: TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF00568D),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            'Challenge yourself with comprehensive reviews and assessments.',
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: Colors.black54,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          _buildModuleSection('Intermediate', intermediateModules,
-                              beginnerModules.length + 1),
-                        ],
-                        // Advanced section (if any in the future)
-                        if (advancedModules.isNotEmpty) ...[
-                          const SizedBox(height: 24),
-                          const Text(
-                            'Advanced',
-                            style: TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF00568D),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            'Master advanced concepts and refine your skills.',
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: Colors.black54,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          _buildModuleSection(
-                              'Advanced',
-                              advancedModules,
-                              beginnerModules.length +
-                                  intermediateModules.length +
-                                  1),
-                        ],
+                        _buildSearchSection(),
+                        // ADD THIS LINE:
+                        _buildCertificateBanner(),
+                        const SizedBox(height: 24),
                       ],
                     ),
                   ),
-                ),
+                  SliverList(
+                    delegate: SliverChildListDelegate([
+                      _buildLevelSection('Beginner'),
+                      _buildLevelSection('Intermediate'),
+                      _buildLevelSection('Advanced'),
+                      const SizedBox(height: 100), // Bottom padding for nav bar
+                    ]),
+                  ),
+                ],
               ),
             ),
+      bottomNavigationBar: _buildBottomNavBar(),
+    );
+  }
+
+  Widget _buildSearchSection() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20.0),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(25),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              spreadRadius: 1,
+              blurRadius: 10,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: TextField(
+          controller: _searchController,
+          onChanged: (value) {
+            setState(() {
+              _searchQuery = value;
+            });
+          },
+          decoration: InputDecoration(
+            hintText: 'Search courses...',
+            hintStyle: TextStyle(color: Colors.grey[400], fontSize: 16),
+            prefixIcon: Icon(Icons.search, color: Colors.grey[400], size: 22),
+            suffixIcon: _searchQuery.isNotEmpty
+                ? IconButton(
+                    icon: Icon(Icons.clear, color: Colors.grey[400]),
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() {
+                        _searchQuery = '';
+                      });
+                    },
+                  )
+                : null,
+            border: InputBorder.none,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 20,
+              vertical: 16,
+            ),
           ),
-        ],
-      ),
-      bottomNavigationBar: AnimatedBottomNavBar(
-        currentIndex: _selectedIndex,
-        onTap: _onItemTapped,
-        items: [
-          CustomBottomNavItem(icon: Icons.home, label: 'Home'),
-          CustomBottomNavItem(icon: Icons.book, label: 'Courses'),
-          CustomBottomNavItem(icon: Icons.school, label: 'My Classes'), // Changed from Icons.class_ to Icons.school
-          CustomBottomNavItem(icon: Icons.library_books, label: 'Journal'),
-          CustomBottomNavItem(icon: Icons.trending_up, label: 'Progress'),
-          CustomBottomNavItem(icon: Icons.person, label: 'Profile'),
-        ],
-        activeColor: Colors.white,
-        inactiveColor: Colors.grey[600]!,
-        notchColor: const Color(0xFF0077B3),
-        backgroundColor: Colors.white,
-        selectedIconSize: 28.0,
-        iconSize: 25.0,
-        barHeight: 55,
-        selectedIconPadding: 10,
-        animationDuration: const Duration(milliseconds: 300),
-        customNotchWidthFactor: 1.8,
+        ),
       ),
     );
   }
 
-  Widget _buildModuleSection(String level,
-      List<Map<String, dynamic>> modulesInLevel, int globalStartIndexOffset) {
-    return Column(
-      children: modulesInLevel.asMap().entries.map<Widget>((entry) {
-        final localIndex = entry.key;
-        final moduleData = entry.value;
-        final bool isLocked = moduleData['isLocked'] as bool? ?? true;
-        final lessons = moduleData['lessons'] as List<Map<String, dynamic>>;
-        final bool allLessonsLocallyCompleted =
-            lessons.every((lesson) => lesson['completed'] as bool? ?? false);
-        final bool isInProgress = !isLocked &&
-            !allLessonsLocallyCompleted &&
-            lessons.any((lesson) => lesson['completed'] as bool? ?? false);
+  Widget _buildLevelSection(String level) {
+    final filteredModules = _getFilteredModules();
+    final modulesForLevel = filteredModules
+        .where((m) => m['level'] == level)
+        .toList();
 
-        final moduleId = 'module${globalStartIndexOffset + localIndex}';
+    if (modulesForLevel.isEmpty) return const SizedBox.shrink();
 
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 16.0),
-          child: Card(
-            elevation: 4,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(15),
-              side: BorderSide(
-                color: (moduleData['color'] as Color).withOpacity(0.5),
-                width: 1,
+    // Add color for Advanced level
+    Color levelColor = const Color(0xFF0077B3); // Default blue
+    if (level == 'Advanced') {
+      levelColor = const Color(0xFF7C3AED); // Purple for advanced
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: levelColor.withOpacity(0.1), // Use dynamic color
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: levelColor.withOpacity(0.3), // Use dynamic color
               ),
             ),
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(15),
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.white,
-                    (moduleData['color'] as Color).withOpacity(0.05),
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
+            child: Text(
+              level,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: levelColor, // Use dynamic color
               ),
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          moduleData['icon'] as IconData,
-                          color: moduleData['color'] as Color,
+            ),
+          ),
+          const SizedBox(height: 20),
+          ...modulesForLevel.map((config) => _buildModuleCard(config)),
+          const SizedBox(height: 32),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModuleCard(Map<String, dynamic> moduleConfig) {
+    final moduleId = moduleConfig['id'] as String;
+    final lessonIds = moduleConfig['lessons'] as List<String>;
+    final lessonAttempts =
+        _userProgress['lessonAttempts'] as Map<String, dynamic>? ?? {};
+
+    final completedLessons = lessonIds
+        .where((id) => (lessonAttempts[id] as List?)?.isNotEmpty ?? false)
+        .length;
+    final totalLessons = lessonIds.length;
+    final isUnlocked = _isModuleUnlocked(moduleId);
+    final progressPercentage = totalLessons > 0
+        ? completedLessons / totalLessons
+        : 0.0;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            spreadRadius: 1,
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: isUnlocked
+              ? () => Navigator.pushNamed(context, moduleConfig['route'])
+              : null,
+          borderRadius: BorderRadius.circular(16),
+          child: Opacity(
+            opacity: isUnlocked ? 1.0 : 0.6,
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: (moduleConfig['color'] as Color).withOpacity(
+                            0.1,
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          moduleConfig['icon'],
+                          color: moduleConfig['color'],
                           size: 28,
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            moduleData['module'] as String,
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: moduleData['color'] as Color,
-                            ),
-                          ),
-                        ),
-                        if (isLocked)
-                          const Icon(
-                            Icons.lock_outline,
-                            color: Colors.grey,
-                            size: 24,
-                          ),
-                        if (!isLocked && allLessonsLocallyCompleted)
-                          Icon(
-                            Icons.check_circle_outline,
-                            color: Colors.green[600],
-                            size: 24,
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    if (!isLocked) ...[
-                      ...lessons.asMap().entries.map<Widget>((lessonEntry) {
-                        final lesson = lessonEntry.value;
-                        final lessonTitle = lesson['title'] as String;
-                        final lessonFirebaseKey =
-                            lesson['firebaseKey'] as String? ??
-                                'lesson${lessonEntry.key + 1}';
-                        String lessonTitleForLog = lessonTitle;
-
-                        return Padding(
-                          padding:
-                              const EdgeInsets.only(bottom: 8.0, left: 8.0),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              Icon(
-                                (lesson['completed'] as bool? ?? false)
-                                    ? Icons.check_box_outlined
-                                    : Icons.check_box_outline_blank,
-                                color: (lesson['completed'] as bool? ?? false)
-                                    ? Colors.green
-                                    : Colors.grey,
-                                size: 20,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: InkWell(
-                                  onTap: () async {
-                                    // Navigation logic for lesson revisit
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (context) {
-                                          if (moduleId == 'module1') {
-                                            return Module1Page(
-                                                targetLessonKey:
-                                                    lessonFirebaseKey);
-                                          } else if (moduleId == 'module2') {
-                                            return Module2Page(
-                                                targetLessonKey:
-                                                    lessonFirebaseKey);
-                                          } else if (moduleId == 'module3') {
-                                            return Module3Page(
-                                                targetLessonKey:
-                                                    lessonFirebaseKey);
-                                          } else if (moduleId == 'module4') {
-                                            return Module4Page(
-                                                targetLessonKey:
-                                                    lessonFirebaseKey);
-                                          } else if (moduleId == 'module5') {
-                                            return Module5Page(
-                                                targetLessonKey:
-                                                    lessonFirebaseKey);
-                                          } else {
-                                            return Scaffold(
-                                                body: Center(
-                                                    child: Text(
-                                                        'Module $moduleId not implemented')));
-                                          }
-                                        },
-                                      ),
-                                    );
-                                  },
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
                                   child: Text(
-                                    lessonTitle,
+                                    moduleConfig['title'],
                                     style: TextStyle(
-                                      fontSize: 15,
-                                      color: Colors.black87,
-                                      decoration:
-                                          (lesson['completed'] as bool? ?? false)
-                                              ? TextDecoration.lineThrough
-                                              : TextDecoration.none,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: moduleConfig['color'],
                                     ),
                                   ),
                                 ),
+                                if (!isUnlocked)
+                                  Icon(
+                                    Icons.lock_outline,
+                                    color: Colors.grey[400],
+                                    size: 20,
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              moduleConfig['description'],
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 14,
+                                height: 1.4,
                               ),
-                              IconButton(
-                                icon:
-                                    Icon(Icons.history_edu_outlined, size: 20),
-                                color: const Color(0xFF00568D).withOpacity(0.8),
-                                onPressed: () async {
-                                  await _showActivityLog(
-                                      moduleId,
-                                      lessonTitleForLog,
-                                      moduleData['color'] as Color);
-                                },
-                                tooltip: 'View Activity Log',
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Progress',
+                                  style: TextStyle(
+                                    color: Colors.grey[600],
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                Text(
+                                  '$completedLessons / $totalLessons lessons',
+                                  style: TextStyle(
+                                    color: moduleConfig['color'],
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Container(
+                              height: 6,
+                              decoration: BoxDecoration(
+                                color: Colors.grey[200],
+                                borderRadius: BorderRadius.circular(3),
                               ),
-                            ],
+                              child: FractionallySizedBox(
+                                alignment: Alignment.centerLeft,
+                                widthFactor: progressPercentage,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: moduleConfig['color'],
+                                    borderRadius: BorderRadius.circular(3),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: (moduleConfig['color'] as Color).withOpacity(
+                            0.1,
                           ),
-                        );
-                      }).toList(),
-                    ] else ...[
-                      const Padding(
-                        padding: EdgeInsets.only(top: 8.0, left: 8.0),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         child: Text(
-                          'Locked - Complete previous module to unlock.',
+                          '${(progressPercentage * 100).round()}%',
                           style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.black54,
-                            fontStyle: FontStyle.italic,
+                            color: moduleConfig['color'],
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
                       ),
                     ],
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        icon: Icon(isLocked
-                            ? Icons.lock_outline
-                            : allLessonsLocallyCompleted
-                                ? Icons.check_circle_outline
-                                : isInProgress
-                                    ? Icons.play_circle_outline
-                                    : Icons.play_arrow_outlined),
-                        label: Text(
-                          isLocked
-                              ? 'Module Locked'
-                              : allLessonsLocallyCompleted
-                                  ? 'Module Completed'
-                                  : isInProgress
-                                      ? 'Continue Module'
-                                      : 'Start Module',
-                          style: const TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.w600),
-                        ),
-                        // Disable the button if the module is completed
-                        onPressed: isLocked || allLessonsLocallyCompleted
-                            ? null
-                            : () async {
-                                logger.i(
-                                    'Navigating to ${moduleData['module']} (ID: $moduleId) - Go to Module button');
-                                Widget destination;
-                                switch (moduleId) {
-                                  case 'module1':
-                                    destination = const Module1Page();
-                                    break;
-                                  case 'module2':
-                                    destination = const Module2Page();
-                                    break;
-                                  case 'module3':
-                                    destination = const Module3Page();
-                                    break;
-                                  case 'module4':
-                                    destination = const Module4Page();
-                                    break;
-                                  case 'module5':
-                                    destination = const Module5Page();
-                                    break;
-                                  default:
-                                    destination = Scaffold(
-                                      appBar: AppBar(
-                                        title: Text(
-                                            moduleData['module'] as String),
-                                      ),
-                                      body: Center(
-                                        child: Text(
-                                            '$moduleId: ${moduleData['module']} is unlocked but the page is not implemented yet.'),
-                                      ),
-                                    );
-                                }
-                                await Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                      builder: (context) => destination),
-                                );
-                                logger.i(
-                                    "Returned from $moduleId (Go to Module button), re-checking module status.");
-                                await _checkModuleStatus();
-                              },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: isLocked
-                              ? Colors.grey[350]
-                              : allLessonsLocallyCompleted
-                                  ? Colors.green[600]
-                                  : isInProgress
-                                      ? Colors.orange[600]
-                                      : const Color(0xFF00568D),
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          elevation:
-                              isLocked || allLessonsLocallyCompleted ? 1 : 3,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
-        );
-      }).toList(),
+        ),
+      ),
+    );
+  }
+
+  // Remove the star button from your AppBar and go back to the original:
+  Widget _buildSliverAppBar() {
+    return SliverAppBar(
+      backgroundColor: const Color(0xFF0077B3),
+      pinned: true,
+      expandedHeight: 120.0,
+      automaticallyImplyLeading: false,
+      flexibleSpace: FlexibleSpaceBar(
+        titlePadding: EdgeInsets.zero,
+        title: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Image.asset(
+                    'images/TR Logo.png',
+                    height: 32,
+                    width: 32,
+                    fit: BoxFit.contain,
+                  ),
+                  const SizedBox(width: 12),
+                  const Text(
+                    'Courses',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 24,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomNavBar() {
+    return AnimatedBottomNavBar(
+      currentIndex: _selectedIndex,
+      onTap: (index) {
+        if (_selectedIndex == index) return;
+        setState(() => _selectedIndex = index);
+        switch (index) {
+          case 0:
+            Navigator.pushReplacementNamed(context, '/homepage');
+            break;
+          case 1:
+            break; // Already here
+          case 2:
+            Navigator.pushReplacementNamed(context, '/enrolled-classes');
+            break;
+          case 3:
+            Navigator.pushReplacementNamed(context, '/journal');
+            break;
+          case 4:
+            Navigator.pushReplacementNamed(context, '/progress');
+            break;
+          case 5:
+            Navigator.pushReplacementNamed(context, '/profile');
+            break;
+        }
+      },
+      items: [
+        CustomBottomNavItem(icon: Icons.home, label: 'Home'),
+        CustomBottomNavItem(icon: Icons.book, label: 'Courses'),
+        CustomBottomNavItem(icon: Icons.school, label: 'My Classes'),
+        CustomBottomNavItem(icon: Icons.library_books, label: 'Journal'),
+        CustomBottomNavItem(icon: Icons.trending_up, label: 'Progress'),
+        CustomBottomNavItem(icon: Icons.person, label: 'Profile'),
+      ],
+      activeColor: Colors.white,
+      inactiveColor: Colors.grey[600]!,
+      notchColor: const Color(0xFF0077B3),
+      backgroundColor: Colors.white,
+      selectedIconSize: 28.0,
+      iconSize: 25.0,
+      barHeight: 55,
+      selectedIconPadding: 10,
+      animationDuration: const Duration(milliseconds: 300),
+      customNotchWidthFactor: 1.8,
     );
   }
 }
-
-//Can you adapt the layout of this? I mean, just the layout and placement, not the original design, and make sure the database (backend) isn't compromised.

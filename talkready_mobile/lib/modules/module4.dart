@@ -1,893 +1,729 @@
+// lib/modules/module4.dart
 import 'package:flutter/material.dart';
-import 'package:carousel_slider/carousel_slider.dart';
-import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:logger/logger.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'dart:io'; // Add this at the top with other imports
-
-import '../firebase_service.dart';
-import '../lessons/lesson4_1.dart';
-import '../lessons/lesson4_2.dart';
+import '../services/unified_progress_service.dart';
 
 class Module4Page extends StatefulWidget {
-  final String? targetLessonKey;
-  const Module4Page({super.key, this.targetLessonKey});
+  const Module4Page({super.key});
 
   @override
   State<Module4Page> createState() => _Module4PageState();
 }
 
 class _Module4PageState extends State<Module4Page> {
-  int currentLesson = 1; // 1 for L4.1, 2 for L4.2
-  bool showActivity = false; // General flag if activity section is shown
-  YoutubePlayerController? _youtubeController;
-  int _currentSlide = 0;
-  final CarouselSliderController _carouselController = CarouselSliderController(); // Changed from CarouselController
   final Logger _logger = Logger();
-  final FirebaseService _firebase_service = FirebaseService();
-  final FirebaseService _firebaseService = FirebaseService();
+  final UnifiedProgressService _progressService = UnifiedProgressService();
 
-  String? _youtubeError;
-  Map<String, bool> _lessonCompletion = {'lesson1': false, 'lesson2': false};
-  late Map<String, int> _lessonAttemptCounts;
-  bool _isContentLoaded = false;
-  bool _isLoading = false; // General loading state for module actions
+  bool _isLoading = true;
+  Map<String, List<Map<String, dynamic>>> _lessonAttempts = {};
+  List<Map<String, dynamic>> _assessmentAttempts = [];
+  bool _allLessonsCompleted = false;
 
-  // Video IDs for Module 4 lessons
-  final Map<int, String?> _videoIds = {
-    1: 'ENCnqouZgyQ',
-    2: 'IddzjASeuUE',
-  };
-
-  // Firestore keys for lessons
-  final Map<int, String> _lessonNumericToFirestoreKey = {
-    1: "Lesson 4.1",
-    2: "Lesson 4.2",
-  };
-
-  // Add these state variables to the _Module4PageState class after the existing declarations
-
-  // Enhanced UI state for lesson4_1 integration
-  bool _isSaveComplete = false;
-  bool _showFeedbackModal = false;
-  Map<String, dynamic>? _currentFeedback;
-
-  // Animation-related state (if you want to add transitions)
-  bool _isTransitioning = false;
+  // Configuration for Module 4 lessons
+  final List<Map<String, dynamic>> _lessonConfigs = [
+    {
+      'id': 'Lesson 4.1',
+      'title': 'Lesson 4.1: Advanced Customer Service Scenarios',
+      'description':
+          'Handle complex customer situations with confidence and professionalism.',
+      'color': const Color(0xFF9C27B0), // Purple color for Module 4
+      'firestoreId': 'Lesson-4-1',
+      'totalQuestions': 80, // Adjust based on actual lesson content
+    },
+    {
+      'id': 'Lesson 4.2',
+      'title': 'Lesson 4.2: Professional Communication Skills',
+      'description':
+          'Master advanced communication techniques for professional interactions.',
+      'color': const Color(0xFF9C27B0),
+      'firestoreId': 'Lesson-4-2',
+      'totalQuestions': 70,
+    },
+  ];
 
   @override
   void initState() {
     super.initState();
-    _lessonAttemptCounts = {'lesson1': 0, 'lesson2': 0};
-    _performAsyncInit();
+    _loadModuleProgress();
   }
 
-  Future<void> _performAsyncInit() async {
-    setState(() => _isContentLoaded = false);
+  Future<void> _loadModuleProgress() async {
+    setState(() => _isLoading = true);
     try {
-      await _loadLessonProgress();
-      _initializeYoutubeController();
-      
-      if (mounted) {
-        setState(() {
-          final attempts = _lessonAttemptCounts['lesson$currentLesson'] ?? 0;
-          final completed = _lessonCompletion['lesson$currentLesson'] ?? false;
-          showActivity = attempts > 0 || completed;
-          _isContentLoaded = true;
-        });
-      }
-    } catch (error) {
-      _logger.e("Error during Module 4 initialization: $error");
-      if (mounted) {
-        setState(() {
-          _youtubeError = "Failed to load lesson content. Please try again.";
-          _isContentLoaded = true;
-        });
-      }
-    }
-  }
-
-  Future<void> _loadLessonProgress() async {
-    try {
-      final progress = await _firebaseService.getModuleProgress('module4');
-      final lessonsData = progress['lessons'] as Map<String, dynamic>? ?? {};
-      final attemptData = progress['attempts'] as Map<String, dynamic>? ?? {};
-
-      _lessonCompletion = {
-        'lesson1': lessonsData['lesson1'] ?? false,
-        'lesson2': lessonsData['lesson2'] ?? false,
-      };
-      _lessonAttemptCounts = {
-        'lesson1': attemptData['lesson1'] as int? ?? 0,
-        'lesson2': attemptData['lesson2'] as int? ?? 0,
-      };
-
-      // Determine current lesson based on targetKey or completion status
-      if (widget.targetLessonKey != null) {
-        switch (widget.targetLessonKey) {
-          case 'lesson1':
-            currentLesson = 1;
-            break;
-          case 'lesson2':
-            currentLesson = 2;
-            break;
-          default:
-            _determineInitialLesson();
-        }
-      } else {
-        _determineInitialLesson();
-      }
-      _logger.i(
-          'Module 4: Progress loaded. Current Lesson: $currentLesson, Completion: $_lessonCompletion, Attempts: $_lessonAttemptCounts');
-    } catch (e) {
-      _logger.e('Module 4: Error loading lesson progress: $e');
-      _determineInitialLesson(); // Fallback
-      rethrow;
-    }
-  }
-
-  void _determineInitialLesson() {
-    if (!(_lessonCompletion['lesson1'] ?? false)) {
-      currentLesson = 1;
-    } else if (!(_lessonCompletion['lesson2'] ?? false))
-      currentLesson = 2;
-    else
-      currentLesson = 2; // Default to last if all complete or other issue
-  }
-
-  void _initializeYoutubeController() {
-    String? videoId = _videoIds[currentLesson];
-    _youtubeController?.dispose(); // Dispose existing controller if any
-
-    if (videoId != null && videoId.isNotEmpty) {
-      _youtubeController = YoutubePlayerController(
-        initialVideoId: videoId,
-        flags: const YoutubePlayerFlags(
-          autoPlay: false,
-          mute: false,
-          enableCaption: true,
-          captionLanguage: 'en',
-          hideControls: false,
+      final results = await Future.wait([
+        _progressService.getModuleAssessmentAttempts('module_4_final'),
+        ..._lessonConfigs.map(
+          (c) => _progressService.getLessonAttempts(c['firestoreId'] as String),
         ),
+      ]);
+
+      final assessmentAttempts = results[0] as List<Map<String, dynamic>>;
+      Map<String, List<Map<String, dynamic>>> lessonAttempts = {};
+      for (int i = 0; i < _lessonConfigs.length; i++) {
+        final lessonId = _lessonConfigs[i]['firestoreId'] as String;
+        lessonAttempts[lessonId] = results[i + 1] as List<Map<String, dynamic>>;
+      }
+
+      final allDone = _lessonConfigs.every(
+        (c) => (lessonAttempts[c['firestoreId']]?.isNotEmpty ?? false),
       );
-      _youtubeController!.addListener(() {
-        if (_youtubeController!.value.errorCode != 0 && mounted) {
-          setState(() => _youtubeError =
-              'YT Error: ${_youtubeController!.value.errorCode}');
-        }
-      });
-      if (mounted) setState(() => _youtubeError = null);
-    } else {
-      _logger.w('Module 4: No video ID for Lesson $currentLesson.');
-      _youtubeController = null; // Explicitly set to null if no video
-      if (mounted) setState(() => _youtubeError = null);
-    }
-  }
 
-  // --- Lesson 4.1 Handlers ---
-  Future<Map<String, dynamic>?> _handleEvaluateLesson4_1Scenarios({
-    required Map<String, String> scenarioAnswers,
-    required String lessonId,
-  }) async {
-    setState(() => _isLoading = true);
-    _logger.i("Evaluating Lesson 4.1 scenarios: $scenarioAnswers for lesson ID: $lessonId");
-    
-    // Check for network connectivity first
-    bool hasNetwork = false;
-    try {
-      final result = await InternetAddress.lookup('google.com')
-          .timeout(const Duration(seconds: 3));
-      hasNetwork = result.isNotEmpty && result[0].rawAddress.isNotEmpty;
-    } catch (_) {
-      hasNetwork = false;
-    }
-    
-    if (!hasNetwork) {
-      _logger.w("Network connectivity issue detected - using mock data");
-      setState(() => _isLoading = false);
-      return _generateMockFeedback(scenarioAnswers);
-    }
-    
-    // CONFIGURATION: I-setup ang actual server address at port
-    final String serverAddress = "192.168.1.2"; // PALITAN NG ACTUAL IP NG SERVER
-    final int serverPort = 5001;
-    final String apiBaseUrl = 'http://$serverAddress:$serverPort';
-    
-    _logger.i("Using server: $apiBaseUrl");
-
-    try {
-      final response = await http.post(
-        Uri.parse('$apiBaseUrl/evaluate-clarification'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'answers': scenarioAnswers,
-          'lesson': lessonId
-        }),
-      ).timeout(const Duration(seconds: 15)); // Reduced timeout - fail faster
-
-      if (!mounted) return null;
-      
-      if (response.statusCode == 200) {
-        final result = jsonDecode(response.body);
-        _logger.i("Lesson 4.1 AI Feedback received: $result");
-        return {
-          'aiFeedbackForScenarios': result['feedback'],
-          'overallAIScore': result['overallScore'] ?? 0.0
-        };
-      } else {
-        _logger.e("Error evaluating L4.1 scenarios: ${response.statusCode} ${response.body}");
-        // Use mock data when server returns error status
-        return _generateMockFeedback(scenarioAnswers);
-      }
-    } catch (e) {
-      _logger.e("Exception evaluating L4.1 scenarios: $e");
-      // Use mock data when server is unreachable
-      return _generateMockFeedback(scenarioAnswers);
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  // Idagdag ang helper method na ito para sa mock feedback
-  Map<String, dynamic> _generateMockFeedback(Map<String, String> answers) {
-    _logger.w("Using mock feedback as server is unreachable");
-    
-    final Map<String, dynamic> feedbackMap = {};
-    double totalScore = 0;
-    
-    answers.forEach((key, value) {
-      String feedbackText = """
-**Effectiveness of Clarification:** Your response is clear and professional. You've asked for the specific information needed.
-
-**Politeness and Professionalism:** Good use of polite language and a professional tone throughout.
-
-**Clarity and Conciseness:** Well-structured response that directly addresses the need for clarification.
-
-**Grammar and Phrasing:** Good grammar and natural phrasing.
-
-**Suggestion for Improvement:** Consider adding a brief explanation of why you need the clarification.
-""";
-      double score = 2.0;
-      
-      if (value.length > 50) {
-        score = 2.3;
-      } else if (value.length < 20) {
-        score = 1.5;
-      }
-      
-      feedbackMap[key] = {
-        "text": feedbackText,
-        "score": score
-      };
-      
-      totalScore += score;
-    });
-    
-    return {
-      "aiFeedbackForScenarios": feedbackMap,
-      "overallAIScore": totalScore
-    };
-  }
-
-  Future<void> _handleSaveLesson4_1Attempt({
-    required String lessonIdFirestoreKey,
-    required int attemptNumber,
-    required int timeSpent,
-    required Map<String, String> scenarioResponses,
-    required Map<String, dynamic> aiFeedbackForScenarios,
-    required double overallAIScore,
-    Map<String, String>? reflectionResponses,
-    required bool isUpdate,
-  }) async {
-    _logger.i(
-        "Saving Lesson 4.1 attempt: #$attemptNumber, Score: $overallAIScore, isUpdate: $isUpdate");
-    final String lessonKeyForProgress = 'lesson1';
-
-    // Add retry logic specifically for module4
-    const int maxRetries = 3;
-    const Duration retryDelay = Duration(seconds: 3);
-    
-    for (int attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        final detailedResponsesPayload = {
-          'scenarioResponses': scenarioResponses,
-          'aiFeedbackForScenarios': aiFeedbackForScenarios,
-          'reflectionResponses': reflectionResponses ?? {},
-        };
-
-        await _firebaseService.saveSpecificLessonAttempt(
-          lessonIdKey: lessonIdFirestoreKey,
-          score: overallAIScore.round(),
-          attemptNumberToSave: attemptNumber,
-          timeSpent: timeSpent,
-          detailedResponsesPayload: detailedResponsesPayload,
-          isUpdate: isUpdate,
-        );
-        
-        _lessonAttemptCounts[lessonKeyForProgress] = attemptNumber;
-        await _saveLessonProgressAndUpdateCompletion(1);
-        
-        _logger.i("L4.1 attempt saved successfully on retry $attempt");
-        return; // Success, exit retry loop
-        
-      } catch (e) {
-        _logger.w("L4.1 save attempt $attempt failed: $e");
-        
-        if (attempt == maxRetries) {
-          _logger.e("All L4.1 save attempts failed");
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text("Failed to save after $maxRetries attempts. Please check your connection and try again."),
-                duration: Duration(seconds: 5),
-              )
-            );
-          }
-          return; // Don't rethrow, just return to prevent crash
-        }
-        
-        if (e.toString().contains('deadline-exceeded') || e.toString().contains('timeout')) {
-          _logger.i("Timeout detected, retrying L4.1 save in ${retryDelay.inSeconds} seconds...");
-          await Future.delayed(retryDelay);
-        } else {
-          // For non-timeout errors, don't retry
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text("Error saving attempt: ${e.toString()}"))
-            );
-          }
-          return;
-        }
-      }
-    }
-  }
-
-  Future<void> _handleSaveLesson4_1Reflection({
-    required String lessonIdFirestoreKey,
-    required int attemptNumber,
-    required Map<String, String> submittedScenarioResponses,
-    required Map<String, dynamic> aiFeedbackForScenarios,
-    required double originalOverallAIScore,
-    required Map<String, String> reflectionResponses,
-  }) async {
-    _logger.i("Saving Lesson 4.1 reflection for attempt: #$attemptNumber");
-    try {
-      await _handleSaveLesson4_1Attempt(
-        lessonIdFirestoreKey: lessonIdFirestoreKey,
-        attemptNumber: attemptNumber,
-        timeSpent: -1,
-        scenarioResponses: submittedScenarioResponses,
-        aiFeedbackForScenarios: aiFeedbackForScenarios,
-        overallAIScore: originalOverallAIScore,
-        reflectionResponses: reflectionResponses,
-        isUpdate: true,
-      );
-      _logger.i("Lesson 4.1 Reflection for attempt #$attemptNumber saved.");
-    } catch (e) {
-      _logger.e("Error saving L4.1 reflection: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text("Error saving reflection: ${e.toString()}")));
-      }
-    }
-  }
-
-  // --- Lesson 4.2 Handlers ---
-  Future<Map<String, dynamic>?> _handleEvaluateLesson4_2Solutions({
-    required Map<String, String> solutionResponses,
-  }) async {
-    setState(() => _isLoading = true);
-    _logger.i("Evaluating Lesson 4.2 solutions: $solutionResponses");
-    
-    // CONFIGURATION: I-setup ang actual server address at port
-    final String serverAddress = "192.168.1.2"; // PALITAN NG ACTUAL IP NG SERVER
-    final int serverPort = 5001;
-    final String apiBaseUrl = 'http://$serverAddress:$serverPort';
-    
-    _logger.i("Using server: $apiBaseUrl");
-
-    try {
-      final response = await http.post(
-        Uri.parse('$apiBaseUrl/evaluate-solutions'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'solutions': solutionResponses, 
-          'lesson': 'Lesson 4.2'
-        }),
-      ).timeout(const Duration(seconds: 30)); // Dagdagan ang timeout
-
-      if (!mounted) return null;
-      
-      if (response.statusCode == 200) {
-        final result = jsonDecode(response.body);
-        _logger.i("Lesson 4.2 AI Feedback received: $result");
-        return {
-          'aiSolutionFeedback': result['feedback'],
-        };
-      } else {
-        _logger.e("Error evaluating L4.2 solutions: ${response.statusCode} ${response.body}");
-        
-        // Use mock data when server is unreachable
-        return _generateSolutionMockFeedback(solutionResponses);
-      }
-    } catch (e) {
-      _logger.e("Exception evaluating L4.2 solutions: $e");
-      
-      // Use mock data when server is unreachable
-      return _generateSolutionMockFeedback(solutionResponses);
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  // Idagdag ang helper method na ito para sa mock solution feedback
-  Map<String, dynamic> _generateSolutionMockFeedback(Map<String, String> solutions) {
-    _logger.w("Using mock solution feedback as server is unreachable");
-    
-    final Map<String, dynamic> feedbackMap = {};
-    
-    solutions.forEach((key, value) {
-      String feedbackText = """
-**Effectiveness and Appropriateness of Solution:** Your solution addresses the customer's problem effectively.
-
-**Clarity and Completeness:** Good explanation with relevant details.
-
-**Professionalism, Tone, and Empathy:** Professional tone with appropriate empathy shown.
-
-**Grammar and Phrasing:** Well-structured sentences with clear phrasing.
-
-**Overall Actionable Suggestion:** Consider providing a specific timeline for resolution.
-""";
-      double score = 4.0;
-      
-      if (value.length > 50) {
-        score = 4.5;
-      } else if (value.length < 20) {
-        score = 3.0;
-      }
-      
-      feedbackMap[key] = {
-        "text": feedbackText,
-        "score": score
-      };
-    });
-    
-    return {
-      "aiSolutionFeedback": feedbackMap
-    };
-  }
-
-  Future<void> _handleSaveLesson4_2Attempt({
-    required String lessonIdFirestoreKey,
-    required int attemptNumber,
-    required int timeSpent,
-    required Map<String, String> solutionResponses,
-    required Map<String, dynamic> aiSolutionFeedback,
-    required double overallAIScore,
-    Map<String, String>? reflectionResponses,
-    required bool isUpdate,
-  }) async {
-    _logger.i(
-        "Saving Lesson 4.2 attempt: #$attemptNumber, Overall Score: $overallAIScore, isUpdate: $isUpdate");
-    final String lessonKeyForProgress =
-        'lesson2'; // Assuming L4.2 is 'lesson2' in module4 context
-
-    try {
-      final detailedResponsesPayload = {
-        'solutionResponses_L4_2': solutionResponses,
-        'solutionFeedback_L4_2': aiSolutionFeedback,
-        'reflectionResponses_L4_2': reflectionResponses ?? {},
-      };
-
-      await _firebaseService.saveSpecificLessonAttempt(
-        lessonIdKey: lessonIdFirestoreKey,
-        score: overallAIScore.round(),
-        attemptNumberToSave: attemptNumber,
-        timeSpent: timeSpent,
-        detailedResponsesPayload: detailedResponsesPayload,
-        isUpdate: isUpdate,
-      );
-      _lessonAttemptCounts[lessonKeyForProgress] = attemptNumber;
-      await _saveLessonProgressAndUpdateCompletion(2); // 2 for lesson 4.2
-    } catch (e) {
-      _logger.e("Error saving L4.2 attempt: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Error saving attempt: ${e.toString()}")));
-      }
-    }
-  }
-
-  Future<void> _handleSaveLesson4_2Reflection({
-    required String lessonIdFirestoreKey,
-    required int attemptNumber,
-    required Map<String, String> submittedSolutionResponses,
-    required Map<String, dynamic> aiSolutionFeedback,
-    required double originalOverallAIScore,
-    required Map<String, String> reflectionResponses,
-  }) async {
-    _logger.i("Saving Lesson 4.2 reflection for attempt: #$attemptNumber");
-    try {
-      await _handleSaveLesson4_2Attempt(
-        lessonIdFirestoreKey: lessonIdFirestoreKey,
-        attemptNumber: attemptNumber,
-        timeSpent: -1,
-        solutionResponses: submittedSolutionResponses,
-        aiSolutionFeedback: aiSolutionFeedback,
-        overallAIScore: originalOverallAIScore,
-        reflectionResponses: reflectionResponses,
-        isUpdate: true,
-      );
-      _logger.i("Lesson 4.2 Reflection for attempt #$attemptNumber saved.");
-    } catch (e) {
-      _logger.e("Error saving L4.2 reflection: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text("Error saving reflection: ${e.toString()}")));
-      }
-    }
-  }
-
-  Future<void> _saveLessonProgressAndUpdateCompletion(int lessonNumber) async {
-    final lessonKey = 'lesson$lessonNumber';
-    await _firebaseService.updateLessonProgress('module4', lessonKey, true,
-        attempts: _lessonAttemptCounts);
-    if (mounted) {
-      setState(() {
-        _lessonCompletion[lessonKey] = true;
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _youtubeController?.dispose();
-    super.dispose();
-  }
-
-  void _goToNextLesson() async {
-    if (currentLesson < _videoIds.length) {
-      setState(() => _isLoading = true);
-      await Future.delayed(const Duration(milliseconds: 300)); // Simulate work
       if (mounted) {
         setState(() {
-          currentLesson++;
-          _currentSlide = 0;
-          _carouselController.animateToPage(0);
-          // recompute showActivity using same rule (attempts OR completion)
-          final attempts = _lessonAttemptCounts['lesson$currentLesson'] ?? 0;
-          final completed = _lessonCompletion['lesson$currentLesson'] ?? false;
-          showActivity = attempts > 0 || completed;
-          _initializeYoutubeController(); // Re-initialize for new lesson
+          _assessmentAttempts = assessmentAttempts;
+          _lessonAttempts = lessonAttempts;
+          _allLessonsCompleted = allDone;
           _isLoading = false;
         });
       }
-    } else {
-      _logger.i("Module 4 completed. Navigating back or to summary.");
-      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      _logger.e('Error loading Module 4 progress: $e');
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  // Add this method to help with debugging
-  void _debugResetAndReload() {
-    setState(() {
-      _isContentLoaded = false;
-      _youtubeError = null;
-    });
-    
-    // Force dispose and re-initialize
-    _youtubeController?.dispose();
-    _youtubeController = null;
-    
-    // Re-initialize everything
-    _performAsyncInit();
+  bool _isLessonUnlocked(int lessonIndex) {
+    if (lessonIndex == 0) return true; // First lesson always unlocked
+    final prevLessonId =
+        _lessonConfigs[lessonIndex - 1]['firestoreId'] as String;
+    return (_lessonAttempts[prevLessonId]?.isNotEmpty ?? false);
   }
 
-  // Modify your build method to include debug options
-  @override
-  Widget build(BuildContext context) {
-    if (!_isContentLoaded) {
-      return Scaffold(
-        appBar: AppBar(title: Text('Module 4: Lesson $currentLesson')),
-        body: const Center(child: CircularProgressIndicator()),
+  void _navigateToLesson(String lessonId) {
+    String? routeName;
+    switch (lessonId) {
+      case 'Lesson 4.1':
+        routeName = '/lesson4_1';
+        break;
+      case 'Lesson 4.2':
+        routeName = '/lesson4_2';
+        break;
+    }
+
+    if (routeName != null) {
+      Navigator.pushNamed(context, routeName);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Navigation for $lessonId not implemented yet.'),
+          backgroundColor: Colors.orange,
+        ),
       );
     }
+  }
 
-    bool isModuleCompleted =
-        _lessonCompletion.values.every((completed) => completed);
-    int initialAttemptForChild =
-        (_lessonAttemptCounts['lesson$currentLesson'] ?? 0);
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Module 4: Lesson $currentLesson'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
-        ),
-        actions: [
-          // Add debug button
-          IconButton(
-            icon: Icon(Icons.bug_report),
-            onPressed: _debugResetAndReload,
-            tooltip: 'Debug Reset',
-          )
-        ],
-      ),
-      body: SafeArea(
-        child: Stack(
-          children: [
-            // Add debug container to ensure something is visible
-            Container(
-              color: Colors.white,
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
+  void _showAssessmentLog() {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Container(
+          constraints: const BoxConstraints(maxHeight: 500, maxWidth: 400),
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF9C27B0),
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(16),
+                    topRight: Radius.circular(16),
+                  ),
+                ),
+                child: Row(
                   children: [
-                    // Debug information section
-                    Container(
-                      width: double.infinity,
-                      padding: EdgeInsets.all(8),
-                      margin: EdgeInsets.only(bottom: 16),
-                      decoration: BoxDecoration(
-                        color: Colors.blue[50],
-                        border: Border.all(color: Colors.blue),
-                        borderRadius: BorderRadius.circular(8)
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Debug Info:'),
-                          Text('Lesson: $currentLesson of ${_videoIds.length}'),
-                          Text('Attempts: ${_lessonAttemptCounts['lesson$currentLesson'] ?? 0}'),
-                          Text('Completed: ${_lessonCompletion['lesson$currentLesson'] ?? false}'),
-                          Text('Show Activity: $showActivity'),
-                          Text('YouTube Error: ${_youtubeError ?? "None"}'),
-                        ],
-                      ),
-                    ),
-                    
-                    Text(
-                      'Lesson $currentLesson of ${_videoIds.length}',
-                      style: const TextStyle(fontSize: 16, color: Colors.grey),
-                    ),
-                    const SizedBox(height: 16),
-                    if (_youtubeError != null)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8.0),
-                        child: Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.red[50],
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.red[200]!),
-                          ),
-                          child: Text(
-                            _youtubeError!,
-                            style: TextStyle(color: Colors.red[700], fontSize: 14),
-                            textAlign: TextAlign.center,
-                          ),
+                    const Icon(Icons.assessment, color: Colors.white, size: 24),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'Assessment Log: Module 4',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                    _buildLessonContentWidget(initialAttemptForChild),
-                    if (showActivity &&
-                        (_lessonCompletion['lesson$currentLesson'] ?? false) &&
-                        _youtubeError == null) ...[
-                      const SizedBox(height: 24),
-                      _buildNavigationButton(),
-                    ],
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close, color: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: _assessmentAttempts.isEmpty
+                    ? const Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.assignment_outlined,
+                              size: 64,
+                              color: Colors.grey,
+                            ),
+                            SizedBox(height: 16),
+                            Text(
+                              'No assessment attempts found.',
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: _assessmentAttempts.length,
+                        itemBuilder: (context, index) {
+                          final attempt = _assessmentAttempts[index];
+                          final timestamp =
+                              attempt['attemptTimestamp'] as DateTime?;
+
+                          final scoreValue = attempt['score'];
+                          final maxScoreValue = attempt['maxScore'];
+
+                          final int score = (scoreValue is num)
+                              ? scoreValue.toInt()
+                              : 0;
+                          final int maxScore = (maxScoreValue is num)
+                              ? maxScoreValue.toInt()
+                              : 25; // Default for Module 4 assessments
+
+                          final double percentageDouble = maxScore > 0
+                              ? (score / maxScore) * 100
+                              : 0.0;
+                          final int percentage = percentageDouble.round();
+
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            elevation: 2,
+                            child: ListTile(
+                              leading: CircleAvatar(
+                                backgroundColor: percentage >= 70
+                                    ? Colors.green
+                                    : percentage >= 50
+                                    ? Colors.orange
+                                    : Colors.red,
+                                child: Text(
+                                  '${index + 1}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              title: Text(
+                                'Attempt ${index + 1}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Score: $score / $maxScore ($percentage%)',
+                                  ),
+                                  if (timestamp != null)
+                                    Text(
+                                      'Date: ${timestamp.toLocal().toString().substring(0, 16)}',
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.grey[50],
+      appBar: AppBar(
+        title: const Text(
+          'Module 4',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        backgroundColor: const Color(0xFF9C27B0),
+        elevation: 4,
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      body: _isLoading
+          ? const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(color: Color(0xFF9C27B0)),
+                  SizedBox(height: 16),
+                  Text('Loading module progress...'),
+                ],
+              ),
+            )
+          : RefreshIndicator(
+              onRefresh: _loadModuleProgress,
+              color: const Color(0xFF9C27B0),
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    _buildModuleHeader(),
+                    const SizedBox(height: 24),
+                    _buildLessonsSection(),
+                    _buildAssessmentCard(),
                   ],
                 ),
               ),
             ),
-            
-            // Loading overlay
-            if (_isLoading)
-              Container(
-                color: Colors.black.withOpacity(0.5),
-                child: const Center(
+    );
+  }
+
+  Widget _buildModuleHeader() {
+    final completed = _lessonConfigs
+        .where((c) => (_lessonAttempts[c['firestoreId']]?.isNotEmpty ?? false))
+        .length;
+    final total = _lessonConfigs.length;
+    final progress = total > 0 ? completed / total : 0.0;
+
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [const Color(0xFF9C27B0), const Color(0xFF7B1FA2)],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF9C27B0).withOpacity(0.3),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.business_center,
+                    size: 32,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                const Expanded(
                   child: Column(
-                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      CircularProgressIndicator(color: Colors.white),
-                      SizedBox(height: 16),
                       Text(
-                        'Processing...',
-                        style: TextStyle(color: Colors.white, fontSize: 16),
+                        'Module 4',
+                        style: TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      Text(
+                        'Advanced Customer Service',
+                        style: TextStyle(
+                          fontSize: 18,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ],
                   ),
                 ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Master advanced customer service skills and professional communication techniques for complex business scenarios.',
+              style: TextStyle(fontSize: 16, color: Colors.white, height: 1.4),
+            ),
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white.withOpacity(0.3)),
               ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Progress',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        '${(progress * 100).toInt()}%',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  LinearProgressIndicator(
+                    value: progress,
+                    minHeight: 8,
+                    backgroundColor: Colors.white.withOpacity(0.3),
+                    valueColor: const AlwaysStoppedAnimation<Color>(
+                      Colors.white,
+                    ),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '$completed of $total lessons completed',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.9),
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  // Replace your _buildLessonContentWidget method with this version
-  Widget _buildLessonContentWidget(int initialAttemptNumberFromModule) {
-    // Debug visibility to find issue
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.red, width: 2)
-      ),
-      child: Column(
-        children: [
-          // Debug text to confirm this method is being called
-          Container(
-            padding: const EdgeInsets.all(8),
-            color: Colors.yellow[100],
-            child: Text(
-              "Debug: Loading lesson ${currentLesson}, attempts: ${_lessonAttemptCounts['lesson$currentLesson']}, show activity: $showActivity",
-              style: TextStyle(color: Colors.black),
+  Widget _buildLessonsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.school, color: Colors.grey[700], size: 24),
+            const SizedBox(width: 8),
+            Text(
+              'Lessons',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey[800],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        ..._lessonConfigs.asMap().entries.map(
+          (e) => _buildLessonCard(e.value, e.key),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLessonCard(Map<String, dynamic> config, int index) {
+    final attempts = _lessonAttempts[config['firestoreId']] ?? [];
+    final isCompleted = attempts.isNotEmpty;
+    final isUnlocked = _isLessonUnlocked(index);
+
+    final lastScore = isCompleted
+        ? ((attempts.last['score'] as num?)?.toInt() ?? 0)
+        : 0;
+
+    return Opacity(
+      opacity: isUnlocked ? 1.0 : 0.6,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Card(
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(
+              color: isCompleted
+                  ? const Color(0xFF9C27B0).withOpacity(0.3)
+                  : Colors.grey.withOpacity(0.2),
+              width: 1,
             ),
           ),
-          
-          // Callback function to show activity section
-          Builder(builder: (context) {
-            onShowActivityCallback() {
-              if (mounted) {
-                setState(() {
-                  showActivity = true;
-                });
-              }
-            }
-
-            // compute showActivityInitially for the child
-            final bool showActivityInitiallyForChild =
-                (_lessonAttemptCounts['lesson$currentLesson'] ?? 0) > 0 ||
-                (_lessonCompletion['lesson$currentLesson'] ?? false);
-
-            try {
-              switch (currentLesson) {
-                case 1:
-                  return Container(
-                    color: Colors.green[50],
-                    padding: const EdgeInsets.all(8),
-                    margin: const EdgeInsets.all(8),
-                    child: buildLesson4_1(  // Capitalized class name
-                      currentSlide: _currentSlide,
-                      carouselController: _carouselController,
-                      youtubeController: _youtubeController,
-                      showActivityInitially: showActivityInitiallyForChild,
-                      onShowActivitySection: onShowActivityCallback,
-                      initialAttemptNumber: initialAttemptNumberFromModule,
-                      onSlideChanged: (index) => setState(() => _currentSlide = index),
-                      onEvaluateScenarios: _handleEvaluateLesson4_1Scenarios,
-                      onSaveAttempt: _handleSaveLesson4_1Attempt,
-                      onSaveReflection: _handleSaveLesson4_1Reflection,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: isUnlocked ? () => _navigateToLesson(config['id']) : null,
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Row(
+                children: [
+                  Container(
+                    width: 60,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      color: isCompleted
+                          ? const Color(0xFF9C27B0)
+                          : (isUnlocked
+                                ? const Color(0xFF9C27B0).withOpacity(0.1)
+                                : Colors.grey.withOpacity(0.1)),
+                      borderRadius: BorderRadius.circular(30),
+                      border: Border.all(
+                        color: isCompleted
+                            ? const Color(0xFF9C27B0)
+                            : (isUnlocked
+                                  ? const Color(0xFF9C27B0).withOpacity(0.3)
+                                  : Colors.grey.withOpacity(0.3)),
+                        width: 2,
+                      ),
                     ),
-                  );
-                case 2:
-                  return Container(
-                    color: Colors.blue[50],
-                    padding: const EdgeInsets.all(8),
-                    margin: const EdgeInsets.all(8),
-                    child: buildLesson4_2(  // Capitalized class name
-                      currentSlide: _currentSlide,
-                      carouselController: _carouselController,
-                      youtubeController: _youtubeController,
-                      showActivityInitially: showActivityInitiallyForChild,
-                      onShowActivitySection: onShowActivityCallback,
-                      initialAttemptNumber: initialAttemptNumberFromModule,
-                      onSlideChanged: (index) => setState(() => _currentSlide = index),
-                      onEvaluateSolutions: _handleEvaluateLesson4_2Solutions,
-                      onSaveAttempt: _handleSaveLesson4_2Attempt,
-                      onSaveReflection: _handleSaveLesson4_2Reflection,
+                    child: Icon(
+                      isCompleted
+                          ? Icons.check_circle
+                          : (isUnlocked
+                                ? Icons.play_circle_outline
+                                : Icons.lock),
+                      color: isCompleted
+                          ? Colors.white
+                          : (isUnlocked
+                                ? const Color(0xFF9C27B0)
+                                : Colors.grey),
+                      size: 28,
                     ),
-                  );
-                default:
-                  return Text('Error: Invalid lesson $currentLesson');
-              }
-            } catch (e) {
-              // Debug error in rendering
-              return Container(
-                padding: EdgeInsets.all(16),
-                color: Colors.red[100],
-                child: Column(
-                  children: [
-                    Text('Error rendering lesson: $e', 
-                      style: TextStyle(color: Colors.red[900]),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          config['title'],
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF2C3E50),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          config['description'],
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[600],
+                            height: 1.3,
+                          ),
+                        ),
+                        if (isUnlocked && isCompleted) ...[
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF9C27B0).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              'Attempts: ${attempts.length} | Last Score: $lastScore / ${config['totalQuestions']}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF9C27B0),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
-                    SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: () => _initializeYoutubeController(),
-                      child: Text('Try Reinitialize'),
-                    )
-                  ],
-                ),
-              );
-            }
-          }),
-        ],
+                  ),
+                  if (isUnlocked)
+                    Icon(
+                      Icons.arrow_forward_ios,
+                      size: 16,
+                      color: Colors.grey[400],
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
 
-  // Add these methods before the dispose() method
+  Widget _buildAssessmentCard() {
+    final isAssessmentTaken = _assessmentAttempts.isNotEmpty;
 
-  Future<void> _handleFetchActivityLog() async {
-    // This method will be called by lesson4_1 when user clicks activity log
-    _logger.i("Activity log requested from lesson 4.1");
-    // The actual implementation is handled by the lesson widget itself
-  }
-
-  Future<Map<String, dynamic>?> _handleGetLessonData() async {
-    // Provide lesson data structure for the enhanced lesson4_1
-    return {
-      'moduleTitle': 'Module 4: Professional Communication',
-      'lessonTitle': 'Lesson 4.1: Asking for Clarification',
-      'video': {
-        'url': 'https://www.youtube.com/embed/${_videoIds[1] ?? ""}'
-      },
-      'objective': {
-        'heading': 'Learning Objectives',
-        'points': [
-          'Use polite and professional phrases to ask customers to repeat or clarify information',
-          'Respond naturally when you don\'t understand a customer during a call',
-          'Practice these skills in simulated role-play conversations',
-          'Build confidence in handling unclear communication'
-        ]
-      },
-      'introduction': {
-        'heading': 'Why Clarification Matters',
-        'paragraph': 'In a call center, background noise, unclear speech, or unfamiliar accents can make it hard to understand the customer. Agents must ask for clarification politely and confidently to ensure accuracy and professionalism.'
-      },
-      'keyPhrases': {
-        'table': [
-          {'situation': 'Didn\'t catch what was said', 'phrase': '"Sorry, can you say that again?"'},
-          {'situation': 'Didn\'t understand fully', 'phrase': '"I didn\'t quite get that. Could you repeat it?"'},
-          {'situation': 'Need spelling confirmation', 'phrase': '"Could you spell that for me, please?"'},
-          {'situation': 'Need to confirm details', 'phrase': '"Just to confirm, did you say [repeat info]?"'},
-          {'situation': 'Need more information', 'phrase': '"Could you explain that a little more?"'},
-          {'situation': 'Need clarification on meaning', 'phrase': '"Could you clarify what you meant by...?"'},
-        ]
-      },
-      'summary': {
-        'heading': 'Lesson Summary',
-        'paragraph': 'Asking for clarification politely and effectively is crucial in call center environments. These strategies help ensure clear understanding, build trust, and prevent mistakes. With practice, these techniques will become natural, enhancing your confidence and communication skills.'
-      }
-    };
-  }
-
-  // Add this method before the dispose() method
-
-  Widget _buildNavigationButton() {
-    final isModuleCompleted = _lessonCompletion.values.every((completed) => completed);
-    
-    if (currentLesson < _videoIds.length) {
-      return ElevatedButton.icon(
-        onPressed: _isLoading ? null : _goToNextLesson,
-        icon: _isLoading
-            ? const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-              )
-            : const Icon(Icons.arrow_forward),
-        label: Text(_isLoading ? 'Loading...' : 'Next Lesson'),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.blue[600],
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+    return Container(
+      margin: const EdgeInsets.only(top: 24),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: _allLessonsCompleted
+                ? const Color(0xFF9C27B0).withOpacity(0.2)
+                : Colors.grey.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Card(
+        elevation: 0,
+        color: _allLessonsCompleted
+            ? const Color(0xFF9C27B0).withOpacity(0.05)
+            : Colors.grey[50],
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: _allLessonsCompleted
+                ? const Color(0xFF9C27B0).withOpacity(0.3)
+                : Colors.grey.withOpacity(0.2),
+            width: 1,
+          ),
         ),
-      );
-    } else {
-      return ElevatedButton.icon(
-        onPressed: () => Navigator.pop(context),
-        icon: Icon(isModuleCompleted ? Icons.check_circle : Icons.home),
-        label: Text(isModuleCompleted ? 'Module Completed' : 'Return to Modules'),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: isModuleCompleted ? Colors.green[600] : Colors.grey[600],
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: _allLessonsCompleted
+                          ? const Color(0xFF9C27B0).withOpacity(0.1)
+                          : Colors.grey.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      Icons.assignment_turned_in,
+                      color: _allLessonsCompleted
+                          ? const Color(0xFF9C27B0)
+                          : Colors.grey,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Module 4 Final Assessment',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF2C3E50),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _allLessonsCompleted
+                              ? 'Test your advanced customer service skills'
+                              : 'Complete all lessons to unlock',
+                          style: TextStyle(
+                            color: _allLessonsCompleted
+                                ? const Color(0xFF9C27B0)
+                                : Colors.grey[600],
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (!_allLessonsCompleted)
+                    Icon(Icons.lock, color: Colors.grey[400]),
+                ],
+              ),
+              const SizedBox(height: 16),
+              if (_allLessonsCompleted)
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () => Navigator.pushNamed(
+                          context,
+                          '/assessment',
+                          arguments: 'module_4_final',
+                        ),
+                        icon: Icon(
+                          isAssessmentTaken ? Icons.refresh : Icons.play_arrow,
+                          size: 20,
+                        ),
+                        label: Text(
+                          isAssessmentTaken
+                              ? 'Practice Again'
+                              : 'Take Assessment',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: isAssessmentTaken
+                              ? Colors.blue
+                              : const Color(0xFF9C27B0),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          elevation: 0,
+                        ),
+                      ),
+                    ),
+                    if (isAssessmentTaken) ...[
+                      const SizedBox(width: 12),
+                      OutlinedButton.icon(
+                        onPressed: _showAssessmentLog,
+                        icon: const Icon(Icons.history, size: 18),
+                        label: const Text('View Log'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF9C27B0),
+                          side: const BorderSide(color: Color(0xFF9C27B0)),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+            ],
+          ),
         ),
-      );
-    }
+      ),
+    );
   }
 }
