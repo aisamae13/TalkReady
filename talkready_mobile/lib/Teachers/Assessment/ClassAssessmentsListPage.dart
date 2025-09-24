@@ -19,7 +19,7 @@ class _ClassAssessmentsListPageState extends State<ClassAssessmentsListPage> {
   String? error;
   List<Map<String, dynamic>> assessments = [];
   Map<String, dynamic>? classDetails;
-  
+
   // Add stream subscriptions for real-time updates
   late Stream<QuerySnapshot> _assessmentsStream;
   late Stream<DocumentSnapshot> _classStream;
@@ -41,7 +41,7 @@ class _ClassAssessmentsListPageState extends State<ClassAssessmentsListPage> {
 
     // Real-time stream for class details
     _classStream = FirebaseFirestore.instance
-        .collection('classes')
+        .collection('trainerClass')
         .doc(widget.classId)
         .snapshots();
   }
@@ -50,7 +50,7 @@ class _ClassAssessmentsListPageState extends State<ClassAssessmentsListPage> {
     setState(() { loading = true; error = null; });
     try {
       final classDoc = await FirebaseFirestore.instance
-          .collection('classes')
+          .collection('trainerClass')
           .doc(widget.classId)
           .get();
 
@@ -80,7 +80,7 @@ class _ClassAssessmentsListPageState extends State<ClassAssessmentsListPage> {
     try {
       // Fetch class details
       final classDoc = await FirebaseFirestore.instance
-          .collection('classes')
+          .collection('trainerClass')
           .doc(widget.classId)
           .get();
 
@@ -250,11 +250,12 @@ class _ClassAssessmentsListPageState extends State<ClassAssessmentsListPage> {
       appBar: AppBar(
         title: Text(
           classDetails != null
-            ? 'Assessments: ${classDetails!['className'] ?? 'Class'}'
+            ? '${classDetails!['className'] ?? 'Class'}'
             : 'Assessments',
           style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.1),
         ),
         backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
         elevation: 0,
         actions: [
           IconButton(
@@ -266,7 +267,8 @@ class _ClassAssessmentsListPageState extends State<ClassAssessmentsListPage> {
         flexibleSpace: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
-              colors: [Color(0xFF6D5DF6), Color(0xFF46C2CB)],
+              colors: [Color(0xFF8B5CF6),
+              Color(0xFF6366F1)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
@@ -291,8 +293,8 @@ class _ClassAssessmentsListPageState extends State<ClassAssessmentsListPage> {
                     Padding(
                       padding: const EdgeInsets.all(16.0),
                       child: Text(
-                        error!, 
-                        style: TextStyle(color: theme.colorScheme.error, fontSize: 16), 
+                        error!,
+                        style: TextStyle(color: theme.colorScheme.error, fontSize: 16),
                         textAlign: TextAlign.center
                       ),
                     ),

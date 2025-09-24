@@ -93,7 +93,7 @@ class FirebaseService {
     _logger.i('startRealtimeSync called — trainerId param=$trainerId, currentAuthUid=$uid');
 
     // classes
-    _realtimeSubs['classes'] = listenToClasses(trainerId).listen((data) {
+    _realtimeSubs['trainerClass'] = listenToClasses(trainerId).listen((data) {
       _classesCache = data;
       _classesController.add(_classesCache);
     }, onError: (e) {
@@ -1463,7 +1463,7 @@ class FirebaseService {
   // Real-time listener for classes
   Stream<List<Map<String, dynamic>>> listenToClasses(String trainerId) {
     return _firestore
-        .collection('classes')
+        .collection('trainerClass')
         .where('trainerId', isEqualTo: trainerId)
         .snapshots()
         .map((snapshot) => snapshot.docs.map((doc) => {
@@ -1508,7 +1508,7 @@ class FirebaseService {
 
   // Real-time listener for a single class document
   Stream<Map<String, dynamic>?> listenToClassDoc(String classId) {
-    return _firestore.collection('classes').doc(classId).snapshots().map((snap) {
+    return _firestore.collection('trainerClass').doc(classId).snapshots().map((snap) {
       if (!snap.exists) return null;
       return {'id': snap.id, ...snap.data()!};
     });
@@ -1518,7 +1518,7 @@ class FirebaseService {
   Future<List<Map<String, dynamic>>> getTrainerClasses(String trainerId) async {
     try {
       final snap = await _firestore
-          .collection('classes')
+          .collection('trainerClass')
           .where('trainerId', isEqualTo: trainerId)
           .orderBy('createdAt', descending: true)
           .get();
@@ -1549,7 +1549,7 @@ class FirebaseService {
     try {
       final data = Map<String, dynamic>.from(classData);
       data['createdAt'] = data['createdAt'] ?? FieldValue.serverTimestamp();
-      final docRef = await _firestore.collection('classes').add(data);
+      final docRef = await _firestore.collection('trainerClass').add(data);
       final createdDoc = await docRef.get();
       return {'id': docRef.id, ...?createdDoc.data()};
     } catch (e) {

@@ -14,7 +14,7 @@ import 'package:path/path.dart' as p;
 Future<List<Map<String, dynamic>>> getTrainerClasses(String trainerId) async {
   try {
     final snapshot = await FirebaseFirestore.instance
-        .collection('classes')
+        .collection('trainerClass')
         .where('trainerId', isEqualTo: trainerId)
         .orderBy('createdAt', descending: true) // Changed to createdAt, descending
         .get();
@@ -184,7 +184,7 @@ class _QuickUploadMaterialPageState extends State<QuickUploadMaterialPage> {
         _selectedFile = null;
         _fileNameDisplay = null;
       });
-      
+
       // Optional: Show a snackbar
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -386,7 +386,7 @@ class _QuickUploadMaterialPageState extends State<QuickUploadMaterialPage> {
               child: SafeArea(
                 child: Center(
                   child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                     child: Container(
                       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 15),
                       constraints: const BoxConstraints(maxWidth: 400),
@@ -526,7 +526,7 @@ class _QuickUploadMaterialPageState extends State<QuickUploadMaterialPage> {
               ),
               child: Row(
                 children: [
-                  Icon(FontAwesomeIcons.triangleExclamation, 
+                  Icon(FontAwesomeIcons.triangleExclamation,
                        color: const Color(0xFFDC2626), size: 16),
                   const SizedBox(width: 8),
                   Expanded(
@@ -740,7 +740,7 @@ class _QuickUploadMaterialPageState extends State<QuickUploadMaterialPage> {
                 width: 1.5,
               ),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-              backgroundColor: _selectedFile != null 
+              backgroundColor: _selectedFile != null
                   ? const Color(0xFF14B8A6).withOpacity(0.05) // Changed to teal
                   : const Color(0xFFF8FAFC),
             ),
@@ -758,7 +758,7 @@ class _QuickUploadMaterialPageState extends State<QuickUploadMaterialPage> {
                 ),
                 child: Row(
                   children: [
-                    Icon(FontAwesomeIcons.checkCircle, 
+                    Icon(FontAwesomeIcons.checkCircle,
                          color: const Color(0xFF16A34A), size: 14),
                     const SizedBox(width: 6),
                     Expanded(
@@ -792,7 +792,7 @@ class _QuickUploadMaterialPageState extends State<QuickUploadMaterialPage> {
                 children: [
                   Row(
                     children: [
-                      Icon(FontAwesomeIcons.cloudArrowUp, 
+                      Icon(FontAwesomeIcons.cloudArrowUp,
                            color: const Color(0xFF14B8A6), size: 14), // Changed to teal
                       const SizedBox(width: 6),
                       Text(
@@ -859,8 +859,8 @@ class _QuickUploadMaterialPageState extends State<QuickUploadMaterialPage> {
                   : _handleSubmitUpload,
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
-                backgroundColor: _isUploading 
-                    ? const Color(0xFF94A3B8) 
+                backgroundColor: _isUploading
+                    ? const Color(0xFF94A3B8)
                     : const Color(0xFF14B8A6), // Changed to teal
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -974,9 +974,9 @@ class _QuickUploadMaterialPageState extends State<QuickUploadMaterialPage> {
                       color: const Color(0xFFFF6B6B),
                     ),
                   ),
-                  
+
                   const SizedBox(height: 20),
-                  
+
                   // Modern typography with better hierarchy
                   Text(
                     "No Classes Available",
@@ -988,9 +988,9 @@ class _QuickUploadMaterialPageState extends State<QuickUploadMaterialPage> {
                     ),
                     textAlign: TextAlign.center,
                   ),
-                  
+
                   const SizedBox(height: 10),
-                  
+
                   Text(
                     error,
                     textAlign: TextAlign.center,
@@ -1001,9 +1001,9 @@ class _QuickUploadMaterialPageState extends State<QuickUploadMaterialPage> {
                       fontWeight: FontWeight.w500,
                     ),
                   ),
-                  
+
                   const SizedBox(height: 24),
-                  
+
                   // Modern action button with enhanced styling
                   if (showCreateClassButton)
                     Container(
@@ -1071,10 +1071,10 @@ class _QuickUploadMaterialPageState extends State<QuickUploadMaterialPage> {
                 ],
               ),
             ),
-          
+
           // Additional decorative elements
           const SizedBox(height: 20),
-          
+
           // Subtle help text with modern styling
           Container(
             margin: const EdgeInsets.symmetric(horizontal: 12),

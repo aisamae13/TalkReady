@@ -1,3 +1,5 @@
+// To add a class code, you need to import the 'dart:math' library.
+import 'dart:math';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -5,8 +7,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:talkready_mobile/firebase_service.dart';
-
-
 
 class CreateClassForm extends StatefulWidget {
   final Function(Map<String, dynamic>)? onClassCreated;
@@ -16,7 +16,8 @@ class CreateClassForm extends StatefulWidget {
   State<CreateClassForm> createState() => _CreateClassFormState();
 }
 
-class _CreateClassFormState extends State<CreateClassForm> with TickerProviderStateMixin {
+class _CreateClassFormState extends State<CreateClassForm>
+    with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _classNameController = TextEditingController();
   final _descriptionController = TextEditingController();
@@ -42,13 +43,11 @@ class _CreateClassFormState extends State<CreateClassForm> with TickerProviderSt
       duration: const Duration(milliseconds: 600),
       vsync: this,
     );
-    
+
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut)
-    );
-    _slideAnimation = Tween<Offset>(begin: const Offset(0, 0.3), end: Offset.zero).animate(
-      CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic)
-    );
+        CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut));
+    _slideAnimation = Tween<Offset>(begin: const Offset(0, 0.3), end: Offset.zero)
+        .animate(CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic));
 
     _fadeController.forward();
     _slideController.forward();
@@ -62,6 +61,14 @@ class _CreateClassFormState extends State<CreateClassForm> with TickerProviderSt
     _descriptionController.dispose();
     _subjectController.dispose();
     super.dispose();
+  }
+
+  // New function to generate a random class code
+  String _generateClassCode() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890';
+    final random = Random();
+    return String.fromCharCodes(Iterable.generate(
+        6, (_) => chars.codeUnitAt(random.nextInt(chars.length))));
   }
 
   Future<void> _handleSubmit() async {
@@ -81,6 +88,9 @@ class _CreateClassFormState extends State<CreateClassForm> with TickerProviderSt
     setState(() => loading = true);
 
     try {
+      // Generate a class code
+      final classCode = _generateClassCode();
+
       final classData = {
         'className': _classNameController.text.trim(),
         'description': _descriptionController.text.trim(),
@@ -88,6 +98,7 @@ class _CreateClassFormState extends State<CreateClassForm> with TickerProviderSt
         'trainerId': user.uid,
         'createdAt': FieldValue.serverTimestamp(),
         'studentCount': 0,
+        'classCode': classCode, // Add the generated class code
       };
 
       // Create the class using your FirebaseService (single source of truth)
@@ -98,7 +109,8 @@ class _CreateClassFormState extends State<CreateClassForm> with TickerProviderSt
       }
 
       setState(() {
-        success = 'Class "${_classNameController.text.trim()}" created successfully!';
+        success =
+            'Class "${_classNameController.text.trim()}" created successfully! Code: $classCode'; // Display the class code in the success message
         _classNameController.clear();
         _descriptionController.clear();
         _subjectController.clear();
@@ -109,11 +121,12 @@ class _CreateClassFormState extends State<CreateClassForm> with TickerProviderSt
           SnackBar(
             content: Row(
               children: [
-                const Icon(FontAwesomeIcons.checkCircle, color: Colors.white, size: 16),
+                const Icon(FontAwesomeIcons.checkCircle,
+                    color: Colors.white, size: 16),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'Class created successfully!',
+                    'Class created successfully! Code: $classCode',
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                 ),
@@ -121,8 +134,9 @@ class _CreateClassFormState extends State<CreateClassForm> with TickerProviderSt
             ),
             backgroundColor: const Color(0xFF10B981),
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            duration: const Duration(seconds: 2),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            duration: const Duration(seconds: 4),
           ),
         );
       }
@@ -133,7 +147,6 @@ class _CreateClassFormState extends State<CreateClassForm> with TickerProviderSt
           Navigator.pop(context);
         }
       });
-
     } catch (e) {
       setState(() => error = "Failed to create class. Please try again.");
     } finally {
@@ -155,7 +168,8 @@ class _CreateClassFormState extends State<CreateClassForm> with TickerProviderSt
               position: _slideAnimation,
               child: SingleChildScrollView(
                 physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 15, vertical: 2),
                 child: Column(
                   children: [
                     const SizedBox(height: 40),
@@ -246,7 +260,7 @@ class _CreateClassFormState extends State<CreateClassForm> with TickerProviderSt
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(32),
+        padding: const EdgeInsets.all(22),
         child: Form(
           key: _formKey,
           child: Column(
@@ -365,10 +379,12 @@ class _CreateClassFormState extends State<CreateClassForm> with TickerProviderSt
             ),
           ),
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
+          contentPadding:
+              const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
         ),
-        validator: (value) =>
-            value == null || value.trim().isEmpty ? 'Class Name is required.' : null,
+        validator: (value) => value == null || value.trim().isEmpty
+            ? 'Class Name is required.'
+            : null,
         enabled: !loading,
       ),
     );
@@ -419,7 +435,8 @@ class _CreateClassFormState extends State<CreateClassForm> with TickerProviderSt
             ),
           ),
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
+          contentPadding:
+              const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
         ),
         maxLines: 3,
         enabled: !loading,
@@ -472,7 +489,8 @@ class _CreateClassFormState extends State<CreateClassForm> with TickerProviderSt
             ),
           ),
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
+          contentPadding:
+              const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
         ),
         enabled: !loading,
       ),
@@ -596,8 +614,8 @@ class _CreateClassFormState extends State<CreateClassForm> with TickerProviderSt
       child: ElevatedButton(
         onPressed: loading ? null : _handleSubmit,
         style: ElevatedButton.styleFrom(
-          backgroundColor: loading 
-              ? const Color(0xFF94A3B8) 
+          backgroundColor: loading
+              ? const Color(0xFF94A3B8)
               : const Color(0xFF2563EB), // Changed to blue
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 18),

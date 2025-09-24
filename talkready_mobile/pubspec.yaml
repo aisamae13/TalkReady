@@ -68,9 +68,6 @@ dependencies:
   flutter_staggered_animations: ^1.1.1
   flutter_quill_extensions: ^11.0.0
   cloudinary_public: ^0.23.1
-  nested_reorderable_list: ^0.0.1
-  http_parser: ^4.1.2
-  share_plus: ^10.0.2
 
 
   flutter_spinkit: ^5.2.0

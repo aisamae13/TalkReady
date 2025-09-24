@@ -42,7 +42,7 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
     super.initState();
     _fadeController = AnimationController(duration: const Duration(milliseconds: 800), vsync: this);
     _slideController = AnimationController(duration: const Duration(milliseconds: 600), vsync: this);
-    
+
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut)
     );
@@ -61,7 +61,7 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
     for (var subscription in _submissionsSubscriptions.values) {
       subscription.cancel();
     }
-    
+
     _fadeController.dispose();
     _slideController.dispose();
     super.dispose();
@@ -101,7 +101,7 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
 
     try {
       _classesSubscription = FirebaseFirestore.instance
-          .collection('classes')
+          .collection('trainerClass')
           .where('trainerId', isEqualTo: _currentUser!.uid)
           .orderBy('createdAt', descending: true)
           .snapshots()
@@ -109,25 +109,25 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
         if (mounted) {
           setState(() {
             List<Map<String, dynamic>> classes = snapshot.docs.map((doc) => {
-              'id': doc.id, 
+              'id': doc.id,
               ...doc.data()
             }).toList();
-            
+
             classes.sort((a, b) {
               String nameA = a['className']?.toString().toLowerCase() ?? '';
               String nameB = b['className']?.toString().toLowerCase() ?? '';
               return nameA.compareTo(nameB);
             });
-            
+
             _trainerClasses = classes;
             _loadingClasses = false;
-            
+
             if (classes.isEmpty) {
               _error = "You haven't created any classes yet. No reports to display.";
             } else {
               _error = null;
             }
-            
+
             // Trigger animations
             _fadeController.forward();
             _slideController.forward();
@@ -161,7 +161,7 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
   void _setupAssessmentsListener(String classId) {
     // Cancel existing assessment listener
     _assessmentsSubscription?.cancel();
-    
+
     // Cancel all existing submissions listeners
     for (var subscription in _submissionsSubscriptions.values) {
       subscription.cancel();
@@ -180,10 +180,10 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
           .listen((snapshot) {
         if (mounted) {
           List<Map<String, dynamic>> assessments = snapshot.docs.map((doc) => {
-            'id': doc.id, 
+            'id': doc.id,
             ...doc.data()
           }).toList();
-          
+
           setState(() {
             _assessments = assessments;
             _loadingAssessments = false;
@@ -236,10 +236,10 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
           .listen((snapshot) {
         if (mounted) {
           List<Map<String, dynamic>> submissions = snapshot.docs.map((doc) => {
-            'id': doc.id, 
+            'id': doc.id,
             ...doc.data()
           }).toList();
-          
+
           setState(() {
             _submissionsByAssessment[assessmentId] = submissions;
           });
@@ -271,7 +271,7 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
         subscription.cancel();
       }
       _submissionsSubscriptions.clear();
-      
+
       if (mounted) {
         setState(() {
           _assessments = [];
@@ -314,7 +314,7 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
     if (submissionCount > 0 && subs[0]['totalPossiblePoints'] != null) {
         totalPossiblePoints = subs[0]['totalPossiblePoints'] as num;
     }
-    
+
     if (submissionCount == 0) {
       return {'submissionCount': 0, 'averageScore': 'N/A', 'totalPossiblePoints': totalPossiblePoints};
     }
@@ -529,17 +529,17 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const SizedBox(height: 20),
-                  
+
                   // Show error widget prominently when there's an error
                   if (_error != null)
                     _buildErrorWidget("No Classes Found", _error!),
-                
+
                   if (_selectedClassName != null && !_loadingAssessments && _error == null)
                     SlideTransition(
                       position: _slideAnimation,
                       child: _buildSelectedClassHeader(),
                     ),
-                  
+
                   if (_error == null && _trainerClasses.isNotEmpty)
                     FadeTransition(
                       opacity: _fadeAnimation,
@@ -548,27 +548,27 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
                         child: _buildClassSelectionCard(),
                       ),
                     ),
-                  
+
                   if (_selectedClassId != null && _error == null) ...[
                     if (_loadingAssessments)
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 24),
                         child: _buildLoadingScreen('Loading assessments for "$_selectedClassName"...'),
                       ),
-                    
+
                     if (!_loadingAssessments && _assessmentError != null)
                       _buildErrorWidget("Could Not Load Assessments", _assessmentError!, isAssessmentError: true),
-                    
+
                     if (!_loadingAssessments && _assessmentError == null && _assessments.isNotEmpty)
                       _buildAssessmentsSection(),
-                    
+
                     if (!_loadingAssessments && _assessmentError == null && _assessments.isEmpty && _selectedClassId != null)
                       _buildEmptyAssessmentsCard(),
                   ],
-                  
+
                   if (_selectedClassId == null && _error == null && _trainerClasses.isNotEmpty)
                     _buildWelcomeCard(),
-                  
+
                   const SizedBox(height: 40),
                 ],
               ),
@@ -868,17 +868,17 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
             final totalQuestions = (assessment['questions'] as List?)?.length ?? 0;
             final averageScore = stats['averageScore'];
             final totalPossiblePoints = stats['totalPossiblePoints'] as num;
-            
+
             String averageScoreDisplay = 'N/A';
             Color scoreColor = const Color(0xFF64748B);
-            
+
             if (stats['submissionCount'] > 0 && averageScore != 'N/A') {
               double percentage = 0;
               if (totalPossiblePoints > 0) {
                 percentage = (averageScore as num) / totalPossiblePoints * 100;
               }
               averageScoreDisplay = "$averageScore / $totalPossiblePoints (${percentage.toStringAsFixed(0)}%)";
-              
+
               if (percentage >= 80) {
                 scoreColor = const Color(0xFF10B981);
               } else if (percentage >= 60) {
@@ -941,7 +941,7 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
                       ],
                     ),
                     const SizedBox(height: 16),
-                    
+
                     // Stats Row
                     Row(
                       children: [
@@ -959,7 +959,7 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
                       ],
                     ),
                     const SizedBox(height: 12),
-                    
+
                     Row(
                       children: [
                         _buildStatChip(
@@ -970,7 +970,7 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
                       ],
                     ),
                     const SizedBox(height: 16),
-                    
+
                     // Average Score
                     Container(
                       padding: const EdgeInsets.all(16),
@@ -1012,7 +1012,7 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
                       ),
                     ),
                     const SizedBox(height: 20),
-                    
+
                     // Action Button
                     Container(
                       width: double.infinity,

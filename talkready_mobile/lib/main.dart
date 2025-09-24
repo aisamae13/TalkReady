@@ -85,7 +85,7 @@ import 'package:talkready_mobile/Teachers/ClassManager/MyClassesPage.dart';
 import 'package:talkready_mobile/Teachers/ClassManager/EditClassPage.dart';
 import 'package:talkready_mobile/Teachers/ClassManager/ManageClassStudents.dart';
 import 'package:talkready_mobile/Teachers/ClassManager/ManageClassContent.dart';
-import 'package:talkready_mobile/Teachers/ClassManager/EditAssessmentPage.dart';
+import 'package:talkready_mobile/Teachers/Assessment/EditAssessmentPage.dart';
 
 // Reports Page Import
 import 'package:talkready_mobile/Teachers/Reports/TrainerReports.dart';

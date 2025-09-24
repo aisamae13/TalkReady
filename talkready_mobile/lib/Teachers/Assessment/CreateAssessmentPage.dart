@@ -1,3 +1,4 @@
+// src/components/TrainerSection/assessments/CreateAssessmentPage.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -12,9 +13,9 @@ import 'package:firebase_storage/firebase_storage.dart' as firebase_storage;
 
 // Add the new imports
 import 'package:talkready_mobile/Teachers/Assessment/ClassAssessmentsListPage.dart';
-import 'package:talkready_mobile/Teachers/Assessment/ViewAssessmentResultsPage.dart';
 
-// Define a simple Question model
+
+// Define a simple Question model for standard quizzes
 class Question {
   String id;
   String text;
@@ -22,7 +23,15 @@ class Question {
   List<String>? options; // For multiple-choice
   List<String>? correctAnswers; // Can be single or multiple
   int points;
-  bool requiresReview; // NEW: Add this field
+  bool requiresReview;
+  String? questionImageUrl; // NEW
+  String? questionImagePath; // NEW
+
+  // NEW: Fields for fill-in-the-blank type
+  String? scenarioContext;
+  String? textBeforeBlank;
+  String? textAfterBlank;
+  String? fillInInputMethod; // 'typing' or 'multiple-choice'
 
   Question({
     required this.id,
@@ -31,7 +40,13 @@ class Question {
     this.options,
     this.correctAnswers,
     this.points = 10,
-    this.requiresReview = false, // NEW: Default to false
+    this.requiresReview = false,
+    this.questionImageUrl, // NEW
+    this.questionImagePath, // NEW
+    this.scenarioContext,
+    this.textBeforeBlank,
+    this.textAfterBlank,
+    this.fillInInputMethod,
   });
 
   Map<String, dynamic> toMap() {
@@ -42,7 +57,44 @@ class Question {
       'options': options,
       'correctAnswers': correctAnswers,
       'points': points,
-      'requiresReview': requiresReview, // NEW: Include in map
+      'requiresReview': requiresReview,
+      'questionImageUrl': questionImageUrl, // NEW
+      'questionImagePath': questionImagePath, // NEW
+      'scenarioContext': scenarioContext,
+      'textBeforeBlank': textBeforeBlank,
+      'textAfterBlank': textAfterBlank,
+      'fillInInputMethod': fillInInputMethod,
+    };
+  }
+}
+
+// NEW: Define a SpeakingPrompt model
+class SpeakingPrompt {
+  String id;
+  String title;
+  String promptText;
+  String referenceText;
+  int points;
+  bool requiresReview;
+
+  SpeakingPrompt({
+    required this.id,
+    required this.title,
+    required this.promptText,
+    required this.referenceText,
+    this.points = 10,
+    this.requiresReview = true, // Speaking assessments always require review
+  });
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'title': title,
+      'type': 'speaking_prompt',
+      'promptText': promptText,
+      'referenceText': referenceText,
+      'points': points,
+      'requiresReview': requiresReview,
     };
   }
 }
@@ -61,8 +113,14 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
 
-  String? _selectedClassId; 
-  List<Map<String, dynamic>> _trainerClasses = []; 
+  // VVVV ADD THESE NEW CONTROLLERS VVVV
+  final TextEditingController _promptTitleController = TextEditingController();
+  final TextEditingController _promptTextController = TextEditingController();
+  final TextEditingController _referenceTextController = TextEditingController();
+  // ^^^^ END OF NEW CONTROLLERS ^^^^
+
+  String? _selectedClassId;
+  List<Map<String, dynamic>> _trainerClasses = [];
 
   final List<Question> _questions = [];
   bool _isLoading = false;
@@ -104,7 +162,7 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
   void initState() {
     super.initState();
     _selectedClassId = widget.classId ?? widget.initialClassId;
-    
+
     // Initialize animations
     _fadeController = AnimationController(
       duration: const Duration(milliseconds: 800),
@@ -114,7 +172,7 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
       duration: const Duration(milliseconds: 600),
       vsync: this,
     );
-    
+
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
     );
@@ -128,7 +186,7 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
     if (widget.classId == null && widget.initialClassId == null) {
       _fetchTrainerClasses();
     }
-    
+
     // Start animations
     _fadeController.forward();
     _slideController.forward();
@@ -140,6 +198,9 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
     _slideController.dispose();
     _titleController.dispose();
     _descriptionController.dispose();
+    _promptTitleController.dispose();
+    _promptTextController.dispose();
+    _referenceTextController.dispose();
     super.dispose();
   }
 
@@ -147,12 +208,12 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
     if (currentUser == null) return;
     try {
       final snapshot = await FirebaseFirestore.instance
-          .collection('classes')
+          .collection('trainerClass')
           .where('trainerId', isEqualTo: currentUser!.uid)
           .get();
       setState(() {
         _trainerClasses = snapshot.docs.map((doc) => {
-          'id': doc.id, 
+          'id': doc.id,
           'name': doc.data()['className'] ?? 'Unnamed Class'
         }).toList();
       });
@@ -165,7 +226,7 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
 
   // NEW: Add validation flags
   bool get _canAddQuestions {
-    return _titleController.text.trim().isNotEmpty && 
+    return _titleController.text.trim().isNotEmpty &&
            (_selectedClassId != null || widget.classId != null);
   }
 
@@ -198,41 +259,43 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
 
   // NEW: Show validation dialog
   void _showValidationDialog() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          child: Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 20,
-                  offset: const Offset(0, 10),
+  showDialog(
+    context: context,
+    builder: (BuildContext context) {
+      return Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF59E0B).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(50),
                 ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF59E0B).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(50),
-                  ),
-                  child: Icon(
-                    FontAwesomeIcons.triangleExclamation,
-                    color: const Color(0xFFF59E0B),
-                    size: 32,
-                  ),
+                child: Icon(
+                  FontAwesomeIcons.triangleExclamation,
+                  color: const Color(0xFFF59E0B),
+                  size: 32,
                 ),
-                const SizedBox(height: 16),
-                Text(
+              ),
+              const SizedBox(height: 16),
+              // ADDED Center WIDGET HERE
+              Center(
+                child: Text(
                   'Complete Basic Information',
                   style: TextStyle(
                     fontSize: 20,
@@ -240,45 +303,46 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
                     color: const Color(0xFF1E293B),
                   ),
                 ),
-                const SizedBox(height: 12),
-                Text(
-                  'Please fill in the assessment title and select a class before adding questions.',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: const Color(0xFF64748B),
-                    height: 1.5,
-                  ),
-                  textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Please fill in the assessment title and select a class before adding questions.',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: const Color(0xFF64748B),
+                  height: 1.5,
                 ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      // Auto-focus the title field if empty
-                      if (_titleController.text.trim().isEmpty) {
-                        FocusScope.of(context).requestFocus(FocusNode());
-                      }
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFF59E0B),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    // Auto-focus the title field if empty
+                    if (_titleController.text.trim().isEmpty) {
+                      FocusScope.of(context).requestFocus(FocusNode());
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFF59E0B),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Text('OK, Got It'),
                   ),
+                  child: const Text('OK, Got It'),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        );
-      },
-    );
-  }
+        ),
+      );
+    },
+  );
+}
 
   void _editQuestion(int index) {
     final question = _questions[index];
@@ -508,24 +572,31 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
 
   // --- Build payload (call inside your save flow) ---
   Map<String, dynamic> _buildAssessmentPayload() {
-    return {
-      'trainerId': currentUser?.uid,
-      'classId': _selectedClassId ?? widget.classId,
-      'title': _titleController.text.trim(),
-      'description': _descriptionController.text.trim(),
-      'assessmentType': _assessmentType,
-      'status': 'published',
-      'createdAt': FieldValue.serverTimestamp(), // Add this line
-      'deadline': _deadline?.toIso8601String(),
-      if (_assessmentHeaderImageUrl != null) 'assessmentHeaderImageUrl': _assessmentHeaderImageUrl,
-      if (_assessmentHeaderImagePath != null) 'assessmentHeaderImagePath': _assessmentHeaderImagePath,
-      'questions': _questions
-          .map((q) => q.toMap()
-            ..addAll({
-              if (_currentQuestionImagePath != null) 'questionImagePath': _currentQuestionImagePath,
-            }))
-          .toList(),
+    final basePayload = {
+        'trainerId': currentUser?.uid,
+        'classId': _selectedClassId ?? widget.classId,
+        'title': _titleController.text.trim(),
+        'description': _descriptionController.text.trim(),
+        'assessmentType': _assessmentType,
+        'status': 'published',
+        'createdAt': FieldValue.serverTimestamp(),
+        'deadline': _deadline?.toIso8601String(),
+        if (_assessmentHeaderImageUrl != null) 'assessmentHeaderImageUrl': _assessmentHeaderImageUrl,
+        if (_assessmentHeaderImagePath != null) 'assessmentHeaderImagePath': _assessmentHeaderImagePath,
     };
+
+    if (_assessmentType == 'standard_quiz') {
+        return basePayload..['questions'] = _questions.map((q) => q.toMap()).toList();
+    } else {
+        // Assume only one speaking prompt per assessment
+        final speakingPrompt = SpeakingPrompt(
+            id: const Uuid().v4(),
+            title: _promptTitleController.text.trim(),
+            promptText: _promptTextController.text.trim(),
+            referenceText: _referenceTextController.text.trim(),
+        );
+        return basePayload..['questions'] = [speakingPrompt.toMap()];
+    }
   }
 
   // Example save using payload
@@ -535,10 +606,20 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
       setState(() => _error = 'Please select a class.');
       return;
     }
-    if (_questions.isEmpty) {
-      setState(() => _error = 'Please add at least one question.');
-      return;
+    // VVVV UPDATE VALIDATION VVVV
+    if (_assessmentType == 'standard_quiz' && _questions.isEmpty) {
+        setState(() => _error = 'Please add at least one question.');
+        return;
     }
+    if (_assessmentType == 'speaking_assessment' && _promptTitleController.text.trim().isEmpty) {
+        setState(() => _error = 'Please add a title for the speaking prompt.');
+        return;
+    }
+    if (_assessmentType == 'speaking_assessment' && _promptTextController.text.trim().isEmpty) {
+        setState(() => _error = 'Please add the prompt text for the speaking assessment.');
+        return;
+    }
+    // ^^^^ END OF UPDATED VALIDATION ^^^^
 
     setState(() { _isLoading = true; _error = null; });
     try {
@@ -723,11 +804,11 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
     return AppBar(
       backgroundColor: Colors.transparent,
       elevation: 0,
-      iconTheme: const IconThemeData(color: Colors.white), // Changed to white
+      iconTheme: const IconThemeData(color: Colors.white),
       title: const Text(
         'Create Assessment',
         style: TextStyle(
-          color: Colors.white, // Changed to white
+          color: Colors.white,
           fontWeight: FontWeight.bold,
           fontSize: 20,
         ),
@@ -735,7 +816,7 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
       centerTitle: true,
       actions: [
         IconButton(
-          icon: const Icon(Icons.list_alt_rounded, color: Colors.white), // Changed to white
+          icon: const Icon(Icons.list_alt_rounded, color: Colors.white),
           tooltip: 'View Assessments',
           onPressed: _navigateToAssessmentsList,
         ),
@@ -746,7 +827,7 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
             colors: [
               Color(0xFF8B5CF6),
               Color(0xFF6366F1),
-            ], // Changed to match the original background gradient
+            ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -758,7 +839,7 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
   // Update the _buildBackgroundGradient method:
   BoxDecoration _buildBackgroundGradient() {
     return const BoxDecoration(
-      color: Colors.white, // Changed to solid white
+      color: Colors.white,
     );
   }
 
@@ -767,7 +848,7 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
     bool titleComplete = _titleController.text.trim().isNotEmpty;
     bool classComplete = _selectedClassId != null || widget.classId != null;
     bool questionsComplete = _questions.isNotEmpty;
-    
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -808,30 +889,30 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
             width: 32,
             height: 32,
             decoration: BoxDecoration(
-              color: isComplete 
+              color: isComplete
                   ? const Color(0xFF10B981)
-                  : isEnabled 
+                  : isEnabled
                       ? const Color(0xFF8B5CF6).withOpacity(0.1)
                       : Colors.grey[200],
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: isComplete 
+                color: isComplete
                     ? const Color(0xFF10B981)
-                    : isEnabled 
+                    : isEnabled
                         ? const Color(0xFF8B5CF6)
                         : Colors.grey[300]!,
                 width: 2,
               ),
             ),
             child: Icon(
-              isComplete 
+              isComplete
                   ? FontAwesomeIcons.check
-                  : isEnabled 
+                  : isEnabled
                       ? FontAwesomeIcons.circle
                       : FontAwesomeIcons.lock,
-              color: isComplete 
+              color: isComplete
                   ? Colors.white
-                  : isEnabled 
+                  : isEnabled
                       ? const Color(0xFF8B5CF6)
                       : Colors.grey[400],
               size: 12,
@@ -842,9 +923,9 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
             label,
             style: TextStyle(
               fontSize: 11,
-              color: isComplete 
+              color: isComplete
                   ? const Color(0xFF10B981)
-                  : isEnabled 
+                  : isEnabled
                       ? const Color(0xFF8B5CF6)
                       : Colors.grey[400],
               fontWeight: FontWeight.w500,
@@ -859,7 +940,7 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
     return Container(
       height: 2,
       width: 24,
-      color: isComplete 
+      color: isComplete
           ? const Color(0xFF10B981)
           : Colors.grey[300],
     );
@@ -984,7 +1065,7 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
                 label: 'Assessment Title',
                 icon: FontAwesomeIcons.fileSignature,
                 validator: (v) => v == null || v.trim().isEmpty ? 'Title is required' : null,
-                isRequired: true, // NEW: Mark as required
+                isRequired: true,
               ),
               const SizedBox(height: 16),
 
@@ -1001,9 +1082,63 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
                 const SizedBox(height: 16),
               ],
 
-              // Questions Section (updated with validation)
-              _buildQuestionsSection(),
-              
+              // VVVV NEW: Assessment Type Selection VVVV
+              Text(
+                'Assessment Type',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1E293B),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: RadioListTile<String>(
+                      title: const Text('Standard Quiz'),
+                      value: 'standard_quiz',
+                      groupValue: _assessmentType,
+                      onChanged: (String? value) {
+                        setState(() {
+                          _assessmentType = value!;
+                          _questions.clear(); // Clear questions when type changes
+                          _promptTitleController.clear(); // Clear speaking prompt when type changes
+                          _promptTextController.clear();
+                          _referenceTextController.clear();
+                        });
+                      },
+                    ),
+                  ),
+                  Expanded(
+                    child: RadioListTile<String>(
+                      title: const Text('Speaking Assessment'),
+                      value: 'speaking_assessment',
+                      groupValue: _assessmentType,
+                      onChanged: (String? value) {
+                        setState(() {
+                          _assessmentType = value!;
+                          _questions.clear();
+                          _promptTitleController.clear();
+                          _promptTextController.clear();
+                          _referenceTextController.clear();
+                        });
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              // ^^^^ END OF NEW: Assessment Type Selection ^^^^
+              const SizedBox(height: 24),
+
+
+              // VVVV START: Assessment Questions/Prompt Section VVVV
+              if (_assessmentType == 'standard_quiz')
+                  _buildStandardQuizSection()
+              else if (_assessmentType == 'speaking_assessment')
+                  _buildSpeakingAssessmentSection(),
+              // ^^^^ END: Assessment Questions/Prompt Section ^^^^
+
               const SizedBox(height: 24),
 
               // Save Button
@@ -1015,12 +1150,145 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
     );
   }
 
+  // NEW: Build the Standard Quiz section
+  Widget _buildStandardQuizSection() {
+      return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+              _buildAssessmentHeaderImagePicker(),
+              const SizedBox(height: 20),
+              _buildSubmissionDeadlinePicker(),
+              const SizedBox(height: 24),
+              Text(
+                  'Assessment Questions',
+                  style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1E293B),
+                  ),
+              ),
+              const SizedBox(height: 12),
+              if (_questions.isEmpty)
+                  Text(
+                      'No questions added yet. Tap "Add Question" to start.',
+                      style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                  ),
+              if (_questions.isNotEmpty)
+                  ..._questions.asMap().entries.map((entry) {
+                      int index = entry.key;
+                      Question question = entry.value;
+                      return _buildQuestionCard(question, index);
+                  }).toList(),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                  onPressed: _addQuestion,
+                  icon: const Icon(Icons.add_circle, color: Colors.white),
+                  label: const Text('Add Question', style: TextStyle(color: Colors.white)),
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFF59E0B),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+              ),
+          ],
+      );
+  }
+
+  // NEW: Build the Speaking Assessment section
+  Widget _buildSpeakingAssessmentSection() {
+      return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+              _buildAssessmentHeaderImagePicker(),
+              const SizedBox(height: 20),
+              _buildSubmissionDeadlinePicker(),
+              const SizedBox(height: 24),
+              Text(
+                  'Speaking Prompt',
+                  style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1E293B),
+                  ),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                  controller: _promptTitleController,
+                  decoration: InputDecoration(
+                      labelText: 'Prompt Title *',
+                      hintText: 'Describe the situation the student needs to respond to.',
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey[50],
+                      prefixIcon: const Icon(Icons.title),
+                  ),
+                  validator: (value) {
+                      if (value == null || value.isEmpty) {
+                          return 'Please enter a title for the prompt.';
+                      }
+                      return null;
+                  },
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                  controller: _promptTextController,
+                  maxLines: 4,
+                  decoration: InputDecoration(
+                      labelText: 'Prompt Text *',
+                      hintText: 'e.g., "Handling an Angry customer"',
+                      alignLabelWithHint: true,
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey[50],
+                      prefixIcon: Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 0, 0, 0),
+                          child: Icon(Icons.chat_bubble_outline),
+                      ),
+                  ),
+                  validator: (value) {
+                      if (value == null || value.isEmpty) {
+                          return 'Please enter the prompt text.';
+                      }
+                      return null;
+                  },
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                  controller: _referenceTextController,
+                  maxLines: 4,
+                  decoration: InputDecoration(
+                      labelText: 'Reference Text for AI Review',
+                      hintText: 'Provide an ideal or correct text response for the AI to compare against.',
+                      alignLabelWithHint: true,
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey[50],
+                      prefixIcon: Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 0, 0, 0),
+                          child: Icon(Icons.mic),
+                      ),
+                  ),
+              ),
+          ],
+      );
+  }
+
   // Simplified save button
   Widget _buildSaveButton() {
-    bool canSave = _titleController.text.trim().isNotEmpty && 
-                  (_selectedClassId != null || widget.classId != null) &&
-                  _questions.isNotEmpty;
-    
+    bool canSave = _titleController.text.trim().isNotEmpty &&
+                  (_selectedClassId != null || widget.classId != null);
+    if (_assessmentType == 'standard_quiz') {
+        canSave = canSave && _questions.isNotEmpty;
+    } else {
+        canSave = canSave && _promptTitleController.text.trim().isNotEmpty && _promptTextController.text.trim().isNotEmpty;
+    }
+
     return SizedBox(
       width: double.infinity,
       height: 48,
@@ -1039,23 +1307,23 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
                 size: 14,
               ),
         label: Text(
-          _isLoading 
-              ? 'Saving...' 
-              : canSave 
+          _isLoading
+              ? 'Saving...'
+              : canSave
                   ? 'Save Assessment'
                   : 'Locked',
           style: const TextStyle(
-            fontWeight: FontWeight.bold, 
+            fontWeight: FontWeight.bold,
             fontSize: 14,
           ),
         ),
-        onPressed: _isLoading 
-            ? null 
-            : canSave 
+        onPressed: _isLoading
+            ? null
+            : canSave
                 ? _saveAssessment
                 : null,
         style: ElevatedButton.styleFrom(
-          backgroundColor: canSave 
+          backgroundColor: canSave
               ? const Color(0xFF8B5CF6)
               : Colors.grey[400],
           foregroundColor: Colors.white,
@@ -1068,90 +1336,161 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
     );
   }
 
-  Widget _buildQuestionsSection() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: _canAddQuestions 
-            ? const Color(0xFF8B5CF6).withOpacity(0.05)
-            : Colors.grey.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: _canAddQuestions 
-              ? const Color(0xFF8B5CF6).withOpacity(0.2)
-              : Colors.grey.withOpacity(0.3),
+  Widget _buildAssessmentHeaderImagePicker() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Assessment Header Image (Optional)',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF1E293B),
+          ),
         ),
-      ),
-      child: Column(
-        children: [
-          // Simple header
-          Row(
+        const SizedBox(height: 12),
+        if (_assessmentHeaderImageUrl != null)
+          Stack(
             children: [
-              Icon(
-                FontAwesomeIcons.questionCircle,
-                color: _canAddQuestions 
-                    ? const Color(0xFF8B5CF6)
-                    : Colors.grey[400],
-                size: 16,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Questions (${_questions.length})',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: _canAddQuestions 
-                        ? const Color(0xFF1E293B)
-                        : Colors.grey[600],
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.network(
+                  _assessmentHeaderImageUrl!,
+                  width: double.infinity,
+                  height: 150,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    height: 150,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[200],
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Center(
+                      child: Text('Failed to load image', style: TextStyle(color: Colors.red)),
+                    ),
                   ),
                 ),
               ),
-              // Simple add button
-              GestureDetector(
-                onTap: _canAddQuestions ? _addQuestion : null,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: _canAddQuestions 
-                        ? const Color(0xFF10B981)
-                        : Colors.grey[400],
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        _canAddQuestions 
-                            ? FontAwesomeIcons.plus 
-                            : FontAwesomeIcons.lock,
-                        size: 10,
-                        color: Colors.white,
-                      ),
-                      const SizedBox(width: 4),
-                      const Text(
-                        'Add',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
+              Positioned(
+                top: 8,
+                right: 8,
+                child: GestureDetector(
+                  onTap: _removeHeaderImage,
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withOpacity(0.8),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(Icons.close, color: Colors.white, size: 16),
                   ),
                 ),
               ),
             ],
+          )
+        else
+          InkWell(
+            onTap: _isUploadingHeaderImage ? null : _pickHeaderImage,
+            child: Container(
+              height: 120,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey[300]!),
+              ),
+              child: Center(
+                child: _isUploadingHeaderImage
+                    ? CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(const Color(0xFF8B5CF6)))
+                    : Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(FontAwesomeIcons.solidImage, size: 30, color: Colors.grey),
+                          const SizedBox(height: 8),
+                          Text('Upload Header Image', style: TextStyle(color: Colors.grey, fontSize: 14)),
+                          if (_headerImageError != null) ...[
+                            const SizedBox(height: 8),
+                            Text(_headerImageError!, style: TextStyle(color: Colors.red, fontSize: 12)),
+                          ],
+                        ],
+                      ),
+              ),
+            ),
           ),
-          
-          const SizedBox(height: 12),
-          
-          if (_questions.isEmpty)
-            _buildEmptyQuestionsState()
-          else
-            _buildQuestionsList(),
-        ],
-      ),
+      ],
+    );
+  }
+
+  Widget _buildSubmissionDeadlinePicker() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Submission Deadline (Optional)',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF1E293B),
+          ),
+        ),
+        const SizedBox(height: 12),
+        InkWell(
+          onTap: () async {
+            final DateTime? pickedDate = await showDatePicker(
+              context: context,
+              initialDate: _deadline ?? DateTime.now(),
+              firstDate: DateTime.now(),
+              lastDate: DateTime.now().add(const Duration(days: 365)),
+            );
+            if (pickedDate != null) {
+              final TimeOfDay? pickedTime = await showTimePicker(
+                context: context,
+                initialTime: TimeOfDay.fromDateTime(_deadline ?? DateTime.now()),
+              );
+              if (pickedTime != null) {
+                setState(() {
+                  _deadline = DateTime(
+                    pickedDate.year,
+                    pickedDate.month,
+                    pickedDate.day,
+                    pickedTime.hour,
+                    pickedTime.minute,
+                  );
+                });
+              }
+            }
+          },
+          child: InputDecorator(
+            decoration: InputDecoration(
+              labelText: 'Select Date and Time',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              filled: true,
+              fillColor: Colors.grey[50],
+              prefixIcon: const Icon(Icons.calendar_today),
+            ),
+            child: Text(
+              _deadline == null ? 'No deadline set' : _deadlineFmt.format(_deadline!),
+              style: TextStyle(
+                fontSize: 14,
+                color: _deadline == null ? Colors.grey[600] : Colors.black,
+              ),
+            ),
+          ),
+        ),
+        if (_deadline != null)
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () {
+                setState(() {
+                  _deadline = null;
+                });
+              },
+              icon: Icon(Icons.close, size: 16, color: Colors.red),
+              label: Text('Remove Deadline', style: TextStyle(color: Colors.red)),
+            ),
+          ),
+      ],
     );
   }
 
@@ -1171,10 +1510,8 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Simple header row
                 Row(
                   children: [
-                    // Question number
                     Container(
                       width: 24,
                       height: 24,
@@ -1194,7 +1531,6 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
                       ),
                     ),
                     const SizedBox(width: 8),
-                    // Question text - takes available space
                     Expanded(
                       child: Text(
                         q.text,
@@ -1206,7 +1542,6 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    // Action buttons - fixed width
                     SizedBox(
                       width: 60,
                       child: Row(
@@ -1250,13 +1585,9 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
                     ),
                   ],
                 ),
-                
                 const SizedBox(height: 8),
-                
-                // Compact info row
                 Row(
                   children: [
-                    // Type
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
@@ -1273,7 +1604,6 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
                       ),
                     ),
                     const SizedBox(width: 4),
-                    // Points
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
@@ -1289,7 +1619,6 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
                         ),
                       ),
                     ),
-                    // Review indicator
                     if (q.requiresReview) ...[
                       const SizedBox(width: 4),
                       Container(
@@ -1318,20 +1647,163 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
     );
   }
 
-  // Simplified type names
   String _getShortQuestionType(String type) {
     switch (type) {
       case 'multiple-choice':
         return 'MC';
-      case 'true-false':
-        return 'T/F';
       case 'fill-in-the-blank':
         return 'Fill';
-      case 'short-answer':
-        return 'Short';
       default:
         return 'Other';
     }
+  }
+
+  Widget _buildQuestionCard(Question question, int index) {
+      return Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey[200]!),
+          ),
+          child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                      Row(
+                          children: [
+                              Container(
+                                  width: 24,
+                                  height: 24,
+                                  decoration: BoxDecoration(
+                                      color: const Color(0xFF8B5CF6),
+                                      borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Center(
+                                      child: Text(
+                                          '${index + 1}',
+                                          style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                          ),
+                                      ),
+                                  ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                  child: Text(
+                                      question.text,
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.w500,
+                                          fontSize: 13,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                  ),
+                              ),
+                              SizedBox(
+                                  width: 60,
+                                  child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.end,
+                                      children: [
+                                          GestureDetector(
+                                              onTap: () => _editQuestion(index),
+                                              child: Container(
+                                                  width: 24,
+                                                  height: 24,
+                                                  decoration: BoxDecoration(
+                                                      color: const Color(0xFF8B5CF6).withOpacity(0.1),
+                                                      borderRadius: BorderRadius.circular(4),
+                                                  ),
+                                                  child: const Icon(
+                                                      FontAwesomeIcons.pencil,
+                                                      size: 10,
+                                                      color: Color(0xFF8B5CF6),
+                                                  ),
+                                              ),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          GestureDetector(
+                                              onTap: () => _removeQuestion(index),
+                                              child: Container(
+                                                  width: 24,
+                                                  height: 24,
+                                                  decoration: BoxDecoration(
+                                                      color: Colors.red.withOpacity(0.1),
+                                                      borderRadius: BorderRadius.circular(4),
+                                                  ),
+                                                  child: const Icon(
+                                                      FontAwesomeIcons.trash,
+                                                      size: 10,
+                                                      color: Colors.red,
+                                                  ),
+                                              ),
+                                          ),
+                                      ],
+                                  ),
+                              ),
+                          ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                          children: [
+                              Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                      color: const Color(0xFF3B82F6).withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                      _getShortQuestionType(question.type),
+                                      style: const TextStyle(
+                                          fontSize: 9,
+                                          color: Color(0xFF3B82F6),
+                                          fontWeight: FontWeight.w500,
+                                      ),
+                                  ),
+                              ),
+                              const SizedBox(width: 4),
+                              Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                      color: const Color(0xFF10B981).withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                      '${question.points}pts',
+                                      style: const TextStyle(
+                                          fontSize: 9,
+                                          color: Color(0xFF10B981),
+                                          fontWeight: FontWeight.w500,
+                                      ),
+                                  ),
+                              ),
+                              if (question.requiresReview) ...[
+                                  const SizedBox(width: 4),
+                                  Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                          color: const Color(0xFFF59E0B).withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: const Text(
+                                          'Manual',
+                                          style: TextStyle(
+                                              fontSize: 9,
+                                              color: Color(0xFFF59E0B),
+                                              fontWeight: FontWeight.w500,
+                                          ),
+                                      ),
+                                  ),
+                              ],
+                          ],
+                      ),
+                  ],
+              ),
+          ),
+      );
   }
 
   Widget _buildEmptyQuestionsState() {
@@ -1342,44 +1814,30 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: _canAddQuestions 
-                  ? const Color(0xFF64748B).withOpacity(0.1)
-                  : Colors.grey.withOpacity(0.05),
+              color: _canAddQuestions ? const Color(0xFF64748B).withOpacity(0.1) : Colors.grey.withOpacity(0.05),
               borderRadius: BorderRadius.circular(16),
             ),
             child: Icon(
-              _canAddQuestions 
-                  ? FontAwesomeIcons.questionCircle
-                  : FontAwesomeIcons.lock,
+              _canAddQuestions ? FontAwesomeIcons.questionCircle : FontAwesomeIcons.lock,
               size: 40,
-              color: _canAddQuestions 
-                  ? const Color(0xFF64748B).withOpacity(0.6)
-                  : Colors.grey[400],
+              color: _canAddQuestions ? const Color(0xFF64748B).withOpacity(0.6) : Colors.grey[400],
             ),
           ),
           const SizedBox(height: 16),
           Text(
-            _canAddQuestions 
-                ? "Ready to add questions!"
-                : "Complete basic information first",
+            _canAddQuestions ? "Ready to add questions!" : "Complete basic information first",
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
-              color: _canAddQuestions 
-                  ? const Color(0xFF64748B)
-                  : Colors.grey[600],
+              color: _canAddQuestions ? const Color(0xFF64748B) : Colors.grey[600],
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            _canAddQuestions 
-                ? "Click 'Add Question' to create your first question"
-                : "Fill in the assessment title and select a class to unlock questions",
+            _canAddQuestions ? "Click 'Add Question' to create your first question" : "Fill in the assessment title and select a class to unlock questions",
             style: TextStyle(
               fontSize: 13,
-              color: _canAddQuestions 
-                  ? const Color(0xFF64748B).withOpacity(0.8)
-                  : const Color(0xFFF59E0B),
+              color: _canAddQuestions ? const Color(0xFF64748B).withOpacity(0.8) : const Color(0xFFF59E0B),
               height: 1.4,
             ),
             textAlign: TextAlign.center,
@@ -1389,7 +1847,6 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
     );
   }
 
-  // Also update the text field method to include real-time validation
   Widget _buildModernTextField({
     required TextEditingController controller,
     required String label,
@@ -1399,7 +1856,6 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
     bool isRequired = false,
   }) {
     bool hasValue = controller.text.trim().isNotEmpty;
-    
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
@@ -1417,10 +1873,9 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
         enabled: !_isLoading,
         style: const TextStyle(fontSize: 14),
         onChanged: (value) {
-          // Update state when title or class changes to enable/disable questions
           if (isRequired) {
             setState(() {
-              _error = null; // Clear errors when user starts typing
+              _error = null;
             });
           }
         },
@@ -1434,48 +1889,36 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
             margin: const EdgeInsets.all(12),
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: isRequired && hasValue 
-                  ? const Color(0xFF10B981).withOpacity(0.1)
-                  : const Color(0xFF8B5CF6).withOpacity(0.1),
+              color: isRequired && hasValue ? const Color(0xFF10B981).withOpacity(0.1) : const Color(0xFF8B5CF6).withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(
               isRequired && hasValue ? FontAwesomeIcons.check : icon,
-              color: isRequired && hasValue 
-                  ? const Color(0xFF10B981)
-                  : const Color(0xFF8B5CF6),
+              color: isRequired && hasValue ? const Color(0xFF10B981) : const Color(0xFF8B5CF6),
               size: 16,
             ),
           ),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(
-              color: isRequired && !hasValue 
-                  ? const Color(0xFFF59E0B).withOpacity(0.5)
-                  : Colors.grey[300]!,
+              color: isRequired && !hasValue ? const Color(0xFFF59E0B).withOpacity(0.5) : Colors.grey[300]!,
             ),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(
-              color: isRequired && !hasValue 
-                  ? const Color(0xFFF59E0B).withOpacity(0.5)
-                  : Colors.grey[300]!,
+              color: isRequired && !hasValue ? const Color(0xFFF59E0B).withOpacity(0.5) : Colors.grey[300]!,
             ),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(
-              color: isRequired && hasValue 
-                  ? const Color(0xFF10B981)
-                  : const Color(0xFF8B5CF6),
+              color: isRequired && hasValue ? const Color(0xFF10B981) : const Color(0xFF8B5CF6),
               width: 2,
             ),
           ),
           filled: true,
-          fillColor: isRequired && !hasValue 
-              ? const Color(0xFFFBBF24).withOpacity(0.05)
-              : Colors.grey[50],
+          fillColor: isRequired && !hasValue ? const Color(0xFFFBBF24).withOpacity(0.05) : Colors.grey[50],
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
           isDense: true,
         ),
@@ -1484,10 +1927,8 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
     );
   }
 
-  // Enhanced class dropdown with visual indicators
   Widget _buildClassDropdown() {
     bool hasValue = _selectedClassId != null;
-    
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
@@ -1510,48 +1951,36 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
             margin: const EdgeInsets.all(12),
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: hasValue 
-                  ? const Color(0xFF10B981).withOpacity(0.1)
-                  : const Color(0xFF8B5CF6).withOpacity(0.1),
+              color: hasValue ? const Color(0xFF10B981).withOpacity(0.1) : const Color(0xFF8B5CF6).withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(
               hasValue ? FontAwesomeIcons.check : FontAwesomeIcons.chalkboardUser,
-              color: hasValue 
-                  ? const Color(0xFF10B981)
-                  : const Color(0xFF8B5CF6),
+              color: hasValue ? const Color(0xFF10B981) : const Color(0xFF8B5CF6),
               size: 16,
             ),
           ),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(
-              color: !hasValue 
-                  ? const Color(0xFFF59E0B).withOpacity(0.5)
-                  : Colors.grey[300]!,
+              color: !hasValue ? const Color(0xFFF59E0B).withOpacity(0.5) : Colors.grey[300]!,
             ),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(
-              color: !hasValue 
-                  ? const Color(0xFFF59E0B).withOpacity(0.5)
-                  : Colors.grey[300]!,
+              color: !hasValue ? const Color(0xFFF59E0B).withOpacity(0.5) : Colors.grey[300]!,
             ),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(
-              color: hasValue 
-                  ? const Color(0xFF10B981)
-                  : const Color(0xFF8B5CF6),
+              color: hasValue ? const Color(0xFF10B981) : const Color(0xFF8B5CF6),
               width: 2,
             ),
           ),
           filled: true,
-          fillColor: !hasValue 
-              ? const Color(0xFFFBBF24).withOpacity(0.05)
-              : Colors.grey[50],
+          fillColor: !hasValue ? const Color(0xFFFBBF24).withOpacity(0.05) : Colors.grey[50],
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         ),
         value: _selectedClassId,
@@ -1573,19 +2002,16 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
   }
 }
 
-// Modern Question Editor Dialog with overflow prevention
 class QuestionEditorDialog extends StatefulWidget {
   final Question? existingQuestion;
   final Function(Question) onSave;
   final VoidCallback onCancel;
-
   const QuestionEditorDialog({
     super.key,
     this.existingQuestion,
     required this.onSave,
     required this.onCancel,
   });
-
   @override
   State<QuestionEditorDialog> createState() => _QuestionEditorDialogState();
 }
@@ -1594,58 +2020,57 @@ class _QuestionEditorDialogState extends State<QuestionEditorDialog> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _questionTextController = TextEditingController();
   final TextEditingController _pointsController = TextEditingController();
-  final TextEditingController _fillInAnswersController = TextEditingController();
-  final TextEditingController _shortAnswerSampleController = TextEditingController();
-  
-  // NEW: Add controllers for advanced fill-in-the-blank features
   final TextEditingController _scenarioContextController = TextEditingController();
   final TextEditingController _textBeforeBlankController = TextEditingController();
   final TextEditingController _textAfterBlankController = TextEditingController();
-  
+
   String _selectedType = 'multiple-choice';
+  String _previousSelectedType = 'multiple-choice'; // NEW: Add this line
   List<String> _options = ['', '', '', ''];
   List<bool> _correctAnswers = [false, false, false, false];
-  
-  // NEW: Add variables for fill-in-the-blank input method
-  String _fillInInputMethod = 'typing'; // 'typing' or 'multiple-choice'
+  String _fillInInputMethod = 'typing';
   List<String> _acceptableAnswers = [''];
-  
-  final List<String> _questionTypes = [
-    'multiple-choice',
-    'true-false',
-    'fill-in-the-blank',
-    'short-answer',
-  ];
+  final List<String> _questionTypes = ['multiple-choice', 'fill-in-the-blank'];
+  final _imagePicker = ImagePicker();
+  final _uuid = const Uuid();
+  XFile? _currentQuestionXFile;
+  String? _currentQuestionImageUrl;
+  String? _currentQuestionImagePath;
+  bool _isUploadingQuestionImage = false;
+  String? _questionImageError;
 
   @override
   void initState() {
     super.initState();
-    
     if (widget.existingQuestion != null) {
       _questionTextController.text = widget.existingQuestion!.text;
       _pointsController.text = widget.existingQuestion!.points.toString();
       _selectedType = widget.existingQuestion!.type;
-      
-      if (widget.existingQuestion!.options != null) {
-        _options = List.from(widget.existingQuestion!.options!);
-        while (_options.length < 4) {
-          _options.add('');
+      _currentQuestionImageUrl = widget.existingQuestion!.questionImageUrl;
+      _currentQuestionImagePath = widget.existingQuestion!.questionImagePath;
+      if (_selectedType == 'multiple-choice') {
+        if (widget.existingQuestion!.options != null) {
+          _options = List.from(widget.existingQuestion!.options!);
+          while (_options.length < 4) {
+            _options.add('');
+          }
         }
-      }
-      
-      if (widget.existingQuestion!.correctAnswers != null) {
-        for (int i = 0; i < _options.length && i < _correctAnswers.length; i++) {
-          _correctAnswers[i] = widget.existingQuestion!.correctAnswers!.contains(_options[i]);
+        if (widget.existingQuestion!.correctAnswers != null) {
+          _correctAnswers = List.filled(_options.length, false);
+          for (int i = 0; i < _options.length; i++) {
+            if (widget.existingQuestion!.correctAnswers!.contains(_options[i])) {
+              _correctAnswers[i] = true;
+            }
+          }
         }
-      }
-      
-      if (_selectedType == 'fill-in-the-blank' && widget.existingQuestion!.correctAnswers != null) {
-        _acceptableAnswers = List.from(widget.existingQuestion!.correctAnswers!);
-        // You can also load additional metadata if stored in the question
-      }
-      
-      if (_selectedType == 'short-answer' && widget.existingQuestion!.correctAnswers != null) {
-        _shortAnswerSampleController.text = widget.existingQuestion!.correctAnswers!.first;
+      } else if (_selectedType == 'fill-in-the-blank') {
+        _scenarioContextController.text = widget.existingQuestion!.scenarioContext ?? '';
+        _textBeforeBlankController.text = widget.existingQuestion!.textBeforeBlank ?? '';
+        _textAfterBlankController.text = widget.existingQuestion!.textAfterBlank ?? '';
+        _fillInInputMethod = widget.existingQuestion!.fillInInputMethod ?? 'typing';
+        if (widget.existingQuestion!.correctAnswers != null) {
+          _acceptableAnswers = List.from(widget.existingQuestion!.correctAnswers!);
+        }
       }
     } else {
       _pointsController.text = '10';
@@ -1656,8 +2081,6 @@ class _QuestionEditorDialogState extends State<QuestionEditorDialog> {
   void dispose() {
     _questionTextController.dispose();
     _pointsController.dispose();
-    _fillInAnswersController.dispose();
-    _shortAnswerSampleController.dispose();
     _scenarioContextController.dispose();
     _textBeforeBlankController.dispose();
     _textAfterBlankController.dispose();
@@ -1696,8 +2119,9 @@ class _QuestionEditorDialogState extends State<QuestionEditorDialog> {
 
   void _saveQuestion() {
     if (!_formKey.currentState!.validate()) return;
-
-    // Validate that at least one correct answer is selected for multiple choice
+    List<String>? options;
+    List<String>? correctAnswers;
+    bool requiresReview = false;
     if (_selectedType == 'multiple-choice') {
       bool hasCorrectAnswer = false;
       for (int i = 0; i < _options.length; i++) {
@@ -1717,92 +2141,285 @@ class _QuestionEditorDialogState extends State<QuestionEditorDialog> {
         );
         return;
       }
-    }
-
-    List<String>? options;
-    List<String>? correctAnswers;
-    bool requiresReview = false; // NEW: Initialize review flag
-
-    if (_selectedType == 'multiple-choice') {
-      options = _options.where((opt) => opt.trim().isNotEmpty).toList();
+      options = _options.where((o) => o.trim().isNotEmpty).toList();
       correctAnswers = [];
       for (int i = 0; i < _options.length; i++) {
         if (_options[i].trim().isNotEmpty && _correctAnswers[i]) {
           correctAnswers.add(_options[i].trim());
         }
       }
-    } else if (_selectedType == 'true-false') {
-      options = ['True', 'False'];
-      correctAnswers = _correctAnswers[0] ? ['True'] : ['False'];
     } else if (_selectedType == 'fill-in-the-blank') {
-      // NEW: Updated logic for advanced fill-in-the-blank
-      List<String> answers = _acceptableAnswers
-          .where((answer) => answer.trim().isNotEmpty)
-          .map((answer) => answer.trim())
-          .toList();
-      
-      if (answers.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Please provide at least one acceptable answer'),
-            backgroundColor: Colors.orange,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        );
-        return;
-      }
-      
-      correctAnswers = answers;
-      
-      // If using multiple choice for fill-in-blank, set options
-      if (_fillInInputMethod == 'multiple-choice') {
-        options = List.from(answers);
-        // Add some wrong options for multiple choice
-        options.addAll(['Wrong Answer 1', 'Wrong Answer 2']);
-      }
-    } else if (_selectedType == 'short-answer') {
-      // NEW: Short answers always require manual review
+      options = _fillInInputMethod == 'multiple-choice' ? _acceptableAnswers.where((a) => a.trim().isNotEmpty).toList() : null;
+      correctAnswers = _acceptableAnswers.where((a) => a.trim().isNotEmpty).toList();
       requiresReview = true;
-      correctAnswers = _shortAnswerSampleController.text.trim().isNotEmpty 
-          ? [_shortAnswerSampleController.text.trim()] 
-          : ['[Sample answer for grading reference]'];
     }
-
-    final question = Question(
-      id: widget.existingQuestion?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
+    final newQuestion = Question(
+      id: widget.existingQuestion?.id ?? const Uuid().v4(),
       text: _questionTextController.text.trim(),
       type: _selectedType,
       options: options,
       correctAnswers: correctAnswers,
-      points: int.tryParse(_pointsController.text) ?? 10,
-      requiresReview: requiresReview, // NEW: Set review flag
+      points: int.tryParse(_pointsController.text.trim()) ?? 10,
+      requiresReview: requiresReview,
+      questionImageUrl: _currentQuestionImageUrl,
+      questionImagePath: _currentQuestionImagePath,
+      scenarioContext: _scenarioContextController.text.trim().isEmpty ? null : _scenarioContextController.text.trim(),
+      textBeforeBlank: _textBeforeBlankController.text.trim().isEmpty ? null : _textBeforeBlankController.text.trim(),
+      textAfterBlank: _textAfterBlankController.text.trim().isEmpty ? null : _textAfterBlankController.text.trim(),
+      fillInInputMethod: _fillInInputMethod,
     );
+    widget.onSave(newQuestion);
+  }
 
-    widget.onSave(question);
+  Future<Map<String, String>> _uploadXFileToStorage({
+    required XFile xfile,
+    required String basePath,
+  }) async {
+    final file = File(xfile.path);
+    final ext = path.extension(xfile.path);
+    final id = _uuid.v4();
+    final storagePath = '$basePath/$id$ext';
+    final ref = firebase_storage.FirebaseStorage.instance.ref(storagePath);
+    await ref.putFile(file);
+    final url = await ref.getDownloadURL();
+    return {'url': url, 'path': storagePath};
+  }
+
+  Future<void> _deleteStorageFileIfAny(String? storagePath) async {
+    if (storagePath == null || storagePath.isEmpty) return;
+    try {
+      await firebase_storage.FirebaseStorage.instance.ref(storagePath).delete();
+    } catch (_) {}
+  }
+
+  Future<void> _pickQuestionImage() async {
+    final picked = await _imagePicker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+    if (picked == null) return;
+    final size = await picked.length();
+    if (size > 2 * 1024 * 1024) {
+      setState(() {
+        _questionImageError = 'File is too large. Max 2MB.';
+        _currentQuestionXFile = null;
+      });
+      return;
+    }
+    setState(() {
+      _currentQuestionXFile = picked;
+      _isUploadingQuestionImage = true;
+      _questionImageError = null;
+    });
+    if ((_currentQuestionImagePath ?? '').isNotEmpty) {
+      await _deleteStorageFileIfAny(_currentQuestionImagePath);
+    }
+    final basePath = 'assessments/question_media/${const Uuid().v4()}';
+    try {
+      final res = await _uploadXFileToStorage(xfile: picked, basePath: basePath);
+      if (mounted) {
+        setState(() {
+          _currentQuestionImageUrl = res['url'];
+          _currentQuestionImagePath = res['path'];
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _questionImageError = 'Failed to upload question image.';
+          _currentQuestionXFile = null;
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _isUploadingQuestionImage = false);
+    }
+  }
+
+  Future<void> _removeQuestionImage() async {
+    setState(() => _isUploadingQuestionImage = true);
+    await _deleteStorageFileIfAny(_currentQuestionImagePath);
+    if (mounted) {
+      setState(() {
+        _isUploadingQuestionImage = false;
+        _currentQuestionXFile = null;
+        _currentQuestionImageUrl = null;
+        _currentQuestionImagePath = null;
+        _questionImageError = null;
+      });
+    }
+  }
+
+  Widget _buildModernTextField({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    String? Function(String?)? validator,
+    int maxLines = 1,
+    bool isRequired = false,
+  }) {
+    bool hasValue = controller.text.trim().isNotEmpty;
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.08),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: TextFormField(
+        controller: controller,
+        maxLines: maxLines,
+        style: const TextStyle(fontSize: 14),
+        onChanged: (value) {
+          if (isRequired) {
+            setState(() {
+              // No error state to update in this scope, but a good practice
+            });
+          }
+        },
+        decoration: InputDecoration(
+          labelText: isRequired ? '$label *' : label,
+          labelStyle: TextStyle(
+            fontSize: 13,
+            color: isRequired && !hasValue ? const Color(0xFFF59E0B) : null,
+          ),
+          prefixIcon: Container(
+            margin: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: isRequired && hasValue ? const Color(0xFF10B981).withOpacity(0.1) : const Color(0xFF8B5CF6).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              isRequired && hasValue ? FontAwesomeIcons.check : icon,
+              color: isRequired && hasValue ? const Color(0xFF10B981) : const Color(0xFF8B5CF6),
+              size: 16,
+            ),
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(
+              color: isRequired && !hasValue ? const Color(0xFFF59E0B).withOpacity(0.5) : Colors.grey[300]!,
+            ),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(
+              color: isRequired && !hasValue ? const Color(0xFFF59E0B).withOpacity(0.5) : Colors.grey[300]!,
+            ),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(
+              color: isRequired && hasValue ? const Color(0xFF10B981) : const Color(0xFF8B5CF6),
+              width: 2,
+            ),
+          ),
+          filled: true,
+          fillColor: isRequired && !hasValue ? const Color(0xFFFBBF24).withOpacity(0.05) : Colors.grey[50],
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          isDense: true,
+        ),
+        validator: validator,
+      ),
+    );
+  }
+
+  Widget _buildQuestionImagePicker() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Question Image (Optional)',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF1E293B),
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (_currentQuestionImageUrl != null)
+          Stack(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.network(
+                  _currentQuestionImageUrl!,
+                  width: double.infinity,
+                  height: 150,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    height: 150,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[200],
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Center(
+                      child: Text('Failed to load image', style: TextStyle(color: Colors.red)),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 8,
+                right: 8,
+                child: GestureDetector(
+                  onTap: _removeQuestionImage,
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withOpacity(0.8),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.close, color: Colors.white, size: 16),
+                  ),
+                ),
+              ),
+            ],
+          )
+        else
+          InkWell(
+            onTap: _isUploadingQuestionImage ? null : _pickQuestionImage,
+            child: Container(
+              height: 100,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey[300]!, style: BorderStyle.solid),
+              ),
+              child: Center(
+                child: _isUploadingQuestionImage
+                    ? const CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF8B5CF6)))
+                    : Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(FontAwesomeIcons.solidImage, size: 24, color: Colors.grey),
+                          const SizedBox(height: 8),
+                          Text('Upload Image', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                          if (_questionImageError != null) ...[
+                            const SizedBox(height: 8),
+                            Text(_questionImageError!, style: TextStyle(color: Colors.red, fontSize: 10)),
+                          ],
+                        ],
+                      ),
+              ),
+            ),
+          ),
+      ],
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    // Get screen dimensions for better responsive design
-    final screenHeight = MediaQuery.of(context).size.height;
-    final screenWidth = MediaQuery.of(context).size.width;
-    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
-    
     return Dialog(
       backgroundColor: Colors.transparent,
-      insetPadding: EdgeInsets.symmetric(
-        horizontal: screenWidth > 600 ? 40 : 16,
-        vertical: 20,
-      ),
+      insetPadding: const EdgeInsets.all(16.0),
       child: Container(
-        constraints: BoxConstraints(
-          maxHeight: screenHeight - 40, // More conservative height
-          maxWidth: screenWidth > 600 ? 600 : screenWidth,
-        ),
+        padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.1),
@@ -1811,737 +2428,342 @@ class _QuestionEditorDialogState extends State<QuestionEditorDialog> {
             ),
           ],
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min, // Important: Let content determine size
-          children: [
-            // Header - Fixed at top
-            Container(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    const Color(0xFF8B5CF6),
-                    const Color(0xFF6366F1),
+        child: SingleChildScrollView(
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    const Text(
+                      'Question Editor',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1E293B),
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.grey),
+                      onPressed: widget.onCancel,
+                    ),
                   ],
                 ),
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(24),
-                  topRight: Radius.circular(24),
+                const SizedBox(height: 16),
+                _buildModernTextField(
+                  controller: _questionTextController,
+                  label: 'Question Text',
+                  icon: FontAwesomeIcons.question,
+                  maxLines: 2,
+                  validator: (value) => value == null || value.trim().isEmpty ? 'Question text is required' : null,
+                  isRequired: true,
                 ),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(
-                      widget.existingQuestion != null 
-                          ? FontAwesomeIcons.pencil 
-                          : FontAwesomeIcons.plus,
-                      color: Colors.white,
-                      size: 18,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          widget.existingQuestion != null ? 'Edit Question' : 'Add New Question',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        Text(
-                          'Create engaging questions',
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(0.8),
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: widget.onCancel,
-                    icon: const Icon(
-                      FontAwesomeIcons.xmark,
-                      color: Colors.white,
-                      size: 18,
-                    ),
-                  ),
-                ],
-              ),
+                const SizedBox(height: 16),
+                _buildQuestionImagePicker(),
+                const SizedBox(height: 16),
+                _buildModernTextField(
+                  controller: _pointsController,
+                  label: 'Points',
+                  icon: FontAwesomeIcons.star,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) return 'Points are required';
+                    if (int.tryParse(value) == null) return 'Must be a number';
+                    return null;
+                  },
+                  isRequired: true,
+                ),
+                const SizedBox(height: 24),
+                _buildQuestionTypeSelector(),
+                const SizedBox(height: 24),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  transitionBuilder: (Widget child, Animation<double> animation) {
+                    final positionTween = Tween<Offset>(
+                      begin: _selectedType == 'fill-in-the-blank'
+                          ? const Offset(1.0, 0.0) // Slide from right
+                          : const Offset(-1.0, 0.0), // Slide from left
+                      end: Offset.zero,
+                    );
+                    return SlideTransition(
+                      position: positionTween.animate(animation),
+                      child: child,
+                    );
+                  },
+                  child: _selectedType == 'multiple-choice'
+                      ? _buildMultipleChoiceSection()
+                      : _buildFillInTheBlankSection(),
+                ),
+                const SizedBox(height: 24),
+                _buildSaveButton(),
+              ],
             ),
-            
-            // Form Content - Flexible scrollable section
-            Flexible( // Changed from Expanded to Flexible
-              child: Form(
-                key: _formKey,
-                child: SingleChildScrollView(
-                  padding: EdgeInsets.fromLTRB(
-                    20, 
-                    16, 
-                    20, 
-                    keyboardHeight > 0 ? 16 : 8, // Adjust for keyboard
-                  ),
-                  physics: const BouncingScrollPhysics(),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    mainAxisSize: MainAxisSize.min, // Important for responsive height
-                    children: [
-                      // Question Type
-                      _buildCompactDialogSection(
-                        title: 'Question Type',
-                        icon: FontAwesomeIcons.listCheck,
-                        color: const Color(0xFF3B82F6),
-                        child: DropdownButtonFormField<String>(
-                          value: _selectedType,
-                          decoration: _buildCompactInputDecoration(),
-                          items: _questionTypes.map((type) {
-                            String displayName = type.split('-').map((word) => 
-                              word[0].toUpperCase() + word.substring(1)
-                            ).join(' ');
-                            
-                            return DropdownMenuItem<String>(
-                              value: type,
-                              child: Text(displayName, style: const TextStyle(fontSize: 14)),
-                            );
-                          }).toList(),
-                          onChanged: (value) {
-                            setState(() {
-                              _selectedType = value!;
-                              if (_selectedType == 'true-false') {
-                                _options = ['True', 'False'];
-                                _correctAnswers = [false, false];
-                              } else if (_selectedType == 'multiple-choice') {
-                                _options = ['', '', '', ''];
-                                _correctAnswers = [false, false, false, false];
-                              } else if (_selectedType == 'fill-in-the-blank') {
-                                _options = [];
-                                _correctAnswers = [false, false, false, false];
-                                _acceptableAnswers = [''];
-                              } else if (_selectedType == 'short-answer') {
-                                _options = [];
-                                _correctAnswers = [false, false, false, false];
-                              }
-                            });
-                          },
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Question Text
-                      _buildCompactDialogSection(
-                        title: 'Question Text *',
-                        icon: FontAwesomeIcons.questionCircle,
-                        color: const Color(0xFF10B981),
-                        child: TextFormField(
-                          controller: _questionTextController,
-                          decoration: _buildCompactInputDecoration(
-                            hintText: 'Enter your question here...',
-                          ),
-                          maxLines: 2, // Reduced from 3 to 2
-                          style: const TextStyle(fontSize: 14),
-                          validator: (value) {
-                            if (value == null || value.trim().isEmpty) {
-                              return 'Question text is required';
-                            }
-                            return null;
-                          },
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Options for multiple choice and true/false
-                      if (_selectedType == 'multiple-choice' || _selectedType == 'true-false') ...[
-                        _buildCompactDialogSection(
-                          title: 'Answer Options *',
-                          icon: FontAwesomeIcons.listOl,
-                          color: const Color(0xFFF59E0B),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (_selectedType == 'true-false')
-                                Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    _buildCompactCheckboxOption('True', 0),
-                                    const SizedBox(height: 6),
-                                    _buildCompactCheckboxOption('False', 1),
-                                  ],
-                                )
-                              else
-                                Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    ...List.generate(_options.length, (index) {
-                                      return Padding(
-                                        padding: const EdgeInsets.only(bottom: 6),
-                                        child: _buildCompactOptionField(index),
-                                      );
-                                    }),
-                                    const SizedBox(height: 8),
-                                    SizedBox(
-                                      width: double.infinity,
-                                      child: OutlinedButton.icon(
-                                        icon: const Icon(FontAwesomeIcons.plus, size: 10),
-                                        label: const Text('Add Option', style: TextStyle(fontSize: 12)),
-                                        onPressed: _addOption,
-                                        style: OutlinedButton.styleFrom(
-                                          padding: const EdgeInsets.symmetric(vertical: 8),
-                                          minimumSize: const Size(0, 32),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                      ],
-
-                      // NEW: Advanced Fill-in-the-blank sections
-                      if (_selectedType == 'fill-in-the-blank') ...[
-                        // Scenario Context - Compact version
-                        _buildCompactDialogSection(
-                          title: 'Context (Optional)',
-                          icon: FontAwesomeIcons.fileText,
-                          color: const Color(0xFF8B5CF6),
-                          child: TextFormField(
-                            controller: _scenarioContextController,
-                            decoration: _buildCompactInputDecoration(
-                              hintText: 'e.g., Customer says: ...',
-                            ),
-                            maxLines: 2, // Reduced from 3
-                            style: const TextStyle(fontSize: 14),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-
-                        // Text Before Blank - Compact version
-                        _buildCompactDialogSection(
-                          title: 'Text Before Blank (Optional)',
-                          icon: FontAwesomeIcons.alignLeft,
-                          color: const Color(0xFF3B82F6),
-                          child: TextFormField(
-                            controller: _textBeforeBlankController,
-                            decoration: _buildCompactInputDecoration(
-                              hintText: 'e.g., I can certainly...',
-                            ),
-                            style: const TextStyle(fontSize: 14),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-
-                        // Visual blank representation - Compact
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.grey[100],
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.grey[300]!),
-                          ),
-                          child: Text(
-                            '--- [BLANK] ---',
-                            style: TextStyle(
-                              fontStyle: FontStyle.italic,
-                              color: Colors.grey[600],
-                              fontSize: 12,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-
-                        // Text After Blank - Compact version
-                        _buildCompactDialogSection(
-                          title: 'Text After Blank (Optional)',
-                          icon: FontAwesomeIcons.alignRight,
-                          color: const Color(0xFF3B82F6),
-                          child: TextFormField(
-                            controller: _textAfterBlankController,
-                            decoration: _buildCompactInputDecoration(
-                              hintText: 'e.g., ...for you.',
-                            ),
-                            style: const TextStyle(fontSize: 14),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-
-                        // Student Answer Input Method - Compact
-                        _buildCompactDialogSection(
-                          title: 'Input Method',
-                          icon: FontAwesomeIcons.keyboard,
-                          color: const Color(0xFFF59E0B),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              _buildCompactRadioTile('Typing', 'Students type answer', 'typing'),
-                              _buildCompactRadioTile('Multiple Choice', 'Students select option', 'multiple-choice'),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-
-                        // Acceptable Answers - Compact version
-                        _buildCompactDialogSection(
-                          title: 'Acceptable Answers *',
-                          icon: FontAwesomeIcons.checkCircle,
-                          color: const Color(0xFF10B981),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Enter acceptable answers',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.grey[600],
-                                  fontStyle: FontStyle.italic,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              ...List.generate(_acceptableAnswers.length, (index) {
-                                return Padding(
-                                  padding: const EdgeInsets.only(bottom: 6),
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        child: TextFormField(
-                                          initialValue: _acceptableAnswers[index],
-                                          decoration: _buildCompactInputDecoration(
-                                            hintText: 'Answer ${index + 1}',
-                                          ),
-                                          style: const TextStyle(fontSize: 14),
-                                          onChanged: (value) {
-                                            _acceptableAnswers[index] = value;
-                                          },
-                                          validator: (value) {
-                                            if (index == 0 && (value == null || value.trim().isEmpty)) {
-                                              return 'Required';
-                                            }
-                                            return null;
-                                          },
-                                        ),
-                                      ),
-                                      if (_acceptableAnswers.length > 1) ...[
-                                        const SizedBox(width: 8),
-                                        IconButton(
-                                          icon: Icon(
-                                            FontAwesomeIcons.trash,
-                                            color: Colors.red[400],
-                                            size: 12,
-                                          ),
-                                          onPressed: () => _removeAcceptableAnswer(index),
-                                          padding: const EdgeInsets.all(4),
-                                          constraints: const BoxConstraints(
-                                            minWidth: 28,
-                                            minHeight: 28,
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                );
-                              }),
-                              const SizedBox(height: 8),
-                              SizedBox(
-                                width: double.infinity,
-                                child: OutlinedButton.icon(
-                                  icon: const Icon(FontAwesomeIcons.plus, size: 12),
-                                  label: const Text('Add Answer', style: TextStyle(fontSize: 12)),
-                                  onPressed: _addAcceptableAnswer,
-                                  style: OutlinedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(vertical: 8),
-                                    minimumSize: const Size(0, 32),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                      ],
-
-                      // Short-answer section - IMPROVED
-                      if (_selectedType == 'short-answer') ...[
-                        _buildCompactDialogSection(
-                          title: 'Grading Info (Optional)',
-                          icon: FontAwesomeIcons.lightbulb,
-                          color: const Color(0xFF3B82F6),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFFBBF24).withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(
-                                    color: const Color(0xFFFBBF24).withOpacity(0.3),
-                                  ),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      FontAwesomeIcons.circleInfo,
-                                      color: const Color(0xFFFBBF24),
-                                      size: 14,
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Expanded(
-                                      child: Text(
-                                        'Requires manual review',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: const Color(0xFFF59E0B),
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              TextFormField(
-                                controller: _shortAnswerSampleController,
-                                decoration: _buildCompactInputDecoration(
-                                  hintText: 'Grading criteria or sample answer...',
-                                ),
-                                maxLines: 3,
-                                style: const TextStyle(fontSize: 14),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                      ],
-
-                      // Points - Compact version
-                      _buildCompactDialogSection(
-                        title: 'Points',
-                        icon: FontAwesomeIcons.star,
-                        color: const Color(0xFFEF4444),
-                        child: SizedBox(
-                          width: 100,
-                          child: TextFormField(
-                            controller: _pointsController,
-                            decoration: _buildCompactInputDecoration(hintText: '10'),
-                            keyboardType: TextInputType.number,
-                            style: const TextStyle(fontSize: 14),
-                            validator: (value) {
-                              if (value == null || value.trim().isEmpty) {
-                                return 'Required';
-                              }
-                              if (int.tryParse(value) == null || int.parse(value) <= 0) {
-                                return 'Invalid';
-                              }
-                              return null;
-                            },
-                          ),
-                        ),
-                      ),
-                      
-                      // Add extra bottom padding for keyboard
-                      SizedBox(height: keyboardHeight > 0 ? 60 : 20),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-
-            // Action Buttons - Fixed at bottom
-            Container(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-              decoration: BoxDecoration(
-                color: Colors.grey[50],
-                borderRadius: const BorderRadius.only(
-                  bottomLeft: Radius.circular(24),
-                  bottomRight: Radius.circular(24),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: widget.onCancel,
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                      child: const Text('Cancel', style: TextStyle(fontSize: 14)),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    flex: 2,
-                    child: ElevatedButton.icon(
-                      icon: const Icon(FontAwesomeIcons.floppyDisk, size: 14),
-                      label: const Text('Save Question', style: TextStyle(fontSize: 14)),
-                      onPressed: _saveQuestion,
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        backgroundColor: const Color(0xFF8B5CF6),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // NEW: Compact helper methods to reduce space usage
-  Widget _buildCompactDialogSection({
-    required String title,
-    required IconData icon,
-    required Color color,
-    required Widget child,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(12), // Reduced from 16
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(10), // Reduced from 12
-        border: Border.all(color: color.withOpacity(0.2)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(4), // Reduced from 6
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Icon(icon, color: color, size: 14), // Reduced from 16
-              ),
-              const SizedBox(width: 6),
-              Text(
-                title,
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: const Color(0xFF1E293B),
-                  fontSize: 13, // Reduced font size
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8), // Reduced from 12
-          child,
-        ],
-      ),
-    );
-  }
-
-  InputDecoration _buildCompactInputDecoration({String? hintText}) {
-    return InputDecoration(
-      hintText: hintText,
-      hintStyle: const TextStyle(fontSize: 13),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(6), // Reduced from 8
-        borderSide: BorderSide(color: Colors.grey[300]!),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(6),
-        borderSide: BorderSide(color: Colors.grey[300]!),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(6),
-        borderSide: const BorderSide(color: Color(0xFF8B5CF6), width: 2),
-      ),
-      filled: true,
-      fillColor: Colors.white,
-      contentPadding: const EdgeInsets.all(10), // Reduced from 12
-      isDense: true, // Makes the field more compact
-    );
-  }
-
-  Widget _buildCompactCheckboxOption(String title, int index) {
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          if (_selectedType == 'true-false') {
-            _correctAnswers = [false, false];
-            _correctAnswers[index] = true;
-          } else {
-            _correctAnswers[index] = !_correctAnswers[index];
-          }
-        });
-      },
-      child: Container(
-        padding: const EdgeInsets.all(10), // Reduced from 12
-        decoration: BoxDecoration(
-          color: _correctAnswers[index] ? const Color(0xFF10B981).withOpacity(0.1) : Colors.white,
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(
-            color: _correctAnswers[index] ? const Color(0xFF10B981) : Colors.grey[300]!,
           ),
         ),
-        child: Row(
-          children: [
-            Container(
-              width: 18, // Reduced from 20
-              height: 18,
-              decoration: BoxDecoration(
-                color: _correctAnswers[index] ? const Color(0xFF10B981) : Colors.transparent,
-                borderRadius: BorderRadius.circular(3),
-                border: Border.all(
-                  color: _correctAnswers[index] ? const Color(0xFF10B981) : Colors.grey[400]!,
-                ),
-              ),
-              child: _correctAnswers[index]
-                  ? const Icon(FontAwesomeIcons.check, color: Colors.white, size: 10)
-                  : null,
-            ),
-            const SizedBox(width: 10),
-            Text(
-              title, 
-              style: const TextStyle(
-                fontWeight: FontWeight.w500,
-                fontSize: 14,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
 
-  Widget _buildCompactOptionField(int index) {
-    return Row(
+  Widget _buildQuestionTypeSelector() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        GestureDetector(
-          onTap: () {
-            setState(() {
-              _correctAnswers[index] = !_correctAnswers[index];
-            });
-          },
-          child: Container(
-            width: 18,
-            height: 18,
-            decoration: BoxDecoration(
-              color: _correctAnswers[index] ? const Color(0xFF10B981) : Colors.transparent,
-              borderRadius: BorderRadius.circular(3),
-              border: Border.all(
-                color: _correctAnswers[index] ? const Color(0xFF10B981) : Colors.grey[400]!,
+        const Text(
+          'Question Type',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF1E293B),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: _questionTypes.map((type) {
+            final isSelected = _selectedType == type;
+            return Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                child: ChoiceChip(
+                  label: Text(
+                    type.replaceAll('-', ' ').toUpperCase(),
+                    style: TextStyle(
+                      color: isSelected ? Colors.white : const Color(0xFF64748B),
+                    ),
+                  ),
+                  selected: isSelected,
+                  selectedColor: const Color(0xFF8B5CF6),
+                  backgroundColor: Colors.grey[100],
+                  onSelected: (selected) {
+                    if (selected) {
+                      setState(() {
+                        _previousSelectedType = _selectedType; // Update the previous type
+                        _selectedType = type;
+                      });
+                    }
+                  },
+                ),
               ),
-            ),
-            child: _correctAnswers[index]
-                ? const Icon(FontAwesomeIcons.check, color: Colors.white, size: 10)
-                : null,
-          ),
+            );
+          }).toList(),
         ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: TextFormField(
-            initialValue: _options[index],
-            decoration: _buildCompactInputDecoration(hintText: 'Option ${index + 1}'),
-            style: const TextStyle(fontSize: 14),
-            onChanged: (value) {
-              _options[index] = value;
-            },
-            validator: (value) {
-              if (index < 2 && (value == null || value.trim().isEmpty)) {
-                return 'Required';
-              }
-              return null;
-            },
-          ),
-        ),
-        if (_options.length > 2) ...[
-          const SizedBox(width: 8),
-          IconButton(
-            icon: Icon(FontAwesomeIcons.trash, color: Colors.red[400], size: 12),
-            onPressed: () => _removeOption(index),
-            padding: const EdgeInsets.all(4),
-            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-          ),
-        ],
       ],
     );
   }
 
-  Widget _buildCompactRadioTile(String title, String subtitle, String value) {
-    return InkWell(
-      onTap: () {
-        setState(() {
-          _fillInInputMethod = value;
-        });
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-        child: Row(
-          children: [
-            Container(
-              width: 18,
-              height: 18,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: _fillInInputMethod == value ? const Color(0xFF8B5CF6) : Colors.grey[400]!,
-                  width: 2,
+  Widget _buildMultipleChoiceSection() {
+    return Column(
+      key: const ValueKey('multiple-choice-section'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Options & Correct Answers',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF1E293B),
+          ),
+        ),
+        const SizedBox(height: 12),
+        ..._options.asMap().entries.map((entry) {
+          int index = entry.key;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8.0),
+            child: Row(
+              children: [
+                Checkbox(
+                  value: _correctAnswers[index],
+                  onChanged: (bool? value) {
+                    setState(() {
+                      _correctAnswers[index] = value!;
+                    });
+                  },
                 ),
-              ),
-              child: _fillInInputMethod == value
-                  ? Center(
-                      child: Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Color(0xFF8B5CF6),
-                        ),
-                      ),
-                    )
-                  : null,
+                Expanded(
+                  child: TextFormField(
+                    initialValue: _options[index],
+                    onChanged: (value) {
+                      _options[index] = value;
+                    },
+                    decoration: InputDecoration(
+                      labelText: 'Option ${index + 1}',
+                      border: const OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    validator: (value) {
+                      if (_options.where((o) => o.trim().isNotEmpty).length < 2) {
+                        return 'At least two options are required.';
+                      }
+                      return null;
+                    },
+                  ),
+                ),
+                if (_options.length > 2)
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.red),
+                    onPressed: () => _removeOption(index),
+                  ),
+              ],
             ),
-            const SizedBox(width: 10),
+          );
+        }).toList(),
+        const SizedBox(height: 8),
+        TextButton.icon(
+          onPressed: _addOption,
+          icon: const Icon(Icons.add_circle),
+          label: const Text('Add Option'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFillInTheBlankSection() {
+    return Column(
+      key: const ValueKey('fill-in-the-blank-section'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildModernTextField(
+          controller: _scenarioContextController,
+          label: 'Scenario Context (Optional)',
+          icon: FontAwesomeIcons.book,
+          maxLines: 2,
+        ),
+        const SizedBox(height: 16),
+        _buildModernTextField(
+          controller: _textBeforeBlankController,
+          label: 'Text Before Blank',
+          icon: FontAwesomeIcons.alignLeft,
+          maxLines: 2,
+        ),
+        const SizedBox(height: 16),
+        Container(
+          height: 50,
+          margin: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.grey[200],
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Center(
+            child: Text(
+              '[ STUDENT FILLS BLANK HERE ]',
+              style: TextStyle(
+                fontStyle: FontStyle.italic,
+                color: Colors.grey,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        _buildModernTextField(
+          controller: _textAfterBlankController,
+          label: 'Text After Blank (Optional)',
+          icon: FontAwesomeIcons.alignRight,
+          maxLines: 2,
+        ),
+        const SizedBox(height: 24),
+        const Text(
+          'Student Answer Input Method:',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF1E293B),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w500,
-                      fontSize: 13,
-                    ),
-                  ),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                ],
+              child: RadioListTile<String>(
+                title: const Text('Typing'),
+                value: 'typing',
+                groupValue: _fillInInputMethod,
+                onChanged: (String? value) {
+                  setState(() {
+                    _fillInInputMethod = value!;
+                  });
+                },
+              ),
+            ),
+            Expanded(
+              child: RadioListTile<String>(
+                title: const Text('Multiple Choice'),
+                value: 'multiple-choice',
+                groupValue: _fillInInputMethod,
+                onChanged: (String? value) {
+                  setState(() {
+                    _fillInInputMethod = value!;
+                  });
+                },
               ),
             ),
           ],
         ),
+        const SizedBox(height: 16),
+        if (_fillInInputMethod == 'typing' || _fillInInputMethod == 'multiple-choice')
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _fillInInputMethod == 'typing' ? 'Acceptable Typed Answer(s) for the Blank' : 'Options for the Blank',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1E293B),
+                ),
+              ),
+              const SizedBox(height: 12),
+              ..._acceptableAnswers.asMap().entries.map((entry) {
+                int index = entry.key;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8.0),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          initialValue: _acceptableAnswers[index],
+                          onChanged: (value) {
+                            _acceptableAnswers[index] = value;
+                          },
+                          decoration: InputDecoration(
+                            labelText: '${_fillInInputMethod == 'typing' ? 'Answer' : 'Option'} ${index + 1}',
+                            border: const OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          validator: (value) => _acceptableAnswers.where((a) => a.trim().isNotEmpty).isEmpty
+                              ? 'At least one answer is required.'
+                              : null,
+                        ),
+                      ),
+                      if (_acceptableAnswers.length > 1)
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.red),
+                          onPressed: () => _removeAcceptableAnswer(index),
+                        ),
+                    ],
+                  ),
+                );
+              }).toList(),
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: _addAcceptableAnswer,
+                icon: const Icon(Icons.add_circle),
+                label: const Text('Add Answer'),
+              ),
+            ],
+          ),
+      ],
+    );
+  }
+
+  Widget _buildSaveButton() {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton(
+        onPressed: _saveQuestion,
+        child: Text(widget.existingQuestion == null ? 'Add Question' : 'Save Changes'),
       ),
     );
   }
