@@ -14,7 +14,6 @@ import 'package:firebase_storage/firebase_storage.dart' as firebase_storage;
 // Add the new imports
 import 'package:talkready_mobile/Teachers/Assessment/ClassAssessmentsListPage.dart';
 
-
 // Define a simple Question model for standard quizzes
 class Question {
   String id;
@@ -1108,6 +1107,8 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
                           _referenceTextController.clear();
                         });
                       },
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
                     ),
                   ),
                   Expanded(
@@ -1124,11 +1125,12 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
                           _referenceTextController.clear();
                         });
                       },
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
                     ),
                   ),
                 ],
               ),
-              // ^^^^ END OF NEW: Assessment Type Selection ^^^^
               const SizedBox(height: 24),
 
 

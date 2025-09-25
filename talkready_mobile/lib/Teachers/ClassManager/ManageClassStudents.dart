@@ -811,33 +811,10 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> with 
                         width: 1.5,
                       ),
                     ),
-                    child: TextField(
+                    child: _buildModernTextField(
                       controller: _searchController,
-                      decoration: InputDecoration(
-                        labelText: "Student Email",
-                        prefixIcon: Container(
-                          margin: const EdgeInsets.all(12),
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF8B5CF6).withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Icon(
-                            FontAwesomeIcons.envelope,
-                            color: Color(0xFF8B5CF6),
-                            size: 16,
-                          ),
-                        ),
-                        border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-                        suffixIcon: _searchController.text.isNotEmpty
-                            ? IconButton(
-                                icon: const Icon(Icons.clear, color: Color(0xFF64748B)),
-                                onPressed: _clearSearchFieldAndResults,
-                                tooltip: "Clear Search",
-                              )
-                            : null,
-                      ),
+                      hintText: "Student Email",
+                      prefixIcon: FontAwesomeIcons.envelope,
                       keyboardType: TextInputType.emailAddress,
                       enabled: !_isSearching,
                       onChanged: (_) {
@@ -1166,6 +1143,8 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> with 
                               color: Color(0xFF64748B),
                               fontSize: 14,
                             ),
+                            softWrap: true,
+                            overflow: TextOverflow.visible, // <-- allow wrapping
                           ),
                           const SizedBox(height: 4),
                           Text(
@@ -1270,4 +1249,68 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> with 
       ),
     );
   }
+
+  Widget _buildModernTextField({
+  required TextEditingController controller,
+  required String hintText,
+  IconData? prefixIcon,
+  TextInputType keyboardType = TextInputType.text,
+  bool enabled = true,
+  void Function(String)? onChanged,
+  void Function()? onSubmitted,
+}) {
+  return TextField(
+    controller: controller,
+    enabled: enabled,
+    keyboardType: keyboardType,
+    style: const TextStyle(
+      fontSize: 17,
+      color: Color(0xFF1E293B),
+      fontWeight: FontWeight.w500,
+      letterSpacing: 0.1,
+      fontFamily: 'RobotoMono', // Monospace font for better email readability
+    ),
+    decoration: InputDecoration(
+      filled: true,
+      fillColor: Colors.white,
+      hintText: hintText,
+      hintStyle: const TextStyle(
+        color: Color(0xFF94A3B8),
+        fontSize: 15,
+        fontWeight: FontWeight.w400,
+        fontFamily: 'RobotoMono', // Match input font
+      ),
+      prefixIcon: prefixIcon != null
+          ? Icon(prefixIcon, color: Color(0xFF8B5CF6), size: 20)
+          : null,
+      contentPadding: const EdgeInsets.symmetric(vertical: 18, horizontal: 18),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: Color(0xFFE2E8F0), width: 1.2),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: Color(0xFFE2E8F0), width: 1.2),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: Color(0xFF8B5CF6), width: 1.5),
+      ),
+      isDense: true, // Make the field more compact
+    ),
+    scrollPadding: const EdgeInsets.all(20),
+    maxLines: 1,
+    minLines: 1,
+    textInputAction: TextInputAction.search,
+    onChanged: onChanged,
+    onSubmitted: (_) => onSubmitted?.call(),
+    scrollPhysics: const BouncingScrollPhysics(),
+    textAlignVertical: TextAlignVertical.center,
+    // Add this to allow horizontal scrolling for long emails:
+    expands: false,
+    textAlign: TextAlign.start,
+    // This ensures the text scrolls horizontally if it's too long
+    keyboardAppearance: Brightness.light,
+  );
+}
 }
