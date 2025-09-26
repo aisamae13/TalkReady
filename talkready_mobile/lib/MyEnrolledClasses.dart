@@ -199,12 +199,12 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
     }
   }
 
-  Future<List<Map<String, dynamic>>> getStudentEnrolledClasses(String uid) async {
+  Future<List<Map<String, dynamic>>> getStudentEnrolledClasses(String studentId) async {
     try {
       // Query classes where the student is enrolled
       final QuerySnapshot classesSnapshot = await _firestore
           .collection('trainerClass')
-          .where('student', arrayContains: uid)
+          .where('student', arrayContains: studentId)
           .get();
 
       List<Map<String, dynamic>> classes = [];
@@ -305,7 +305,7 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
     }
   }
 
-  Future<Map<String, dynamic>> joinClassWithCode(String uid, String classCode) async {
+  Future<Map<String, dynamic>> joinClassWithCode(String studentId, String classCode) async {
     try {
       // Find class by code
       final QuerySnapshot classQuery = await _firestore
@@ -323,13 +323,13 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
       
       // Check if student is already enrolled
       List<dynamic> currentStudent = classData['student'] ?? [];
-      if (currentStudent.contains(uid)) {
+      if (currentStudent.contains(studentId)) {
         throw Exception("You are already enrolled in this class.");
       }
 
       // Add student to the class
       await _firestore.collection('trainerClass').doc(classDoc.id).update({
-        'student': FieldValue.arrayUnion([uid])
+        'student': FieldValue.arrayUnion([studentId])
       });
 
       return {
