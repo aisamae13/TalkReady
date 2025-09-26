@@ -10,7 +10,8 @@ import 'forgotpass.dart';
 import 'loading_screen.dart';
 import 'homepage.dart';
 import 'welcome_page.dart';
-import 'package:talkready_mobile/Teachers/TrainerDashboard.dart';
+import '../Teachers/TrainerDashboard.dart';
+import 'chooseUserType.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -96,56 +97,110 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  Future<void> _navigateAfterLogin(User user) async {
-    try {
-      final docRef = _firestore.collection('users').doc(user.uid);
-      final doc = await docRef.get();
-      final Map<String, dynamic>? userData = doc.data() as Map<String, dynamic>?;
+ void _navigateAfterLogin(User user) async {
+    // Show a loading screen while we fetch user data
+    Navigator.push(
+        context, MaterialPageRoute(builder: (context) => const LoadingScreen()));
 
-      // Prefer any explicit role field set by web or mobile (may be 'role' or 'userType').
-      String? role;
-      if (userData != null) {
-        role = (userData['role'] ?? userData['userType'] ?? userData['type'])?.toString().toLowerCase();
+    try {
+      final docSnapshot = await _firestore.collection('users').doc(user.uid).get();
+      final Map<String, dynamic>? userData = docSnapshot.data();
+
+      // Remove the loading screen
+      if (Navigator.of(context).canPop()) {
+          Navigator.pop(context);
       }
 
-      // If role exists, route immediately based on role (skip onboarding prompts).
-      if (role != null && role.isNotEmpty) {
-        if (!mounted) return;
-        if (role == 'trainer') {
-          Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => TrainerDashboard()));
+      // --- Core Logic Check ---
+
+      // 1. Check if the user document exists and has the necessary data
+      if (!docSnapshot.exists || userData == null || userData['userType'] == null) {
+        // If the document doesn't exist, create a minimal one (for new users)
+        if (!docSnapshot.exists) {
+          await _firestore.collection('users').doc(user.uid).set({
+            'uid': user.uid,
+            'email': user.email,
+            'displayName': user.displayName ?? user.email?.split('@').first,
+            'createdAt': FieldValue.serverTimestamp(),
+            'userType': null, // Explicitly null
+            'onboardingCompleted': false, // Explicitly false
+          }, SetOptions(merge: true));
+        }
+
+        // Action: Needs to select user type
+        logger.i('User ${user.uid} needs user type selection. Navigating to ChooseUserTypePage.');
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const ChooseUserTypePage())
+        );
+        return;
+      }
+
+      final role = userData['userType'];
+      final onboardingCompleted = userData['onboardingCompleted'] ?? false; // Default to false if field is missing
+
+      // 2. Check if the user type is set but onboarding isn't complete (e.g., they just selected their type)
+      if (role != null && onboardingCompleted == false) {
+        // Action: Has user type, but needs to start/complete onboarding (e.g., name/goals)
+        logger.i('User ${user.uid} has user type ($role) but needs onboarding. Navigating to WelcomePage.');
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const WelcomePage()),
+        );
+        return;
+      }
+
+      // 3. Check for existing, fully onboarded user (Role-based navigation)
+      if (onboardingCompleted == true && role != null) {
+        logger.i('User ${user.uid} is fully onboarded as $role. Navigating to Dashboard.');
+        if (role == 'trainer' || role == 'teacher') {
+          // Navigate to Trainer Dashboard
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const TrainerDashboard()),
+          );
         } else {
-          Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const HomePage()));
+          // Default to Home Page (for students/other roles)
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const HomePage()),
+          );
         }
         return;
       }
 
-      // No explicit role found => fall back to onboarding checks (existing behavior)
-      bool hasOnboardingData = await _hasCompletedOnboarding(user.uid);
-      if (!mounted) return;
+      // Fallback: This should ideally not be reached if logic is perfect, but leads to user type selection
+      logger.w('User ${user.uid} fell through navigation logic. Sending to ChooseUserTypePage.');
+       Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const ChooseUserTypePage())
+      );
 
-      if (!hasOnboardingData) {
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const WelcomePage()));
-        return;
+    } catch (e, stackTrace) {
+      // Ensure loading screen is removed on error
+      if (Navigator.of(context).canPop()) {
+          Navigator.pop(context);
       }
-
-      // If onboarding exists but role still missing, default to HomePage (or you can decide a safer fallback)
-      Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const HomePage()));
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Login error: $e')));
-      logger.e('Navigation error after login: $e');
+      // Log error and show snackbar
+      logger.e('Login failed or profile error: $e', error: e, stackTrace: stackTrace);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Login failed or profile error. Check logs for details.')),
+      );
     }
   }
 
-  Future<void> _signInWithGoogle() async {
+ Future<void> _signInWithGoogle() async {
     try {
+      // Step 1: Sign out existing Google session (clean start for robustness)
       await _googleSignIn.signOut();
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-      if (googleUser == null) return;
+      if (googleUser == null) return; // User cancelled sign-in
 
       if (!mounted) return;
+      // Show loading screen
       Navigator.push(context, MaterialPageRoute(builder: (context) => const LoadingScreen()));
 
+      // Step 2: Get Firebase credentials
       final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
       final OAuthCredential credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
@@ -153,9 +208,10 @@ class _LoginPageState extends State<LoginPage> {
       );
 
       final UserCredential userCredential = await _auth.signInWithCredential(credential);
-      if (!mounted) { Navigator.pop(context); return; }
-
       final user = userCredential.user;
+
+      if (!mounted) { try { Navigator.pop(context); } catch (_) {} return; }
+
       if (user == null) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Google sign-in failed. Please try again.')));
@@ -163,39 +219,53 @@ class _LoginPageState extends State<LoginPage> {
       }
 
       final userDocRef = _firestore.collection('users').doc(user.uid);
-      final docSnapshot = await userDocRef.get();
 
-      if (!docSnapshot.exists) {
-        // Create/merge a minimal profile using info from Google.
-        // IMPORTANT: do NOT set `role` or `onboardingCompleted` here — let existing web settings win.
-        await userDocRef.set({
+      // Step 3: Crucial Read - Fetch the current state of the user document
+      final docSnapshot = await userDocRef.get();
+      final existingData = docSnapshot.data() as Map<String, dynamic>? ?? {};
+
+      // Step 4: Write - Only merge new/updated information, explicitly preserving userType and onboardingCompleted
+      // We explicitly check if these fields exist in the existing data.
+      final Map<String, dynamic> dataToMerge = {
           'uid': user.uid,
           'email': user.email,
           'displayName': user.displayName ?? googleUser.email.split('@').first,
           'photoURL': user.photoURL ?? googleUser.photoUrl,
-          'createdAt': FieldValue.serverTimestamp(),
           'emailVerified': user.emailVerified,
-        }, SetOptions(merge: true));
-      } else {
-        // Merge non-destructive fields only; do not overwrite role/onboarding flags.
-        final existing = docSnapshot.data() as Map<String, dynamic>? ?? {};
-        await userDocRef.set({
-          'email': user.email,
-          'displayName': user.displayName ?? existing['displayName'],
-          'photoURL': user.photoURL ?? existing['photoURL'],
-          'emailVerified': user.emailVerified,
-        }, SetOptions(merge: true));
+          'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      // CRITICAL: ONLY set userType and onboardingCompleted if they DON'T exist in the DB yet.
+      // If they exist, the merge operation ensures the DB values are kept unless explicitly overwritten.
+      // We use SetOptions(merge: true) to protect existing fields.
+
+      if (!existingData.containsKey('userType')) {
+        dataToMerge['userType'] = null;
+      }
+      if (!existingData.containsKey('onboardingCompleted')) {
+        dataToMerge['onboardingCompleted'] = false;
+      }
+      if (!existingData.containsKey('createdAt')) {
+        dataToMerge['createdAt'] = FieldValue.serverTimestamp();
       }
 
-      Navigator.pop(context);
+      await userDocRef.set(dataToMerge, SetOptions(merge: true));
+
+      // Step 5: Dismiss loading and navigate
+      if (Navigator.of(context).canPop()) {
+         Navigator.pop(context); // Dismiss the LoadingScreen
+      }
       if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Login successful!')));
 
-      await _navigateAfterLogin(user);
-    } catch (e) {
-      try { Navigator.pop(context); } catch (_) {}
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Google Sign-In error: $e')));
-      logger.e('Google Sign-In error: $e');
+      // This will now use the correct and fully preserved userType and onboardingCompleted flags
+      _navigateAfterLogin(user);
+
+    } catch (e, stackTrace) {
+      try { if (Navigator.of(context).canPop()) Navigator.pop(context); } catch (_) {}
+      logger.e('Google Sign-In error: $e', error: e, stackTrace: stackTrace);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Google Sign-In error: An error occurred during authentication. Please try again.')));
     }
   }
 
@@ -212,13 +282,25 @@ class _LoginPageState extends State<LoginPage> {
       Navigator.push(context, MaterialPageRoute(builder: (context) => const LoadingScreen()));
 
       // If the email is associated only with a non-password provider, show suggestion
-      final providers = await _auth.fetchSignInMethodsForEmail(email);
-      if (providers.isNotEmpty && !providers.contains('password')) {
-        Navigator.pop(context);
-        final suggestion = providers.contains('google.com') ? 'Google Sign-In' : providers.join(', ');
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Please sign in using: $suggestion')));
-        return;
+    final providers = await _auth.fetchSignInMethodsForEmail(email);
+
+    // Check if providers exist BUT 'password' is not one of them (e.g., only 'google.com')
+    if (providers.isNotEmpty && !providers.contains('password')) {
+      Navigator.pop(context); // Dismiss the LoadingScreen
+      if (!mounted) return;
+
+      String message;
+      if (providers.contains('google.com')) {
+        // Specific message for Google account
+        message = 'It looks like you signed up with Google. Please use the "Continue with Google" button below.';
+      } else {
+        // Generic message for other non-password providers
+        final suggestion = providers.join(', ');
+        message = 'This email is linked to a non-password account (e.g., $suggestion). Please use the appropriate sign-in method.';
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+      return;
       }
 
       final UserCredential userCredential = await _auth.signInWithEmailAndPassword(email: email, password: password);
@@ -240,7 +322,7 @@ class _LoginPageState extends State<LoginPage> {
           }, SetOptions(merge: true));
         }
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Login successful!')));
-        await _navigateAfterLogin(user);
+        _navigateAfterLogin(user);
       }
     } on FirebaseAuthException catch (e) {
       try { Navigator.pop(context); } catch (_) {}
@@ -253,6 +335,18 @@ class _LoginPageState extends State<LoginPage> {
         case 'wrong-password':
           message = 'Incorrect password.';
           break;
+           case 'invalid-credential':
+      // This is often thrown when a Google-only account tries to use email/password.
+      // We check if the email has 'google.com' as a provider to give the best instruction.
+      final email = _emailController.text.trim();
+      final providers = await _auth.fetchSignInMethodsForEmail(email);
+
+      if (providers.contains('google.com')) {
+        message = 'It looks like you signed up with Google. Please use the "Continue with Google" button below.';
+      } else {
+        message = 'The credential is invalid, or the account is linked to a different sign-in method.';
+      }
+      break;
         default:
           message = e.message ?? 'Login failed.';
       }

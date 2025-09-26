@@ -82,6 +82,30 @@ class OnboardingScreenState extends State<OnboardingScreen> {
     super.dispose();
   }
 
+  // 1. UTILITY: Function to calculate age from birthdate
+  int _calculateAge(DateTime birthDate) {
+    DateTime now = DateTime.now();
+    int age = now.year - birthDate.year;
+    if (now.month < birthDate.month || (now.month == birthDate.month && now.day < birthDate.day)) {
+      age--;
+    }
+    return age;
+  }
+
+  // Helper for age validation feedback
+  String? _getAgeValidationError() {
+    final enteredAge = int.tryParse(_ageController.text.trim());
+    if (_birthdate == null || enteredAge == null || enteredAge <= 0) {
+      return null;
+    }
+
+    final calculatedAge = _calculateAge(_birthdate!);
+    if (enteredAge != calculatedAge) {
+      return 'Age must match the calculated age from your birthdate ($calculatedAge).';
+    }
+    return null;
+  }
+
   Future<void> _pickProfilePic() async {
     try {
       _logger.i('Attempting to pick profile picture from gallery');
@@ -142,6 +166,7 @@ class OnboardingScreenState extends State<OnboardingScreen> {
         'municipality': _municipalityController.text.trim(),
         'barangay': _barangayController.text.trim(),
         'timestamp': FieldValue.serverTimestamp(),
+        'onboardingCompleted': true,
       };
 
       if (_profilePic != null) {
@@ -196,12 +221,29 @@ class OnboardingScreenState extends State<OnboardingScreen> {
     }
   }
 
+  // 2. VALIDATION: Check for age consistency
   bool _isStage1Valid() {
-    return _firstNameController.text.trim().isNotEmpty &&
-        _lastNameController.text.trim().isNotEmpty &&
-        _ageController.text.trim().isNotEmpty &&
-        _birthdate != null &&
-        _selectedGender != null;
+    final enteredAgeText = _ageController.text.trim();
+
+    // 1. Basic non-empty checks
+    if (_firstNameController.text.trim().isEmpty ||
+        _lastNameController.text.trim().isEmpty ||
+        enteredAgeText.isEmpty ||
+        _birthdate == null ||
+        _selectedGender == null) {
+      return false;
+    }
+
+    // 2. Age parsing check
+    final enteredAge = int.tryParse(enteredAgeText);
+    if (enteredAge == null || enteredAge <= 0) {
+      return false; // Invalid age format
+    }
+
+    // 3. Consistency Check: Age must match calculated age
+    final calculatedAge = _calculateAge(_birthdate!);
+
+    return enteredAge == calculatedAge;
   }
 
   bool _isStage2Valid() {
@@ -210,13 +252,37 @@ class OnboardingScreenState extends State<OnboardingScreen> {
         _barangayController.text.trim().isNotEmpty;
   }
 
-  Future<void> _selectBirthdate(BuildContext context) async {
+ Future<void> _selectBirthdate(BuildContext context) async {
     final now = DateTime.now();
+
+    // Define the custom color scheme
+    final customColorScheme = ColorScheme.light(
+      primary: primaryColor, // Blue color for header background, selected day circle
+      onPrimary: Colors.white, // White color for text/icons on the primary color
+      surface: Colors.white, // White color for the main calendar surface
+      onSurface: Colors.black, // Black for day numbers
+      onBackground: primaryColor, // Hint for text fields (sometimes)
+    );
+
     final picked = await showDatePicker(
       context: context,
       initialDate: _birthdate ?? DateTime(now.year - 18, now.month, now.day),
       firstDate: DateTime(1900),
       lastDate: now,
+      builder: (context, child) {
+        return Theme(
+          // Apply the custom color scheme to the date picker
+          data: ThemeData.light().copyWith(
+            colorScheme: customColorScheme,
+            textButtonTheme: TextButtonThemeData(
+              style: TextButton.styleFrom(
+                foregroundColor: primaryColor, // Blue color for 'CANCEL' and 'OK' buttons
+              ),
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
     if (picked != null) {
       setState(() {
@@ -263,6 +329,9 @@ class OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   Widget _buildStage1() {
+    // Check for age error to control the input's error state
+    final ageErrorText = _getAgeValidationError();
+
     return _buildCard(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -297,6 +366,7 @@ class OnboardingScreenState extends State<OnboardingScreen> {
             onChanged: (_) => setState(() {}),
           ),
           const SizedBox(height: 16),
+          // 3. UI FEEDBACK: Add error text to age field
           TextField(
             controller: _ageController,
             keyboardType: TextInputType.number,
@@ -304,6 +374,7 @@ class OnboardingScreenState extends State<OnboardingScreen> {
               labelText: "Age",
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               prefixIcon: Icon(Icons.cake_outlined),
+              errorText: ageErrorText, // <-- Display the error message here
             ),
             onChanged: (_) => setState(() {}),
           ),
@@ -346,6 +417,8 @@ class OnboardingScreenState extends State<OnboardingScreen> {
                       ? ""
                       : "${_birthdate!.year}-${_birthdate!.month.toString().padLeft(2, '0')}-${_birthdate!.day.toString().padLeft(2, '0')}",
                 ),
+                // Force a rebuild here when birthdate is selected to trigger age validation
+                onTap: () => setState(() {}),
               ),
             ),
           ),
@@ -593,9 +666,9 @@ class OnboardingScreenState extends State<OnboardingScreen> {
         elevation: 0,
         iconTheme: IconThemeData(color: primaryColor),
       ),
-      resizeToAvoidBottomInset: true, // <-- Add this line
+      resizeToAvoidBottomInset: true,
       body: SafeArea(
-        child: SingleChildScrollView( // <-- Wrap with this
+        child: SingleChildScrollView(
           child: Column(
             children: [
               _buildProgressIndicator(),

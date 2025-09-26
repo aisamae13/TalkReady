@@ -17,7 +17,7 @@ class JournalEntriesPage extends StatefulWidget {
     required this.addEntry,
     required this.updateEntry,
     required this.deleteEntry,
-    required this.toggleFavorite, required void Function(int index) onToggleFavorite, required Future<void> Function(int index) onDeleteEntry, required Future<void> Function(int index, JournalEntry updatedEntry) onUpdateEntry,
+    required this.toggleFavorite, required Future<void> Function(int index, JournalEntry updatedEntry) onUpdateEntry,
   });
 
   @override
@@ -36,9 +36,9 @@ class _JournalEntriesPageState extends State<JournalEntriesPage> {
   @override
   Widget build(BuildContext context) {
     // Filter entries based on mood, tag, favorites, and time
-    List<JournalEntry> filteredEntries = widget.entries.where((entry) {
+       List<JournalEntry> filteredEntries = widget.entries.where((entry) {
       bool matchesMood = filterMood == 'All' || entry.mood == filterMood;
-      bool matchesTag = filterTag == 'All' || entry.tag == filterTag;
+      bool matchesTag = filterTag == 'All' || (entry.tagName ?? '') == filterTag;
       bool matchesFavorite = !filterFavorites || entry.isFavorite;
       bool matchesTime = true;
       final now = DateTime.now();
@@ -74,7 +74,7 @@ class _JournalEntriesPageState extends State<JournalEntriesPage> {
               borderRadius: BorderRadius.circular(15),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.grey.withOpacity(0.3),
+                  color: Colors.grey.withValues(alpha: 0.3),
                   blurRadius: 8,
                   offset: const Offset(0, 4),
                 ),
@@ -153,18 +153,18 @@ class _JournalEntriesPageState extends State<JournalEntriesPage> {
                               Wrap(
                                 spacing: 10,
                                 runSpacing: 10,
-                                children: [
-                                  'All',
-                                  'Personal',
-                                  'Work',
-                                  'Travel',
-                                  'Study',
-                                  'Food',
-                                  'Plant',
-                                ].map((tag) {
-                                  return ChoiceChip(
-                                    label: Text(tag),
-                                    selected: tempTag == tag,
+                                 children:
+                                 [
+                                    'All',
+                                    ...widget.entries
+                                        .map((e) => e.tagName)
+                                        .where((tag) => tag != null && tag.isNotEmpty)
+                                        .toSet()
+                                        .toList(),
+                                  ].map((tag) {
+                                 return ChoiceChip(
+                                    label: Text(tag ?? 'Unknown'),
+                                    selected: tempTag == (tag ?? ''),
                                     selectedColor: const Color(0xFF00568D).withOpacity(0.5),
                                     backgroundColor: Colors.white.withOpacity(0.8),
                                     shape: RoundedRectangleBorder(
@@ -174,7 +174,7 @@ class _JournalEntriesPageState extends State<JournalEntriesPage> {
                                     elevation: 2,
                                     onSelected: (selected) {
                                       modalSetState(() {
-                                        tempTag = tag;
+                                        tempTag = tag ?? '';
                                       });
                                     },
                                   );
@@ -252,7 +252,7 @@ class _JournalEntriesPageState extends State<JournalEntriesPage> {
                                       borderRadius: BorderRadius.circular(10),
                                       boxShadow: [
                                         BoxShadow(
-                                          color: Colors.grey.withOpacity(0.3),
+                                          color: Colors.grey.withValues(alpha: 0.3),
                                           blurRadius: 8,
                                           offset: const Offset(0, 4),
                                         ),
@@ -295,7 +295,7 @@ class _JournalEntriesPageState extends State<JournalEntriesPage> {
                                       borderRadius: BorderRadius.circular(10),
                                       boxShadow: [
                                         BoxShadow(
-                                          color: Colors.grey.withOpacity(0.3),
+                                          color: Colors.grey.withValues(alpha: 0.3),
                                           blurRadius: 8,
                                           offset: const Offset(0, 4),
                                         ),
@@ -354,7 +354,7 @@ class _JournalEntriesPageState extends State<JournalEntriesPage> {
               borderRadius: BorderRadius.circular(15),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.grey.withOpacity(0.3),
+                  color: Colors.grey.withValues(alpha: 0.3),
                   blurRadius: 8,
                   offset: const Offset(0, 4),
                 ),
@@ -382,9 +382,9 @@ class _JournalEntriesPageState extends State<JournalEntriesPage> {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              const Color(0xFF00568D).withOpacity(0.1),
+              const Color(0xFF00568D).withValues(alpha: 0.1),
               Colors.white,
-              const Color(0xFFE0FFD6).withOpacity(0.3),
+              const Color(0xFFE0FFD6).withValues(alpha: 0.3),
             ],
           ),
         ),
@@ -613,7 +613,7 @@ class _JournalEntriesPageState extends State<JournalEntriesPage> {
                                                     const SizedBox(width: 10),
                                                     // Tag display
                                                     Expanded(
-                                                      child: entry.tag == 'Not specified'
+                                                      child: entry.tagName == 'Not specified'
                                                           ? Text(
                                                               'Tag: Not specified',
                                                               style: TextStyle(
@@ -627,13 +627,13 @@ class _JournalEntriesPageState extends State<JournalEntriesPage> {
                                                               mainAxisSize: MainAxisSize.min,
                                                               children: [
                                                                 Icon(
-                                                                  _getTagIcon(entry.tag),
+                                                                  _getTagIcon(entry.tagName ?? ''),
                                                                   size: 16,
                                                                   color: const Color(0xFF00568D),
                                                                 ),
                                                                 const SizedBox(width: 4),
                                                                 Text(
-                                                                  entry.tag,
+                                                                  entry.tagName ?? 'Unknown',
                                                                   style: const TextStyle(
                                                                     fontSize: 12,
                                                                     color: Color(0xFF00568D),
@@ -672,7 +672,7 @@ class _JournalEntriesPageState extends State<JournalEntriesPage> {
                                         borderRadius: BorderRadius.circular(15),
                                         boxShadow: [
                                           BoxShadow(
-                                            color: Colors.grey.withOpacity(0.3),
+                                            color: Colors.grey.withValues(alpha: 0.3),
                                             blurRadius: 8,
                                             offset: const Offset(0, 4),
                                           ),
@@ -705,7 +705,7 @@ class _JournalEntriesPageState extends State<JournalEntriesPage> {
                                         borderRadius: BorderRadius.circular(15),
                                         boxShadow: [
                                           BoxShadow(
-                                            color: Colors.grey.withOpacity(0.3),
+                                            color: Colors.grey.withValues(alpha: 0.3),
                                             blurRadius: 8,
                                             offset: const Offset(0, 4),
                                           ),
@@ -852,9 +852,9 @@ class JournalEntryDetailsPage extends StatelessWidget {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              const Color(0xFF00568D).withOpacity(0.1),
+              const Color(0xFF00568D).withValues(alpha: 0.1),
               Colors.white,
-              const Color(0xFFE0FFD6).withOpacity(0.3),
+              const Color(0xFFE0FFD6).withValues(alpha: 0.3),
             ],
           ),
         ),
@@ -884,7 +884,8 @@ class JournalEntryDetailsPage extends StatelessWidget {
                                 MaterialPageRoute(
                                   builder: (context) => JournalWritingPage(
                                     mood: entry.mood,
-                                    tag: entry.tag,
+                                    tagId: entry.tagId,
+                                    tagName: entry.tagName,
                                     entries: entries,
                                     addEntry: addEntry,
                                     updateEntry: (index, updatedEntry) {
@@ -971,7 +972,7 @@ class JournalEntryDetailsPage extends StatelessWidget {
                         ),
                         const SizedBox(height: 10),
                         Text(
-                          'Mood: ${entry.mood} | Tag: ${entry.tag}',
+                          'Mood: ${entry.mood} | Tag: ${(entry.tagName?.isEmpty ?? true) ? "Not specified" : entry.tagName}',
                           style: const TextStyle(
                             fontSize: 16,
                             fontStyle: FontStyle.italic,

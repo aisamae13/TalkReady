@@ -4,7 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class MoodSelectionPage extends StatefulWidget {
-  final Function(String?, String?) onMoodSelected;
+ final Function(String?, String?, String?) onMoodSelected;
 
   const MoodSelectionPage({super.key, required this.onMoodSelected});
 
@@ -43,7 +43,7 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
     _loadTags();
   }
 
-  Future<void> _loadTags() async {
+ Future<void> _loadTags() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) {
@@ -54,44 +54,34 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
         return;
       }
 
+      // Default tags with proper IDs
+      List<Map<String, dynamic>> defaultTags = [
+        {'id': 'default_personal', 'name': 'Personal', 'iconCodePoint': '58944'},
+        {'id': 'default_work', 'name': 'Work', 'iconCodePoint': '59475'},
+        {'id': 'default_travel', 'name': 'Travel', 'iconCodePoint': '59126'},
+        {'id': 'default_study', 'name': 'Study', 'iconCodePoint': '58394'},
+        {'id': 'default_food', 'name': 'Food', 'iconCodePoint': '59522'},
+        {'id': 'default_plant', 'name': 'Plant', 'iconCodePoint': '59330'},
+      ];
+
+      // Load custom tags from Firestore (consistent with journal_page.dart)
       final snapshot = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
           .collection('tags')
+          .where('userId', isEqualTo: user.uid)
           .get();
 
       final customTags = snapshot.docs.map((doc) {
         final data = doc.data();
         return {
+          'id': doc.id,  // Include document ID
           'name': data['name'] as String,
           'iconCodePoint': data['iconCodePoint'] as String,
         };
       }).toList();
 
-      // Ensure default tags are not duplicated if _loadTags is called multiple times
-      // or if custom tags have the same name as default tags.
-      // A more robust way would be to ensure default tags are added only once.
-      // For now, let's clear and add default tags first, then custom ones.
-      List<Map<String, dynamic>> defaultTags = [
-        {'name': 'Personal', 'iconCodePoint': '58944'},
-        {'name': 'Work', 'iconCodePoint': '59475'},
-        {'name': 'Travel', 'iconCodePoint': '59126'},
-        {'name': 'Study', 'iconCodePoint': '58394'},
-        {'name': 'Food', 'iconCodePoint': '59522'},
-        {'name': 'Plant', 'iconCodePoint': '59330'},
-      ];
-
-      // Filter out custom tags that might already exist in defaultTags by name
-      final uniqueCustomTags = customTags.where((customTag) {
-        return !defaultTags.any((defaultTag) => defaultTag['name'] == customTag['name']);
-      }).toList();
-
       if (mounted) {
         setState(() {
-          tags = [
-            ...defaultTags,
-            ...uniqueCustomTags,
-          ];
+          tags = [...defaultTags, ...customTags];
           _isLoadingTags = false;
         });
       }
@@ -109,7 +99,7 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
     }
   }
 
-  Future<void> _addCustomTag(String name, IconData icon) async {
+ Future<void> _addCustomTag(String name, IconData icon) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) {
@@ -118,13 +108,14 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
       }
 
       final iconCodePoint = icon.codePoint.toString();
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
+
+      // Store in the main tags collection (consistent with journal_page.dart)
+      final docRef = await FirebaseFirestore.instance
           .collection('tags')
           .add({
         'name': name,
         'iconCodePoint': iconCodePoint,
+        'userId': user.uid,
       });
 
       if (mounted) {
@@ -132,6 +123,7 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
           // Avoid adding duplicate tag if it somehow got added by another means
           if (!tags.any((tag) => tag['name'] == name)) {
             tags.add({
+              'id': docRef.id,  // Store the document ID
               'name': name,
               'iconCodePoint': iconCodePoint,
             });
@@ -139,7 +131,7 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
           selectedTag = name; // Automatically select the newly added tag
         });
       }
-      logger.i('Added custom tag: $name with iconCodePoint: $iconCodePoint');
+      logger.i('Added custom tag: $name with ID: ${docRef.id} and iconCodePoint: $iconCodePoint');
     } catch (e) {
       logger.e('Error adding custom tag: $e');
       if (mounted) {
@@ -179,10 +171,10 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
     }
   }
 
-  void _navigateToJournalWriting(String? mood, String? tag) {
-    logger.i('Navigating to JournalWritingPage with mood: $mood, tag: $tag');
-    widget.onMoodSelected(mood, tag);
-  }
+ void _navigateToJournalWriting(String? mood, String? tagId, String? tagName) {
+  logger.i('Navigating to JournalWritingPage with mood: $mood, tagId: $tagId, tagName: $tagName');
+  widget.onMoodSelected(mood, tagId, tagName);
+}
 
   @override
   Widget build(BuildContext context) {
@@ -221,7 +213,7 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
                           child: TextButton(
                             onPressed: () {
                               logger.i('Skip button pressed, navigating with no mood or tag');
-                              _navigateToJournalWriting(null, null);
+                              _navigateToJournalWriting(null, null, null);
                             },
                             child: const Text(
                               'Skip',
@@ -642,9 +634,15 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
                         onPressed: selectedMood != null && selectedTag != null
                             ? () {
                                 logger.i('Continue button pressed with mood: $selectedMood, tag: $selectedTag');
-                                _navigateToJournalWriting(selectedMood!, selectedTag!);
+                                // Find the selected tag's ID from the tags list
+                                String? selectedTagId;
+                                if (selectedTag != null) {
+                                  final tag = tags.firstWhere((t) => t['name'] == selectedTag);
+                                  selectedTagId = tag['id']; // Use the actual tag ID
+                                }
+                                _navigateToJournalWriting(selectedMood!, selectedTagId, selectedTag!);
                               }
-                            : null, // Button is disabled if mood or tag is not selected
+                            : null,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.transparent,
                           shadowColor: Colors.transparent,

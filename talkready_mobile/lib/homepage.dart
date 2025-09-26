@@ -52,11 +52,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   bool _isLoading = true;
   bool _hasError = false;
   String? _errorMessage;
-  
+
   // User stats
   Duration _totalSpeakingTime = Duration.zero;
   int _currentStreak = 0;
-  
+
   // Skill tracking
   final Map<String, double> skillPercentages = {
     'Fluency': 0.0,
@@ -65,10 +65,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     'Vocabulary': 0.0,
     'Interaction': 0.0,
   };
-  
+
   // Featured courses
   final List<Map<String, dynamic>> _featuredCourses = [];
-  
+
   // Animation controllers
   late AnimationController _fadeController;
   late AnimationController _slideController;
@@ -102,7 +102,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       duration: const Duration(milliseconds: 600),
       vsync: this,
     );
-    
+
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _fadeController, curve: Curves.bounceOut),
     );
@@ -119,7 +119,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         _calculateUserStats(),
         _loadFeaturedCourses(),
       ]);
-      
+
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -146,21 +146,21 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       logger.e('No user logged in');
       return;
     }
-    
+
     try {
       logger.i('Fetching progress for user: ${user.uid}');
       DocumentSnapshot doc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
           .get();
-      
+
       Map<String, dynamic>? userData = doc.data() as Map<String, dynamic>?;
       if (userData != null && userData.containsKey('progress')) {
         Map<String, dynamic> progress = userData['progress'];
-        
+
         // Calculate skill scores using similar logic to React component
         final skillScores = _calculateSkillScores(userData);
-        
+
         if (mounted) {
           setState(() {
             skillPercentages['Fluency'] = skillScores[1];
@@ -170,7 +170,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             skillPercentages['Interaction'] = skillScores[2];
           });
         }
-        
+
         logger.i('Fetched progress: $skillPercentages');
       } else {
         logger.i('No progress data found for user: ${user.uid}, using defaults');
@@ -183,12 +183,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   List<double> _calculateSkillScores(Map<String, dynamic> userData) {
     final lessonAttempts = userData['lessonAttempts'] as Map<String, dynamic>? ?? {};
-    
+
     if (lessonAttempts.isEmpty) {
       return [20, 20, 20, 20, 20]; // Default for new users
     }
 
-    List<double> grammarScores = [], fluencyScores = [], interactionScores = [], 
+    List<double> grammarScores = [], fluencyScores = [], interactionScores = [],
                  pronunciationScores = [], vocabularyScores = [];
 
     final speakingLessonIds = ["Lesson-3-2", "Lesson-5-1", "Lesson-5-2"];
@@ -197,7 +197,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     for (final lessonId in lessonAttempts.keys) {
       final attempts = lessonAttempts[lessonId] as List<dynamic>? ?? [];
       if (attempts.isEmpty) continue;
-      
+
       final latestAttempt = attempts.last as Map<String, dynamic>?;
       if (latestAttempt == null || latestAttempt['detailedResponses'] == null) continue;
 
@@ -210,7 +210,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           if (detail is Map<String, dynamic>) {
             final character = detail['character'] as String? ?? '';
             final isAgentTurn = character.contains('Agent') || character.contains('Your Turn');
-            
+
             if (isAgentTurn && detail['azureAiFeedback'] != null) {
               final fb = detail['azureAiFeedback'] as Map<String, dynamic>;
               if (fb['fluencyScore'] != null) fluencyScores.add(fb['fluencyScore'].toDouble());
@@ -226,7 +226,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         final feedbackKey = detailedResponses.keys
             .where((k) => k.toLowerCase().contains('feedback'))
             .firstOrNull;
-        
+
         if (feedbackKey != null) {
           final allPromptFeedback = detailedResponses[feedbackKey] as Map<String, dynamic>? ?? {};
           for (final feedbackDetail in allPromptFeedback.values) {
@@ -241,7 +241,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       }
     }
 
-    double calculateAverage(List<double> scores) => 
+    double calculateAverage(List<double> scores) =>
         scores.isEmpty ? 20 : scores.reduce((a, b) => a + b) / scores.length;
 
     return [
@@ -262,14 +262,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           .collection('users')
           .doc(user.uid)
           .get();
-      
+
       Map<String, dynamic>? userData = doc.data() as Map<String, dynamic>?;
       if (userData == null) return;
 
       // Calculate speaking time and streak
       _calculateSpeakingTime(userData);
       _calculateStreak(userData);
-      
+
     } catch (e) {
       logger.e('Error calculating user stats: $e');
     }
@@ -278,7 +278,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   void _calculateSpeakingTime(Map<String, dynamic> userData) {
     // Implementation similar to React component
     int totalSeconds = 0;
-    
+
     final lessonAttempts = userData['lessonAttempts'] as Map<String, dynamic>? ?? {};
     for (final attempts in lessonAttempts.values) {
       if (attempts is List) {
@@ -289,27 +289,27 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         }
       }
     }
-    
+
     _totalSpeakingTime = Duration(seconds: totalSeconds);
   }
 
   void _calculateStreak(Map<String, dynamic> userData) {
     final Set<String> activityDates = {};
     final lessonAttempts = userData['lessonAttempts'] as Map<String, dynamic>? ?? {};
-    
+
     for (final attempts in lessonAttempts.values) {
       if (attempts is List) {
         for (final attempt in attempts) {
           if (attempt is Map<String, dynamic> && attempt['attemptTimestamp'] != null) {
             DateTime dateObj;
             final timestamp = attempt['attemptTimestamp'];
-            
+
             if (timestamp is Timestamp) {
               dateObj = timestamp.toDate();
             } else {
               dateObj = DateTime.parse(timestamp.toString());
             }
-            
+
             final dateString = '${dateObj.year}-${dateObj.month.toString().padLeft(2, '0')}-${dateObj.day.toString().padLeft(2, '0')}';
             activityDates.add(dateString);
           }
@@ -325,7 +325,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final sortedDates = activityDates.toList()..sort();
     final today = DateTime.now();
     final yesterday = today.subtract(const Duration(days: 1));
-    
+
     final todayStr = '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
     final yesterdayStr = '${yesterday.year}-${yesterday.month.toString().padLeft(2, '0')}-${yesterday.day.toString().padLeft(2, '0')}';
     final lastActivityStr = sortedDates.last;
@@ -333,11 +333,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     if (lastActivityStr == todayStr || lastActivityStr == yesterdayStr) {
       _currentStreak = 1;
       DateTime currentDate = DateTime.parse(lastActivityStr);
-      
+
       for (int i = sortedDates.length - 2; i >= 0; i--) {
         final expectedPrevious = currentDate.subtract(const Duration(days: 1));
         final expectedStr = '${expectedPrevious.year}-${expectedPrevious.month.toString().padLeft(2, '0')}-${expectedPrevious.day.toString().padLeft(2, '0')}';
-        
+
         if (sortedDates[i] == expectedStr) {
           _currentStreak++;
           currentDate = expectedPrevious;
@@ -390,7 +390,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         'reason': 'Practical Skills',
       },
     ];
-    
+
     _featuredCourses.clear();
     _featuredCourses.addAll(staticCourses);
   }
@@ -409,14 +409,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   String _formatSpeakingTime() {
     if (_totalSpeakingTime.inSeconds == 0) return "0 min";
-    
+
     final hours = _totalSpeakingTime.inHours;
     final minutes = _totalSpeakingTime.inMinutes % 60;
-    
+
     String result = "";
     if (hours > 0) result += "${hours}h ";
     if (minutes > 0 || hours == 0) result += "${minutes}m";
-    
+
     return result.trim().isEmpty ? "0 min" : result.trim();
   }
 
@@ -492,7 +492,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   // Update skills immediately when data changes
   void _updateSkillProgressFromData(Map<String, dynamic> userData) {
     final skillScores = _calculateSkillScores(userData);
-    
+
     setState(() {
       skillPercentages['Fluency'] = skillScores[1];
       skillPercentages['Grammar'] = skillScores[0];
@@ -500,7 +500,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       skillPercentages['Vocabulary'] = skillScores[4];
       skillPercentages['Interaction'] = skillScores[2];
     });
-    
+
     logger.i('Real-time skill update: $skillPercentages');
   }
 
@@ -661,9 +661,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   child: _buildWelcomeSection(firstName),
                 ),
               ),
-              
+
               const SizedBox(height: 24),
-              
+
               // Skill Progress Section
               AnimatedBuilder(
                 animation: _fadeAnimation,
@@ -674,9 +674,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   );
                 },
               ),
-              
+
               const SizedBox(height: 20),
-              
+
               // User Stats Section
               AnimatedBuilder(
                 animation: _fadeAnimation,
@@ -687,9 +687,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   );
                 },
               ),
-              
+
               const SizedBox(height: 20),
-              
+
               // Main Content Grid
               AnimatedBuilder(
                 animation: _fadeAnimation,
@@ -700,9 +700,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   );
                 },
               ),
-              
+
               const SizedBox(height: 20),
-              
+
               // Quick Navigation
               AnimatedBuilder(
                 animation: _fadeAnimation,
@@ -788,7 +788,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 20),
-          
+
           // Pentagon Graph
           Stack(
             alignment: Alignment.center,
@@ -808,9 +808,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               ),
             ],
           ),
-          
+
           const SizedBox(height: 20),
-          
+
           // Skill Buttons
           Wrap(
             alignment: WrapAlignment.center,
@@ -836,7 +836,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         ? skillColors[skill]?.withOpacity(0.7)
                         : skillColors[skill] ?? Colors.grey,
                     borderRadius: BorderRadius.circular(20),
-                    border: isSelected 
+                    border: isSelected
                         ? Border.all(color: const Color(0xFF00568D), width: 2)
                         : null,
                   ),
@@ -852,7 +852,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               );
             }).toList(),
           ),
-          
+
           // Skill Description
           if (selectedSkill != null) ...[
             const SizedBox(height: 16),
@@ -878,7 +878,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               ),
             ),
           ],
-          
+
           if (selectedSkill == null && skillPercentages.values.every((value) => value == 0.0)) ...[
             const SizedBox(height: 16),
             Container(
@@ -1076,9 +1076,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             ],
           ),
         ),
-        
+
         const SizedBox(height: 20),
-        
+
         // Featured Courses Section
         _buildFeaturedCoursesSection(),
       ],

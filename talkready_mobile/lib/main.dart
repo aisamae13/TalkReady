@@ -99,6 +99,7 @@ import 'package:talkready_mobile/Teachers/Contents/SelectClassForContentPage.dar
 
 // Add this import if not already present
 import 'package:talkready_mobile/progress_page.dart';
+import 'profile.dart';
 
 final logger = Logger(
   printer: PrettyPrinter(
@@ -152,6 +153,7 @@ class MyApp extends StatelessWidget {
       '/forgot-password': (context) => const ForgotPasswordPage(),
       '/courses': (context) => CoursesPage(),
       '/journal': (context) => JournalPage(),
+      '/profile': (context) => const ProfilePage(),
 
       //Courses
       '/module1': (context) => const Module1Page(),

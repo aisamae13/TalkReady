@@ -241,38 +241,39 @@ class _CoursesPageState extends State<CoursesPage> {
   }
 
   // Helper to determine if a module is unlocked
-  bool _isModuleUnlocked(String moduleId) {
-    if (moduleId == 'module1') return true;
+    bool _isModuleUnlocked(String moduleId) {
+      if (moduleId == 'module1') return true;
 
-    int moduleNum = int.tryParse(moduleId.replaceAll('module', '')) ?? 0;
-    if (moduleNum <= 1) return true;
+      int moduleNum = int.tryParse(moduleId.replaceAll('module', '')) ?? 0;
+      if (moduleNum <= 1) return true;
 
-    String prevModuleId = 'module${moduleNum - 1}';
-    final prevModuleConfig = _moduleConfigs.firstWhere(
-      (m) => m['id'] == prevModuleId,
-      orElse: () => {},
-    );
+      String prevModuleId = 'module${moduleNum - 1}';
+      final prevModuleConfig = _moduleConfigs.firstWhere(
+         (m) => m['id'] == prevModuleId,
+         orElse: () => {},
+      );
 
-    if (prevModuleConfig.isEmpty) return false;
+      if (prevModuleConfig.isEmpty) return false;
 
-    final lessonAttempts =
-        _userProgress['lessonAttempts'] as Map<String, dynamic>? ?? {};
-    final assessmentAttempts =
-        _userProgress['moduleAssessmentAttempts'] as Map<String, dynamic>? ??
-        {};
+    // FIX HERE: Use safe casting for nested maps
+      final lessonAttempts = (_userProgress['lessonAttempts'] as Map?)
+        ?.cast<String, dynamic>() ?? {};
+    // FIX HERE: Use safe casting for nested maps
+      final assessmentAttempts = (_userProgress['moduleAssessmentAttempts'] as Map?)
+        ?.cast<String, dynamic>() ?? {};
 
-    final prevLessons = prevModuleConfig['lessons'] as List<String>? ?? [];
-    final allPrevLessonsDone = prevLessons.every(
-      (lessonId) => (lessonAttempts[lessonId] as List?)?.isNotEmpty ?? false,
-    );
+      final prevLessons = prevModuleConfig['lessons'] as List<String>? ?? [];
+      final allPrevLessonsDone = prevLessons.every(
+         (lessonId) => (lessonAttempts[lessonId] as List?)?.isNotEmpty ?? false,
+      );
 
-    final prevAssessmentId = prevModuleConfig['assessmentId'] as String?;
-    final prevAssessmentDone =
-        prevAssessmentId == null ||
-        (assessmentAttempts[prevAssessmentId] as List?)?.isNotEmpty == true;
+      final prevAssessmentId = prevModuleConfig['assessmentId'] as String?;
+      final prevAssessmentDone =
+            prevAssessmentId == null ||
+            (assessmentAttempts[prevAssessmentId] as List?)?.isNotEmpty == true;
 
-    return allPrevLessonsDone && prevAssessmentDone;
-  }
+      return allPrevLessonsDone && prevAssessmentDone;
+   }
 
   // Filter modules based on search query
   List<Map<String, dynamic>> _getFilteredModules() {
@@ -423,8 +424,8 @@ class _CoursesPageState extends State<CoursesPage> {
   Widget _buildModuleCard(Map<String, dynamic> moduleConfig) {
     final moduleId = moduleConfig['id'] as String;
     final lessonIds = moduleConfig['lessons'] as List<String>;
-    final lessonAttempts =
-        _userProgress['lessonAttempts'] as Map<String, dynamic>? ?? {};
+    final lessonAttempts = (_userProgress['lessonAttempts'] as Map?)
+    ?.cast<String, dynamic>() ?? {};
 
     final completedLessons = lessonIds
         .where((id) => (lessonAttempts[id] as List?)?.isNotEmpty ?? false)

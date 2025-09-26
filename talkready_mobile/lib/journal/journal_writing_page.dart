@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:logger/logger.dart';
 import 'journal_page.dart';
 
+// Assuming JournalEntry class is defined in journal_page.dart or another file
+// and is available here.
+
 class AppTheme {
   static const Color primaryColor = Color(0xFF00568D);
   static const Color secondaryColor = Color(0xFF003F6A);
@@ -33,7 +36,8 @@ class AppTheme {
 
 class JournalWritingPage extends StatefulWidget {
   final String? mood;
-  final String? tag;
+  final String? tagId;
+  final String? tagName;
   final List<JournalEntry> entries;
   final Function(JournalEntry) addEntry;
   final Function(int, JournalEntry) updateEntry;
@@ -44,7 +48,8 @@ class JournalWritingPage extends StatefulWidget {
   const JournalWritingPage({
     super.key,
     required this.mood,
-    required this.tag,
+    required this.tagId,
+    required this.tagName,
     required this.entries,
     required this.addEntry,
     required this.updateEntry,
@@ -94,7 +99,7 @@ class _JournalWritingPageState extends State<JournalWritingPage> {
   @override
   void initState() {
     super.initState();
-    logger.i('Received mood: ${widget.mood}, tag: ${widget.tag}');
+    logger.i('Received mood: ${widget.mood}, tagId: ${widget.tagId}, tagName: ${widget.tagName}');
     if (widget.initialEntry != null) {
       _titleController.text = widget.initialEntry!.title;
       try {
@@ -106,6 +111,7 @@ class _JournalWritingPageState extends State<JournalWritingPage> {
         _alignment = content['alignment'] ?? 'left';
       } catch (e) {
         logger.e('Failed to load entry: $e');
+        // ignore: use_build_context_synchronously
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Error loading entry')),
         );
@@ -184,6 +190,7 @@ class _JournalWritingPageState extends State<JournalWritingPage> {
   void _saveEntry() async {
     final contentText = _textController.text.trim();
     if (contentText.isEmpty) {
+      // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Content is required')),
       );
@@ -195,14 +202,15 @@ class _JournalWritingPageState extends State<JournalWritingPage> {
     });
 
     final mood = widget.mood ?? 'Unknown';
-    final tag = widget.tag ?? 'Unknown';
+    final tag = widget.tagName ?? 'Unknown';
     if (mood == 'Unknown' || tag == 'Unknown') {
-      logger.w('Saving entry with missing mood or tag: mood=$mood, tag=$tag');
+      logger.w('Saving entry with missing mood or tagName: mood=$mood, tagName=$tag');
     }
 
     final newEntry = JournalEntry(
       mood: mood,
-      tag: tag,
+      tagId: widget.tagId,
+      tagName: tag,
       title: _titleController.text.trim(),
       content: jsonEncode({
         'text': contentText,
@@ -215,7 +223,7 @@ class _JournalWritingPageState extends State<JournalWritingPage> {
       isFavorite: widget.initialEntry?.isFavorite ?? false,
     );
 
-    logger.i('Saving entry with mood: ${newEntry.mood}, tag: ${newEntry.tag}');
+    logger.i('Saving entry with mood: ${newEntry.mood}, tagId: ${newEntry.tagId}, tagName: ${newEntry.tagName}');
 
     try {
       if (widget.initialEntry != null) {
@@ -240,9 +248,11 @@ class _JournalWritingPageState extends State<JournalWritingPage> {
         _alignment = 'left';
         _isSaving = false;
       });
+      // ignore: use_build_context_synchronously
       Navigator.pushNamed(context, '/journal-entries');
     } catch (e) {
       logger.e('Error saving entry: $e');
+      // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Error saving entry')),
       );
@@ -322,12 +332,15 @@ class _JournalWritingPageState extends State<JournalWritingPage> {
           if (shouldDiscard != true) return;
         }
         if (widget.initialEntry != null) {
+          // ignore: use_build_context_synchronously
           Navigator.pushNamed(context, '/journal-entries');
         } else {
+          // ignore: use_build_context_synchronously
           Navigator.pushNamed(context, '/mood-selection');
         }
       },
       child: Scaffold(
+        // This is fine, as it's outside the main scrolling area
         floatingActionButton: Container(
           decoration: BoxDecoration(
             gradient: const LinearGradient(
@@ -362,9 +375,9 @@ class _JournalWritingPageState extends State<JournalWritingPage> {
                   ),
                   child: Padding(
                     padding: const EdgeInsets.all(20.0),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    child: ListView(
+                      padding: const EdgeInsets.all(0),
+                      shrinkWrap: true,
                       children: [
                         Text(
                           'Select your Prompts',
@@ -403,6 +416,7 @@ class _JournalWritingPageState extends State<JournalWritingPage> {
                                     selectedPrompt = null;
                                   });
                                 }
+                                // ignore: use_build_context_synchronously
                                 Navigator.pop(context);
                               },
                             );
@@ -437,46 +451,57 @@ class _JournalWritingPageState extends State<JournalWritingPage> {
               ],
             ),
           ),
+          // FIX: Use a Column to properly size the children, and Expanded/SingleChildScrollView for the main content.
           child: SafeArea(
-            child: SingleChildScrollView(
-              child: Padding(
-                padding: const EdgeInsets.all(20.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.arrow_back, color: AppTheme.primaryColor),
-                          onPressed: () {
-                            logger.i('Back button pressed on JournalWritingPage');
-                            Navigator.pop(context);
-                          },
-                        ),
-                        StreamBuilder(
-                          stream: Stream.periodic(const Duration(seconds: 1)),
-                          builder: (context, snapshot) {
-                            final now = DateTime.now();
-                            return Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              child: Text(
-                                '${now.day} ${_getMonthName(now.month)} ${now.year} | ${TimeOfDay.fromDateTime(now).format(context)}',
-                                style: AppTheme.dateStyle,
-                              ),
-                            );
-                          },
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    if (widget.mood != null || widget.tag != null)
-                      Text(
-                        'Mood: ${widget.mood ?? "Unknown"} | Tag: ${widget.tag ?? "Unknown"}',
-                        style: AppTheme.moodTagStyle,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // --- Fixed Header Area (Not scrollable) ---
+                Padding(
+                  padding: const EdgeInsets.only(left: 20.0, right: 20.0, top: 10.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                     IconButton(
+                        icon: const Icon(Icons.arrow_back, color: AppTheme.primaryColor),
+                        onPressed: () {
+                          logger.i('Back button pressed on JournalWritingPage');
+                          // This triggers the system pop mechanism, which executes the PopScope logic.
+                          Navigator.pop(context);
+                        },
                       ),
-                    const SizedBox(height: 20),
-                    Container(
+                      StreamBuilder(
+                        stream: Stream.periodic(const Duration(seconds: 1)),
+                        builder: (context, snapshot) {
+                          final now = DateTime.now();
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            child: Text(
+                              '${now.day} ${_getMonthName(now.month)} ${now.year} | ${TimeOfDay.fromDateTime(now).format(context)}',
+                              style: AppTheme.dateStyle,
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                if (widget.mood != null || widget.tagName != null)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                    child: Text(
+                      'Mood: ${widget.mood ?? "Unknown"} | Tag: ${widget.tagName ?? "Unknown"}',
+                      style: AppTheme.moodTagStyle,
+                    ),
+                  ),
+                const SizedBox(height: 20),
+
+                // --- Scrollable Content Area (Uses all remaining space) ---
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(20.0, 0, 20.0, 20.0), // Padding adjusted
+                    child: Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
@@ -609,6 +634,7 @@ class _JournalWritingPageState extends State<JournalWritingPage> {
                             ),
                           ),
                           const SizedBox(height: 10),
+                          // Min/Max height constraints are no longer strictly needed but are fine.
                           Container(
                             constraints: BoxConstraints(
                               minHeight: 200,
@@ -731,9 +757,9 @@ class _JournalWritingPageState extends State<JournalWritingPage> {
                         ],
                       ),
                     ),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
         ),

@@ -40,9 +40,43 @@ Route _createSlidingPageRoute({
   );
 }
 
+// Updated Tag class
+class Tag {
+  final String id;
+  final String name;
+  final String iconCodePoint;
+  final String userId;
+
+  Tag({
+    required this.id,
+    required this.name,
+    required this.iconCodePoint,
+    required this.userId,
+  });
+
+  Map<String, dynamic> toMap() {
+    return {
+      'name': name,
+      'iconCodePoint': iconCodePoint,
+      'userId': userId,
+    };
+  }
+
+  factory Tag.fromMap(Map<String, dynamic> map, String id) {
+    return Tag(
+      id: id,
+      name: map['name'] ?? '',
+      iconCodePoint: map['iconCodePoint'] ?? '58944',
+      userId: map['userId'] ?? '',
+    );
+  }
+}
+
+// Updated JournalEntry class
 class JournalEntry {
   final String mood;
-  final String tag;
+  final String? tagId;        // Store tag document ID instead of name
+  final String? tagName;      // Cache tag name for display
   final String title;
   final String content;
   final DateTime timestamp;
@@ -51,7 +85,8 @@ class JournalEntry {
 
   JournalEntry({
     required this.mood,
-    required this.tag,
+    this.tagId,
+    this.tagName,
     required this.title,
     required this.content,
     required this.timestamp,
@@ -62,7 +97,8 @@ class JournalEntry {
   Map<String, dynamic> toMap() {
     return {
       'mood': mood,
-      'tag': tag,
+      'tagId': tagId,
+      'tagName': tagName,
       'title': title,
       'content': content,
       'timestamp': Timestamp.fromDate(timestamp),
@@ -71,18 +107,107 @@ class JournalEntry {
   }
 
   factory JournalEntry.fromMap(Map<String, dynamic> map, String id) {
-    logger.i('Loading entry from Firestore: mood=${map['mood']}, tag=${map['tag']}');
+    logger.i('Loading entry from Firestore: mood=${map['mood']}, tagId=${map['tagId']}, tagName=${map['tagName']}');
     if (map['mood'] == null) logger.w('Mood is null in Firestore data for entry ID: $id');
-    if (map['tag'] == null) logger.w('Tag is null in Firestore data for entry ID: $id');
+    if (map['tagId'] == null && map['tagName'] == null) logger.w('Both tagId and tagName are null in Firestore data for entry ID: $id');
     return JournalEntry(
       id: id,
       mood: map['mood'] ?? 'Not specified',
-      tag: map['tag'] ?? 'Not specified',
+      tagId: map['tagId'],
+      tagName: map['tagName'] ?? 'Not specified',
       title: map['title'] ?? '',
       content: map['content'] ?? '{}',
       timestamp: (map['timestamp'] as Timestamp).toDate(),
       isFavorite: map['isFavorite'] ?? false,
     );
+  }
+}
+
+// Tag Service class
+class TagService {
+  static Future<List<Tag>> loadUserTags(String userId) async {
+    try {
+      // Load default tags first
+      List<Tag> defaultTags = [
+        Tag(id: 'default_personal', name: 'Personal', iconCodePoint: '58944', userId: userId),
+        Tag(id: 'default_work', name: 'Work', iconCodePoint: '59475', userId: userId),
+        Tag(id: 'default_travel', name: 'Travel', iconCodePoint: '59126', userId: userId),
+        Tag(id: 'default_study', name: 'Study', iconCodePoint: '58394', userId: userId),
+        Tag(id: 'default_food', name: 'Food', iconCodePoint: '59522', userId: userId),
+        Tag(id: 'default_plant', name: 'Plant', iconCodePoint: '59330', userId: userId),
+      ];
+
+      // Load custom tags from Firestore
+      final snapshot = await FirebaseFirestore.instance
+          .collection('tags')
+          .where('userId', isEqualTo: userId)
+          .get();
+
+      final customTags = snapshot.docs.map((doc) => Tag.fromMap(doc.data(), doc.id)).toList();
+
+      return [...defaultTags, ...customTags];
+    } catch (e) {
+      logger.e('Error loading tags: $e');
+      return [];
+    }
+  }
+
+  static Future<String?> addCustomTag(String name, IconData icon, String userId) async {
+    try {
+      final docRef = await FirebaseFirestore.instance
+          .collection('tags')
+          .add({
+        'name': name,
+        'iconCodePoint': icon.codePoint.toString(),
+        'userId': userId,
+      });
+
+      logger.i('Added custom tag: $name with ID: ${docRef.id}');
+      return docRef.id;
+    } catch (e) {
+      logger.e('Error adding custom tag: $e');
+      return null;
+    }
+  }
+
+  static Future<Tag?> getTagById(String tagId) async {
+    try {
+      // Check if it's a default tag
+      if (tagId.startsWith('default_')) {
+        Map<String, Map<String, String>> defaultTags = {
+          'default_personal': {'name': 'Personal', 'iconCodePoint': '58944'},
+          'default_work': {'name': 'Work', 'iconCodePoint': '59475'},
+          'default_travel': {'name': 'Travel', 'iconCodePoint': '59126'},
+          'default_study': {'name': 'Study', 'iconCodePoint': '58394'},
+          'default_food': {'name': 'Food', 'iconCodePoint': '59522'},
+          'default_plant': {'name': 'Plant', 'iconCodePoint': '59330'},
+        };
+
+        if (defaultTags.containsKey(tagId)) {
+          return Tag(
+            id: tagId,
+            name: defaultTags[tagId]!['name']!,
+            iconCodePoint: defaultTags[tagId]!['iconCodePoint']!,
+            userId: '',
+          );
+        }
+        return null;
+      }
+
+      // Load from Firestore for custom tags
+      final doc = await FirebaseFirestore.instance
+          .collection('tags')
+          .doc(tagId)
+          .get();
+
+      if (doc.exists) {
+        return Tag.fromMap(doc.data()!, doc.id);
+      }
+      return null;
+    } catch (e) {
+      logger.e('Error getting tag by ID: $e');
+      return null;
+    }
   }
 }
 
@@ -116,9 +241,8 @@ class _JournalPageState extends State<JournalPage> {
       }
 
       final snapshot = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .collection('journal_entries')
+          .collection('journals')
+          .where('userId', isEqualTo: user.uid)
           .orderBy('timestamp', descending: true)
           .get();
 
@@ -150,23 +274,25 @@ class _JournalPageState extends State<JournalPage> {
       }
 
       final docRef = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .collection('journal_entries')
-          .add(entry.toMap());
+          .collection('journals')
+          .add({
+            'userId': user.uid,
+            ...entry.toMap(),
+          });
 
       setState(() {
         _entries.insert(0, JournalEntry(
           id: docRef.id,
           mood: entry.mood,
-          tag: entry.tag,
+          tagId: entry.tagId,
+          tagName: entry.tagName,
           title: entry.title,
           content: entry.content,
           timestamp: entry.timestamp,
           isFavorite: entry.isFavorite,
         ));
       });
-      logger.i('Added journal entry with ID: ${docRef.id}, mood: ${entry.mood}, tag: ${entry.tag}');
+      logger.i('Added journal entry with ID: ${docRef.id}, mood: ${entry.mood}, tagId: ${entry.tagId}, tagName: ${entry.tagName}');
     } catch (e) {
       logger.e('Error adding entry: $e');
       if(mounted){
@@ -192,17 +318,19 @@ class _JournalPageState extends State<JournalPage> {
       }
 
       await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .collection('journal_entries')
+          .collection('journals')
           .doc(entry.id)
-          .update(updatedEntry.toMap());
+          .update({
+            'userId': user.uid,
+            ...updatedEntry.toMap(),
+          });
 
       setState(() {
         _entries[index] = JournalEntry(
           id: entry.id,
           mood: updatedEntry.mood,
-          tag: updatedEntry.tag,
+          tagId: updatedEntry.tagId,
+          tagName: updatedEntry.tagName,
           title: updatedEntry.title,
           content: updatedEntry.content,
           timestamp: updatedEntry.timestamp,
@@ -235,9 +363,7 @@ class _JournalPageState extends State<JournalPage> {
       }
 
       await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .collection('journal_entries')
+          .collection('journals')
           .doc(entry.id)
           .delete();
 
@@ -273,13 +399,70 @@ class _JournalPageState extends State<JournalPage> {
     }
 
     FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .collection('journal_entries')
+        .collection('journals')
         .doc(entry.id)
         .update({'isFavorite': _entries[index].isFavorite})
         .then((_) => logger.i('Updated favorite status for entry ID: ${entry.id}'))
         .catchError((e) => logger.e('Error updating favorite status: $e'));
+  }
+
+  // Method to handle tag updates across all journal entries
+  Future<void> _updateTagInAllJournals(String tagId, String newTagName) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      // Update all journal entries that use this tag
+      final batch = FirebaseFirestore.instance.batch();
+
+      final journalsSnapshot = await FirebaseFirestore.instance
+          .collection('journals')
+          .where('userId', isEqualTo: user.uid)
+          .where('tagId', isEqualTo: tagId)
+          .get();
+
+      for (var doc in journalsSnapshot.docs) {
+        batch.update(doc.reference, {'tagName': newTagName});
+      }
+
+      await batch.commit();
+      logger.i('Updated tag name in ${journalsSnapshot.docs.length} journal entries');
+    } catch (e) {
+      logger.e('Error updating tag in journals: $e');
+    }
+  }
+
+  // Method to clean up orphaned journal entries when tag is deleted
+  Future<void> _handleTagDeletion(String tagId) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      // Set tagId to null for affected journals
+      final batch = FirebaseFirestore.instance.batch();
+
+      final journalsSnapshot = await FirebaseFirestore.instance
+          .collection('journals')
+          .where('userId', isEqualTo: user.uid)
+          .where('tagId', isEqualTo: tagId)
+          .get();
+
+      for (var doc in journalsSnapshot.docs) {
+        batch.update(doc.reference, {
+          'tagId': null,
+          'tagName': 'Deleted Tag'
+        });
+      }
+
+      await batch.commit();
+
+      // Delete the tag
+      await FirebaseFirestore.instance.collection('tags').doc(tagId).delete();
+
+      logger.i('Deleted tag and updated ${journalsSnapshot.docs.length} journal entries');
+    } catch (e) {
+      logger.e('Error handling tag deletion: $e');
+    }
   }
 
   void _onItemTapped(int index) {
@@ -347,13 +530,14 @@ class _JournalPageState extends State<JournalPage> {
                   case '/mood-selection':
                     return MaterialPageRoute(
                       builder: (context) => MoodSelectionPage(
-                        onMoodSelected: (mood, tag) {
-                          logger.i('MoodSelectionPage callback - mood: $mood, tag: $tag');
+                        onMoodSelected: (mood, tagId, tagName) {
+                          logger.i('MoodSelectionPage callback - mood: $mood, tagId: $tagId, tagName: $tagName');
                           Navigator.of(context).pushNamed(
                             '/journal-writing',
                             arguments: {
                               'mood': mood,
-                              'tag': tag,
+                              'tagId': tagId,
+                              'tagName': tagName,
                               'entries': _entries,
                               'addEntry': _addEntry,
                               'updateEntry': _updateEntry,
@@ -369,7 +553,8 @@ class _JournalPageState extends State<JournalPage> {
                     final args = settings.arguments as Map<String, dynamic>?;
                     if (args == null ||
                         !args.containsKey('mood') ||
-                        !args.containsKey('tag') ||
+                        !args.containsKey('tagId') ||
+                        !args.containsKey('tagName') ||
                         !args.containsKey('entries') ||
                         !args.containsKey('addEntry') ||
                         !args.containsKey('updateEntry') ||
@@ -383,16 +568,18 @@ class _JournalPageState extends State<JournalPage> {
                       );
                     }
                     final mood = args['mood'] as String?;
-                    final tag = args['tag'] as String?;
-                    if (mood == null || tag == null) {
-                      logger.w('Navigating to JournalWritingPage with null mood or tag: mood=$mood, tag=$tag');
+                    final tagId = args['tagId'] as String?;
+                    final tagName = args['tagName'] as String?;
+                    if (mood == null || (tagId == null && tagName == null)) {
+                      logger.w('Navigating to JournalWritingPage with null mood or tag: mood=$mood, tagId=$tagId, tagName=$tagName');
                     } else {
-                      logger.i('Navigating to JournalWritingPage with args: mood=$mood, tag=$tag');
+                      logger.i('Navigating to JournalWritingPage with args: mood=$mood, tagId=$tagId, tagName=$tagName');
                     }
                     return MaterialPageRoute(
                       builder: (context) => JournalWritingPage(
                         mood: mood,
-                        tag: tag,
+                        tagId: tagId,
+                        tagName: tagName,
                         entries: args['entries'] as List<JournalEntry>,
                         addEntry: args['addEntry'] as Function(JournalEntry),
                         updateEntry: args['updateEntry'] as Function(int, JournalEntry),
@@ -410,8 +597,6 @@ class _JournalPageState extends State<JournalPage> {
                         deleteEntry: _deleteEntry,
                         toggleFavorite: _toggleFavorite,
                         onUpdateEntry: _updateEntry,
-                        onDeleteEntry: _deleteEntry,
-                        onToggleFavorite: _toggleFavorite,
                       ),
                     );
 
@@ -447,6 +632,5 @@ class _JournalPageState extends State<JournalPage> {
         customNotchWidthFactor: 1.8,
       ),
     );
-
   }
 }
