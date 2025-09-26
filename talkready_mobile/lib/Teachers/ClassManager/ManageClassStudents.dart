@@ -102,7 +102,7 @@ Future<DocumentReference> enrollStudentInClassService(String classId, String stu
     'enrolledAt': FieldValue.serverTimestamp(),
   });
   await FirebaseFirestore.instance.collection('trainerClass').doc(classId).update({
-    'studentCount': FieldValue.increment(1),
+    'student': FieldValue.arrayUnion([studentId])
   });
   return enrollmentRef;
 }

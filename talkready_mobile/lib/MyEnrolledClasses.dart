@@ -203,8 +203,8 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
     try {
       // Query classes where the student is enrolled
       final QuerySnapshot classesSnapshot = await _firestore
-          .collection('classes')
-          .where('students', arrayContains: studentId)
+          .collection('trainerClass')
+          .where('student', arrayContains: studentId)
           .get();
 
       List<Map<String, dynamic>> classes = [];
@@ -235,8 +235,8 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
         }
         
         // Add student count
-        List<dynamic> students = classData['students'] ?? [];
-        classData['studentCount'] = students.length;
+        List<dynamic> student = classData['student'] ?? [];
+        classData['studentCount'] = student.length;
         
         classes.add(classData);
       }
@@ -309,7 +309,7 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
     try {
       // Find class by code
       final QuerySnapshot classQuery = await _firestore
-          .collection('classes')
+          .collection('trainerClass')
           .where('classCode', isEqualTo: classCode.toUpperCase())
           .limit(1)
           .get();
@@ -322,14 +322,14 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
       final Map<String, dynamic> classData = classDoc.data() as Map<String, dynamic>;
       
       // Check if student is already enrolled
-      List<dynamic> currentStudents = classData['students'] ?? [];
-      if (currentStudents.contains(studentId)) {
+      List<dynamic> currentStudent = classData['student'] ?? [];
+      if (currentStudent.contains(studentId)) {
         throw Exception("You are already enrolled in this class.");
       }
 
       // Add student to the class
-      await _firestore.collection('classes').doc(classDoc.id).update({
-        'students': FieldValue.arrayUnion([studentId])
+      await _firestore.collection('trainerClass').doc(classDoc.id).update({
+        'student': FieldValue.arrayUnion([studentId])
       });
 
       return {
@@ -740,7 +740,7 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
             const SizedBox(height: 4),
             
             Text(
-              'Students: ${cls['studentCount'] ?? 0}',
+              'Student: ${cls['studentCount'] ?? 0}',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: Colors.grey[400],
               ),
