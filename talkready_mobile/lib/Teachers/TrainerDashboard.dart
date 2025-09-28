@@ -82,8 +82,8 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
 
       setState(() {
         activeClassesCount = classCount;
-        totalStudents = studentSum;
-        pendingSubmissions = pendingSum;
+        totalStudents = studentSum < 0 ? 0 : studentSum;
+        pendingSubmissions = pendingSum < 0 ? 0 : pendingSum;
         mostRecentClass = recentClass;
         loading = false;
         error = null;

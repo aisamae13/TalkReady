@@ -785,4 +785,4 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
       ),
     );
   }
-    }
+}
