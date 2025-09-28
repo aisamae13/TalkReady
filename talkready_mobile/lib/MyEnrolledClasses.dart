@@ -320,18 +320,14 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
 
       final DocumentSnapshot classDoc = classQuery.docs.first;
       final Map<String, dynamic> classData = classDoc.data() as Map<String, dynamic>;
-      
-      // Check if student is already enrolled
+
+      // Check if student is already enrolled by trainer
       List<dynamic> currentStudent = classData['student'] ?? [];
-      if (currentStudent.contains(studentId)) {
-        throw Exception("You are already enrolled in this class.");
+      if (!currentStudent.contains(studentId)) {
+        throw Exception("You must be enrolled by the trainer before joining this class.");
       }
 
-      // Add student to the class
-      await _firestore.collection('trainerClass').doc(classDoc.id).update({
-        'student': FieldValue.arrayUnion([studentId])
-      });
-
+      // Optionally, you can update a local state or Firestore if needed, but usually just refresh the list
       return {
         'message': 'Successfully joined class!',
         'className': classData['className'] ?? 'Unnamed Class',
