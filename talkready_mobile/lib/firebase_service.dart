@@ -1,6 +1,5 @@
 //firebase
 
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:logger/logger.dart';
@@ -49,7 +48,8 @@ class FirebaseService {
       _announcementsController.stream;
   Stream<List<Map<String, dynamic>>> get assessmentsStream =>
       _assessmentsController.stream;
-  Stream<Map<String, dynamic>?> get classDocStream => _classDocController.stream;
+  Stream<Map<String, dynamic>?> get classDocStream =>
+      _classDocController.stream;
   Stream<List<Map<String, dynamic>>> get materialsStream =>
       _materialsController.stream;
   Stream<List<Map<String, dynamic>>> get submissionsStream =>
@@ -81,7 +81,9 @@ class FirebaseService {
   void startRealtimeSync({required String trainerId, String? activeClassId}) {
     // avoid re-subscribing for same trainer
     if (_currentTrainerId == trainerId && _activeClassId == activeClassId) {
-      _logger.d('startRealtimeSync: already subscribed for trainer $trainerId and class $activeClassId');
+      _logger.d(
+        'startRealtimeSync: already subscribed for trainer $trainerId and class $activeClassId',
+      );
       return;
     }
 
@@ -90,40 +92,54 @@ class FirebaseService {
     _activeClassId = activeClassId;
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    _logger.i('startRealtimeSync called — trainerId param=$trainerId, currentAuthUid=$uid');
+    _logger.i(
+      'startRealtimeSync called — trainerId param=$trainerId, currentAuthUid=$uid',
+    );
 
     // classes
-    _realtimeSubs['trainerClass'] = listenToClasses(trainerId).listen((data) {
-      _classesCache = data;
-      _classesController.add(_classesCache);
-    }, onError: (e) {
-      _logger.e('classes stream error: $e');
-    });
+    _realtimeSubs['trainerClass'] = listenToClasses(trainerId).listen(
+      (data) {
+        _classesCache = data;
+        _classesController.add(_classesCache);
+      },
+      onError: (e) {
+        _logger.e('classes stream error: $e');
+      },
+    );
 
     // announcements
-    _realtimeSubs['announcements'] = listenToAnnouncements(trainerId).listen((data) {
-      _announcementsCache = data;
-      _announcementsController.add(_announcementsCache);
-    }, onError: (e) {
-      _logger.e('announcements stream error: $e');
-    });
+    _realtimeSubs['announcements'] = listenToAnnouncements(trainerId).listen(
+      (data) {
+        _announcementsCache = data;
+        _announcementsController.add(_announcementsCache);
+      },
+      onError: (e) {
+        _logger.e('announcements stream error: $e');
+      },
+    );
 
     // optional: listen to materials for active class
     if (activeClassId != null && activeClassId.isNotEmpty) {
       _realtimeSubs['assessments'] =
-          listenToTrainerAssessmentsByClass(activeClassId).listen((data) {
-        _assessmentsCache = data;
-        _assessmentsController.add(_assessmentsCache);
-      }, onError: (e) {
-        _logger.e('assessments stream error: $e');
-      });
+          listenToTrainerAssessmentsByClass(activeClassId).listen(
+            (data) {
+              _assessmentsCache = data;
+              _assessmentsController.add(_assessmentsCache);
+            },
+            onError: (e) {
+              _logger.e('assessments stream error: $e');
+            },
+          );
 
-      _realtimeSubs['classDoc'] = listenToClassDoc(activeClassId).listen((doc) {
-        _classDocCache = doc;
-        _classDocController.add(_classDocCache);
-      }, onError: (e) {
-        _logger.e('classDoc stream error: $e');
-      });
+      _realtimeSubs['classDoc'] = listenToClassDoc(activeClassId).listen(
+        (doc) {
+          _classDocCache = doc;
+          _classDocController.add(_classDocCache);
+        },
+        onError: (e) {
+          _logger.e('classDoc stream error: $e');
+        },
+      );
 
       // materials
       _realtimeSubs['materials'] = _firestore
@@ -131,19 +147,25 @@ class FirebaseService {
           .where('classId', isEqualTo: activeClassId)
           .orderBy('createdAt', descending: true)
           .snapshots()
-          .listen((snap) {
-        _materialsCache =
-            snap.docs.map((d) => {'id': d.id, ...d.data()}).toList();
-        _materialsController.add(_materialsCache);
-      }, onError: (e) {
-        _logger.e('materials stream error: $e');
-      });
+          .listen(
+            (snap) {
+              _materialsCache = snap.docs
+                  .map((d) => {'id': d.id, ...d.data()})
+                  .toList();
+              _materialsController.add(_materialsCache);
+            },
+            onError: (e) {
+              _logger.e('materials stream error: $e');
+            },
+          );
 
       // submissions for assessments of this class (optional heavy; consider per-assessment instead)
       // we do not attach a global submissions listener here by default to avoid large scans.
     }
 
-    _logger.i('Realtime sync started for trainer=$trainerId, activeClass=$activeClassId');
+    _logger.i(
+      'Realtime sync started for trainer=$trainerId, activeClass=$activeClassId',
+    );
   }
 
   /// Stop and cancel all realtime subscriptions
@@ -176,33 +198,43 @@ class FirebaseService {
 
     if (_currentTrainerId != null && classId != null && classId.isNotEmpty) {
       // re-subscribe assessments and classDoc for new class
-      _realtimeSubs['assessments'] =
-          listenToTrainerAssessmentsByClass(classId).listen((data) {
-        _assessmentsCache = data;
-        _assessmentsController.add(_assessmentsCache);
-      }, onError: (e) {
-        _logger.e('assessments stream error: $e');
-      });
+      _realtimeSubs['assessments'] = listenToTrainerAssessmentsByClass(classId)
+          .listen(
+            (data) {
+              _assessmentsCache = data;
+              _assessmentsController.add(_assessmentsCache);
+            },
+            onError: (e) {
+              _logger.e('assessments stream error: $e');
+            },
+          );
 
-      _realtimeSubs['classDoc'] = listenToClassDoc(classId).listen((doc) {
-        _classDocCache = doc;
-        _classDocController.add(_classDocCache);
-      }, onError: (e) {
-        _logger.e('classDoc stream error: $e');
-      });
+      _realtimeSubs['classDoc'] = listenToClassDoc(classId).listen(
+        (doc) {
+          _classDocCache = doc;
+          _classDocController.add(_classDocCache);
+        },
+        onError: (e) {
+          _logger.e('classDoc stream error: $e');
+        },
+      );
 
       _realtimeSubs['materials'] = _firestore
           .collection('classMaterials')
           .where('classId', isEqualTo: classId)
           .orderBy('createdAt', descending: true)
           .snapshots()
-          .listen((snap) {
-        _materialsCache =
-            snap.docs.map((d) => {'id': d.id, ...d.data()}).toList();
-        _materialsController.add(_materialsCache);
-      }, onError: (e) {
-        _logger.e('materials stream error: $e');
-      });
+          .listen(
+            (snap) {
+              _materialsCache = snap.docs
+                  .map((d) => {'id': d.id, ...d.data()})
+                  .toList();
+              _materialsController.add(_materialsCache);
+            },
+            onError: (e) {
+              _logger.e('materials stream error: $e');
+            },
+          );
     }
   }
 
@@ -236,13 +268,15 @@ class FirebaseService {
   }) async {
     final uId = userId;
     if (uId == null) {
-      _logger
-          .e('User not authenticated for saving lesson attempt: $lessonIdKey.');
+      _logger.e(
+        'User not authenticated for saving lesson attempt: $lessonIdKey.',
+      );
       throw Exception('User not authenticated');
     }
 
     _logger.i(
-        'Saving attempt for Lesson: $lessonIdKey, User: $uId, Attempt: $attemptNumberToSave, Score: $score, IsUpdate: $isUpdate');
+      'Saving attempt for Lesson: $lessonIdKey, User: $uId, Attempt: $attemptNumberToSave, Score: $score, IsUpdate: $isUpdate',
+    );
     if (detailedResponsesPayload != null) {
       // _logger.d('Detailed Payload: ${jsonEncode(detailedResponsesPayload)}'); // Can be verbose
     }
@@ -256,17 +290,19 @@ class FirebaseService {
         Map<String, dynamic> dataToWrite =
             {}; // Data for the entire userProgress doc
         Map<String, dynamic>
-            lessonAttemptsMap; // Holds all attempts for all lessons
+        lessonAttemptsMap; // Holds all attempts for all lessons
         List<dynamic>
-            specificLessonAttemptsArray; // Array of attempts for the current lessonIdKey
+        specificLessonAttemptsArray; // Array of attempts for the current lessonIdKey
 
         if (docSnapshot.exists) {
           final existingData = docSnapshot.data() as Map<String, dynamic>;
           dataToWrite = {...existingData}; // Preserve other module data
           lessonAttemptsMap = Map<String, dynamic>.from(
-              existingData['lessonAttempts'] as Map? ?? {});
-          specificLessonAttemptsArray =
-              List<dynamic>.from(lessonAttemptsMap[lessonIdKey] as List? ?? []);
+            existingData['lessonAttempts'] as Map? ?? {},
+          );
+          specificLessonAttemptsArray = List<dynamic>.from(
+            lessonAttemptsMap[lessonIdKey] as List? ?? [],
+          );
         } else {
           dataToWrite['createdAt'] = FieldValue.serverTimestamp();
           lessonAttemptsMap = {};
@@ -275,12 +311,14 @@ class FirebaseService {
 
         if (isUpdate) {
           // Find and update the existing attempt
-          int attemptIndex = specificLessonAttemptsArray.indexWhere((att) =>
-              att is Map && att['attemptNumber'] == attemptNumberToSave);
+          int attemptIndex = specificLessonAttemptsArray.indexWhere(
+            (att) => att is Map && att['attemptNumber'] == attemptNumberToSave,
+          );
 
           if (attemptIndex != -1) {
             Map<String, dynamic> existingAttempt = Map<String, dynamic>.from(
-                specificLessonAttemptsArray[attemptIndex]);
+              specificLessonAttemptsArray[attemptIndex],
+            );
 
             // Merge new detailedResponses. If reflections are the only thing changing,
             // the payload should reflect that.
@@ -296,10 +334,12 @@ class FirebaseService {
 
             specificLessonAttemptsArray[attemptIndex] = existingAttempt;
             _logger.i(
-                'Updated attempt $attemptNumberToSave for lesson "$lessonIdKey"');
+              'Updated attempt $attemptNumberToSave for lesson "$lessonIdKey"',
+            );
           } else {
             _logger.w(
-                'Attempt $attemptNumberToSave for lesson "$lessonIdKey" not found for update. No changes made to this attempt.');
+              'Attempt $attemptNumberToSave for lesson "$lessonIdKey" not found for update. No changes made to this attempt.',
+            );
             // Decide if you want to throw an error or just log
             // throw Exception('Attempt to update non-existent attempt $attemptNumberToSave for $lessonIdKey');
             return; // Exit transaction if specific attempt to update is not found
@@ -317,7 +357,8 @@ class FirebaseService {
           };
           specificLessonAttemptsArray.add(newAttemptData);
           _logger.i(
-              'Added new attempt $attemptNumberToSave for lesson "$lessonIdKey"');
+            'Added new attempt $attemptNumberToSave for lesson "$lessonIdKey"',
+          );
         }
 
         lessonAttemptsMap[lessonIdKey] = specificLessonAttemptsArray;
@@ -333,10 +374,12 @@ class FirebaseService {
       });
 
       _logger.i(
-          'Successfully ${isUpdate ? "updated" : "saved new"} attempt $attemptNumberToSave for lesson "$lessonIdKey" for user $uId.');
+        'Successfully ${isUpdate ? "updated" : "saved new"} attempt $attemptNumberToSave for lesson "$lessonIdKey" for user $uId.',
+      );
     } catch (e) {
       _logger.e(
-          'Error ${isUpdate ? "updating" : "saving new"} lesson attempt for "$lessonIdKey", User $uId: $e');
+        'Error ${isUpdate ? "updating" : "saving new"} lesson attempt for "$lessonIdKey", User $uId: $e',
+      );
       rethrow;
     }
   }
@@ -347,7 +390,10 @@ class FirebaseService {
 
   // NEW METHOD: Upload user audio for a lesson prompt
   Future<String?> uploadLessonAudio(
-      String localFilePath, String lessonIdKey, String promptId) async {
+    String localFilePath,
+    String lessonIdKey,
+    String promptId,
+  ) async {
     final uId = userId;
     if (uId == null) {
       _logger.e('User not authenticated for audio upload.');
@@ -361,7 +407,8 @@ class FirebaseService {
     File audioFile = File(localFilePath);
     if (!await audioFile.exists()) {
       _logger.e(
-          "Local audio file does not exist at path: $localFilePath for lesson audio upload.");
+        "Local audio file does not exist at path: $localFilePath for lesson audio upload.",
+      );
       return null;
     }
 
@@ -372,7 +419,8 @@ class FirebaseService {
         'userLessonAudio/$uId/$lessonIdKey/$promptId/${timestamp}_$fileName';
 
     _logger.i(
-        "Attempting to upload lesson audio to Firebase Storage: $storagePath");
+      "Attempting to upload lesson audio to Firebase Storage: $storagePath",
+    );
 
     try {
       final storageRef = FirebaseStorage.instance.ref().child(storagePath);
@@ -388,12 +436,14 @@ class FirebaseService {
       final TaskSnapshot snapshot = await uploadTask.whenComplete(() => null);
       final String downloadUrl = await snapshot.ref.getDownloadURL();
 
-      _logger
-          .i("Firebase Storage Upload Successful! Download URL: $downloadUrl");
+      _logger.i(
+        "Firebase Storage Upload Successful! Download URL: $downloadUrl",
+      );
       return downloadUrl;
     } on FirebaseException catch (e) {
       _logger.e(
-          "Firebase Storage Upload FirebaseException: ${e.code} - ${e.message}");
+        "Firebase Storage Upload FirebaseException: ${e.code} - ${e.message}",
+      );
       return null;
     } catch (e) {
       _logger.e("Firebase Storage Upload General Exception: $e");
@@ -402,14 +452,16 @@ class FirebaseService {
   }
 
   Future<Map<String, dynamic>?> getLessonContent(
-      String lessonDocumentId) async {
+    String lessonDocumentId,
+  ) async {
     if (lessonDocumentId.isEmpty) {
       _logger.w('Lesson document ID is empty. Cannot fetch content.');
       return null;
     }
     try {
       _logger.i(
-          'Fetching content for lesson document: $lessonDocumentId from "lessons" collection.');
+        'Fetching content for lesson document: $lessonDocumentId from "lessons" collection.',
+      );
       final lessonDocRef = _firestore
           .collection('lessons')
           .doc(lessonDocumentId); // Ensure 'lessons' is your collection name
@@ -417,11 +469,13 @@ class FirebaseService {
 
       if (docSnapshot.exists) {
         _logger.d(
-            'Lesson content found for $lessonDocumentId: ${docSnapshot.data()}');
+          'Lesson content found for $lessonDocumentId: ${docSnapshot.data()}',
+        );
         return docSnapshot.data();
       } else {
         _logger.w(
-            'Lesson document "$lessonDocumentId" not found in "lessons" collection.');
+          'Lesson document "$lessonDocumentId" not found in "lessons" collection.',
+        );
         return null;
       }
     } catch (e) {
@@ -474,15 +528,17 @@ class FirebaseService {
   }
 
   Future<Map<String, dynamic>?> getAssessmentDetails(
-      String assessmentId) async {
+    String assessmentId,
+  ) async {
     if (assessmentId.isEmpty) {
       _logger.w("Assessment ID is missing for getAssessmentDetails");
       return null;
     }
     _logger.i("Fetching assessment details for assessmentId: $assessmentId");
     try {
-      final assessmentRef =
-          _firestore.collection("trainerAssessments").doc(assessmentId);
+      final assessmentRef = _firestore
+          .collection("trainerAssessments")
+          .doc(assessmentId);
       final docSnap = await assessmentRef.get();
       if (docSnap.exists) {
         return {'id': docSnap.id, ...(docSnap.data() as Map<String, dynamic>)};
@@ -497,15 +553,17 @@ class FirebaseService {
   }
 
   Future<Map<String, dynamic>?> getStudentSubmissionDetails(
-      String submissionId) async {
+    String submissionId,
+  ) async {
     if (submissionId.isEmpty) {
       _logger.w("Submission ID is missing for getStudentSubmissionDetails");
       return null;
     }
     _logger.i("Fetching submission details for submissionId: $submissionId");
     try {
-      final submissionRef =
-          _firestore.collection("studentSubmissions").doc(submissionId);
+      final submissionRef = _firestore
+          .collection("studentSubmissions")
+          .doc(submissionId);
       final docSnap = await submissionRef.get();
       if (docSnap.exists) {
         final data = docSnap.data() as Map<String, dynamic>;
@@ -524,8 +582,37 @@ class FirebaseService {
     }
   }
 
+Future<Map<String, String>> uploadSpeakingAssessmentAudio(
+  File audioFile, 
+  String studentId, 
+  String assessmentId, 
+  int timestamp
+) async {
+  try {
+    final fileName = 'speaking_assessment_${timestamp}.aac';
+    final filePath = 'studentSubmissions/$studentId/$assessmentId/$fileName';
+    
+    final storageRef = FirebaseStorage.instance.ref().child(filePath);
+    final uploadTask = storageRef.putFile(audioFile);
+    
+    final snapshot = await uploadTask.whenComplete(() => null);
+    final downloadURL = await snapshot.ref.getDownloadURL();
+    
+    _logger.i("Audio uploaded successfully: $downloadURL");
+    
+    return {
+      'downloadURL': downloadURL,
+      'filePath': filePath,
+    };
+  } catch (e) {
+    _logger.e("Error uploading audio: $e");
+    throw Exception('Failed to upload audio: $e');
+  }
+}
+
   Future<List<Map<String, dynamic>>> getStudentSubmissionsWithDetails(
-      String studentId) async {
+    String studentId,
+  ) async {
     if (studentId.isEmpty) {
       _logger.w("Student ID is missing for getStudentSubmissionsWithDetails.");
       return [];
@@ -548,7 +635,7 @@ class FirebaseService {
       for (var submissionDoc in querySnapshot.docs) {
         Map<String, dynamic> submissionData = {
           'id': submissionDoc.id,
-          ...(submissionDoc.data())
+          ...(submissionDoc.data()),
         };
         if (submissionData['submittedAt'] is Timestamp) {
           submissionData['submittedAt'] =
@@ -562,23 +649,27 @@ class FirebaseService {
 
         if (submissionData['assessmentId'] != null) {
           try {
-            final assessmentDetails =
-                await getAssessmentDetails(submissionData['assessmentId']);
+            final assessmentDetails = await getAssessmentDetails(
+              submissionData['assessmentId'],
+            );
             if (assessmentDetails != null) {
               assessmentTitle =
                   assessmentDetails['title'] ?? "Untitled Assessment";
               originalAssessmentTrainerId = assessmentDetails['trainerId'];
 
               if (assessmentDetails['classId'] != null) {
-                final classDetails =
-                    await getClassDetails(assessmentDetails['classId']);
+                final classDetails = await getClassDetails(
+                  assessmentDetails['classId'],
+                );
                 if (classDetails != null) {
                   className = classDetails['className'] ?? "Unnamed Class";
                   if (classDetails['trainerId'] != null) {
-                    final trainerProfile =
-                        await getUserProfileById(classDetails['trainerId']);
+                    final trainerProfile = await getUserProfileById(
+                      classDetails['trainerId'],
+                    );
                     if (trainerProfile != null) {
-                      trainerName = trainerProfile['displayName'] ??
+                      trainerName =
+                          trainerProfile['displayName'] ??
                           "${trainerProfile['firstName'] ?? ''} ${trainerProfile['lastName'] ?? ''}"
                               .trim();
                       if (trainerName.isEmpty) trainerName = "Unknown Trainer";
@@ -589,7 +680,8 @@ class FirebaseService {
             }
           } catch (e) {
             _logger.w(
-                "Could not fetch full details for assessmentId ${submissionData['assessmentId']}: $e");
+              "Could not fetch full details for assessmentId ${submissionData['assessmentId']}: $e",
+            );
           }
         }
         submissionsWithDetails.add({
@@ -600,7 +692,8 @@ class FirebaseService {
         });
       }
       _logger.i(
-          "Fetched ${submissionsWithDetails.length} submissions with details for student $studentId.");
+        "Fetched ${submissionsWithDetails.length} submissions with details for student $studentId.",
+      );
       return submissionsWithDetails;
     } catch (e) {
       _logger.e("Error fetching student submissions with details: $e");
@@ -608,7 +701,8 @@ class FirebaseService {
           e.code == 'failed-precondition' &&
           e.message!.contains("index")) {
         _logger.e(
-            "Firestore query requires an index on 'studentSubmissions' for 'studentId' and 'submittedAt'. Please create it. The error message might contain a direct link.");
+          "Firestore query requires an index on 'studentSubmissions' for 'studentId' and 'submittedAt'. Please create it. The error message might contain a direct link.",
+        );
         // Depending on your app's error handling, you might want to throw a more user-friendly error here.
       }
       return []; // Return empty on error
@@ -616,13 +710,14 @@ class FirebaseService {
   }
 
   Future<void> sendTrainerNotification(
-      String trainerId,
-      String studentName,
-      String assessmentTitle,
-      String submissionId,
-      String assessmentId,
-      String? classId,
-      String? className) async {
+    String trainerId,
+    String studentName,
+    String assessmentTitle,
+    String submissionId,
+    String assessmentId,
+    String? classId,
+    String? className,
+  ) async {
     if (trainerId.isEmpty) {
       _logger.w("Trainer ID missing, cannot send notification.");
       return;
@@ -635,9 +730,9 @@ class FirebaseService {
         'link':
             "/student/submission/$submissionId/review?assessmentId=$assessmentId", // Adjust if your trainer link is different
         'type': "assessment_result_shared",
-        'classId': classId ??
-            FieldValue
-                .delete(), // Use FieldValue.delete() if classId is null to remove the field
+        'classId':
+            classId ??
+            FieldValue.delete(), // Use FieldValue.delete() if classId is null to remove the field
         'className': className ?? FieldValue.delete(),
         'relatedDocId': submissionId,
         'isRead': false,
@@ -645,7 +740,8 @@ class FirebaseService {
       };
       await _firestore.collection("notifications").add(notificationData);
       _logger.i(
-          "Notification sent to trainer $trainerId for submission $submissionId.");
+        "Notification sent to trainer $trainerId for submission $submissionId.",
+      );
     } catch (e) {
       _logger.e("Error sending notification to trainer $trainerId: $e");
     }
@@ -672,12 +768,14 @@ class FirebaseService {
         // Check if this module's structure needs to be initialized or is missing
         if (!userSnapshot.exists || (userSnapshot.data())?[moduleId] == null) {
           needsUpdate = true;
-          List<String> lessonKeysToUse =
-              List<String>.from(moduleSpecificConfig['lessons'] as List? ?? []);
+          List<String> lessonKeysToUse = List<String>.from(
+            moduleSpecificConfig['lessons'] as List? ?? [],
+          );
 
           if (lessonKeysToUse.isEmpty) {
             _logger.e(
-                "CRITICAL: InitializeUserProgress for $moduleId: No lesson keys found in courseConfig. Module progress might be incorrect.");
+              "CRITICAL: InitializeUserProgress for $moduleId: No lesson keys found in courseConfig. Module progress might be incorrect.",
+            );
             // Define a hardcoded fallback if absolutely necessary, e.g.
             if (moduleId == 'module5') {
               lessonKeysToUse = ['lesson1', 'lesson2'];
@@ -688,7 +786,7 @@ class FirebaseService {
 
           final lessonsMap = {for (var key in lessonKeysToUse) key: false};
           final attemptsMapForActivityLog = {
-            for (var key in lessonKeysToUse) key: 0
+            for (var key in lessonKeysToUse) key: 0,
           };
 
           dataToInitialize[moduleId] = {
@@ -696,34 +794,41 @@ class FirebaseService {
             'lessons': lessonsMap,
             'activityLogs': {
               // CORRECTED: Nested structure for attempts
-              'attempts': attemptsMapForActivityLog
+              'attempts': attemptsMapForActivityLog,
             },
             // 'detailedLogEntries': [], // If you want a separate array for detailed logs from logLessonActivity
-            'isUnlocked': moduleId ==
+            'isUnlocked':
+                moduleId ==
                 'module1', // Example: module1 is unlocked by default
-            'unlockedAt':
-                moduleId == 'module1' ? FieldValue.serverTimestamp() : null,
+            'unlockedAt': moduleId == 'module1'
+                ? FieldValue.serverTimestamp()
+                : null,
             'lastUpdated': FieldValue.serverTimestamp(),
           };
           _logger.i(
-              "Prepared initial data for $moduleId: ${dataToInitialize[moduleId]}");
+            "Prepared initial data for $moduleId: ${dataToInitialize[moduleId]}",
+          );
         }
       }
 
       if (needsUpdate) {
         if (userSnapshot.exists) {
-          await userDocRef
-              .update(dataToInitialize); // Update existing doc with new modules
+          await userDocRef.update(
+            dataToInitialize,
+          ); // Update existing doc with new modules
           _logger.i(
-              'Updated progress for user $userId with new module structures.');
+            'Updated progress for user $userId with new module structures.',
+          );
         } else {
-          await userDocRef
-              .set(dataToInitialize); // Set new doc if it didn't exist
+          await userDocRef.set(
+            dataToInitialize,
+          ); // Set new doc if it didn't exist
           _logger.i('Initialized new progress document for user $userId.');
         }
       } else {
         _logger.i(
-            'User progress already up-to-date for user $userId, no initialization needed.');
+          'User progress already up-to-date for user $userId, no initialization needed.',
+        );
       }
     } catch (e, s) {
       _logger.e('Error initializing user progress: $e\n$s');
@@ -747,8 +852,9 @@ class FirebaseService {
       if (docSnap.exists && docSnap.data() != null) {
         final userData = docSnap.data() as Map<String, dynamic>;
         if (userData.containsKey(moduleId) && userData[moduleId] is Map) {
-          final moduleDataFromServer =
-              Map<String, dynamic>.from(userData[moduleId] as Map);
+          final moduleDataFromServer = Map<String, dynamic>.from(
+            userData[moduleId] as Map,
+          );
 
           Map<String, dynamic> processedModuleData = {
             'isCompleted': moduleDataFromServer['isCompleted'] ?? false,
@@ -758,17 +864,20 @@ class FirebaseService {
           };
 
           processedModuleData['lessons'] = Map<String, bool>.from(
-              moduleDataFromServer['lessons'] as Map? ?? {});
+            moduleDataFromServer['lessons'] as Map? ?? {},
+          );
 
           // CORRECTED: Read attempts from the nested 'activityLogs.attempts' path
           final activityLogsMap =
               moduleDataFromServer['activityLogs'] as Map<String, dynamic>?;
           if (activityLogsMap != null && activityLogsMap['attempts'] is Map) {
             processedModuleData['attempts'] = Map<String, int>.from(
-                activityLogsMap['attempts'] as Map? ?? {});
+              activityLogsMap['attempts'] as Map? ?? {},
+            );
           } else {
             _logger.w(
-                "Attempts data not found or not a map at $moduleId.activityLogs.attempts. Initializing empty for return.");
+              "Attempts data not found or not a map at $moduleId.activityLogs.attempts. Initializing empty for return.",
+            );
             processedModuleData['attempts'] =
                 <String, int>{}; // Fallback to empty map
           }
@@ -778,13 +887,15 @@ class FirebaseService {
           // processedModuleData['detailedLogEntries'] = List<Map<String, dynamic>>.from(moduleDataFromServer['detailedLogEntries'] ?? []);
 
           _logger.d(
-              'Processed Module $moduleId progress from Firestore: $processedModuleData');
+            'Processed Module $moduleId progress from Firestore: $processedModuleData',
+          );
           return processedModuleData;
         }
       }
 
       _logger.w(
-          'No progress data found for module $moduleId for user $userId. Creating and returning default structure.');
+        'No progress data found for module $moduleId for user $userId. Creating and returning default structure.',
+      );
       // Default data creation if module data doesn't exist for the user
       List<String> lessonKeysToUse = [];
       final config = courseConfig[moduleId];
@@ -794,7 +905,8 @@ class FirebaseService {
         lessonKeysToUse = List<String>.from(config['lessons']);
       } else {
         _logger.w(
-            "Default progress for $moduleId: lesson keys not found in courseConfig. Using fallback/hardcoded for $moduleId.");
+          "Default progress for $moduleId: lesson keys not found in courseConfig. Using fallback/hardcoded for $moduleId.",
+        );
         if (moduleId == 'module5') {
           lessonKeysToUse = ['lesson1', 'lesson2'];
         } else if (moduleId == 'module1')
@@ -811,12 +923,13 @@ class FirebaseService {
         'lessons': defaultLessons,
         'activityLogs': {
           // Nested structure for attempts
-          'attempts': defaultAttemptsNested
+          'attempts': defaultAttemptsNested,
         },
         // 'detailedLogEntries': [], // If you have a separate list for log entries
         'isUnlocked': moduleId == 'module1',
-        'unlockedAt':
-            moduleId == 'module1' ? FieldValue.serverTimestamp() : null,
+        'unlockedAt': moduleId == 'module1'
+            ? FieldValue.serverTimestamp()
+            : null,
         'lastUpdated': FieldValue.serverTimestamp(),
       };
 
@@ -824,11 +937,12 @@ class FirebaseService {
       final defaultModuleDataToReturn = {
         'isCompleted': defaultModuleDataToSet['isCompleted'] as bool,
         'isUnlocked': defaultModuleDataToSet['isUnlocked'] as bool,
-        'lessons':
-            Map<String, bool>.from(defaultModuleDataToSet['lessons'] as Map),
+        'lessons': Map<String, bool>.from(
+          defaultModuleDataToSet['lessons'] as Map,
+        ),
         'attempts': Map<String, int>.from(
-            (defaultModuleDataToSet['activityLogs'] as Map)['attempts']
-                as Map), // Extract for return
+          (defaultModuleDataToSet['activityLogs'] as Map)['attempts'] as Map,
+        ), // Extract for return
         // 'detailedLogEntries': [],
         'lastUpdated': null,
         'unlockedAt': null,
@@ -836,11 +950,13 @@ class FirebaseService {
 
       // Set the default structure in Firestore for next time
       // Use SetOptions(merge: true) if userProgressDocRef might already exist with other module data
-      await userDocRef.set({moduleId: defaultModuleDataToSet},
-          SetOptions(mergeFields: [moduleId]));
+      await userDocRef.set({
+        moduleId: defaultModuleDataToSet,
+      }, SetOptions(mergeFields: [moduleId]));
 
       _logger.d(
-          'Created and returned default progress data for module $moduleId for user $userId: $defaultModuleDataToReturn');
+        'Created and returned default progress data for module $moduleId for user $userId: $defaultModuleDataToReturn',
+      );
       return defaultModuleDataToReturn;
     } catch (e, s) {
       _logger.e('Error fetching module progress for $moduleId: $e\n$s');
@@ -849,17 +965,20 @@ class FirebaseService {
   }
 
   Future<List<Map<String, dynamic>>> getDetailedLessonAttempts(
-      String lessonIdKey) async {
+    String lessonIdKey,
+  ) async {
     final uId =
         userId; // Uses the existing 'userId' getter in your FirebaseService
     if (uId == null) {
       _logger.e(
-          'User not authenticated for getDetailedLessonAttempts for $lessonIdKey.');
+        'User not authenticated for getDetailedLessonAttempts for $lessonIdKey.',
+      );
       return []; // Return empty list if not authenticated
     }
 
-    _logger
-        .i('Fetching detailed attempts for Lesson: $lessonIdKey, User: $uId');
+    _logger.i(
+      'Fetching detailed attempts for Lesson: $lessonIdKey, User: $uId',
+    );
 
     try {
       final userProgressDocRef = _firestore.collection('userProgress').doc(uId);
@@ -882,7 +1001,8 @@ class FirebaseService {
                   return Map<String, dynamic>.from(attempt);
                 }
                 _logger.w(
-                    'Found non-map item in attemptsList for $lessonIdKey: $attempt');
+                  'Found non-map item in attemptsList for $lessonIdKey: $attempt',
+                );
                 return <String, dynamic>{}; // Or handle error more gracefully
               }).toList();
             }
@@ -890,11 +1010,13 @@ class FirebaseService {
         }
       }
       _logger.i(
-          'No detailed attempts found for $lessonIdKey for user $uId, or path does not exist.');
+        'No detailed attempts found for $lessonIdKey for user $uId, or path does not exist.',
+      );
       return []; // Return empty list if no data, path doesn't exist, or data is malformed
     } catch (e, s) {
       _logger.e(
-          'Error fetching detailed lesson attempts for $lessonIdKey, User $uId: $e\n$s');
+        'Error fetching detailed lesson attempts for $lessonIdKey, User $uId: $e\n$s',
+      );
       return []; // Return empty list on error to prevent crashes
     }
   }
@@ -902,7 +1024,7 @@ class FirebaseService {
   // Add this method to your FirebaseService class in firebase_service.dart
 
   Future<Map<String, List<Map<String, dynamic>>>>
-      getAllUserLessonAttempts() async {
+  getAllUserLessonAttempts() async {
     final uId = userId;
     if (uId == null) {
       _logger.w('User not authenticated for getAllUserLessonAttempts.');
@@ -917,7 +1039,8 @@ class FirebaseService {
       if (docSnapshot.exists) {
         final data = docSnapshot.data();
         _logger.d(
-            '[SERVICE] Raw userProgress data: $data'); // LOG THE ENTIRE DOCUMENT DATA
+          '[SERVICE] Raw userProgress data: $data',
+        ); // LOG THE ENTIRE DOCUMENT DATA
 
         if (data != null && data.containsKey('lessonAttempts')) {
           final lessonAttemptsMapFromFirestore = // Raw map from Firestore
@@ -925,18 +1048,24 @@ class FirebaseService {
 
           // LOG THE RAW lessonAttemptsMapFromFirestore
           _logger.d(
-              '[SERVICE] Raw lessonAttemptsMapFromFirestore: $lessonAttemptsMapFromFirestore');
+            '[SERVICE] Raw lessonAttemptsMapFromFirestore: $lessonAttemptsMapFromFirestore',
+          );
           _logger.i(
-              '[SERVICE] Keys in raw lessonAttemptsMapFromFirestore: ${lessonAttemptsMapFromFirestore?.keys.toList()}');
+            '[SERVICE] Keys in raw lessonAttemptsMapFromFirestore: ${lessonAttemptsMapFromFirestore?.keys.toList()}',
+          );
           _logger.i(
-              '[SERVICE] Values in raw lessonAttemptsMapFromFirestore: ${lessonAttemptsMapFromFirestore?.values.toList()}'); // Log values
+            '[SERVICE] Values in raw lessonAttemptsMapFromFirestore: ${lessonAttemptsMapFromFirestore?.values.toList()}',
+          ); // Log values
 
           if (lessonAttemptsMapFromFirestore != null) {
             final Map<String, List<Map<String, dynamic>>> typedAttemptsMap = {};
-            lessonAttemptsMapFromFirestore
-                .forEach((lessonId, attemptsListFromFirestore) {
+            lessonAttemptsMapFromFirestore.forEach((
+              lessonId,
+              attemptsListFromFirestore,
+            ) {
               _logger.d(
-                  '[SERVICE] Processing lessonId: $lessonId'); // Log each lessonId being processed
+                '[SERVICE] Processing lessonId: $lessonId',
+              ); // Log each lessonId being processed
               if (attemptsListFromFirestore is List) {
                 try {
                   // Add try-catch around the mapping for each lesson's attempts
@@ -945,23 +1074,26 @@ class FirebaseService {
                         if (attemptDoc == null) {
                           // Check for null attempts in the list
                           _logger.w(
-                              '[SERVICE] Null attempt found in list for lessonId: $lessonId. Skipping.');
+                            '[SERVICE] Null attempt found in list for lessonId: $lessonId. Skipping.',
+                          );
                           return <String, dynamic>{
-                            'error': 'Null attempt data'
+                            'error': 'Null attempt data',
                           }; // Or filter it out
                         }
                         if (attemptDoc is! Map) {
                           // Ensure each attempt is a map
                           _logger.w(
-                              '[SERVICE] Non-map attempt found for lessonId: $lessonId. Data: $attemptDoc. Skipping.');
+                            '[SERVICE] Non-map attempt found for lessonId: $lessonId. Data: $attemptDoc. Skipping.',
+                          );
                           return <String, dynamic>{
                             'error': 'Non-map attempt data',
-                            'originalData': attemptDoc.toString()
+                            'originalData': attemptDoc.toString(),
                           };
                         }
 
-                        final attemptData =
-                            Map<String, dynamic>.from(attemptDoc);
+                        final attemptData = Map<String, dynamic>.from(
+                          attemptDoc,
+                        );
 
                         if (attemptData['attemptTimestamp'] is Timestamp) {
                           attemptData['attemptTimestamp'] =
@@ -973,84 +1105,101 @@ class FirebaseService {
 
                         return attemptData;
                       })
-                      .where((attempt) =>
-                          attempt.isNotEmpty && attempt['error'] == null)
+                      .where(
+                        (attempt) =>
+                            attempt.isNotEmpty && attempt['error'] == null,
+                      )
                       .toList(); // Filter out problematic attempts
 
                   if (typedAttemptsMap[lessonId]!.isEmpty &&
                       attemptsListFromFirestore.isNotEmpty) {
                     _logger.w(
-                        '[SERVICE] All attempts for lessonId $lessonId were problematic and filtered out.');
+                      '[SERVICE] All attempts for lessonId $lessonId were problematic and filtered out.',
+                    );
                   }
                 } catch (e, s) {
                   _logger.e(
-                      '[SERVICE] Error processing attempts for lessonId: $lessonId. Error: $e\nStackTrace: $s');
+                    '[SERVICE] Error processing attempts for lessonId: $lessonId. Error: $e\nStackTrace: $s',
+                  );
                   // Decide if you want to skip this lesson or return partial data.
                   // For now, it will be skipped if an error occurs here.
                 }
               } else {
                 _logger.w(
-                    '[SERVICE] Attempts data for lessonId "$lessonId" is not a List. Found: ${attemptsListFromFirestore.runtimeType}');
+                  '[SERVICE] Attempts data for lessonId "$lessonId" is not a List. Found: ${attemptsListFromFirestore.runtimeType}',
+                );
               }
             });
             _logger.i(
-                "[SERVICE] Processed typedAttemptsMap. ${typedAttemptsMap.length} lessons found. Keys: ${typedAttemptsMap.keys.toList()}");
+              "[SERVICE] Processed typedAttemptsMap. ${typedAttemptsMap.length} lessons found. Keys: ${typedAttemptsMap.keys.toList()}",
+            );
             return typedAttemptsMap;
           } else {
             _logger.w('[SERVICE] lessonAttemptsMapFromFirestore was null.');
           }
         } else {
           _logger.w(
-              "[SERVICE] Document exists, but 'lessonAttempts' field is missing or null.");
+            "[SERVICE] Document exists, but 'lessonAttempts' field is missing or null.",
+          );
         }
       } else {
         _logger.w(
-            "[SERVICE] User progress document does not exist for user $uId.");
+          "[SERVICE] User progress document does not exist for user $uId.",
+        );
       }
     } catch (e, s) {
       _logger.e('[SERVICE] Error fetching all user lesson attempts: $e\n$s');
     }
     _logger.w(
-        '[SERVICE] No lessonAttempts data found or a critical error occurred for user $uId. Returning empty map.');
+      '[SERVICE] No lessonAttempts data found or a critical error occurred for user $uId. Returning empty map.',
+    );
     return {};
   }
 
   Future<Map<String, dynamic>?> getFullLessonContent(
-      String lessonDocumentId) async {
+    String lessonDocumentId,
+  ) async {
     if (lessonDocumentId.isEmpty) {
-      _logger
-          .w('Lesson document ID is empty. Cannot fetch full lesson content.');
+      _logger.w(
+        'Lesson document ID is empty. Cannot fetch full lesson content.',
+      );
       return null;
     }
     try {
       _logger.i(
-          'Fetching full content for lesson document: $lessonDocumentId from "lessons" collection.');
-      final lessonDocRef =
-          _firestore.collection('lessons').doc(lessonDocumentId);
+        'Fetching full content for lesson document: $lessonDocumentId from "lessons" collection.',
+      );
+      final lessonDocRef = _firestore
+          .collection('lessons')
+          .doc(lessonDocumentId);
       final docSnapshot = await lessonDocRef.get();
 
       if (docSnapshot.exists) {
         _logger.d(
-            'Full lesson content found for $lessonDocumentId: ${docSnapshot.data()}');
+          'Full lesson content found for $lessonDocumentId: ${docSnapshot.data()}',
+        );
         return docSnapshot.data();
       } else {
         _logger.w(
-            'Lesson document "$lessonDocumentId" not found in "lessons" collection.');
+          'Lesson document "$lessonDocumentId" not found in "lessons" collection.',
+        );
         return null;
       }
     } catch (e) {
-      _logger
-          .e('Error fetching full lesson content for "$lessonDocumentId": $e');
+      _logger.e(
+        'Error fetching full lesson content for "$lessonDocumentId": $e',
+      );
       return null;
     }
   }
 
   Future<void> updateLessonProgress(
-      String moduleId, // e.g., "module5"
-      String
-          lessonKeyInModule, // e.g., "lesson1", "lesson2" (this is the 'lessonId' from your previous version)
-      bool completed,
-      {Map<String, int>? attempts}) async {
+    String moduleId, // e.g., "module5"
+    String
+    lessonKeyInModule, // e.g., "lesson1", "lesson2" (this is the 'lessonId' from your previous version)
+    bool completed, {
+    Map<String, int>? attempts,
+  }) async {
     // This map is like {'lesson1': count1, 'lesson2': count2}
     final user = _auth.currentUser;
     if (user == null) {
@@ -1059,7 +1208,8 @@ class FirebaseService {
     }
     final userId = user.uid;
     _logger.i(
-        'Updating progress for User: $userId, Module: $moduleId, LessonKey: $lessonKeyInModule, Completed: $completed');
+      'Updating progress for User: $userId, Module: $moduleId, LessonKey: $lessonKeyInModule, Completed: $completed',
+    );
     if (attempts != null) {
       _logger.i('Attempt counts to update for $moduleId: $attempts');
     }
@@ -1086,7 +1236,8 @@ class FirebaseService {
           dataToUpdate['$moduleId.activityLogs.attempts.$localLessonKey'] =
               count;
           _logger.d(
-              'Firestore update path for attempt count: $moduleId.activityLogs.attempts.$localLessonKey = $count');
+            'Firestore update path for attempt count: $moduleId.activityLogs.attempts.$localLessonKey = $count',
+          );
         });
       }
 
@@ -1097,7 +1248,8 @@ class FirebaseService {
       final doc = await userDocRef.get();
       if (!doc.exists || doc.data() == null) {
         _logger.e(
-            'User document not found for $userId after lesson update. Cannot check module completion.');
+          'User document not found for $userId after lesson update. Cannot check module completion.',
+        );
         return;
       }
       final userData = doc.data() as Map<String, dynamic>;
@@ -1105,14 +1257,17 @@ class FirebaseService {
 
       if (moduleData == null || moduleData['lessons'] == null) {
         _logger.e(
-            'Module data or lessons map not found for $moduleId in user $userId. Cannot check module completion.');
+          'Module data or lessons map not found for $moduleId in user $userId. Cannot check module completion.',
+        );
         return;
       }
 
-      final lessonsInProgressMap =
-          Map<String, bool>.from(moduleData['lessons'] as Map? ?? {});
+      final lessonsInProgressMap = Map<String, bool>.from(
+        moduleData['lessons'] as Map? ?? {},
+      );
       _logger.i(
-          'For module completion check of $moduleId - Lessons map from Firestore: $lessonsInProgressMap');
+        'For module completion check of $moduleId - Lessons map from Firestore: $lessonsInProgressMap',
+      );
 
       List<String> actualLessonKeysForCompletion = [];
       final config =
@@ -1123,42 +1278,51 @@ class FirebaseService {
           (config['lessons'] as List).every((item) => item is String)) {
         actualLessonKeysForCompletion = List<String>.from(config['lessons']);
         _logger.i(
-            "Module completion check for $moduleId: Using lesson keys from courseConfig: $actualLessonKeysForCompletion");
+          "Module completion check for $moduleId: Using lesson keys from courseConfig: $actualLessonKeysForCompletion",
+        );
       } else {
         _logger.w(
-            "Module completion check for $moduleId: Lesson keys not found/invalid in courseConfig. Using keys from user's progress map: ${lessonsInProgressMap.keys.toList()}");
+          "Module completion check for $moduleId: Lesson keys not found/invalid in courseConfig. Using keys from user's progress map: ${lessonsInProgressMap.keys.toList()}",
+        );
         actualLessonKeysForCompletion = lessonsInProgressMap.keys.toList();
         // Add specific fallbacks if a module's keys are known but config might be missing
         // Ensure these match your actual lesson keys in modules_config.dart
         if (actualLessonKeysForCompletion.isEmpty && moduleId == 'module5') {
           actualLessonKeysForCompletion = ['lesson1', 'lesson2'];
           _logger.w(
-              "Module completion check for $moduleId: Using hardcoded default lesson keys for completion check: $actualLessonKeysForCompletion");
+            "Module completion check for $moduleId: Using hardcoded default lesson keys for completion check: $actualLessonKeysForCompletion",
+          );
         } else if (actualLessonKeysForCompletion.isEmpty &&
             moduleId == 'module1') {
           actualLessonKeysForCompletion = ['lesson1', 'lesson2', 'lesson3'];
           _logger.w(
-              "Module completion check for $moduleId: Using hardcoded default lesson keys for completion check: $actualLessonKeysForCompletion");
+            "Module completion check for $moduleId: Using hardcoded default lesson keys for completion check: $actualLessonKeysForCompletion",
+          );
         }
         // Add other module fallbacks as needed
       }
 
       bool allRequiredLessonsCompleted =
           actualLessonKeysForCompletion.isNotEmpty &&
-              actualLessonKeysForCompletion
-                  .every((key) => lessonsInProgressMap[key] == true);
+          actualLessonKeysForCompletion.every(
+            (key) => lessonsInProgressMap[key] == true,
+          );
 
       _logger.d(
-          "For $moduleId, required keys: $actualLessonKeysForCompletion. All completed: $allRequiredLessonsCompleted");
+        "For $moduleId, required keys: $actualLessonKeysForCompletion. All completed: $allRequiredLessonsCompleted",
+      );
 
-      await userDocRef
-          .update({'$moduleId.isCompleted': allRequiredLessonsCompleted});
+      await userDocRef.update({
+        '$moduleId.isCompleted': allRequiredLessonsCompleted,
+      });
 
       _logger.i(
-          'Updated lesson $lessonKeyInModule in $moduleId: completed=$completed. Module $moduleId completion is $allRequiredLessonsCompleted for user $userId.');
+        'Updated lesson $lessonKeyInModule in $moduleId: completed=$completed. Module $moduleId completion is $allRequiredLessonsCompleted for user $userId.',
+      );
     } catch (e, s) {
       _logger.e(
-          'Error updating lesson progress for $moduleId/$lessonKeyInModule: $e\n$s');
+        'Error updating lesson progress for $moduleId/$lessonKeyInModule: $e\n$s',
+      );
       rethrow;
     }
   }
@@ -1189,19 +1353,23 @@ class FirebaseService {
       };
 
       await userDocRef.update({
-        '$moduleId.activityLogs': FieldValue.arrayUnion([logEntry])
+        '$moduleId.activityLogs': FieldValue.arrayUnion([logEntry]),
       });
       _logger.i(
-          'Logged activity for $lessonTitleForLog in $moduleId, attempt $attemptNumber for user $userId');
+        'Logged activity for $lessonTitleForLog in $moduleId, attempt $attemptNumber for user $userId',
+      );
     } catch (e) {
-      _logger
-          .e('Error logging activity for $lessonTitleForLog in $moduleId: $e');
+      _logger.e(
+        'Error logging activity for $lessonTitleForLog in $moduleId: $e',
+      );
       rethrow;
     }
   }
 
   Future<List<Map<String, dynamic>>> getActivityLogs(
-      String moduleId, String lessonTitleForLog) async {
+    String moduleId,
+    String lessonTitleForLog,
+  ) async {
     final user = _auth.currentUser;
     if (user == null) {
       _logger.e('User not authenticated for getActivityLogs');
@@ -1219,8 +1387,9 @@ class FirebaseService {
         if (data != null && data[moduleId] is Map) {
           final moduleData = data[moduleId] as Map<String, dynamic>;
           if (moduleData['activityLogs'] is List) {
-            final allLogsForModule =
-                List<Map<String, dynamic>>.from(moduleData['activityLogs']);
+            final allLogsForModule = List<Map<String, dynamic>>.from(
+              moduleData['activityLogs'],
+            );
             // Filter logs for the specific lessonTitleForLog
             logs = allLogsForModule
                 .where((log) => log['lessonId'] == lessonTitleForLog)
@@ -1239,11 +1408,13 @@ class FirebaseService {
         }
       }
       _logger.i(
-          'Fetched ${logs.length} activity logs for $moduleId - $lessonTitleForLog');
+        'Fetched ${logs.length} activity logs for $moduleId - $lessonTitleForLog',
+      );
       return logs;
     } catch (e) {
       _logger.e(
-          'Error fetching activity logs for $moduleId - $lessonTitleForLog: $e');
+        'Error fetching activity logs for $moduleId - $lessonTitleForLog: $e',
+      );
       rethrow;
     }
   }
@@ -1262,7 +1433,8 @@ class FirebaseService {
       };
 
       final doc = await userDocRef.get();
-      bool moduleExists = doc.exists &&
+      bool moduleExists =
+          doc.exists &&
           (doc.data() as Map<String, dynamic>).containsKey(moduleId);
 
       if (!moduleExists) {
@@ -1273,27 +1445,35 @@ class FirebaseService {
             (config['lessons'] as List).every((item) => item is String)) {
           lessonKeysForNewModule = List<String>.from(config['lessons']);
           _logger.i(
-              "UnlockModule (new) for $moduleId: using lesson keys from courseConfig: $lessonKeysForNewModule");
+            "UnlockModule (new) for $moduleId: using lesson keys from courseConfig: $lessonKeysForNewModule",
+          );
         } else {
           _logger.w(
-              "UnlockModule (new) for $moduleId: lesson keys not found/invalid in courseConfig. Fetching from 'courses' doc.");
-          final courseDocSnapshot =
-              await _firestore.collection('courses').doc(moduleId).get();
+            "UnlockModule (new) for $moduleId: lesson keys not found/invalid in courseConfig. Fetching from 'courses' doc.",
+          );
+          final courseDocSnapshot = await _firestore
+              .collection('courses')
+              .doc(moduleId)
+              .get();
           final courseData = courseDocSnapshot.data();
           var lessonsFromDocRaw = courseData?['lessons'];
           if (lessonsFromDocRaw is List &&
               lessonsFromDocRaw.every((item) => item is String)) {
-            lessonKeysForNewModule =
-                List<String>.from(lessonsFromDocRaw.cast<String>());
+            lessonKeysForNewModule = List<String>.from(
+              lessonsFromDocRaw.cast<String>(),
+            );
             _logger.i(
-                "UnlockModule (new) for $moduleId: using lesson keys from 'courses' doc: $lessonKeysForNewModule");
+              "UnlockModule (new) for $moduleId: using lesson keys from 'courses' doc: $lessonKeysForNewModule",
+            );
           } else {
             _logger.e(
-                "CRITICAL: UnlockModule (new) for $moduleId: lesson keys are not List<String> in 'courses' doc. Module progress may be incorrect.");
+              "CRITICAL: UnlockModule (new) for $moduleId: lesson keys are not List<String> in 'courses' doc. Module progress may be incorrect.",
+            );
             if (moduleId == 'module1') {
               lessonKeysForNewModule = ['lesson1', 'lesson2', 'lesson3'];
               _logger.w(
-                  "UnlockModule (new) for $moduleId: Using hardcoded default lesson keys: $lessonKeysForNewModule");
+                "UnlockModule (new) for $moduleId: Using hardcoded default lesson keys: $lessonKeysForNewModule",
+              );
             }
           }
         }
@@ -1301,7 +1481,8 @@ class FirebaseService {
         if (lessonKeysForNewModule.isEmpty &&
             !(moduleId == 'module1' && config == null)) {
           _logger.e(
-              "CRITICAL: No lesson keys could be determined for new module $moduleId. It will be created with an empty lessons map.");
+            "CRITICAL: No lesson keys could be determined for new module $moduleId. It will be created with an empty lessons map.",
+          );
         }
 
         final lessons = {for (var key in lessonKeysForNewModule) key: false};
@@ -1316,10 +1497,11 @@ class FirebaseService {
             'attempts': attempts,
             'activityLogs': [],
             'isCompleted': false,
-          }
+          },
         }, SetOptions(merge: true));
         _logger.i(
-            'Module $moduleId created and unlocked for user $userId with lessons: $lessons and attempts: $attempts');
+          'Module $moduleId created and unlocked for user $userId with lessons: $lessons and attempts: $attempts',
+        );
       } else {
         await userDocRef.update(moduleUpdateData);
         _logger.i('Module $moduleId unlocked for user $userId');
@@ -1345,13 +1527,13 @@ class FirebaseService {
       final data = userProgressDoc.data();
       if (data == null) return false;
 
-      final preAssessmentsCompleted = data['preAssessmentsCompleted'] as Map<String, dynamic>?;
+      final preAssessmentsCompleted =
+          data['preAssessmentsCompleted'] as Map<String, dynamic>?;
       if (preAssessmentsCompleted == null) return false;
 
       // I-ensure na boolean ang return value
       final isComplete = preAssessmentsCompleted[lessonKey];
       return isComplete == true; // Explicitly check for true value
-
     } catch (e) {
       _logger.e("Error checking pre-assessment status: $e");
       return false; // Safe default
@@ -1375,15 +1557,20 @@ class FirebaseService {
       final userProgressDocRef = _firestore.collection('userProgress').doc(uId);
       // Use dot notation to update a specific field within the 'preAssessmentsCompleted' map.
       // This will create the map if it doesn't exist and add/update the lessonKey.
-      await userProgressDocRef.set({
-        'preAssessmentsCompleted': {
-          lessonKey: true,
-        }
-      }, SetOptions(merge: true)); // Use merge:true to avoid overwriting the whole document
+      await userProgressDocRef.set(
+        {
+          'preAssessmentsCompleted': {lessonKey: true},
+        },
+        SetOptions(merge: true),
+      ); // Use merge:true to avoid overwriting the whole document
 
-      _logger.i('Successfully marked pre-assessment "$lessonKey" as complete for user $uId.');
+      _logger.i(
+        'Successfully marked pre-assessment "$lessonKey" as complete for user $uId.',
+      );
     } catch (e, s) {
-      _logger.e('Error marking pre-assessment "$lessonKey" as complete: $e\n$s');
+      _logger.e(
+        'Error marking pre-assessment "$lessonKey" as complete: $e\n$s',
+      );
       rethrow;
     }
   }
@@ -1398,9 +1585,13 @@ class FirebaseService {
     required double overallScore,
     required int timeSpent,
     required Map<String, String> reflections,
-    required List<Map<String, dynamic>> submittedPrompts, required String lessonIdKey, required List<Map<String, dynamic>> promptDetails, required String lessonId
+    required List<Map<String, dynamic>> submittedPrompts,
+    required String lessonIdKey,
+    required List<Map<String, dynamic>> promptDetails,
+    required String lessonId,
   }) async {
-    const String lessonIdKey = 'Lesson 3.2'; // Hardcoded for this specific function
+    const String lessonIdKey =
+        'Lesson 3.2'; // Hardcoded for this specific function
     _logger.i('Submitting data for $lessonIdKey, attempt: $attemptNumber');
 
     try {
@@ -1414,7 +1605,8 @@ class FirebaseService {
       // Use the existing generic method to save the attempt
       await saveSpecificLessonAttempt(
         lessonIdKey: lessonIdKey,
-        score: overallScore.toInt(), // Convert double to int if score is always integer
+        score: overallScore
+            .toInt(), // Convert double to int if score is always integer
         attemptNumberToSave: attemptNumber,
         timeSpent: timeSpent,
         detailedResponsesPayload: detailedResponsesPayload,
@@ -1429,7 +1621,10 @@ class FirebaseService {
   }
 
   /// Directly updates the completion status of a specific module.
-  Future<void> updateModuleCompletionStatus(String moduleId, bool isCompleted) async {
+  Future<void> updateModuleCompletionStatus(
+    String moduleId,
+    bool isCompleted,
+  ) async {
     final uId = userId;
     if (uId == null) {
       _logger.e('User not authenticated to update module completion status.');
@@ -1447,9 +1642,13 @@ class FirebaseService {
         '$moduleId.isCompleted': isCompleted,
         '$moduleId.lastUpdated': FieldValue.serverTimestamp(),
       });
-      _logger.i('Updated module "$moduleId" completion status to $isCompleted for user $uId.');
+      _logger.i(
+        'Updated module "$moduleId" completion status to $isCompleted for user $uId.',
+      );
     } catch (e, s) {
-      _logger.e('Error updating module completion status for "$moduleId": $e\n$s');
+      _logger.e(
+        'Error updating module completion status for "$moduleId": $e\n$s',
+      );
       rethrow;
     }
   }
@@ -1466,10 +1665,11 @@ class FirebaseService {
         .collection('trainerClass')
         .where('trainerId', isEqualTo: trainerId)
         .snapshots()
-        .map((snapshot) => snapshot.docs.map((doc) => {
-              'id': doc.id,
-              ...doc.data(),
-            }).toList());
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => {'id': doc.id, ...doc.data()})
+              .toList(),
+        );
   }
 
   // Real-time listener for announcements
@@ -1478,10 +1678,11 @@ class FirebaseService {
         .collection('announcements')
         .where('trainerId', isEqualTo: trainerId)
         .snapshots()
-        .map((snapshot) => snapshot.docs.map((doc) => {
-              'id': doc.id,
-              ...doc.data(),
-            }).toList());
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => {'id': doc.id, ...doc.data()})
+              .toList(),
+        );
   }
 
   // Real-time listener for assessments
@@ -1490,25 +1691,32 @@ class FirebaseService {
         .collection('assessments')
         .where('trainerId', isEqualTo: trainerId)
         .snapshots()
-        .map((snapshot) => snapshot.docs.map((doc) => {
-              'id': doc.id,
-              ...doc.data(),
-            }).toList());
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => {'id': doc.id, ...doc.data()})
+              .toList(),
+        );
   }
 
   // Real-time listener for trainer assessments filtered by classId
-  Stream<List<Map<String, dynamic>>> listenToTrainerAssessmentsByClass(String classId) {
+  Stream<List<Map<String, dynamic>>> listenToTrainerAssessmentsByClass(
+    String classId,
+  ) {
     return _firestore
         .collection('trainerAssessments')
         .where('classId', isEqualTo: classId)
         .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snap) => snap.docs.map((d) => {'id': d.id, ...d.data()}).toList());
+        .map(
+          (snap) => snap.docs.map((d) => {'id': d.id, ...d.data()}).toList(),
+        );
   }
 
   // Real-time listener for a single class document
   Stream<Map<String, dynamic>?> listenToClassDoc(String classId) {
-    return _firestore.collection('trainerClass').doc(classId).snapshots().map((snap) {
+    return _firestore.collection('trainerClass').doc(classId).snapshots().map((
+      snap,
+    ) {
       if (!snap.exists) return null;
       return {'id': snap.id, ...snap.data()!};
     });
@@ -1530,7 +1738,9 @@ class FirebaseService {
   }
 
   // Fetch class materials (one-shot)
-  Future<List<Map<String, dynamic>>> fetchClassMaterialsFromService(String classId) async {
+  Future<List<Map<String, dynamic>>> fetchClassMaterialsFromService(
+    String classId,
+  ) async {
     try {
       final snap = await _firestore
           .collection('classMaterials')
@@ -1545,7 +1755,9 @@ class FirebaseService {
   }
 
   // Create a class and return created class data (with id)
-  Future<Map<String, dynamic>> createClass(Map<String, dynamic> classData) async {
+  Future<Map<String, dynamic>> createClass(
+    Map<String, dynamic> classData,
+  ) async {
     try {
       final data = Map<String, dynamic>.from(classData);
       data['createdAt'] = data['createdAt'] ?? FieldValue.serverTimestamp();
@@ -1563,7 +1775,9 @@ class FirebaseService {
     try {
       final data = Map<String, dynamic>.from(assessmentPayload);
       data['createdAt'] = data['createdAt'] ?? FieldValue.serverTimestamp();
-      final docRef = await _firestore.collection('trainerAssessments').add(data);
+      final docRef = await _firestore
+          .collection('trainerAssessments')
+          .add(data);
       _logger.i('Saved assessment ${docRef.id}');
       return docRef.id;
     } catch (e) {
@@ -1573,10 +1787,16 @@ class FirebaseService {
   }
 
   // Update trainer assessment
-  Future<void> updateTrainerAssessmentInService(String assessmentId, Map<String, dynamic> assessmentData) async {
+  Future<void> updateTrainerAssessmentInService(
+    String assessmentId,
+    Map<String, dynamic> assessmentData,
+  ) async {
     try {
       assessmentData['updatedAt'] = FieldValue.serverTimestamp();
-      await _firestore.collection('trainerAssessments').doc(assessmentId).update(assessmentData);
+      await _firestore
+          .collection('trainerAssessments')
+          .doc(assessmentId)
+          .update(assessmentData);
       _logger.i('Updated assessment $assessmentId');
     } catch (e) {
       _logger.e('updateTrainerAssessmentInService error: $e');
@@ -1587,7 +1807,10 @@ class FirebaseService {
   // Delete trainer assessment
   Future<void> deleteTrainerAssessmentFromService(String assessmentId) async {
     try {
-      await _firestore.collection('trainerAssessments').doc(assessmentId).delete();
+      await _firestore
+          .collection('trainerAssessments')
+          .doc(assessmentId)
+          .delete();
       _logger.i('Deleted assessment $assessmentId');
     } catch (e) {
       _logger.e('deleteTrainerAssessmentFromService error: $e');
@@ -1597,14 +1820,21 @@ class FirebaseService {
 
   // Get assessment details (one-shot)
   // Note: you already have a similar getAssessmentDetails; this is an explicit copy for trainerAssessments.
-  Future<Map<String, dynamic>> getAssessmentDetailsFromService(String assessmentId) async {
-    final doc = await _firestore.collection('trainerAssessments').doc(assessmentId).get();
+  Future<Map<String, dynamic>> getAssessmentDetailsFromService(
+    String assessmentId,
+  ) async {
+    final doc = await _firestore
+        .collection('trainerAssessments')
+        .doc(assessmentId)
+        .get();
     if (!doc.exists) throw Exception("Assessment not found");
     return {'id': doc.id, ...doc.data()!};
   }
 
   // Fetch submissions for an assessment (ordered by studentName)
-  Future<List<Map<String, dynamic>>> fetchAssessmentSubmissions(String assessmentId) async {
+  Future<List<Map<String, dynamic>>> fetchAssessmentSubmissions(
+    String assessmentId,
+  ) async {
     try {
       final snap = await _firestore
           .collection('studentSubmissions')

@@ -4,399 +4,706 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:logger/logger.dart';
 import 'package:talkready_mobile/custom_animated_bottom_bar.dart';
-import 'package:fl_chart/fl_chart.dart'; // For charts
-import 'package:flutter_html/flutter_html.dart'; // For OpenAI HTML feedback
-// Import PDF and printing packages if you were to implement PDF generation
-// import 'package:pdf/widgets.dart' as pw;
-// import 'package:printing/printing.dart';
-// import 'package:path_provider/path_provider.dart';
-// import 'dart:io';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:math' as math;
 
-import '../firebase_service.dart'; // Your FirebaseService
+import '../firebase_service.dart';
 import 'homepage.dart';
 import 'courses_page.dart';
 import 'journal/journal_page.dart';
 import 'profile.dart';
 import 'package:talkready_mobile/MyEnrolledClasses.dart';
 
-// ... (COURSE_STRUCTURE_MOBILE and lessonPromptsDataMobile remain the same)
-const Map<String, Map<String, dynamic>> COURSE_STRUCTURE_MOBILE = {
-  "module1": {
-    "title": "Module 1: Basic English Grammar",
-    "lessons": [
-      {
-        "firestoreId": "Lesson 1.1",
-        "title": "Lesson 1.1: Nouns and Pronouns",
-        "type": "MCQ"
-      },
-      {
-        "firestoreId": "Lesson 1.2",
-        "title": "Lesson 1.2: Simple Sentences",
-        "type": "MCQ"
-      },
-      {
-        "firestoreId": "Lesson 1.3",
-        "title": "Lesson 1.3: Verb and Tenses (Present Simple)",
-        "type": "MCQ"
-      },
-    ]
-  },
-  "module2": {
-    "title": "Module 2: Vocabulary & Everyday Conversations",
-    "lessons": [
-      {
-        "firestoreId": "Lesson 2.1",
-        "title": "Lesson 2.1: Greetings and Self-Introductions",
-        "type": "TEXT_SCENARIO"
-      },
-      {
-        "firestoreId": "Lesson 2.2",
-        "title": "Lesson 2.2: Asking for Information",
-        "type": "TEXT_SCENARIO"
-      },
-      {
-        "firestoreId": "Lesson 2.3",
-        "title": "Lesson 2.3: Numbers and Dates",
-        "type": "TEXT_FILL_IN"
-      },
-    ]
-  },
-  "module3": {
-    "title": "Module 3: Listening & Speaking Practice",
-    "lessons": [
-      {
-        "firestoreId": "Lesson 3.1",
-        "title": "Lesson 3.1: Listening Comprehension",
-        "type": "LISTENING_COMP"
-      },
-      {
-        "firestoreId": "Lesson 3.2",
-        "title": "Lesson 3.2: Speaking Practice - Dialogues",
-        "type": "SPEAKING_PRACTICE"
-      },
-    ]
-  },
-  "module4": {
-    "title": "Module 4: Practical Grammar & Customer Service Scenarios",
-    "lessons": [
-      {
-        "firestoreId": "Lesson 4.1",
-        "title": "Lesson 4.1: Asking for Clarification",
-        "type": "CLARIFICATION_SCENARIO"
-      },
-      {
-        "firestoreId": "Lesson 4.2",
-        "title": "Lesson 4.2: Providing Solutions",
-        "type": "PROVIDING_SOLUTIONS"
-      },
-    ]
-  },
-  "module5": {
-    "title": "Module 5: Basic Call Simulations",
-    "lessons": [
-      {
-        "firestoreId": "Lesson 5.1",
-        "title": "Lesson 5.1: Call Simulation - Scenario 1",
-        "type": "BASIC_CALL_SIMULATION"
-      },
-      {
-        "firestoreId": "Lesson 5.2",
-        "title": "Lesson 5.2: Call Simulation - Scenario 2",
-        "type": "BASIC_CALL_SIMULATION"
-      },
-    ]
-  },
-};
+// Assessment Review Page
+class AssessmentReviewPage extends StatefulWidget {
+  final String submissionId;
+  final String? assessmentId;
 
-final Map<String, Map<String, dynamic>> lessonPromptsDataMobile = {
-  "Lesson 1.1": {
-    "type": "MCQ",
-    "prompts": [],
-    "detailsArrayKey": "attemptDetails",
-    "maxPossibleAIScore": 5.0
-  },
-  "Lesson 1.2": {
-    "type": "MCQ",
-    "prompts": [],
-    "detailsArrayKey": "attemptDetails",
-    "maxPossibleAIScore": 5.0
-  },
-  "Lesson 1.3": {
-    "type": "MCQ",
-    "prompts": [],
-    "detailsArrayKey": "attemptDetails",
-    "maxPossibleAIScore": 5.0
-  },
-  "Lesson 2.1": {
-    "type": "TEXT_SCENARIO",
-    "prompts": [
-      {
-        "name": "scenario1",
-        "label": "Scenario 1: Customer Greeting",
-        "customerText": "Customer: \"Good morning, is this customer support?\""
-      },
-      {
-        "name": "scenario2",
-        "label": "Scenario 2: Customer Needs Help",
-        "customerText": "Customer: \"Hello, I need help with my order.\""
-      }
-    ],
-    "answersKey": "scenarioAnswers_L2_1",
-    "feedbackKey": "scenarioFeedback_L2_1",
-    "maxScorePerPrompt": 5.0,
-    "maxPossibleAIScore": 10.0
-  },
-  "Lesson 2.2": {
-    "type": "TEXT_SCENARIO",
-    "prompts": [
-      {
-        "name": "scenario1",
-        "label": "Scenario 1: Broken Item",
-        "customerText":
-            "Customer: \"I need help with my recent purchase. The item I received is broken.\""
-      },
-      {
-        "name": "scenario2",
-        "label": "Scenario 2: Slow Internet",
-        "customerText":
-            "Customer: \"My internet has been very slow for the past few days.\""
-      }
-    ],
-    "answersKey": "scenarioAnswers_L2_2",
-    "feedbackKey": "scenarioFeedback_L2_2",
-    "maxScorePerPrompt": 5.0,
-    "maxPossibleAIScore": 10.0
-  },
-  "Lesson 2.3": {
-    "type": "TEXT_FILL_IN",
-    "prompts": [
-      {
-        "name": "price",
-        "promptText": "Prompt 1 – Price Confirmation",
-        "customerText": "Customer: “How much is the total for my order?”"
-      },
-      {
-        "name": "delivery",
-        "promptText": "Prompt 2 – Delivery Date",
-        "customerText": "Customer: “When can I expect my package?”"
-      },
-      {
-        "name": "appointment",
-        "promptText": "Prompt 3 – Time Appointment",
-        "customerText": "Customer: “What time is my appointment?”"
-      },
-      {
-        "name": "account",
-        "promptText": "Prompt 4 – Account Number",
-        "customerText": "Customer: “Can you check my account?”"
-      },
-      {
-        "name": "billing",
-        "promptText": "Prompt 5 – Billing Issue",
-        "customerText": "Customer: “I was charged twice!”"
-      },
-    ],
-    "answersKey": "answers",
-    "feedbackKey": "feedbackForEachAnswer",
-    "maxScorePerPrompt": 5.0,
-    "maxPossibleAIScore": 25.0
-  },
-  "Lesson 3.1": {
-    "type": "LISTENING_COMP",
-    "scripts": {
-      "1":
-          "Customer: Hi, I received the wrong item in my order. Agent: I'm really sorry about that. Can you please provide the order number? Customer: It's 784512. Agent: Thank you. I’ll arrange a replacement right away. Customer: Thanks.",
-      "2":
-          "Customer: My internet has been disconnected for two days. Agent: I apologize for the inconvenience. Can I have your account ID? Customer: Sure, it's 56102. Agent: I’ve reported the issue and a technician will visit tomorrow. Customer: Great, thanks.",
-      "3":
-          "Customer: I was charged twice for the same bill. Agent: I see. Can I verify your billing date and amount? Customer: April 3rd, \$39.99. Agent: I’ll process the refund today. Customer: Thank you.",
-    },
-    "prompts": [
-      "What was the customer’s issue?",
-      "What information did the agent ask for?",
-      "What solution did the agent offer?",
-      "Was the customer satisfied with the response? (e.g., Yes/No, and why)"
-    ],
-    "answersKey": "answers",
-    "feedbackKey": "feedbackForAnswers",
-    "maxScorePerPrompt": 5.0,
-    "maxPossibleAIScore": 60.0
-  },
-  "Lesson 3.2": {
-    "type": "SPEAKING_PRACTICE",
-    "prompts": [
-      {
-        "id": 'd1_agent1',
-        "text":
-            "Good morning! This is Anna from TechSupport. How can I assist you?",
-        "character": "Agent"
-      },
-      {
-        "id": 'd1_agent2',
-        "text": "I’m sorry about that. Can I get your account number, please?",
-        "character": "Agent"
-      },
-      {
-        "id": 'd2_agent1',
-        "text": "Hello! Thank you for calling. What can I help you with today?",
-        "character": "Agent"
-      },
-      {
-        "id": 'd2_agent2',
-        "text": "Certainly. May I have your tracking number?",
-        "character": "Agent"
-      },
-      {
-        "id": 'd3_agent1',
-        "text":
-            "Thank you for waiting. I’ve confirmed your refund has been processed.",
-        "character": "Agent"
-      },
-      {
-        "id": 'd3_agent2',
-        "text": "You're welcome! Have a great day.",
-        "character": "Agent"
-      },
-    ],
-    "detailsArrayKey": "promptDetails",
-    "maxPossibleAIScore": 100.0
-  },
-  "Lesson 4.1": {
-    "type": "CLARIFICATION_SCENARIO",
-    "prompts": [
-      {
-        "name": 'scenario1',
-        "scenarioText":
-            '“Yes, my order was… [muffled] … and I need to change the delivery.”'
-      },
-      {
-        "name": 'scenario2',
-        "scenarioText": '“My email is zlaytsev_b12@yahoo.com.”'
-      },
-      {"name": 'scenario3', "scenarioText": '“The item number is 47823A.”'},
-      {
-        "name": 'scenario4',
-        "scenarioText":
-            '“Yeah I called yesterday and they said it’d be fixed in two days but it’s not.”'
-      },
-    ],
-    "answersKey": "scenarioResponses",
-    "feedbackKey": "aiFeedbackForScenarios",
-    "maxScorePerPrompt": 2.5,
-    "maxPossibleAIScore": 10.0
-  },
-  "Lesson 4.2": {
-    "type": "PROVIDING_SOLUTIONS",
-    "prompts": [
-      {
-        "name": "solution1",
-        "label": "Scenario 1: Wrong Item",
-        "customerProblem": "Customer: “I received the wrong item.”"
-      },
-      {
-        "name": "solution2",
-        "label": "Scenario 2: Order Not Arrived",
-        "customerProblem":
-            "Customer: “My order hasn’t arrived yet, and it’s past the estimated delivery date.”"
-      },
-      {
-        "name": "solution3",
-        "label": "Scenario 3: Payment Issue",
-        "customerProblem":
-            "Customer: “My payment didn’t go through, but I was still charged.”"
-      },
-      {
-        "name": "solution4",
-        "label": "Scenario 4: Subscription Cancellation",
-        "customerProblem":
-            "Customer: “I want to cancel my subscription, but I can’t find the option online.”"
-      }
-    ],
-    "answersKey": "solutionResponses_L4_2",
-    "feedbackKey": "solutionFeedback_L4_2",
-    "maxScorePerPrompt": 5.0,
-    "maxPossibleAIScore": 20.0
-  },
-  "Lesson 5.1": {
-    "type": "BASIC_CALL_SIMULATION",
-    "prompts": [
-      {
-        "id": 'turn1_customer_complex',
-        "text":
-            "Hi there, I was hoping to find out your opening hours today...",
-        "character": "Customer"
-      },
-      {
-        "id": 'turn2_agent_complex',
-        "text": "Good morning! Our standard hours are Monday to Friday...",
-        "character": "Agent - Your Turn"
-      },
-      {
-        "id": 'turn3_customer_complex',
-        "text": "Oh, closed on Saturdays? That's a bit inconvenient...",
-        "character": "Customer"
-      },
-      {
-        "id": 'turn4_agent_complex',
-        "text":
-            "I understand that can be inconvenient. While our live phone support...",
-        "character": "Agent - Your Turn"
-      },
-      {
-        "id": 'turn5_customer_complex',
-        "text": "Okay, yes, the email address would be helpful. Thank you.",
-        "character": "Customer"
-      },
-      {
-        "id": 'turn6_agent_complex',
-        "text": "Certainly, our support email is support@talkready.ai...",
-        "character": "Agent - Your Turn"
-      },
-    ],
-    "detailsArrayKey": "promptDetails",
-    "maxPossibleAIScore": 100.0
-  },
-  "Lesson 5.2": {
-    "type": "BASIC_CALL_SIMULATION",
-    "prompts": [
-      {
-        "id": 'turn1_customer_s2_complex',
-        "text": "Hi, I made a payment online a little while ago...",
-        "character": "Customer"
-      },
-      {
-        "id": 'turn2_agent_s2_complex',
-        "text": "Hello! I can certainly check on that payment for you...",
-        "character": "Agent - Your Turn"
-      },
-      {
-        "id": 'turn3_customer_s2_complex',
-        "text":
-            "Sure, the email is customer@example.com. And while you're checking...",
-        "character": "Customer"
-      },
-      {
-        "id": 'turn4_agent_s2_complex',
-        "text":
-            "Thank you, I've found your order. Yes, I can confirm your payment...",
-        "character": "Agent - Your Turn"
-      },
-      {
-        "id": 'turn5_customer_s2_complex',
-        "text": "No, that's all. Thank you for your help!",
-        "character": "Customer"
-      },
-      {
-        "id": 'turn6_agent_s2_complex',
-        "text": "You're very welcome! Have a wonderful day...",
-        "character": "Agent - Your Turn"
-      },
-    ],
-    "detailsArrayKey": "promptDetails",
-    "maxPossibleAIScore": 100.0
-  },
-};
+  const AssessmentReviewPage({
+    super.key,
+    required this.submissionId,
+    this.assessmentId,
+  });
 
+  @override
+  State<AssessmentReviewPage> createState() => _AssessmentReviewPageState();
+}
+
+class _AssessmentReviewPageState extends State<AssessmentReviewPage> {
+  final Logger _logger = Logger();
+  final FirebaseService _firebaseService = FirebaseService();
+
+  bool _isLoading = true;
+  String? _error;
+  Map<String, dynamic>? _submissionDetails;
+  Map<String, dynamic>? _assessmentDetails;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadReviewData();
+  }
+
+  Future<void> _loadReviewData() async {
+    try {
+      setState(() => _isLoading = true);
+
+      final submission = await _firebaseService.getStudentSubmissionDetails(
+        widget.submissionId,
+      );
+      if (submission == null) {
+        throw Exception('Submission not found');
+      }
+
+      final assessmentId = widget.assessmentId ?? submission['assessmentId'];
+      final assessment = await _firebaseService.getAssessmentDetails(
+        assessmentId,
+      );
+
+      // Enhanced class name resolution
+      String? className = submission['className'];
+
+      if (className == null || className == 'N/A' || className.isEmpty) {
+        // Try to get class name from assessment
+        if (assessment?['classId'] != null) {
+          final classData = await _firebaseService.getClassDetails(
+            assessment!['classId'],
+          );
+          className = classData?['className'] ?? classData?['name'];
+        }
+      }
+
+      // Update submission data with resolved class name
+      if (className != null && className.isNotEmpty) {
+        submission['className'] = className;
+      }
+
+      setState(() {
+        _submissionDetails = submission;
+        _assessmentDetails = assessment;
+        _isLoading = false;
+      });
+    } catch (e) {
+      _logger.e('Error loading review data: $e');
+      setState(() {
+        _error = e.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Review Assessment'),
+          backgroundColor: const Color(0xFF0077B3),
+          foregroundColor: Colors.white,
+        ),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_error != null) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Review Assessment'),
+          backgroundColor: const Color(0xFF0077B3),
+          foregroundColor: Colors.white,
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error, size: 64, color: Colors.red),
+              const SizedBox(height: 16),
+              Text('Error: $_error'),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _loadReviewData,
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_assessmentDetails?['title'] ?? 'Review Assessment'),
+        backgroundColor: const Color(0xFF0077B3),
+        foregroundColor: Colors.white,
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildAssessmentHeader(),
+            const SizedBox(height: 20),
+            _buildScoreCard(),
+            const SizedBox(height: 20),
+            _buildQuestionsReview(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAssessmentHeader() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _assessmentDetails?['title'] ?? 'Assessment',
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            if (_assessmentDetails?['description'] != null)
+              Text(_assessmentDetails!['description']),
+            const SizedBox(height: 12),
+            _buildInfoRow(
+              'Submitted:',
+              _formatDateTime(_submissionDetails?['submittedAt']),
+            ),
+            _buildInfoRow('Class:', _submissionDetails?['className'] ?? 'N/A'),
+            _buildInfoRow(
+              'Type:',
+              _submissionDetails?['assessmentType'] ?? 'Standard Quiz',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    // Clean up the value
+    String displayValue = value;
+    if (value == 'N/A' || value.isEmpty) {
+      if (label == 'Class:') {
+        displayValue = 'Class information unavailable';
+      }
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 80,
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontWeight: FontWeight.w500,
+                color: Colors.grey,
+              ),
+            ),
+          ),
+          Expanded(child: Text(displayValue)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScoreCard() {
+    final score = _submissionDetails?['score'] ?? 0;
+    final totalPoints = _submissionDetails?['totalPossiblePoints'] ?? 100;
+    final percentage = totalPoints > 0 ? (score / totalPoints * 100) : 0;
+
+    Color scoreColor;
+    String scoreLabel;
+
+    if (percentage >= 90) {
+      scoreColor = Colors.green;
+      scoreLabel = 'Excellent';
+    } else if (percentage >= 75) {
+      scoreColor = Colors.blue;
+      scoreLabel = 'Good';
+    } else if (percentage >= 60) {
+      scoreColor = Colors.orange;
+      scoreLabel = 'Fair';
+    } else {
+      scoreColor = Colors.red;
+      scoreLabel = 'Needs Improvement';
+    }
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            const Text(
+              'Your Score',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  '$score',
+                  style: TextStyle(
+                    fontSize: 36,
+                    fontWeight: FontWeight.bold,
+                    color: scoreColor,
+                  ),
+                ),
+                Text(
+                  ' / $totalPoints',
+                  style: const TextStyle(fontSize: 24, color: Colors.grey),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${percentage.toStringAsFixed(1)}% - $scoreLabel',
+              style: TextStyle(fontSize: 16, color: scoreColor),
+            ),
+            const SizedBox(height: 16),
+            LinearProgressIndicator(
+              value: percentage / 100,
+              backgroundColor: Colors.grey[300],
+              valueColor: AlwaysStoppedAnimation<Color>(scoreColor),
+              minHeight: 8,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuestionsReview() {
+    if (_submissionDetails?['assessmentType'] == 'speaking_assessment') {
+      return _buildSpeakingAssessmentReview();
+    } else {
+      return _buildStandardAssessmentReview();
+    }
+  }
+
+  Widget _buildSpeakingAssessmentReview() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Speaking Assessment Details',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+
+            // Show prompt/questions
+            if (_assessmentDetails?['questions'] != null) ...[
+              const Text(
+                'Prompt:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              ..._buildSpeakingPrompts(),
+            ],
+
+            const SizedBox(height: 16),
+
+            // Audio submission info
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.shade200),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.mic, color: Colors.blue),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'Audio response submitted',
+                      style: TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                  if (_submissionDetails?['audioUrl'] != null)
+                    IconButton(
+                      icon: const Icon(Icons.play_arrow),
+                      onPressed: () =>
+                          _playAudio(_submissionDetails!['audioUrl']),
+                    ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // Feedback section
+            _buildFeedbackSection(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildSpeakingPrompts() {
+    final questions = _assessmentDetails!['questions'] as List;
+    return questions.map<Widget>((question) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.purple.shade50,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.purple.shade200),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (question['title'] != null)
+              Text(
+                question['title'],
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            if (question['promptText'] != null || question['text'] != null)
+              Text(question['promptText'] ?? question['text'] ?? ''),
+          ],
+        ),
+      );
+    }).toList();
+  }
+
+  Widget _buildFeedbackSection() {
+    final isReviewed = _submissionDetails?['isReviewed'] ?? false;
+
+    if (!isReviewed) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.orange.shade50,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.orange.shade200),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.access_time, color: Colors.orange),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Awaiting trainer review',
+                style: TextStyle(fontWeight: FontWeight.w500),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Trainer Feedback',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.green.shade50,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.green.shade200),
+          ),
+          child: Text(
+            _submissionDetails?['trainerFeedback'] ??
+                'No feedback provided yet.',
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStandardAssessmentReview() {
+    final questions = _assessmentDetails?['questions'] as List? ?? [];
+    final answers = _submissionDetails?['answers'] as List? ?? [];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Question Review',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 16),
+        ...questions.asMap().entries.map((entry) {
+          final index = entry.key;
+          final question = entry.value;
+          final answer = answers.isNotEmpty && index < answers.length
+              ? answers[index]
+              : null;
+          return _buildQuestionCard(question, answer, index + 1);
+        }).toList(),
+      ],
+    );
+  }
+
+  Widget _buildQuestionCard(
+    Map<String, dynamic> question,
+    Map<String, dynamic>? answer,
+    int questionNumber,
+  ) {
+    final isCorrect = answer?['isCorrect'] ?? false;
+    final pointsEarned = answer?['pointsEarned'] ?? 0;
+    final totalPoints = question['points'] ?? 0;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Question header
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Question $questionNumber',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isCorrect
+                        ? Colors.green.shade100
+                        : Colors.red.shade100,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '$pointsEarned / $totalPoints pts',
+                    style: TextStyle(
+                      color: isCorrect
+                          ? Colors.green.shade700
+                          : Colors.red.shade700,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            // Question text
+            Text(
+              question['text'] ?? 'Question text not available',
+              style: const TextStyle(fontSize: 14),
+            ),
+
+            const SizedBox(height: 16),
+
+            // Answer section
+            if (question['type'] == 'multiple-choice')
+              _buildMultipleChoiceReview(question, answer)
+            else if (question['type'] == 'fill-in-the-blank')
+              _buildFillInBlankReview(question, answer),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMultipleChoiceReview(
+    Map<String, dynamic> question,
+    Map<String, dynamic>? answer,
+  ) {
+    final options = question['options'] as List? ?? [];
+    final selectedOptionId = answer?['selectedOptionId'];
+    final correctOptions = question['correctOptionIds'] as List? ?? [];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Options:', style: TextStyle(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        ...options.map<Widget>((option) {
+          final optionId = option['optionId'];
+          final isSelected = selectedOptionId == optionId;
+          final isCorrect = correctOptions.contains(optionId);
+
+          Color backgroundColor;
+          Color textColor;
+          IconData? icon;
+
+          if (isSelected && isCorrect) {
+            backgroundColor = Colors.green.shade100;
+            textColor = Colors.green.shade700;
+            icon = Icons.check_circle;
+          } else if (isSelected && !isCorrect) {
+            backgroundColor = Colors.red.shade100;
+            textColor = Colors.red.shade700;
+            icon = Icons.cancel;
+          } else if (!isSelected && isCorrect) {
+            backgroundColor = Colors.green.shade50;
+            textColor = Colors.green.shade600;
+            icon = Icons.check_circle_outline;
+          } else {
+            backgroundColor = Colors.grey.shade50;
+            textColor = Colors.grey.shade700;
+          }
+
+          return Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: backgroundColor,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: isSelected || isCorrect
+                    ? (isCorrect ? Colors.green.shade300 : Colors.red.shade300)
+                    : Colors.grey.shade300,
+              ),
+            ),
+            child: Row(
+              children: [
+                if (icon != null) ...[
+                  Icon(icon, color: textColor, size: 20),
+                  const SizedBox(width: 8),
+                ],
+                Expanded(
+                  child: Text(
+                    option['text'] ?? '',
+                    style: TextStyle(color: textColor),
+                  ),
+                ),
+                if (isSelected)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: textColor,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Text(
+                      'Your Answer',
+                      style: TextStyle(color: Colors.white, fontSize: 10),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        }).toList(),
+      ],
+    );
+  }
+
+  Widget _buildFillInBlankReview(
+    Map<String, dynamic> question,
+    Map<String, dynamic>? answer,
+  ) {
+    final studentAnswer = answer?['studentAnswer'] ?? '';
+    final correctAnswers = question['correctAnswers'] as List? ?? [];
+    final isCorrect = answer?['isCorrect'] ?? false;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Your Answer:',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: isCorrect ? Colors.green.shade100 : Colors.red.shade100,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isCorrect ? Colors.green.shade300 : Colors.red.shade300,
+            ),
+          ),
+          child: Text(
+            studentAnswer.isEmpty ? 'No answer provided' : studentAnswer,
+            style: TextStyle(
+              color: isCorrect ? Colors.green.shade700 : Colors.red.shade700,
+            ),
+          ),
+        ),
+
+        if (!isCorrect && correctAnswers.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          const Text(
+            'Correct Answer(s):',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.green.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.green.shade200),
+            ),
+            child: Text(
+              correctAnswers.join(', '),
+              style: TextStyle(color: Colors.green.shade700),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Future<void> _playAudio(String audioUrl) async {
+    try {
+      final uri = Uri.parse(audioUrl);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not play audio: $e')));
+    }
+  }
+
+  String _formatDateTime(dynamic timestamp) {
+    if (timestamp == null) return 'N/A';
+
+    try {
+      DateTime date;
+      if (timestamp is Timestamp) {
+        date = timestamp.toDate();
+      } else if (timestamp is DateTime) {
+        date = timestamp;
+      } else {
+        return 'N/A';
+      }
+
+      return '${date.day}/${date.month}/${date.year} at ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+    } catch (e) {
+      return 'N/A';
+    }
+  }
+}
+
+// Main Progress Tracker Page
 class ProgressTrackerPage extends StatefulWidget {
   const ProgressTrackerPage({super.key});
 
@@ -404,7 +711,8 @@ class ProgressTrackerPage extends StatefulWidget {
   State<ProgressTrackerPage> createState() => _ProgressTrackerPageState();
 }
 
-class _ProgressTrackerPageState extends State<ProgressTrackerPage> {
+class _ProgressTrackerPageState extends State<ProgressTrackerPage>
+    with TickerProviderStateMixin {
   final Logger _logger = Logger();
   final FirebaseService _firebaseService = FirebaseService();
   User? _currentUser;
@@ -412,28 +720,63 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage> {
   bool _isLoading = true;
   String? _error;
   Map<String, List<Map<String, dynamic>>> _allUserAttempts = {};
-  // New state for trainer assessment submissions
   List<Map<String, dynamic>> _assessmentSubmissions = [];
-  bool _isLoadingAssessments = true; // Separate loading for assessments
+  bool _isLoadingAssessments = true;
 
   Map<String, dynamic> _overallStats = {
     'attemptedLessonsCount': 0,
     'totalAttempts': 0,
-    'averageScore': "N/A"
+    'averageScore': "N/A",
   };
+
+  Map<String, List<MapEntry<String, List<Map<String, dynamic>>>>>
+  _groupLessonsByLevel() {
+    final Map<String, List<MapEntry<String, List<Map<String, dynamic>>>>>
+    levelGroups = {'Beginner': [], 'Intermediate': [], 'Advanced': []};
+
+    _allUserAttempts.entries.forEach((entry) {
+      final lessonId = entry.key;
+      final attempts = entry.value;
+
+      // Find which module this lesson belongs to
+      String? lessonLevel;
+      for (var moduleEntry in COURSE_STRUCTURE_MOBILE.entries) {
+        final lessons = moduleEntry.value['lessons'] as List<dynamic>?;
+        if (lessons != null) {
+          for (var lesson in lessons) {
+            if (lesson is Map && lesson['firestoreId'] == lessonId) {
+              lessonLevel = moduleEntry.value['level'] as String?;
+              break;
+            }
+          }
+        }
+        if (lessonLevel != null) break;
+      }
+
+      lessonLevel ??= 'Beginner'; // Default fallback
+      levelGroups[lessonLevel]?.add(entry);
+    });
+
+    return levelGroups;
+  }
+
+  // AI Advisor state
+  String? _aiAdvisorFeedback;
+  bool _loadingAdvisor = false;
+  String? _advisorError;
+
   final Map<String, bool> _expandedLesson = {};
+  int _selectedIndex = 4;
 
-  // New state for PDF processing
-  bool _isProcessingPdf = false;
-  String? _processingSubmissionId; // To show loading on a specific item
-  bool _isDownloadingFullHistoryPdf = false;
-  String? _pdfMessage;
-
-  int _selectedIndex = 4; // Progress is now index 4
+  // Animation controllers
+  late AnimationController _fadeController;
+  late AnimationController _pulseController;
+  late Animation<double> _fadeAnimation;
 
   @override
   void initState() {
     super.initState();
+    _initializeAnimations();
     _currentUser = FirebaseAuth.instance.currentUser;
     if (_currentUser != null) {
       _fetchAllReportData();
@@ -446,51 +789,44 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage> {
     }
   }
 
-  Map<String, dynamic>? _getLessonConfig(String lessonId) {
-    Map<String, dynamic>? structureConfig;
-    for (var moduleEntry in COURSE_STRUCTURE_MOBILE.entries) {
-      var lessons = moduleEntry.value['lessons'] as List<dynamic>?;
-      if (lessons != null) {
-        for (var lesson in lessons) {
-          if (lesson is Map && lesson['firestoreId'] == lessonId) {
-            structureConfig = Map<String, dynamic>.from(lesson);
-            break;
-          }
-        }
-      }
-      if (structureConfig != null) break;
-    }
+  void _initializeAnimations() {
+    _fadeController = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    );
+    _pulseController = AnimationController(
+      duration: const Duration(milliseconds: 2000),
+      vsync: this,
+    );
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
+    );
+  }
 
-    final promptsData = lessonPromptsDataMobile[lessonId];
-
-    if (structureConfig == null && promptsData == null) {
-      _logger.w("No config found for lessonId: $lessonId in _getLessonConfig.");
-      return null;
-    }
-    final mergedConfig = {...(structureConfig ?? {}), ...(promptsData ?? {})};
-    if (mergedConfig.isEmpty) {
-      _logger.w("Merged config is empty for lessonId: $lessonId");
-      return null;
-    }
-    return mergedConfig;
+  @override
+  void dispose() {
+    _fadeController.dispose();
+    _pulseController.dispose();
+    super.dispose();
   }
 
   Future<void> _fetchAllReportData() async {
     if (_currentUser == null) return;
     setState(() {
       _isLoading = true;
-      _isLoadingAssessments = true; // Start loading assessments too
+      _isLoadingAssessments = true;
       _error = null;
-      _pdfMessage = null;
     });
+
     try {
       final attemptsFuture = _firebaseService.getAllUserLessonAttempts();
-      // Fetch assessment submissions
-      final assessmentSubmissionsFuture =
-          _firebaseService.getStudentSubmissionsWithDetails(_currentUser!.uid);
+      final assessmentSubmissionsFuture = _firebaseService
+          .getStudentSubmissionsWithDetails(_currentUser!.uid);
 
-      final results =
-          await Future.wait([attemptsFuture, assessmentSubmissionsFuture]);
+      final results = await Future.wait([
+        attemptsFuture,
+        assessmentSubmissionsFuture,
+      ]);
 
       final attempts = results[0] as Map<String, List<Map<String, dynamic>>>;
       final assessmentSubmissions = results[1] as List<Map<String, dynamic>>;
@@ -503,6 +839,9 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage> {
           _isLoading = false;
           _isLoadingAssessments = false;
         });
+
+        _fadeController.forward();
+        _generateAIAdvisorFeedback();
       }
     } catch (e) {
       _logger.e("Error fetching all report data: $e");
@@ -521,10 +860,11 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage> {
       _overallStats = {
         'attemptedLessonsCount': 0,
         'totalAttempts': 0,
-        'averageScore': "N/A"
+        'averageScore': "N/A",
       };
       return;
     }
+
     int totalAttempts = 0;
     double totalScoreSum = 0;
     int scoredAttemptsCount = 0;
@@ -549,30 +889,89 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage> {
       'totalAttempts': totalAttempts,
       'averageScore': scoredAttemptsCount > 0
           ? (totalScoreSum / scoredAttemptsCount).toStringAsFixed(1)
-          : "N/A"
+          : "N/A",
     };
   }
 
-  String _getLessonTitle(String lessonIdFirestoreKey) {
-    for (var moduleEntry in COURSE_STRUCTURE_MOBILE.entries) {
-      var lessons = moduleEntry.value['lessons'] as List<dynamic>?;
-      if (lessons != null) {
-        for (var lesson in lessons) {
-          if (lesson is Map && lesson['firestoreId'] == lessonIdFirestoreKey) {
-            return lesson['title'] as String? ?? lessonIdFirestoreKey;
-          }
-        }
-      }
+  Future<void> _generateAIAdvisorFeedback() async {
+    if (_overallStats['attemptedLessonsCount'] == 0) return;
+
+    setState(() {
+      _loadingAdvisor = true;
+      _advisorError = null;
+    });
+
+    try {
+      // Simulate AI advisor feedback generation
+      await Future.delayed(const Duration(seconds: 2));
+
+      final avgScore = _overallStats['averageScore'];
+      final lessonsCount = _overallStats['attemptedLessonsCount'];
+      final attemptsCount = _overallStats['totalAttempts'];
+
+      String feedback = _generateMockFeedback(
+        avgScore,
+        lessonsCount,
+        attemptsCount,
+      );
+
+      setState(() {
+        _aiAdvisorFeedback = feedback;
+        _loadingAdvisor = false;
+      });
+    } catch (e) {
+      setState(() {
+        _advisorError = 'Failed to generate AI advice';
+        _loadingAdvisor = false;
+      });
     }
-    return lessonIdFirestoreKey;
   }
 
-  // Add this method to build the app bar with logo
+  String _generateMockFeedback(
+    dynamic avgScore,
+    int lessonsCount,
+    int attemptsCount,
+  ) {
+    if (avgScore == "N/A")
+      return "Complete some lessons to get personalized feedback!";
+
+    final score = double.tryParse(avgScore.toString()) ?? 0;
+    List<String> feedback = [];
+
+    if (score >= 85) {
+      feedback.add("🌟 Excellent performance! You're mastering the material.");
+    } else if (score >= 70) {
+      feedback.add("👍 Good progress! Keep practicing to reach excellence.");
+    } else {
+      feedback.add(
+        "💪 Keep working hard! Focus on understanding core concepts.",
+      );
+    }
+
+    if (lessonsCount < 3) {
+      feedback.add("📚 Try exploring more lessons to broaden your knowledge.");
+    }
+
+    if (attemptsCount > lessonsCount * 2) {
+      feedback.add(
+        "🎯 Great dedication! Your practice frequency is impressive.",
+      );
+    }
+
+    feedback.add("🚀 Continue your learning journey - you're doing great!");
+
+    return feedback.join('\n\n');
+  }
+
   Widget _buildAppBarWithLogo() {
     return Container(
       padding: const EdgeInsets.only(top: 40, left: 16, right: 16, bottom: 10),
       decoration: const BoxDecoration(
-        color: Color(0xFF0077B3),
+        gradient: LinearGradient(
+          colors: [Color(0xFF0077B3), Color(0xFF005f8c)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
         borderRadius: BorderRadius.only(
           bottomLeft: Radius.circular(20),
           bottomRight: Radius.circular(20),
@@ -580,19 +979,21 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage> {
       ),
       child: Row(
         children: [
-          Image.asset(
-            'images/TR Logo.png',
-            height: 40,
-            width: 40,
-          ),
+          Image.asset('images/TR Logo.png', height: 40, width: 40),
           const SizedBox(width: 12),
-          const Text(
-            'Progress Tracker',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
+          const Expanded(
+            child: Text(
+              'My Progress Reports',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
             ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.white),
+            onPressed: _fetchAllReportData,
           ),
         ],
       ),
@@ -602,6 +1003,7 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage> {
   void _onItemTapped(int index) {
     if (_selectedIndex == index) return;
     setState(() => _selectedIndex = index);
+
     Widget nextPage;
     switch (index) {
       case 0:
@@ -614,11 +1016,10 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage> {
         nextPage = const MyEnrolledClasses();
         break;
       case 3:
-        nextPage = const JournalPage(); // Restore Journal
+        nextPage = const JournalPage();
         break;
       case 4:
-        // Already on ProgressTrackerPage
-        return;
+        return; // Already on ProgressTrackerPage
       case 5:
         nextPage = const ProfilePage();
         break;
@@ -630,37 +1031,290 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage> {
       context,
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) => nextPage,
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          return child;
-        },
+        transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+            child,
         transitionDuration: Duration.zero,
         reverseTransitionDuration: Duration.zero,
       ),
     );
   }
 
-  Widget _buildOverallStatsCard() {
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: Colors.grey[50],
+        body: Column(
+          children: [
+            _buildAppBarWithLogo(),
+            const Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(color: Color(0xFF0077B3)),
+                    SizedBox(height: 16),
+                    Text('Loading your progress...'),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        bottomNavigationBar: _buildBottomNavBar(),
+      );
+    }
+
+    if (_error != null) {
+      return Scaffold(
+        backgroundColor: Colors.grey[50],
+        body: Column(
+          children: [
+            _buildAppBarWithLogo(),
+            Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.error, size: 64, color: Colors.red),
+                    const SizedBox(height: 16),
+                    Text(_error!, style: const TextStyle(color: Colors.red)),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: _fetchAllReportData,
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        bottomNavigationBar: _buildBottomNavBar(),
+      );
+    }
+
+    bool hasProgress =
+        _allUserAttempts.isNotEmpty || _assessmentSubmissions.isNotEmpty;
+
+    if (!hasProgress) {
+      return Scaffold(
+        backgroundColor: Colors.grey[50],
+        body: Column(
+          children: [
+            _buildAppBarWithLogo(),
+            const Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.trending_up, size: 80, color: Colors.grey),
+                    SizedBox(height: 16),
+                    Text(
+                      'No Progress Yet',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      'Start learning to see your progress here!',
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        bottomNavigationBar: _buildBottomNavBar(),
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: Colors.grey[50],
+      body: Column(
+        children: [
+          _buildAppBarWithLogo(),
+          Expanded(
+            child: FadeTransition(
+              opacity: _fadeAnimation,
+              child: RefreshIndicator(
+                onRefresh: _fetchAllReportData,
+                child: SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildAIAdvisorCard(),
+                      const SizedBox(height: 16),
+                      _buildOverallStatsCards(),
+                      const SizedBox(height: 16),
+                      _buildTrainerAssessmentsSection(),
+                      const SizedBox(height: 16),
+                      _buildAILessonsSection(),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+      bottomNavigationBar: _buildBottomNavBar(),
+    );
+  }
+
+  Widget _buildAIAdvisorCard() {
     return Card(
-      elevation: 2,
-      margin: const EdgeInsets.symmetric(vertical: 8.0),
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF6366F1), Color(0xFF8B5CF6), Color(0xFF0077B3)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.psychology, color: Colors.amber, size: 28),
+                  SizedBox(width: 12),
+                  Text(
+                    'Your AI Learning Advisor',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              if (_loadingAdvisor) ...[
+                const Row(
+                  children: [
+                    SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.amber),
+                      ),
+                    ),
+                    SizedBox(width: 12),
+                    Text(
+                      'Analyzing your progress...',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                  ],
+                ),
+              ] else if (_advisorError != null) ...[
+                Row(
+                  children: [
+                    const Icon(Icons.error, color: Colors.redAccent),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        _advisorError!,
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                    ),
+                  ],
+                ),
+              ] else if (_aiAdvisorFeedback != null) ...[
+                Text(
+                  _aiAdvisorFeedback!,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    height: 1.5,
+                  ),
+                ),
+              ] else ...[
+                const Text(
+                  'Complete some lessons to receive personalized advice!',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 16,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOverallStatsCards() {
+    return Row(
+      children: [
+        Expanded(
+          child: _buildStatCard(
+            'Lessons Tried',
+            '${_overallStats['attemptedLessonsCount']}',
+            Icons.book,
+            Colors.blue,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _buildStatCard(
+            'Total Attempts',
+            '${_overallStats['totalAttempts']}',
+            Icons.refresh,
+            Colors.green,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _buildStatCard(
+            'Average Score',
+            '${_overallStats['averageScore']}${_overallStats['averageScore'] == "N/A" ? "" : "%"}',
+            Icons.analytics,
+            Colors.purple,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
+    return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text("AI Lesson Progress", // Changed title for clarity
-                style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildStatItem("Lessons Tried",
-                    "${_overallStats['attemptedLessonsCount']}"),
-                _buildStatItem(
-                    "Total Attempts", "${_overallStats['totalAttempts']}"),
-                _buildStatItem("Average Score",
-                    "${_overallStats['averageScore']}${_overallStats['averageScore'] == "N/A" ? "" : "%"}"),
-              ],
+            Icon(icon, color: color, size: 28),
+            const SizedBox(height: 8),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+            Text(
+              title,
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
             ),
           ],
         ),
@@ -668,220 +1322,279 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage> {
     );
   }
 
-  Widget _buildStatItem(String label, String value) {
+  Widget _buildTrainerAssessmentsSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Trainer Assessments',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        'Your formal assessment submissions',
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_assessmentSubmissions.isNotEmpty)
+                  TextButton.icon(
+                    icon: const Icon(Icons.download, size: 18),
+                    label: const Text('Export'),
+                    onPressed: _showExportOptions,
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            if (_isLoadingAssessments) ...[
+              const Center(child: CircularProgressIndicator()),
+            ] else if (_assessmentSubmissions.isEmpty) ...[
+              const Center(
+                child: Column(
+                  children: [
+                    Icon(Icons.assignment, size: 48, color: Colors.grey),
+                    SizedBox(height: 8),
+                    Text('No assessments submitted yet'),
+                  ],
+                ),
+              ),
+            ] else ...[
+              ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _assessmentSubmissions.length,
+                separatorBuilder: (context, index) => const SizedBox(height: 8),
+                itemBuilder: (context, index) {
+                  return _buildAssessmentSubmissionCard(
+                    _assessmentSubmissions[index],
+                  );
+                },
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAssessmentSubmissionCard(Map<String, dynamic> submission) {
+    final score = submission['score'] ?? 0;
+    final totalPoints = submission['totalPossiblePoints'] ?? 100;
+    final percentage = totalPoints > 0 ? (score / totalPoints * 100) : 0;
+
+    Color scoreColor = _getScoreColor(percentage);
+
+    return Card(
+      elevation: 1,
+      child: InkWell(
+        onTap: () => _navigateToReview(submission),
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      submission['assessmentTitle'] ?? 'Assessment',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: scoreColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '$score / $totalPoints',
+                      style: TextStyle(
+                        color: scoreColor,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 8),
+
+              if (submission['className'] != null &&
+                  submission['className'] != 'Class Name Not Found')
+                Text(
+                  'Class: ${submission['className']}',
+                  style: const TextStyle(color: Colors.grey),
+                ),
+
+              const SizedBox(height: 8),
+
+              Row(
+                children: [
+                  Expanded(
+                    child: LinearProgressIndicator(
+                      value: percentage / 100,
+                      backgroundColor: Colors.grey[300],
+                      valueColor: AlwaysStoppedAnimation<Color>(scoreColor),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    '${percentage.toStringAsFixed(0)}%',
+                    style: TextStyle(
+                      color: scoreColor,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 8),
+
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    _formatSubmissionDate(submission['submittedAt']),
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                  Row(
+                    children: [
+                      TextButton(
+                        onPressed: () => _navigateToReview(submission),
+                        child: const Text('Review'),
+                      ),
+                      TextButton.icon(
+                        icon: const Icon(Icons.share, size: 16),
+                        label: const Text('Share'),
+                        onPressed: () => _shareAssessment(submission),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAILessonsSection() {
+    if (_allUserAttempts.isEmpty) return const SizedBox.shrink();
+
+    final levelGroups = _groupLessonsByLevel();
+
     return Column(
-      mainAxisSize: MainAxisSize.min,
       children: [
-        Text(value,
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 4),
-        Text(label, style: Theme.of(context).textTheme.bodySmall),
+        // Header card
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.school, color: Color(0xFF0077B3)),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Detailed Performance by Level & Module',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                const Text(
+                  'Explore your progress through each learning module',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 16),
+
+        // Level sections
+        ...levelGroups.entries.map((levelEntry) {
+          return _buildLevelSection(levelEntry.key, levelEntry.value);
+        }).toList(),
       ],
     );
   }
 
-  // --- Placeholder PDF and Notification methods ---
-  Future<void> _handleDownloadAndSendAssessment(
-      Map<String, dynamic> submission) async {
-    if (_currentUser == null) return;
-    setState(() {
-      _isProcessingPdf = true;
-      _processingSubmissionId = submission['id'] as String?;
-      _pdfMessage = null;
-    });
+  Widget _buildLevelSection(
+    String level,
+    List<MapEntry<String, List<Map<String, dynamic>>>> lessons,
+  ) {
+    // Get modules for this level
+    final modulesForLevel = COURSE_STRUCTURE_MOBILE.entries
+        .where((entry) => entry.value['level'] == level)
+        .toList();
 
-    _logger.i(
-        "Attempting to 'Download & Send' for submission: ${submission['id']}");
-
-    // Simulate PDF generation and sending
-    await Future.delayed(const Duration(seconds: 2));
-
-    // Placeholder: Fetch details (in a real scenario, you'd use these for PDF)
-    final Map<String, dynamic>? submissionDetails = await _firebaseService
-        .getStudentSubmissionDetails(submission['id'] as String);
-    final Map<String, dynamic>? assessmentDetails = await _firebaseService
-        .getAssessmentDetails(submission['assessmentId'] as String);
-    final Map<String, dynamic>? studentProfile =
-        await _firebaseService.getUserProfileById(_currentUser!.uid);
-
-    if (submissionDetails == null ||
-        assessmentDetails == null ||
-        studentProfile == null) {
-      _logger.e("Failed to fetch all details for PDF generation and sending.");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text("Error: Could not fetch all report details."),
-            backgroundColor: Colors.red));
-        setState(() {
-          _isProcessingPdf = false;
-          _processingSubmissionId = null;
-          _pdfMessage = "Error: Could not fetch report details.";
-        });
-      }
-      return;
-    }
-
-    String studentNameToDisplay = studentProfile['displayName'] ??
-        '${studentProfile['firstName'] ?? ''} ${studentProfile['lastName'] ?? ''}'
-            .trim();
-    if (studentNameToDisplay.isEmpty) studentNameToDisplay = "Student";
-
-    // Placeholder for trainer notification
-    final String? trainerId = assessmentDetails['trainerId'] as String?;
-    if (trainerId != null && trainerId.isNotEmpty) {
-      await _firebaseService.sendTrainerNotification(
-          trainerId,
-          studentNameToDisplay, // student name
-          assessmentDetails['title'] as String? ?? 'Untitled Assessment',
-          submission['id'] as String,
-          submission['assessmentId'] as String,
-          submissionDetails['classId'] as String?,
-          assessmentDetails['className']
-              as String? // Assuming className is on assessmentDetails or fetched separately
-          );
-      _logger.i("Placeholder: Notification sent to trainer $trainerId.");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text(
-                "Report 'sent' to trainer (placeholder). PDF generation TBD."),
-            backgroundColor: Colors.green));
-      }
-    } else {
-      _logger.w(
-          "No trainerId found for assessment ${submission['assessmentId']}, notification not sent.");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text(
-                "Report 'downloaded' (placeholder). Trainer not notified (no ID)."),
-            backgroundColor: Colors.orange));
-      }
-    }
-
-    setState(() {
-      _isProcessingPdf = false;
-      _processingSubmissionId = null;
-      _pdfMessage = "Report 'processed' (PDF TBD).";
-    });
-  }
-
-  Future<void> _handleDownloadFullHistoryPdf() async {
-    setState(() {
-      _isDownloadingFullHistoryPdf = true;
-      _pdfMessage = null;
-    });
-    _logger.i("Attempting to 'Download Full History'");
-    // Simulate PDF generation
-    await Future.delayed(const Duration(seconds: 3));
-
-    // In a real app, loop through _assessmentSubmissions, fetch all details, and generate one large PDF.
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text(
-              "Full history 'downloaded' (placeholder). PDF generation TBD."),
-          backgroundColor: Colors.blue));
-    }
-    setState(() {
-      _isDownloadingFullHistoryPdf = false;
-      _pdfMessage = "Full history 'downloaded' (PDF TBD).";
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    bool noAiProgress = _allUserAttempts.isEmpty;
-    bool noTrainerAssessments =
-        _assessmentSubmissions.isEmpty && !_isLoadingAssessments;
-
-    return Scaffold(
-      backgroundColor: Colors.grey[50],
-      // Remove the appBar property
-      body: Column(
-        children: [
-          _buildAppBarWithLogo(), // Add the custom header
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _error != null
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(_error!, style: const TextStyle(color: Colors.red)),
-                            ElevatedButton(
-                              onPressed: _fetchAllReportData,
-                              child: const Text('Retry'),
-                            ),
-                          ],
-                        ),
-                      )
-                    : SingleChildScrollView(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _buildOverallStatsCard(),
-                            const SizedBox(height: 16),
-                            _buildTrainerAssessmentsSection(),
-                            // Add your other sections here as needed
-                            // ...existing content...
-                          ],
-                        ),
-                      ),
-          ),
-        ],
-      ),
-      bottomNavigationBar: AnimatedBottomNavBar(
-        currentIndex: _selectedIndex,
-        onTap: _onItemTapped,
-        items: [
-          CustomBottomNavItem(icon: Icons.home, label: 'Home'),
-          CustomBottomNavItem(icon: Icons.book, label: 'Courses'),
-          CustomBottomNavItem(icon: Icons.school, label: 'My Classes'), // Changed from Icons.class_ to Icons.school
-          CustomBottomNavItem(icon: Icons.library_books, label: 'Journal'),
-          CustomBottomNavItem(icon: Icons.trending_up, label: 'Progress'),
-          CustomBottomNavItem(icon: Icons.person, label: 'Profile'),
-        ],
-        activeColor: Colors.white,
-        inactiveColor: Colors.grey[600]!,
-        notchColor: const Color(0xFF0077B3),
-        backgroundColor: Colors.white,
-        selectedIconSize: 28.0,
-        iconSize: 25.0,
-        barHeight: 55,
-        selectedIconPadding: 10,
-        animationDuration: const Duration(milliseconds: 300),
-        customNotchWidthFactor: 1.8,
-      ),
-    );
-  }
-
-  // --- New Widget for Trainer Assessments History Section ---
-  Widget _buildTrainerAssessmentsSection() {
-    if (_isLoadingAssessments) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 20.0),
-        child: Center(child: CircularProgressIndicator()),
-      );
-    }
-    if (_assessmentSubmissions.isEmpty) {
+    if (modulesForLevel.isEmpty) {
       return Card(
-        elevation: 1,
-        margin: const EdgeInsets.symmetric(vertical: 8.0),
+        margin: const EdgeInsets.only(bottom: 16),
         child: Padding(
-          padding: const EdgeInsets.all(16.0),
+          padding: const EdgeInsets.all(16),
           child: Column(
             children: [
-              Text("Trainer Assessments History",
-                  style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 10),
-              Icon(Icons.history_edu, size: 40, color: Colors.grey[400]),
-              const SizedBox(height: 8),
-              const Text("No trainer assessments submitted yet.",
-                  style: TextStyle(color: Colors.grey)),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _getLevelColor(level).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      _getLevelIcon(level),
+                      color: _getLevelColor(level),
+                      size: 24,
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      '$level Level',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: _getLevelColor(level),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'No progress yet. Start learning to see your achievements here!',
+                style: TextStyle(color: Colors.grey),
+              ),
             ],
           ),
         ),
@@ -889,49 +1602,620 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage> {
     }
 
     return Card(
-      elevation: 2,
-      margin: const EdgeInsets.symmetric(vertical: 8.0),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        children: [
+          // Level header
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: _getLevelColor(level).withOpacity(0.1),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(8),
+                topRight: Radius.circular(8),
+              ),
+            ),
+            child: Row(
               children: [
-                Text("Trainer Assessments History",
-                    style: Theme.of(context).textTheme.titleLarge),
-                if (_assessmentSubmissions.isNotEmpty)
-                  ElevatedButton.icon(
-                    icon: _isDownloadingFullHistoryPdf
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                    Colors.white)))
-                        : const Icon(Icons.download_for_offline, size: 18),
-                    label: const Text("Full History"),
-                    onPressed: _isDownloadingFullHistoryPdf || _isProcessingPdf
-                        ? null
-                        : _handleDownloadFullHistoryPdf,
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 8),
-                      textStyle: const TextStyle(fontSize: 12),
-                    ),
+                Icon(
+                  _getLevelIcon(level),
+                  color: _getLevelColor(level),
+                  size: 24,
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  '$level Level',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: _getLevelColor(level),
                   ),
+                ),
               ],
             ),
-            const SizedBox(height: 10),
-            ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _assessmentSubmissions.length,
-              itemBuilder: (context, index) {
-                final submission = _assessmentSubmissions[index];
-                return _buildAssessmentSubmissionItem(submission);
+          ),
+
+          // Modules in this level
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: modulesForLevel.map((moduleEntry) {
+                return _buildModuleSection(moduleEntry.key, moduleEntry.value);
+              }).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModuleSection(String moduleId, Map<String, dynamic> moduleData) {
+    final moduleLessons = moduleData['lessons'] as List<dynamic>? ?? [];
+    final moduleAssessment = moduleData['assessment'] as Map<String, dynamic>?;
+
+    // Check if any lessons in this module have progress
+    final hasProgress = moduleLessons.any((lesson) {
+      final lessonId = lesson['firestoreId'] as String;
+      return _allUserAttempts[lessonId]?.isNotEmpty ?? false;
+    });
+
+    // Check module assessment progress
+    final hasAssessmentProgress =
+        moduleAssessment != null &&
+        (_assessmentSubmissions.any(
+          (sub) => sub['assessmentId'] == moduleAssessment['id'],
+        ));
+
+    if (!hasProgress && !hasAssessmentProgress) {
+      return const SizedBox.shrink(); // Don't show modules with no progress
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Module header
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(12),
+                topRight: Radius.circular(12),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.book, color: Colors.indigo.shade600),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    moduleData['title'] as String,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey.shade800,
+                    ),
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: () {
+                    // Navigate to courses page and scroll to this module
+                    Navigator.pushReplacementNamed(context, '/courses');
+                  },
+                  icon: const Icon(Icons.launch, size: 16),
+                  label: const Text(
+                    'View Module',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Module lessons
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                // Lessons
+                ...moduleLessons.map((lesson) {
+                  final lessonId = lesson['firestoreId'] as String;
+                  final attempts = _allUserAttempts[lessonId] ?? [];
+                  if (attempts.isEmpty) return const SizedBox.shrink();
+
+                  return _buildLessonProgressCard(lessonId, attempts);
+                }).toList(),
+
+                // Module Assessment
+                if (moduleAssessment != null && hasAssessmentProgress)
+                  _buildModuleAssessmentCard(moduleAssessment),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModuleAssessmentCard(Map<String, dynamic> assessmentData) {
+    final assessmentId = assessmentData['id'] as String;
+    final assessmentTitle = assessmentData['title'] as String;
+
+    // Find assessment submissions for this assessment
+    final assessmentSubmissions = _assessmentSubmissions
+        .where((sub) => sub['assessmentId'] == assessmentId)
+        .toList();
+
+    if (assessmentSubmissions.isEmpty) return const SizedBox.shrink();
+
+    // Get the best submission
+    final bestSubmission = assessmentSubmissions.reduce((a, b) {
+      final scoreA = a['score'] ?? 0;
+      final scoreB = b['score'] ?? 0;
+      return scoreA > scoreB ? a : b;
+    });
+
+    final score = bestSubmission['score'] ?? 0;
+    final totalPoints = bestSubmission['totalPossiblePoints'] ?? 100;
+    final percentage = totalPoints > 0 ? (score / totalPoints * 100) : 0;
+
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.yellow.shade50, Colors.orange.shade50],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        border: Border.all(color: Colors.yellow.shade300),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.emoji_events, color: Colors.amber.shade600),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  assessmentTitle,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.amber.shade800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Text(
+                '${assessmentSubmissions.length} attempt${assessmentSubmissions.length != 1 ? 's' : ''}',
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(width: 16),
+              Text(
+                'Best Score: $score / $totalPoints',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          LinearProgressIndicator(
+            value: percentage / 100,
+            backgroundColor: Colors.yellow.shade200,
+            valueColor: AlwaysStoppedAnimation<Color>(Colors.amber.shade600),
+            minHeight: 4,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _getLevelColor(String level) {
+    switch (level) {
+      case 'Beginner':
+        return Colors.blue;
+      case 'Intermediate':
+        return Colors.orange;
+      case 'Advanced':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  IconData _getLevelIcon(String level) {
+    switch (level) {
+      case 'Beginner':
+        return Icons.star_outline;
+      case 'Intermediate':
+        return Icons.star_half;
+      case 'Advanced':
+        return Icons.star;
+      default:
+        return Icons.circle;
+    }
+  }
+
+  Widget _buildLessonProgressCard(
+    String lessonId,
+    List<Map<String, dynamic>> attempts,
+  ) {
+    final lessonTitle = _getLessonTitle(lessonId);
+
+    // Calculate best percentage instead of raw score
+    final bestPercentage = attempts
+        .map((a) {
+          final score = (a['score'] as num?)?.toDouble() ?? 0;
+          final maxScore = _getMaxScoreForLesson(a);
+          return maxScore > 0 ? (score / maxScore * 100) : 0.0;
+        })
+        .reduce(math.max);
+
+    final isExpanded = _expandedLesson[lessonId] ?? false;
+
+    return Card(
+      elevation: 1,
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        children: [
+          InkWell(
+            onTap: () =>
+                setState(() => _expandedLesson[lessonId] = !isExpanded),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          lessonTitle,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${attempts.length} attempt${attempts.length != 1 ? 's' : ''} • Best: ${bestPercentage.toStringAsFixed(1)}%',
+                          style: const TextStyle(
+                            color: Colors.grey,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        // Progress bar for best score
+                        LinearProgressIndicator(
+                          value: bestPercentage / 100,
+                          backgroundColor: Colors.grey.shade300,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            _getScoreColor(bestPercentage),
+                          ),
+                          minHeight: 4,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _getScoreColor(bestPercentage).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      _getPerformanceLabel(bestPercentage),
+                      style: TextStyle(
+                        color: _getScoreColor(bestPercentage),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(
+                    isExpanded ? Icons.expand_less : Icons.expand_more,
+                    color: Colors.grey,
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          if (isExpanded) ...[
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                children: attempts
+                    .map((attempt) => _buildAttemptSummary(attempt))
+                    .toList(),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAttemptSummary(Map<String, dynamic> attempt) {
+    final score = (attempt['score'] as num?)?.toDouble() ?? 0;
+    final attemptNumber = attempt['attemptNumber'] ?? 0;
+    final timestamp = attempt['attemptTimestamp'] as DateTime?;
+
+    // Get the maximum possible score for this lesson
+    final maxScore = _getMaxScoreForLesson(attempt);
+    final percentage = maxScore > 0 ? (score / maxScore * 100) : 0.0;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Attempt $attemptNumber',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (timestamp != null)
+                Text(
+                  _formatShortDate(timestamp),
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: LinearProgressIndicator(
+                  value: percentage / 100,
+                  backgroundColor: Colors.grey.shade300,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    _getScoreColor(percentage),
+                  ),
+                  minHeight: 6,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _getScoreColor(percentage).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${percentage.toStringAsFixed(1)}%',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: _getScoreColor(percentage),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Score: ${score.toStringAsFixed(0)} / $maxScore',
+                style: const TextStyle(fontSize: 11, color: Colors.grey),
+              ),
+              Text(
+                _getPerformanceLabel(percentage),
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: _getScoreColor(percentage),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  double _getMaxScoreForLesson(Map<String, dynamic> attempt) {
+    // Try to get from the attempt data first
+    if (attempt['maxScore'] != null) {
+      return (attempt['maxScore'] as num).toDouble();
+    }
+
+    // Get lesson ID to look up in our lesson configs
+    final lessonId = attempt['lessonId'] as String?;
+    if (lessonId == null) return 100.0; // Default fallback
+
+    // Define max scores for different lessons based on your lesson configs
+    const lessonMaxScores = {
+      'Lesson-1-1': 7.0, // From your module configs
+      'Lesson-1-2': 5.0,
+      'Lesson-1-3': 11.0,
+      'Lesson-2-1': 10.0,
+      'Lesson-2-2': 10.0,
+      'Lesson-2-3': 10.0,
+      'Lesson-3-1': 60.0,
+      'Lesson-3-2': 50.0,
+      'Lesson-4-1': 80.0,
+      'Lesson-4-2': 70.0,
+      'Lesson-5-1': 100.0,
+      'Lesson-5-2': 100.0,
+      'Lesson-6-1': 100.0,
+    };
+
+    return lessonMaxScores[lessonId] ?? 100.0; // Default to 100 if not found
+  }
+
+  String _getPerformanceLabel(double percentage) {
+    if (percentage >= 95) return 'Excellent';
+    if (percentage >= 85) return 'Very Good';
+    if (percentage >= 75) return 'Good';
+    if (percentage >= 65) return 'Fair';
+    if (percentage >= 50) return 'Needs Work';
+    return 'Poor';
+  }
+
+  Widget _buildBottomNavBar() {
+    return AnimatedBottomNavBar(
+      currentIndex: _selectedIndex,
+      onTap: _onItemTapped,
+      items: [
+        CustomBottomNavItem(icon: Icons.home, label: 'Home'),
+        CustomBottomNavItem(icon: Icons.book, label: 'Courses'),
+        CustomBottomNavItem(icon: Icons.school, label: 'My Classes'),
+        CustomBottomNavItem(icon: Icons.library_books, label: 'Journal'),
+        CustomBottomNavItem(icon: Icons.trending_up, label: 'Progress'),
+        CustomBottomNavItem(icon: Icons.person, label: 'Profile'),
+      ],
+      activeColor: Colors.white,
+      inactiveColor: Colors.grey[600]!,
+      notchColor: const Color(0xFF0077B3),
+      backgroundColor: Colors.white,
+      selectedIconSize: 28.0,
+      iconSize: 25.0,
+      barHeight: 55,
+      selectedIconPadding: 10,
+      animationDuration: const Duration(milliseconds: 300),
+      customNotchWidthFactor: 1.8,
+    );
+  }
+
+  // Helper methods
+  Color _getScoreColor(double score) {
+    if (score >= 90) return Colors.green;
+    if (score >= 75) return Colors.blue;
+    if (score >= 60) return Colors.orange;
+    return Colors.red;
+  }
+
+  String _getLessonTitle(String lessonId) {
+    // Implementation from your existing COURSE_STRUCTURE_MOBILE
+    for (var moduleEntry in COURSE_STRUCTURE_MOBILE.entries) {
+      var lessons = moduleEntry.value['lessons'] as List<dynamic>?;
+      if (lessons != null) {
+        for (var lesson in lessons) {
+          if (lesson is Map && lesson['firestoreId'] == lessonId) {
+            return lesson['title'] as String? ?? lessonId;
+          }
+        }
+      }
+    }
+    return lessonId;
+  }
+
+  String _formatSubmissionDate(dynamic timestamp) {
+    if (timestamp == null) return 'N/A';
+
+    try {
+      DateTime date;
+      if (timestamp is Timestamp) {
+        date = timestamp.toDate();
+      } else if (timestamp is DateTime) {
+        date = timestamp;
+      } else {
+        return 'N/A';
+      }
+
+      return '${date.day}/${date.month}/${date.year}';
+    } catch (e) {
+      return 'N/A';
+    }
+  }
+
+  String _formatShortDate(DateTime date) {
+    return '${date.day}/${date.month}';
+  }
+
+  void _navigateToReview(Map<String, dynamic> submission) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AssessmentReviewPage(
+          submissionId: submission['id'],
+          assessmentId: submission['assessmentId'],
+        ),
+      ),
+    );
+  }
+
+  void _shareAssessment(Map<String, dynamic> submission) {
+    // Placeholder for sharing functionality
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Sharing ${submission['assessmentTitle']} (feature coming soon)',
+        ),
+      ),
+    );
+  }
+
+  void _showExportOptions() {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Export Options',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            ListTile(
+              leading: const Icon(Icons.picture_as_pdf),
+              title: const Text('Download Full History PDF'),
+              onTap: () {
+                Navigator.pop(context);
+                _handleDownloadFullHistoryPdf();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.share),
+              title: const Text('Share Progress Summary'),
+              onTap: () {
+                Navigator.pop(context);
+                _shareProgressSummary();
               },
             ),
           ],
@@ -940,650 +2224,146 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage> {
     );
   }
 
-  Widget _buildAssessmentSubmissionItem(Map<String, dynamic> submission) {
-    final submittedAtDate = submission['submittedAt'] as DateTime?;
-    final score = (submission['score'] as num?)?.toDouble() ?? 0;
-    final totalPossiblePoints =
-        (submission['totalPossiblePoints'] as num?)?.toDouble() ?? 0;
-    final bool isCurrentlyProcessingItem =
-        _isProcessingPdf && _processingSubmissionId == submission['id'];
-
-    return Card(
-      elevation: 1.0,
-      margin: const EdgeInsets.symmetric(vertical: 6.0),
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(submission['assessmentTitle'] as String? ?? 'Assessment',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 4),
-            if (submission['className'] != null &&
-                (submission['className'] as String).isNotEmpty &&
-                submission['className'] != 'Class Name Not Found')
-              Text("Class: ${submission['className']}",
-                  style: Theme.of(context).textTheme.bodySmall),
-            if (submission['trainerName'] != null &&
-                (submission['trainerName'] as String).isNotEmpty &&
-                submission['trainerName'] != 'Trainer Name Not Found')
-              Text("Trainer: ${submission['trainerName']}",
-                  style: Theme.of(context).textTheme.bodySmall),
-            Text(
-                "Submitted: ${submittedAtDate != null ? MaterialLocalizations.of(context).formatMediumDate(submittedAtDate) : 'N/A'}",
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: Colors.grey[600])),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                    "Score: ${score.toStringAsFixed(0)} / ${totalPossiblePoints.toStringAsFixed(0)}",
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: scoreColor(score,
-                              maxScore: totalPossiblePoints > 0
-                                  ? totalPossiblePoints
-                                  : 100), // Avoid division by zero
-                        )),
-                Row(
-                  children: [
-                    TextButton(
-                      onPressed: isCurrentlyProcessingItem ||
-                              _isDownloadingFullHistoryPdf
-                          ? null
-                          : () {
-                              _logger.i(
-                                  "Review Answers for ${submission['id']} clicked. (Placeholder navigation)");
-                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                                  content: Text(
-                                      "Review for ${submission['assessmentTitle']} (TBD)")));
-                              // Example navigation:
-                              // Navigator.push(context, MaterialPageRoute(builder: (_) => PlaceholderReviewPage(submissionId: submission['id'])));
-                            },
-                      child:
-                          const Text("Review", style: TextStyle(fontSize: 12)),
-                    ),
-                    const SizedBox(width: 4),
-                    ElevatedButton.icon(
-                      icon: isCurrentlyProcessingItem
-                          ? const SizedBox(
-                              width: 12,
-                              height: 12,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 1.5,
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                      Colors.white)))
-                          : const Icon(Icons.send_to_mobile, size: 14),
-                      label: Text(isCurrentlyProcessingItem ? "..." : "Send",
-                          style: const TextStyle(fontSize: 12)),
-                      onPressed: isCurrentlyProcessingItem ||
-                              _isDownloadingFullHistoryPdf ||
-                              _isProcessingPdf
-                          ? null
-                          : () => _handleDownloadAndSendAssessment(submission),
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 6),
-                      ),
-                    ),
-                  ],
-                )
-              ],
-            ),
-          ],
-        ),
-      )
-    );
-  }
-
-  // ... (Rest of your _ProgressTrackerPageState class: _buildAttemptDetails, _formatScore, _buildRadarChartData etc.)
-  // Ensure _buildAttemptDetails and other helper methods are correctly placed within the class
-  Widget _buildAttemptDetails(String lessonId, Map<String, dynamic> attempt) {
-    final score = (attempt['score'] as num?)?.toDouble() ?? 0.0;
-    final timeSpent = attempt['timeSpent'] as int?;
-    final attemptTimestamp = attempt['attemptTimestamp'] as DateTime?;
-    final detailedResponses =
-        attempt['detailedResponses'] as Map<String, dynamic>? ?? {};
-
-    final lessonConfig = _getLessonConfig(lessonId);
-
-    if (lessonConfig == null) {
-      _logger.e(
-          "CRITICAL: No lessonConfig found for lessonId: $lessonId in _buildAttemptDetails.");
-      return Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Text("Error: Lesson configuration missing for $lessonId.",
-              style: const TextStyle(color: Colors.red)));
-    }
-
-    final String lessonType = lessonConfig['type'] as String? ?? "GENERIC";
-    final List<dynamic> lessonPrompts =
-        lessonConfig['prompts'] as List<dynamic>? ??
-            (lessonType == "LISTENING_COMP"
-                ? lessonConfig['questionLabels'] as List<dynamic>? ?? []
-                : []);
-
-    final String? answersKey = lessonConfig['answersKey'] as String?;
-    final String? feedbackKey = lessonConfig['feedbackKey'] as String?;
-    final String? detailsArrayKey = lessonConfig['detailsArrayKey'] as String?;
-    final double maxScorePerItem =
-        (lessonConfig['maxScorePerPrompt'] as num?)?.toDouble() ?? 5.0;
-    final double overallMaxScore =
-        (lessonConfig['maxPossibleAIScore'] as num?)?.toDouble() ?? 100.0;
-
-    List<Widget> detailsWidgets = [
-      ListTile(
-        dense: true,
-        title: Text("Attempt ${attempt['attemptNumber']}",
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-        subtitle: Text(
-            attemptTimestamp != null
-                ? "Taken: ${MaterialLocalizations.of(context).formatMediumDate(attemptTimestamp)} at ${TimeOfDay.fromDateTime(attemptTimestamp).format(context)}"
-                : "Timestamp N/A",
-            style: const TextStyle(fontSize: 12)),
-        trailing: _formatScore(score, context, maxScore: overallMaxScore),
-      ),
-      if (timeSpent != null)
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-          child: Text(
-              "Time Spent: ${Duration(seconds: timeSpent).toString().split('.').first.padLeft(8, "0")}",
-              style: const TextStyle(fontSize: 13, color: Colors.blueGrey)),
-        ),
-      const Divider(height: 1),
-    ];
-
-    if (lessonType == "MCQ" &&
-        detailsArrayKey != null &&
-        detailedResponses.containsKey(detailsArrayKey)) {
-      final List<dynamic> attemptDetailsList =
-          detailedResponses[detailsArrayKey] as List<dynamic>? ?? [];
-      if (attemptDetailsList.isNotEmpty) {
-        detailsWidgets.add(Padding(
-          padding: const EdgeInsets.fromLTRB(16.0, 8.0, 16.0, 0),
-          child: Text("Question Details:",
-              style: Theme.of(context)
-                  .textTheme
-                  .titleSmall
-                  ?.copyWith(fontWeight: FontWeight.bold)),
-        ));
-        for (var itemData in attemptDetailsList) {
-          final itemMap = Map<String, dynamic>.from(itemData as Map);
-          detailsWidgets.add(Padding(
-            padding: const EdgeInsets.only(
-                left: 16.0, right: 16.0, top: 6.0, bottom: 6.0),
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(
-                  "Q: ${itemMap['promptText'] ?? 'Question text not recorded'}",
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w500, fontSize: 13)),
-              Text("Your Answer: ${itemMap['userAnswer'] ?? 'N/A'}",
-                  style: TextStyle(
-                      color: itemMap['isCorrect'] == true
-                          ? Colors.green.shade800
-                          : Colors.red.shade800,
-                      fontSize: 13)),
-              if (itemMap['isCorrect'] == false)
-                Text("Correct Answer: ${itemMap['correctAnswer'] ?? 'N/A'}",
-                    style:
-                        TextStyle(color: Colors.green.shade800, fontSize: 13)),
-            ]),
-          ));
-        }
-      } else {
-        detailsWidgets.add(const Padding(
-            padding: EdgeInsets.all(16),
-            child: Text("No MCQ details found.",
-                style: TextStyle(fontStyle: FontStyle.italic))));
-      }
-    } else if ((lessonType == "SPEAKING_PRACTICE" ||
-            lessonType == "BASIC_CALL_SIMULATION") &&
-        detailsArrayKey != null &&
-        detailedResponses.containsKey(detailsArrayKey)) {
-      final List<dynamic> turnDetailsList =
-          detailedResponses[detailsArrayKey] as List<dynamic>? ?? [];
-
-      if (turnDetailsList.isNotEmpty) {
-        detailsWidgets.add(Padding(
-          padding: const EdgeInsets.fromLTRB(16.0, 12.0, 16.0, 4.0),
-          child: Text(
-              lessonType == "SPEAKING_PRACTICE"
-                  ? "Prompt Review:"
-                  : "Turn-by-Turn Review:",
-              style: Theme.of(context)
-                  .textTheme
-                  .titleSmall
-                  ?.copyWith(fontWeight: FontWeight.bold)),
-        ));
-        for (var turnDataMap in turnDetailsList) {
-          final turnData = Map<String, dynamic>.from(turnDataMap);
-          final String character = turnData['character'] ?? 'Unknown';
-          final String originalText = turnData['text'] ?? 'No script.';
-          final String? transcription = turnData['transcription'] as String?;
-          final Map<String, dynamic>? azureFeedback =
-              turnData['azureAiFeedback'] as Map<String, dynamic>?;
-          final String? openAiFeedbackHtml =
-              turnData['openAiDetailedFeedback'] as String?;
-
-          detailsWidgets.add(Card(
-            elevation: 0.5,
-            color: Colors.white,
-            margin: const EdgeInsets.symmetric(vertical: 5, horizontal: 8),
-            child: Padding(
-              padding: const EdgeInsets.all(10.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text("$character: \"$originalText\"",
-                      style: TextStyle(
-                          fontWeight: FontWeight.w500,
-                          fontStyle: FontStyle.italic,
-                          fontSize: 13,
-                          color: character == "Customer"
-                              ? Colors.blueGrey[700]
-                              : Theme.of(context).colorScheme.primary)),
-                  if (character.contains("Agent") ||
-                      character.contains("Your Turn")) ...[
-                    if (transcription != null &&
-                        transcription.isNotEmpty &&
-                        transcription != "N/A") ...[
-                      const SizedBox(height: 6),
-                      Text("Your Transcription:",
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 12)),
-                      Padding(
-                          padding: const EdgeInsets.only(top: 2.0, left: 8.0),
-                          child: Text(transcription,
-                              style: const TextStyle(fontSize: 12))),
-                    ],
-                    if (azureFeedback != null)
-                      _buildAzureMetricsDisplay(azureFeedback, context),
-                    if (openAiFeedbackHtml != null &&
-                        openAiFeedbackHtml.isNotEmpty)
-                      _buildOpenAICoachFeedbackDisplay(
-                          openAiFeedbackHtml, context),
-                  ]
-                ],
-              ),
-            ),
-          ));
-        }
-      } else {
-        detailsWidgets.add(const Padding(
-            padding: EdgeInsets.all(16),
-            child: Text("No speaking/turn details found.",
-                style: TextStyle(fontStyle: FontStyle.italic))));
-      }
-    } else if ((lessonType == "TEXT_SCENARIO" ||
-            lessonType == "TEXT_FILL_IN" ||
-            lessonType == "CLARIFICATION_SCENARIO" ||
-            lessonType == "PROVIDING_SOLUTIONS" ||
-            lessonType == "LISTENING_COMP") &&
-        answersKey != null &&
-        detailedResponses.containsKey(answersKey) &&
-        detailedResponses[answersKey] is Map) {
-      final Map<String, dynamic> userAnswers =
-          Map<String, dynamic>.from(detailedResponses[answersKey] as Map);
-      final Map<String, dynamic>? aiFeedbacks = (feedbackKey != null &&
-              detailedResponses.containsKey(feedbackKey) &&
-              detailedResponses[feedbackKey] is Map)
-          ? Map<String, dynamic>.from(detailedResponses[feedbackKey] as Map)
-          : null;
-
-      detailsWidgets.add(Padding(
-        padding: const EdgeInsets.fromLTRB(16.0, 12.0, 16.0, 4.0),
-        child: Text("Details & Feedback:",
-            style: Theme.of(context)
-                .textTheme
-                .titleSmall
-                ?.copyWith(fontWeight: FontWeight.bold)),
-      ));
-
-      if (lessonPrompts.isEmpty) {
-        detailsWidgets.add(const Padding(
-            padding: EdgeInsets.all(8),
-            child: Text("Prompt configuration missing.",
-                style: TextStyle(fontStyle: FontStyle.italic))));
-      }
-
-      for (var promptConfig in lessonPrompts) {
-        String promptKey;
-        String promptTextDisplay;
-
-        if (lessonType == "LISTENING_COMP" && promptConfig is String) {
-          promptTextDisplay = promptConfig;
-          int qIndex = lessonPrompts.indexOf(promptConfig);
-          promptKey = "question_${qIndex + 1}";
-        } else if (promptConfig is Map<String, dynamic>) {
-          promptKey = promptConfig['name'] ??
-              promptConfig['id'] ??
-              "prompt_${lessonPrompts.indexOf(promptConfig)}";
-          promptTextDisplay = promptConfig['label'] ??
-              promptConfig['customerText'] ??
-              promptConfig['promptText'] ??
-              promptConfig['scenarioText'] ??
-              "Question";
-        } else {
-          continue;
-        }
-
-        final String? userAnswer = userAnswers[promptKey] as String?;
-        final Map<String, dynamic>? feedbackDataForPrompt =
-            aiFeedbacks?[promptKey] as Map<String, dynamic>?;
-
-        detailsWidgets.add(Card(
-          elevation: 0.3,
-          color: Colors.white,
-          margin: const EdgeInsets.symmetric(vertical: 5, horizontal: 8),
-          child: Padding(
-            padding: const EdgeInsets.all(10.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(promptTextDisplay,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                        color: Colors.black87)),
-                const SizedBox(height: 5),
-                Text("Your Answer: ${userAnswer ?? "N/A"}",
-                    style: TextStyle(
-                        fontStyle: FontStyle.italic,
-                        color: Colors.grey[800],
-                        fontSize: 13)),
-                if (feedbackDataForPrompt != null) ...[
-                  const SizedBox(height: 8),
-                  ReusableFeedbackCard(
-                      feedbackData: feedbackDataForPrompt,
-                      maxScore: maxScorePerItem)
-                ] else if (userAnswer != null && userAnswer.isNotEmpty) ...[
-                  Padding(
-                      padding: const EdgeInsets.only(top: 8.0),
-                      child: Text("No specific AI feedback recorded.",
-                          style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[600],
-                              fontStyle: FontStyle.italic))),
-                ]
-              ],
-            ),
-          ),
-        ));
-      }
-    } else {
-      final logMessage =
-          "Details for $lessonId (type: $lessonType) - AnsKey: $answersKey, FbKey: $feedbackKey, DetArrKey: $detailsArrayKey, Prompts: ${lessonPrompts.length}, DR Keys: ${detailedResponses.keys}";
-      detailsWidgets.add(Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Text(
-              "Config/Data Mismatch. Check logs. $logMessage", // Added logMessage for debugging in UI
-              style: const TextStyle(
-                  fontStyle: FontStyle.italic, color: Colors.redAccent))));
-      _logger.w(logMessage);
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 0.0, vertical: 4.0),
-      child: Card(
-        elevation: 0.5,
-        color: Colors.grey[50],
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8.0),
-          child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: detailsWidgets),
-        ),
+  Future<void> _handleDownloadFullHistoryPdf() async {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('PDF generation coming soon!'),
+        backgroundColor: Colors.blue,
       ),
     );
   }
 
-  Widget _formatScore(double? score, BuildContext context,
-      {double maxScore = 100.0}) {
-    if (score == null) {
-      return Text("N/A", style: TextStyle(color: Colors.grey[600]));
-    }
-    final percentage =
-        maxScore > 0 ? (score / maxScore) * 100 : 0.0; // Avoid division by zero
-    Color scoreColorVal = scoreColor(score,
-        maxScore: maxScore); // Use the global scoreColor function
-
-    return Text(
-      "${score.toStringAsFixed(1)}%", // Assuming score is already a percentage or needs to be displayed as such
-      style: TextStyle(
-          fontWeight: FontWeight.bold, fontSize: 16, color: scoreColorVal),
-    );
-  }
-
-  List<RadarDataSet> _buildRadarChartData(List<dynamic> turnDetailsList) {
-    if (turnDetailsList.isEmpty) return [];
-
-    Map<String, double> totalMetrics = {
-      'accuracyScore': 0,
-      'fluencyScore': 0,
-      'completenessScore': 0,
-      'prosodyScore': 0
-    };
-    int agentTurnCount = 0;
-
-    for (var turnDataMap in turnDetailsList) {
-      final turnData = Map<String, dynamic>.from(turnDataMap);
-      final String character = turnData['character'] ?? 'Unknown';
-      final Map<String, dynamic>? azureFeedback =
-          turnData['azureAiFeedback'] as Map<String, dynamic>?;
-
-      if ((character.contains("Agent") || character.contains("Your Turn")) &&
-          azureFeedback != null) {
-        totalMetrics['accuracyScore'] = totalMetrics['accuracyScore']! +
-            ((azureFeedback['accuracyScore'] as num?)?.toDouble() ?? 0.0);
-        totalMetrics['fluencyScore'] = totalMetrics['fluencyScore']! +
-            ((azureFeedback['fluencyScore'] as num?)?.toDouble() ?? 0.0);
-        totalMetrics['completenessScore'] = totalMetrics['completenessScore']! +
-            ((azureFeedback['completenessScore'] as num?)?.toDouble() ?? 0.0);
-        totalMetrics['prosodyScore'] = totalMetrics['prosodyScore']! +
-            ((azureFeedback['prosodyScore'] as num?)?.toDouble() ?? 0.0);
-        agentTurnCount++;
-      }
-    }
-
-    if (agentTurnCount == 0) return [];
-
-    return [
-      RadarDataSet(
-        fillColor: Colors.blue.withOpacity(0.3),
-        borderColor: Colors.blue,
-        entryRadius: 3,
-        dataEntries: [
-          RadarEntry(value: totalMetrics['accuracyScore']! / agentTurnCount),
-          RadarEntry(value: totalMetrics['fluencyScore']! / agentTurnCount),
-          RadarEntry(
-              value: totalMetrics['completenessScore']! / agentTurnCount),
-          RadarEntry(value: totalMetrics['prosodyScore']! / agentTurnCount),
-        ],
-        borderWidth: 2,
-      ),
-    ];
-  }
-}
-
-// Global helper widgets (outside the _ProgressTrackerPageState class)
-Widget _buildAzureMetricsDisplay(
-    Map<String, dynamic> azureFeedback, BuildContext context) {
-  if (azureFeedback.isEmpty) return const SizedBox.shrink();
-
-  List<Widget> metrics = [];
-  final labelStyle = TextStyle(color: Colors.grey[700], fontSize: 12);
-
-  if (azureFeedback['accuracyScore'] != null) {
-    metrics.add(Text(
-        'Accuracy: ${(azureFeedback['accuracyScore'] as num?)?.toStringAsFixed(1) ?? "N/A"}%',
-        style: labelStyle.copyWith(color: scoreColor(// Uses global scoreColor
-            (azureFeedback['accuracyScore'] as num?)?.toDouble() ?? 0))));
-  }
-  if (azureFeedback['fluencyScore'] != null) {
-    metrics.add(Text(
-        'Fluency: ${(azureFeedback['fluencyScore'] as num?)?.toStringAsFixed(1) ?? "N/A"}',
-        style: labelStyle.copyWith(
-            color: scoreColor(
-                (azureFeedback['fluencyScore'] as num?)?.toDouble() ?? 0))));
-  }
-  // ... (add completeness and prosody similarly)
-
-  if (metrics.isEmpty) return const SizedBox.shrink();
-
-  return Padding(
-    padding: const EdgeInsets.only(top: 4.0, left: 8.0),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text("Azure AI Metrics:",
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: Colors.deepPurpleAccent,
-                fontSize: 11)),
-        ...metrics,
-      ],
-    ),
-  );
-}
-
-Widget _buildOpenAICoachFeedbackDisplay(
-    String htmlFeedback, BuildContext context) {
-  if (htmlFeedback.isEmpty) return const SizedBox.shrink();
-  return Padding(
-    padding: const EdgeInsets.only(top: 8.0, left: 8.0),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text("AI Coach's Playbook:",
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                fontWeight: FontWeight.bold, color: Colors.teal, fontSize: 11)),
-        Html(data: htmlFeedback, style: {
-          "body": Style(
-              fontSize: FontSize(11.0), // Smaller font for mobile
-              margin: Margins.all(0),
-              padding: HtmlPaddings.all(0))
-        }),
-      ],
-    ),
-  );
-}
-
-Color scoreColor(double score, {double maxScore = 100.0}) {
-  final percentage = maxScore > 0 ? (score / maxScore) * 100 : 0.0;
-  if (percentage >= 90) return Colors.green.shade700;
-  if (percentage >= 75) return Colors.lime.shade700;
-  if (percentage >= 60) return Colors.yellow.shade800;
-  if (percentage >= 40) return Colors.orange.shade700;
-  return Colors.red.shade700;
-}
-
-class ReusableFeedbackCard extends StatelessWidget {
-  final Map<String, dynamic> feedbackData;
-  final String? titlePrefix;
-  final double maxScore;
-
-  const ReusableFeedbackCard({
-    super.key,
-    required this.feedbackData,
-    this.titlePrefix,
-    this.maxScore = 5.0,
-  });
-
-  List<Widget> _parseAndDisplayFeedbackText(
-      String rawText, BuildContext context) {
-    final List<Widget> widgets = [];
-    final lines =
-        rawText.split('\n').where((line) => line.trim().isNotEmpty).toList();
-    for (String line in lines) {
-      if (line.startsWith("**") && line.contains(":**")) {
-        widgets.add(Text(
-          line.replaceAll("**", "").replaceAll(":", ":"),
-          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              fontWeight: FontWeight.bold, fontSize: 12), // Smaller font
-        ));
-      } else {
-        widgets.add(Padding(
-          padding: const EdgeInsets.only(left: 8.0, top: 2.0, bottom: 4.0),
-          child: Html(data: line, style: {
-            "body": Style(
-                margin: Margins.zero,
-                fontSize: FontSize(11.0), // Smaller font
-                padding: HtmlPaddings.zero)
-          }),
-        ));
-      }
-    }
-    return widgets.isNotEmpty
-        ? widgets
-        : [
-            Html(data: rawText, style: {
-              "body": Style(
-                  margin: Margins.zero,
-                  fontSize: FontSize(11.0), // Smaller font
-                  padding: HtmlPaddings.zero)
-            })
-          ];
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final scoreNum = (feedbackData['score'] as num?)?.toDouble();
-    final text =
-        feedbackData['text'] as String? ?? "No detailed feedback provided.";
-
-    String scoreLabel = "N/A";
-    Color currentScoreColor = Colors.grey;
-
-    if (scoreNum != null) {
-      scoreLabel =
-          "${scoreNum.toStringAsFixed(1)} / ${maxScore.toStringAsFixed(1)}";
-      currentScoreColor =
-          scoreColor(scoreNum, maxScore: maxScore); // Global scoreColor
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(top: 6.0),
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-      decoration: BoxDecoration(
-        color: Colors.grey[50],
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: Colors.grey[300]!),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (scoreNum != null)
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                Text("AI Score: $scoreLabel",
-                    style: TextStyle(
-                        color: currentScoreColor,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13)),
-              ],
-            ),
-          if (scoreNum != null) ...[
-            const SizedBox(height: 3),
-            LinearProgressIndicator(
-              value: maxScore > 0 ? scoreNum / maxScore : 0,
-              minHeight: 4,
-              backgroundColor: currentScoreColor.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(2),
-            ),
-            const SizedBox(height: 6),
-          ],
-          ..._parseAndDisplayFeedbackText(text, context),
-        ],
+  void _shareProgressSummary() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Progress sharing coming soon!'),
+        backgroundColor: Colors.blue,
       ),
     );
   }
 }
+
+// Keep your existing COURSE_STRUCTURE_MOBILE and helper methods...
+const Map<String, Map<String, dynamic>> COURSE_STRUCTURE_MOBILE = {
+  "module1": {
+    "title": "Module 1: Basic English Grammar",
+    "level": "Beginner",
+    "lessons": [
+      {
+        "firestoreId": "Lesson-1-1",
+        "title": "Lesson 1.1: Nouns and Pronouns",
+        "type": "MCQ",
+      },
+      {
+        "firestoreId": "Lesson-1-2",
+        "title": "Lesson 1.2: Simple Sentences",
+        "type": "MCQ",
+      },
+      {
+        "firestoreId": "Lesson-1-3",
+        "title": "Lesson 1.3: Verb and Tenses (Present Simple)",
+        "type": "MCQ",
+      },
+    ],
+    "assessment": {
+      "id": "module_1_final",
+      "title": "Module 1 Final Assessment",
+    },
+  },
+  "module2": {
+    "title": "Module 2: Vocabulary & Everyday Conversations",
+    "level": "Beginner",
+    "lessons": [
+      {
+        "firestoreId": "Lesson-2-1",
+        "title": "Lesson 2.1: Greetings and Self-Introductions",
+        "type": "TEXT_SCENARIO",
+      },
+      {
+        "firestoreId": "Lesson-2-2",
+        "title": "Lesson 2.2: Asking for Information",
+        "type": "TEXT_SCENARIO",
+      },
+      {
+        "firestoreId": "Lesson-2-3",
+        "title": "Lesson 2.3: Numbers and Dates",
+        "type": "TEXT_FILL_IN",
+      },
+    ],
+    "assessment": {
+      "id": "module_2_final",
+      "title": "Module 2 Final Assessment",
+    },
+  },
+  "module3": {
+    "title": "Module 3: Listening & Speaking Practice",
+    "level": "Intermediate",
+    "lessons": [
+      {
+        "firestoreId": "Lesson-3-1",
+        "title": "Lesson 3.1: Listening Comprehension",
+        "type": "LISTENING_COMP",
+      },
+      {
+        "firestoreId": "Lesson-3-2",
+        "title": "Lesson 3.2: Speaking Practice - Dialogues",
+        "type": "SPEAKING_PRACTICE",
+      },
+    ],
+    "assessment": {
+      "id": "module_3_final",
+      "title": "Module 3 Final Assessment: Role-Play Scenario",
+    },
+  },
+  "module4": {
+    "title": "Module 4: Practical Grammar & Customer Service Scenarios",
+    "level": "Intermediate",
+    "lessons": [
+      {
+        "firestoreId": "Lesson-4-1",
+        "title": "Lesson 4.1: Asking for Clarification",
+        "type": "CLARIFICATION_SCENARIO",
+      },
+      {
+        "firestoreId": "Lesson-4-2",
+        "title": "Lesson 4.2: Providing Solutions",
+        "type": "PROVIDING_SOLUTIONS",
+      },
+    ],
+    "assessment": {
+      "id": "module_4_final",
+      "title": "Module 4 Final Assessment",
+    },
+  },
+  "module5": {
+    "title": "Module 5: Basic Call Simulations",
+    "level": "Intermediate",
+    "lessons": [
+      {
+        "firestoreId": "Lesson-5-1",
+        "title": "Lesson 5.1: Call Simulation - Scenario 1",
+        "type": "BASIC_CALL_SIMULATION",
+      },
+      {
+        "firestoreId": "Lesson-5-2",
+        "title": "Lesson 5.2: Call Simulation - Scenario 2",
+        "type": "BASIC_CALL_SIMULATION",
+      },
+    ],
+    "assessment": {
+      "id": "module_5_final",
+      "title": "Module 5 Final Assessment",
+    },
+  },
+  "module6": {
+    "title": "Module 6: Advanced Call Simulation",
+    "level": "Advanced",
+    "lessons": [
+      {
+        "firestoreId": "Lesson-6-1",
+        "title": "Lesson 6.1: Advanced Call Simulation",
+        "type": "ADVANCED_CALL_SIMULATION",
+      },
+    ],
+  },
+};
