@@ -71,9 +71,7 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
 
       for (var doc in snapshot.docs) {
         final data = doc.data();
-        // Use array length for real-time count
-        final students = data['student'] as List<dynamic>? ?? [];
-        studentSum += students.length;
+        studentSum += (data['studentCount'] as int? ?? 0);
         pendingSum += (data['pendingSubmissions'] as int? ?? 0);
       }
 
