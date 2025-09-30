@@ -224,7 +224,16 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> with 
     try {
       final users = await searchUsersByEmailFromService(searchTerm);
       final enrolledStudentUids = _enrolledStudents.map((s) => s.studentId).toSet();
-      final filteredResults = users.where((user) => !enrolledStudentUids.contains(user.uid)).toList();
+
+      // Remove duplicates by UID
+      final uniqueResults = <String, UserSearchResult>{};
+      for (var user in users) {
+        if (!enrolledStudentUids.contains(user.uid)) {
+          uniqueResults[user.uid] = user;
+        }
+      }
+
+      final filteredResults = uniqueResults.values.toList();
 
       setState(() {
         _searchResults = filteredResults;
