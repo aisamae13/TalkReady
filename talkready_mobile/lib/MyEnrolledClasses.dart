@@ -10,7 +10,7 @@ import 'homepage.dart';
 import 'courses_page.dart';
 import 'progress_page.dart';
 import 'profile.dart';
-
+import 'class_content_page.dart'; // Add this line
 
 class MyEnrolledClasses extends StatefulWidget {
   const MyEnrolledClasses({super.key});
@@ -24,7 +24,7 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
   final Logger _logger = Logger();
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  
+
   // Controllers and Animation
   final TextEditingController _classCodeController = TextEditingController();
   late AnimationController _fadeController;
@@ -59,16 +59,14 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
       duration: const Duration(milliseconds: 400),
       vsync: this,
     );
-    
+
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
     );
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, -0.2),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
-    );
+    _slideAnimation =
+        Tween<Offset>(begin: const Offset(0, -0.2), end: Offset.zero).animate(
+          CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
+        );
 
     _fadeController.forward();
     _slideController.forward();
@@ -140,11 +138,7 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
       ),
       child: Row(
         children: [
-          Image.asset(
-            'images/TR Logo.png',
-            height: 40,
-            width: 40,
-          ),
+          Image.asset('images/TR Logo.png', height: 40, width: 40),
           const SizedBox(width: 12),
           const Text(
             'My Classes',
@@ -161,7 +155,7 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
 
   Future<void> fetchClasses() async {
     final User? currentUser = _auth.currentUser;
-    
+
     if (currentUser == null) {
       setState(() {
         loading = false;
@@ -178,9 +172,10 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
 
     try {
       final fetchedClasses = await getStudentEnrolledClasses(currentUser.uid);
-      fetchedClasses.sort((a, b) => 
-          (a['className'] ?? '').compareTo(b['className'] ?? ''));
-      
+      fetchedClasses.sort(
+        (a, b) => (a['className'] ?? '').compareTo(b['className'] ?? ''),
+      );
+
       if (mounted) {
         setState(() {
           enrolledClasses = fetchedClasses;
@@ -199,48 +194,98 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
     }
   }
 
-  Future<List<Map<String, dynamic>>> getStudentEnrolledClasses(String studentId) async {
+  Future<List<Map<String, dynamic>>> getStudentEnrolledClasses(
+    String studentId,
+  ) async {
     try {
-      // Query classes where the student is enrolled
-      final QuerySnapshot classesSnapshot = await _firestore
-          .collection('trainerClass')
-          .where('student', arrayContains: studentId)
+      _logger.i("Fetching enrolled classes for studentId: $studentId");
+
+      // Query the enrollments collection for this student
+      final QuerySnapshot enrollmentsSnapshot = await _firestore
+          .collection('enrollments')
+          .where('studentId', isEqualTo: studentId)
           .get();
 
+      if (enrollmentsSnapshot.docs.isEmpty) {
+        _logger.i("No enrollments found for studentId: $studentId");
+        return [];
+      }
+
       List<Map<String, dynamic>> classes = [];
-      
-      for (QueryDocumentSnapshot classDoc in classesSnapshot.docs) {
-        Map<String, dynamic> classData = classDoc.data() as Map<String, dynamic>;
-        classData['id'] = classDoc.id;
-        
-        // Get trainer information
-        String? trainerId = classData['trainerId'];
-        if (trainerId != null) {
+
+      for (QueryDocumentSnapshot enrollmentDoc in enrollmentsSnapshot.docs) {
+        Map<String, dynamic> enrollmentData =
+            enrollmentDoc.data() as Map<String, dynamic>;
+        String? classId = enrollmentData['classId'];
+
+        if (classId != null) {
           try {
-            DocumentSnapshot trainerDoc = await _firestore
-                .collection('users')
-                .doc(trainerId)
+            // Get class details
+            DocumentSnapshot classDoc = await _firestore
+                .collection('trainerClass')
+                .doc(classId)
                 .get();
-            
-            if (trainerDoc.exists) {
-              Map<String, dynamic> trainerData = trainerDoc.data() as Map<String, dynamic>;
-              classData['trainerName'] = trainerData['displayName'] ?? 
-                                        trainerData['name'] ?? 
-                                        'Unknown Trainer';
+
+            if (classDoc.exists) {
+              Map<String, dynamic> classData =
+                  classDoc.data() as Map<String, dynamic>;
+              classData['id'] = classDoc.id;
+
+              // Get trainer information
+              String? trainerId = classData['trainerId'];
+              if (trainerId != null) {
+                try {
+                  DocumentSnapshot trainerDoc = await _firestore
+                      .collection('users')
+                      .doc(trainerId)
+                      .get();
+
+                  if (trainerDoc.exists) {
+                    Map<String, dynamic> trainerData =
+                        trainerDoc.data() as Map<String, dynamic>;
+                    classData['trainerName'] =
+                        trainerData['displayName'] ??
+                        '${trainerData['firstName'] ?? ''} ${trainerData['lastName'] ?? ''}'
+                            .trim();
+                    if (classData['trainerName'].toString().isEmpty) {
+                      classData['trainerName'] = 'Unknown Trainer';
+                    }
+                  } else {
+                    classData['trainerName'] = 'Unknown Trainer';
+                  }
+                } catch (e) {
+                  _logger.w(
+                    "Could not fetch trainer data for class $classId: $e",
+                  );
+                  classData['trainerName'] = 'Unknown Trainer';
+                }
+              } else {
+                classData['trainerName'] = 'Unknown Trainer';
+              }
+
+              // Get actual student count from enrollments
+              final QuerySnapshot enrollmentCount = await _firestore
+                  .collection('enrollments')
+                  .where('classId', isEqualTo: classId)
+                  .get();
+              classData['studentCount'] = enrollmentCount.docs.length;
+
+              // Add enrollment data
+              classData['enrollmentId'] = enrollmentDoc.id;
+
+              classes.add(classData);
+            } else {
+              _logger.w(
+                "Class document with ID $classId not found for enrollment ${enrollmentDoc.id}.",
+              );
             }
           } catch (e) {
-            _logger.w("Could not fetch trainer data for class ${classDoc.id}: $e");
-            classData['trainerName'] = 'Unknown Trainer';
+            _logger.e("Error fetching class details for classId $classId: $e");
           }
         }
-        
-        // Add student count
-        List<dynamic> student = classData['student'] ?? [];
-        classData['studentCount'] = student.length;
-        
-        classes.add(classData);
       }
-      
+
+      _logger.i("Fetched ${classes.length} classes for student $studentId");
       return classes;
     } catch (e) {
       _logger.e("Error in getStudentEnrolledClasses: $e");
@@ -250,7 +295,7 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
 
   Future<void> handleJoinClass() async {
     final String classCode = _classCodeController.text.trim();
-    
+
     if (classCode.isEmpty) {
       setState(() {
         joinError = "Please enter a class code.";
@@ -276,14 +321,15 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
 
     try {
       final result = await joinClassWithCode(currentUser.uid, classCode);
-      
+
       if (mounted) {
         setState(() {
-          joinSuccess = result['message'] ?? 
-                       'Successfully joined "${result['className']}"!';
+          joinSuccess =
+              result['message'] ??
+              'Successfully joined "${result['className']}"!';
           _classCodeController.clear();
         });
-        
+
         // Refresh the list of enrolled classes
         fetchClasses();
       }
@@ -291,7 +337,7 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
       _logger.e("Error joining class with code: $err");
       if (mounted) {
         setState(() {
-          joinError = err.toString().contains('Exception: ') 
+          joinError = err.toString().contains('Exception: ')
               ? err.toString().replaceFirst('Exception: ', '')
               : "Failed to join class. Please check the code and try again.";
         });
@@ -305,7 +351,10 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
     }
   }
 
-  Future<Map<String, dynamic>> joinClassWithCode(String studentId, String classCode) async {
+  Future<Map<String, dynamic>> joinClassWithCode(
+    String studentId,
+    String classCode,
+  ) async {
     try {
       // Find class by code
       final QuerySnapshot classQuery = await _firestore
@@ -319,19 +368,64 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
       }
 
       final DocumentSnapshot classDoc = classQuery.docs.first;
-      final Map<String, dynamic> classData = classDoc.data() as Map<String, dynamic>;
+      final Map<String, dynamic> classData =
+          classDoc.data() as Map<String, dynamic>;
+      final String classId = classDoc.id;
+      final String trainerId = classData['trainerId'] ?? '';
 
-      // Check if student is already enrolled by trainer
-      List<dynamic> currentStudent = classData['student'] ?? [];
-      if (!currentStudent.contains(studentId)) {
-        throw Exception("You must be enrolled by the trainer before joining this class.");
+      // Check if student is already enrolled
+      final QuerySnapshot existingEnrollment = await _firestore
+          .collection('enrollments')
+          .where('studentId', isEqualTo: studentId)
+          .where('classId', isEqualTo: classId)
+          .get();
+
+      if (existingEnrollment.docs.isNotEmpty) {
+        throw Exception(
+          'You are already enrolled in "${classData['className']}".',
+        );
       }
 
-      // Optionally, you can update a local state or Firestore if needed, but usually just refresh the list
+      // Get student's details
+      DocumentSnapshot studentDoc = await _firestore
+          .collection('users')
+          .doc(studentId)
+          .get();
+
+      String studentName = "Student";
+      String studentEmail = "N/A";
+
+      if (studentDoc.exists) {
+        Map<String, dynamic> studentData =
+            studentDoc.data() as Map<String, dynamic>;
+        studentName =
+            studentData['displayName'] ??
+            '${studentData['firstName'] ?? ''} ${studentData['lastName'] ?? ''}'
+                .trim();
+        if (studentName.isEmpty) studentName = "Student";
+        studentEmail = studentData['email'] ?? "N/A";
+      }
+
+      // Create enrollment document
+      await _firestore.collection('enrollments').add({
+        'classId': classId,
+        'studentId': studentId,
+        'studentName': studentName,
+        'studentEmail': studentEmail,
+        'trainerId': trainerId,
+        'enrolledAt': FieldValue.serverTimestamp(),
+      });
+
+      // REMOVE THIS SECTION - Don't update trainerClass document
+      // await _firestore.collection('trainerClass').doc(classId).update({
+      //   'studentCount': FieldValue.increment(1),
+      //   'lastUpdated': FieldValue.serverTimestamp(),
+      // });
+
       return {
-        'message': 'Successfully joined class!',
+        'message': 'Successfully joined "${classData['className']}"!',
         'className': classData['className'] ?? 'Unnamed Class',
-        'classId': classDoc.id,
+        'classId': classId,
       };
     } catch (e) {
       _logger.e("Error in joinClassWithCode: $e");
@@ -342,7 +436,7 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     return Scaffold(
       backgroundColor: Colors.grey[50],
       // Remove the default AppBar and use custom header
@@ -395,7 +489,7 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
                               ],
                             ),
                             const SizedBox(height: 16),
-                            
+
                             // Join Form
                             Row(
                               children: [
@@ -403,7 +497,8 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
                                   child: TextField(
                                     controller: _classCodeController,
                                     enabled: !isJoining,
-                                    textCapitalization: TextCapitalization.characters,
+                                    textCapitalization:
+                                        TextCapitalization.characters,
                                     onChanged: (value) {
                                       setState(() {
                                         joinError = '';
@@ -417,7 +512,9 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
                                       ),
                                       focusedBorder: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(8),
-                                        borderSide: BorderSide(color: Colors.blue[600]!),
+                                        borderSide: BorderSide(
+                                          color: Colors.blue[600]!,
+                                        ),
                                       ),
                                       filled: true,
                                       fillColor: Colors.white,
@@ -426,16 +523,25 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
                                 ),
                                 const SizedBox(width: 12),
                                 ElevatedButton.icon(
-                                  onPressed: isJoining || _classCodeController.text.trim().isEmpty
+                                  onPressed:
+                                      isJoining ||
+                                          _classCodeController.text
+                                              .trim()
+                                              .isEmpty
                                       ? null
                                       : handleJoinClass,
                                   icon: isJoining
                                       ? const SizedBox(
                                           width: 16,
                                           height: 16,
-                                          child: CircularProgressIndicator(strokeWidth: 2),
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
                                         )
-                                      : const FaIcon(FontAwesomeIcons.signInAlt, size: 16),
+                                      : const FaIcon(
+                                          FontAwesomeIcons.signInAlt,
+                                          size: 16,
+                                        ),
                                   label: const Text('Join Class'),
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: Colors.blue[600],
@@ -451,7 +557,7 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
                                 ),
                               ],
                             ),
-                            
+
                             // Error/Success Messages
                             if (joinError.isNotEmpty) ...[
                               const SizedBox(height: 12),
@@ -463,7 +569,10 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
                                 ),
                                 child: Text(
                                   joinError,
-                                  style: TextStyle(color: Colors.red[700], fontSize: 14),
+                                  style: TextStyle(
+                                    color: Colors.red[700],
+                                    fontSize: 14,
+                                  ),
                                 ),
                               ),
                             ],
@@ -477,16 +586,19 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
                                 ),
                                 child: Text(
                                   joinSuccess,
-                                  style: TextStyle(color: Colors.green[700], fontSize: 14),
+                                  style: TextStyle(
+                                    color: Colors.green[700],
+                                    fontSize: 14,
+                                  ),
                                 ),
                               ),
                             ],
                           ],
                         ),
                       ),
-                      
+
                       const SizedBox(height: 32),
-                      
+
                       // Section Header
                       Row(
                         children: [
@@ -505,9 +617,9 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
                           ),
                         ],
                       ),
-                      
+
                       const SizedBox(height: 16),
-                      
+
                       // Content
                       if (loading)
                         const Center(
@@ -520,7 +632,10 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
                               SizedBox(height: 16),
                               Text(
                                 'Loading your classes...',
-                                style: TextStyle(fontSize: 16, color: Colors.grey),
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.grey,
+                                ),
                               ),
                             ],
                           ),
@@ -568,16 +683,18 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
                         GridView.builder(
                           shrinkWrap: true,
                           physics: const NeverScrollableScrollPhysics(),
-                          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: MediaQuery.of(context).size.width > 1200
-                                ? 3
-                                : MediaQuery.of(context).size.width > 800
+                          gridDelegate:
+                              SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount:
+                                    MediaQuery.of(context).size.width > 1200
+                                    ? 3
+                                    : MediaQuery.of(context).size.width > 800
                                     ? 2
                                     : 1,
-                            crossAxisSpacing: 16,
-                            mainAxisSpacing: 16,
-                            childAspectRatio: 1.2,
-                          ),
+                                crossAxisSpacing: 16,
+                                mainAxisSpacing: 16,
+                                childAspectRatio: 1.2,
+                              ),
                           itemCount: enrolledClasses.length,
                           itemBuilder: (context, index) {
                             final cls = enrolledClasses[index];
@@ -638,7 +755,10 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
         items: [
           CustomBottomNavItem(icon: Icons.home, label: 'Home'),
           CustomBottomNavItem(icon: Icons.book, label: 'Courses'),
-          CustomBottomNavItem(icon: Icons.school, label: 'My Classes'), // Changed from Icons.class_ to Icons.school
+          CustomBottomNavItem(
+            icon: Icons.school,
+            label: 'My Classes',
+          ), // Changed from Icons.class_ to Icons.school
           CustomBottomNavItem(icon: Icons.library_books, label: 'Journal'),
           CustomBottomNavItem(icon: Icons.trending_up, label: 'Progress'),
           CustomBottomNavItem(icon: Icons.person, label: 'Profile'),
@@ -686,9 +806,9 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
-            
+
             const SizedBox(height: 8),
-            
+
             // Trainer Name
             Row(
               children: [
@@ -709,9 +829,9 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
                 ),
               ],
             ),
-            
+
             const SizedBox(height: 4),
-            
+
             Text(
               'Subject: ${cls['subject'] ?? 'General'}',
               style: theme.textTheme.bodySmall?.copyWith(
@@ -719,9 +839,9 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
                 fontStyle: FontStyle.italic,
               ),
             ),
-            
+
             const SizedBox(height: 8),
-            
+
             Expanded(
               child: Text(
                 cls['description'] ?? 'No description available.',
@@ -732,37 +852,39 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            
+
             const SizedBox(height: 4),
-            
+
             Text(
               'Student: ${cls['studentCount'] ?? 0}',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: Colors.grey[400],
               ),
             ),
-            
+
             const SizedBox(height: 16),
-            
+
             // Divider
-            Container(
-              height: 1,
-              color: Colors.grey[200],
-            ),
-            
+            Container(height: 1, color: Colors.grey[200]),
+
             const SizedBox(height: 16),
-            
+
             // View Class Button
             Align(
               alignment: Alignment.centerRight,
               child: ElevatedButton.icon(
                 onPressed: () {
-                  // Navigate to class content - you can create a proper class content page
-                  // For now, let's navigate to courses page as a placeholder
-                  Navigator.pushNamed(
+                  // Create a proper class content page or navigate to an appropriate page
+                  // For now, let's navigate to a class detail page with the class data
+                  Navigator.push(
                     context,
-                    '/courses', // You can create a specific route for class content later
-                    arguments: {'classId': cls['id'], 'className': cls['className']},
+                    MaterialPageRoute(
+                      builder: (context) => ClassContentPage(
+                        classId: cls['id'],
+                        className: cls['className'],
+                        classData: cls,
+                      ),
+                    ),
                   );
                 },
                 icon: const FaIcon(FontAwesomeIcons.bookOpen, size: 14),
