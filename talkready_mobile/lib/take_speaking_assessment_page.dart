@@ -105,94 +105,87 @@ class _TakeSpeakingAssessmentPageState extends State<TakeSpeakingAssessmentPage>
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       setState(() {
-        error = "Please log in to take this assessment.";
         loading = false;
+        error = 'You must be logged in to take an assessment.';
       });
       return;
     }
 
-    setState(() {
-      loading = true;
-      error = '';
-    });
-
     try {
-      // Check if already submitted
-      await _checkIfAlreadySubmitted(user.uid);
-
-      if (hasAlreadySubmitted) {
-        final assessmentData = await _firebaseService.getAssessmentDetails(
-          widget.assessmentId,
-        );
-        setState(() {
-          assessment = assessmentData;
-          loading = false;
-        });
-        return;
-      }
-
       // Fetch assessment details
-      final assessmentData = await _firebaseService.getAssessmentDetails(
-        widget.assessmentId,
-      );
+      final doc = await _firestore
+          .collection('trainerAssessments')
+          .doc(widget.assessmentId)
+          .get();
 
-      if (assessmentData == null ||
-          assessmentData['questions'] == null ||
-          (assessmentData['questions'] as List).isEmpty) {
-        setState(() {
-          error = "This assessment is not available or has no questions.";
-          loading = false;
-        });
-        return;
+      if (!doc.exists) {
+        throw Exception('Assessment not found.');
       }
 
-      // Check deadline
-      if (assessmentData['deadline'] != null) {
-        final deadline = (assessmentData['deadline'] as Timestamp).toDate();
-        final now = DateTime.now();
-        if (now.isAfter(deadline)) {
-          setState(() {
-            isDeadlinePassed = true;
-            assessment = assessmentData;
-            loading = false;
-          });
-          return;
+      final data = doc.data()!;
+      final questions = (data['questions'] as List<dynamic>?)
+              ?.map((q) => Map<String, dynamic>.from(q))
+              .toList() ??
+          [];
+
+      // Safely handle the deadline field
+      DateTime? deadline;
+      final dynamic deadlineValue = data['deadline'];
+      if (deadlineValue is Timestamp) {
+        deadline = deadlineValue.toDate();
+      } else if (deadlineValue is String) {
+        try {
+          deadline = DateTime.parse(deadlineValue);
+        } catch (e) {
+          _logger.w('Could not parse deadline string: $e');
         }
       }
 
-      setState(() {
-        assessment = assessmentData;
-        loading = false;
-      });
+      // Check if the deadline has passed
+      if (deadline != null && DateTime.now().isAfter(deadline)) {
+        setState(() {
+          isDeadlinePassed = true;
+          loading = false;
+        });
+        return; // Stop further processing if deadline is passed
+      }
 
-      _fadeController.forward();
-    } catch (e) {
-      _logger.e("Error fetching assessment: $e");
-      setState(() {
-        error = "Failed to load assessment. Please try again.";
-        loading = false;
-      });
-    }
-  }
-
-  Future<void> _checkIfAlreadySubmitted(String studentId) async {
-    try {
+      // Check for existing submission
       final submissionQuery = await _firestore
           .collection('studentSubmissions')
-          .where('studentId', isEqualTo: studentId)
           .where('assessmentId', isEqualTo: widget.assessmentId)
-          .orderBy('submittedAt', descending: true)
+          .where('studentId', isEqualTo: user.uid)
           .limit(1)
           .get();
 
       if (submissionQuery.docs.isNotEmpty) {
         setState(() {
           hasAlreadySubmitted = true;
-          existingSubmissionId = submissionQuery.docs.first.id;
+          loading = false;
         });
+      } else {
+        setState(() {
+          this.assessment = {
+            'id': doc.id,
+            ...data,
+            'questions': questions,
+            'deadline': deadline, // Store the parsed deadline
+          };
+          loading = false;
+        });
+        // Start the animation only after the assessment data is set
+        _fadeController.forward();
       }
-    } catch (e) {
-      _logger.e("Error checking submission status: $e");
+    } catch (e, stackTrace) {
+      _logger.e(
+        'Error fetching assessment: $e',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      setState(() {
+        loading = false;
+        error = 'Failed to load assessment. Please try again.';
+      });
     }
   }
 
@@ -613,6 +606,9 @@ class _TakeSpeakingAssessmentPageState extends State<TakeSpeakingAssessmentPage>
   Widget _buildAssessmentContent() {
     if (assessment == null) return Container();
 
+    // The new design doesn't seem to have a separate header.
+    // The title is in the AppBar, and the subtitle can be added here.
+
     return FadeTransition(
       opacity: _fadeAnimation,
       child: SingleChildScrollView(
@@ -620,17 +616,20 @@ class _TakeSpeakingAssessmentPageState extends State<TakeSpeakingAssessmentPage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Assessment Header
-            _buildAssessmentHeader(),
-            const SizedBox(height: 24),
+            // Subtitle from the new design
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16.0),
+              child: Text(
+                assessment!['description'] ?? 'Speaking Test',
+                style: TextStyle(
+                  fontSize: 18,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ),
 
             // Questions/Prompts
             _buildQuestions(),
-
-            const SizedBox(height: 24),
-
-            // Recording Controls
-            _buildRecordingControls(),
 
             const SizedBox(height: 32),
 
@@ -655,43 +654,6 @@ class _TakeSpeakingAssessmentPageState extends State<TakeSpeakingAssessmentPage>
             ],
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildAssessmentHeader() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF0077B3), Color(0xFF005f8c)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            assessment!['title'] ?? 'Speaking Assessment',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-
-          if (assessment!['description'] != null &&
-              assessment!['description'].toString().isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text(
-              assessment!['description'],
-              style: const TextStyle(color: Colors.white70, fontSize: 16),
-            ),
-          ],
-        ],
       ),
     );
   }
@@ -731,66 +693,44 @@ class _TakeSpeakingAssessmentPageState extends State<TakeSpeakingAssessmentPage>
           Text(
             'Prompt $questionNumber: ${question['title'] ?? 'Speaking Prompt'}',
             style: const TextStyle(
-              fontSize: 18,
+              fontSize: 16,
               fontWeight: FontWeight.bold,
-              color: Color(0xFF0077B3),
+              color: Color(0xFF333333),
             ),
           ),
-
           const SizedBox(height: 16),
-
           Container(
+            width: double.infinity,
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.purple.shade50,
+              color: Colors.grey.shade100,
               borderRadius: BorderRadius.circular(8),
-              border: Border(
-                left: BorderSide(color: Colors.purple.shade400, width: 4),
-              ),
+              border: Border.all(color: Colors.grey.shade300),
             ),
             child: Text(
               question['promptText'] ??
                   question['text'] ??
                   'No prompt text available',
               style: TextStyle(
-                color: Colors.purple.shade700,
+                color: Colors.grey.shade800,
                 fontSize: 16,
                 height: 1.5,
               ),
             ),
           ),
+          const SizedBox(height: 24),
+
+          // Recording controls are now inside the card
+          _buildRecordingControls(),
         ],
       ),
     );
   }
 
   Widget _buildRecordingControls() {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+    return Center(
       child: Column(
         children: [
-          const Text(
-            'Record Your Response',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF0077B3),
-            ),
-          ),
-
-          const SizedBox(height: 24),
-
           // Recording button
           if (recordingStatus == RecordingStatus.inactive)
             _buildStartRecordingButton()
@@ -896,8 +836,7 @@ class _TakeSpeakingAssessmentPageState extends State<TakeSpeakingAssessmentPage>
   }
 
   Widget _buildSubmitButton() {
-    final canSubmit =
-        audioFilePath != null &&
+    final canSubmit = audioFilePath != null &&
         File(audioFilePath!).existsSync() &&
         recordingStatus == RecordingStatus.stopped;
 
@@ -909,12 +848,15 @@ class _TakeSpeakingAssessmentPageState extends State<TakeSpeakingAssessmentPage>
             ? const SizedBox(
                 width: 20,
                 height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
               )
             : const FaIcon(FontAwesomeIcons.paperPlane),
         label: Text(isSubmitting ? 'Submitting...' : 'Submit Assessment'),
         style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.green,
+          backgroundColor: const Color(0xFF28a745), // Green color from image
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 16),
           textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),

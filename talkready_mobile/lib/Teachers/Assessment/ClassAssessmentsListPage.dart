@@ -251,7 +251,7 @@ class _ClassAssessmentsListPageState extends State<ClassAssessmentsListPage> {
         title: Text(
           classDetails != null
             ? '${classDetails!['className'] ?? 'Class'}'
-            : 'Assessments',
+            : 'trainerAssessments',
           style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.1),
         ),
         backgroundColor: Colors.transparent,

@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'dart:async';
+import '../Assessment/ViewAssessmentResultsPage.dart';
 
 class TrainerReportsPage extends StatefulWidget {
   const TrainerReportsPage({super.key});
@@ -230,7 +231,7 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
 
     try {
       _submissionsSubscriptions[assessmentId] = FirebaseFirestore.instance
-          .collection('submissions')
+          .collection('studentSubmissions')
           .where('assessmentId', isEqualTo: assessmentId)
           .snapshots()
           .listen((snapshot) {
@@ -1044,7 +1045,15 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
                           ),
                         ),
                         onPressed: () {
-                          Navigator.pushNamed(context, '/trainer/assessment/${assessment['id']}/results');
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => ViewAssessmentResultsPage(
+                                assessmentId: assessment['id'],
+                                className: _selectedClassName, // Pass class name if available
+                              ),
+                            ),
+                          );
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.transparent,

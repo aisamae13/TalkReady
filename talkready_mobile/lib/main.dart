@@ -304,7 +304,7 @@ class MyApp extends StatelessWidget {
             final submissionId = segments[2];
             return MaterialPageRoute(
               builder: (_) =>
-                  ReviewSpeakingSubmission(submissionId: submissionId),
+                  ReviewSpeakingSubmissionPage(submissionId: submissionId),
               settings: settings,
             );
           }

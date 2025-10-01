@@ -2,8 +2,10 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:talkready_mobile/Teachers/Assessment/ReviewSpeakingSubmission.dart';
 import 'EditAssessmentPage.dart';
 import 'package:intl/intl.dart';
+import 'ReviewSpeakingSubmission.dart'; // Import the new page
 
 class ViewAssessmentResultsPage extends StatefulWidget {
   final String assessmentId;
@@ -68,13 +70,15 @@ class _ViewAssessmentResultsPageState extends State<ViewAssessmentResultsPage> {
         _fetchedClassName = 'N/A';
       }
 
-      // 4. Fetch student submissions
+      // 4. Fetch student submissions with their IDs
       final submissionQuery = await FirebaseFirestore.instance
           .collection('studentSubmissions')
           .where('assessmentId', isEqualTo: widget.assessmentId)
           .get();
 
-      _submissions = submissionQuery.docs.map((doc) => doc.data()).toList();
+      _submissions = submissionQuery.docs.map((doc) {
+        return {'id': doc.id, ...doc.data()};
+      }).toList();
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -90,9 +94,22 @@ class _ViewAssessmentResultsPageState extends State<ViewAssessmentResultsPage> {
     }
   }
 
-  String _formatTimestamp(Timestamp? timestamp) {
-    if (timestamp == null) return 'N/A';
-    return DateFormat('MMM d, yyyy - hh:mm a').format(timestamp.toDate());
+  String _formatTimestamp(dynamic timestamp) {
+    if (timestamp == null) {
+      return 'N/A';
+    }
+    if (timestamp is Timestamp) {
+      return DateFormat('MM/dd/yyyy, hh:mm a').format(timestamp.toDate());
+    }
+    if (timestamp is String) {
+      try {
+        final dateTime = DateTime.parse(timestamp);
+        return DateFormat('MM/dd/yyyy, hh:mm a').format(dateTime);
+      } catch (e) {
+        return 'Invalid Date';
+      }
+    }
+    return 'Unknown Date Format';
   }
 
   @override
@@ -305,59 +322,82 @@ class _ViewAssessmentResultsPageState extends State<ViewAssessmentResultsPage> {
                       final score = sub['score'] ?? 0;
                       final submissionTotalPossiblePoints =
                           sub['totalPossiblePoints'] ?? totalPossiblePoints;
-                      final submittedAt = sub['submittedAt'] as Timestamp?;
+                      final submittedAt = sub['submittedAt'];
+                      final assessmentType = sub['assessmentType'] ?? 'standard'; // Get assessment type
 
                       return AnimatedContainer(
                         duration: Duration(milliseconds: 350 + idx * 30),
                         curve: Curves.easeInOut,
                         child: Card(
-                          // Reduced elevation for a softer shadow
                           elevation: 2,
                           margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(16)),
-                          color: Colors.white.withOpacity(0.93),
-                          child: ListTile(
-                            contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 18),
-                            leading: CircleAvatar(
-                              backgroundColor: theme.colorScheme.primary.withOpacity(0.13),
-                              child: FaIcon(FontAwesomeIcons.userGraduate,
-                                  color: theme.colorScheme.primary, size: 20),
-                            ),
-                            title: Text(studentName,
-                                style: theme.textTheme.titleSmall?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                  color: theme.colorScheme.onSurface,
-                                )),
-                            subtitle: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const SizedBox(height: 2),
-                                Text(studentEmail,
-                                    style: theme.textTheme.bodyMedium?.copyWith(
-                                      color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
-                                    )),
-                                Text('Score: $score / $submissionTotalPossiblePoints',
-                                    style: theme.textTheme.bodyMedium?.copyWith(
-                                      fontWeight: FontWeight.bold,
-                                    )),
-                                if (submittedAt != null)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 2.0),
-                                    child: Text(
-                                      'Submitted: ${_formatTimestamp(submittedAt)}',
-                                      style: theme.textTheme.bodySmall?.copyWith(
-                                        color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
-                                      ),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(16),
+                            onTap: () {
+                              if (assessmentType == 'speaking_assessment') {
+                                // Navigate to the new speaking review page
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => ReviewSpeakingSubmissionPage(
+                                      submissionId: sub['id'],
                                     ),
                                   ),
-                              ],
-                            ),
-                            trailing: Icon(Icons.chevron_right,
-                                color: theme.colorScheme.primary.withOpacity(0.7)),
-                            onTap: () {
-                              _showSubmissionDetails(context, sub);
+                                );
+                              } else {
+                                // Show the standard review dialog
+                                _showSubmissionDetails(context, sub);
+                              }
                             },
+                            child: Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: Row(
+                                children: [
+                                  CircleAvatar(
+                                    backgroundColor: theme.colorScheme.primary.withOpacity(0.13),
+                                    child: FaIcon(FontAwesomeIcons.userGraduate,
+                                        color: theme.colorScheme.primary, size: 20),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(studentName,
+                                            style: theme.textTheme.titleSmall?.copyWith(
+                                              fontWeight: FontWeight.w600,
+                                              color: theme.colorScheme.onSurface,
+                                            )),
+                                        const SizedBox(height: 4),
+                                        Text(studentEmail,
+                                            style: theme.textTheme.bodyMedium?.copyWith(
+                                              color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
+                                            )),
+                                      ],
+                                    ),
+                                  ),
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Text('Score: $score',
+                                          style: theme.textTheme.titleMedium?.copyWith(
+                                            fontWeight: FontWeight.bold,
+                                            color: theme.colorScheme.onSurface,
+                                          )),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        _formatTimestamp(submittedAt),
+                                        style: theme.textTheme.bodySmall?.copyWith(
+                                          color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
                         ),
                       );
@@ -373,73 +413,267 @@ class _ViewAssessmentResultsPageState extends State<ViewAssessmentResultsPage> {
 
   void _showSubmissionDetails(BuildContext context, Map<String, dynamic> submission) {
     final theme = Theme.of(context);
+    final questions = _assessmentDetails?['questions'] as List<dynamic>? ?? [];
+    final studentAnswers = submission['answers'] as List<dynamic>? ?? [];
 
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          child: Container(
-            padding: const EdgeInsets.all(24),
-            constraints: const BoxConstraints(maxWidth: 400, maxHeight: 600),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+          backgroundColor: Colors.transparent,
+          child: Center(
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 420, maxHeight: 700),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(28),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.08),
+                    blurRadius: 24,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.person, color: theme.colorScheme.primary),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        submission['studentName'] ?? 'Unknown Student',
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
+                    Row(
+                      children: [
+                        CircleAvatar(
+                          backgroundColor: theme.colorScheme.primary.withOpacity(0.13),
+                          child: FaIcon(FontAwesomeIcons.userGraduate, color: theme.colorScheme.primary, size: 22),
+                          radius: 22,
                         ),
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.close),
-                    ),
-                  ],
-                ),
-                const Divider(),
-                const SizedBox(height: 16),
-                _buildDetailRow('Email', submission['studentEmail'] ?? 'N/A', theme),
-                _buildDetailRow('Score',
-                    '${submission['score'] ?? 0} / ${submission['totalPossiblePoints'] ?? 0}', theme),
-                _buildDetailRow('Submitted', _formatTimestamp(submission['submittedAt']), theme),
-                _buildDetailRow('Reviewed', submission['isReviewed'] == true ? 'Yes' : 'No', theme),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () {
-                          Navigator.of(context).pop();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Detailed review feature coming soon!'),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Text(
+                            submission['studentName'] ?? 'Unknown Student',
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 22,
                             ),
-                          );
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: theme.colorScheme.primary,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
                           ),
                         ),
-                        child: const Text('Review Answers'),
+                        IconButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          icon: const Icon(Icons.close, size: 26),
+                          splashRadius: 22,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Divider(thickness: 1.2, color: Colors.grey.shade200),
+                    const SizedBox(height: 8),
+                    _buildDetailRow('Email', submission['studentEmail'] ?? 'N/A', theme),
+                    _buildDetailRow('Score', '${submission['score'] ?? 0} / ${submission['totalPossiblePoints'] ?? 0}', theme),
+                    _buildDetailRow('Submitted', _formatTimestamp(submission['submittedAt']), theme),
+                    const SizedBox(height: 18),
+                    Text('Answers', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, fontSize: 18)),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: questions.length,
+                        itemBuilder: (context, index) {
+                          final question = questions[index];
+                          final studentAnswerData = studentAnswers.firstWhere(
+                            (ans) => ans['questionId'] == question['questionId'],
+                            orElse: () => null,
+                          );
+                          return _buildModernQuestionReviewCard(
+                            question,
+                            studentAnswerData,
+                            index + 1,
+                            theme,
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        style: TextButton.styleFrom(
+                          foregroundColor: theme.colorScheme.primary,
+                          textStyle: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        child: const Text('Close'),
                       ),
                     ),
                   ],
                 ),
-              ],
+              ),
             ),
           ),
         );
       },
+    );
+  }
+
+  Widget _buildModernQuestionReviewCard(Map<String, dynamic> question, Map<String, dynamic>? studentAnswerData, int questionNumber, ThemeData theme) {
+    final isCorrect = studentAnswerData?['isCorrect'] ?? false;
+    final pointsEarned = studentAnswerData?['pointsEarned'] ?? 0;
+    final questionPoints = question['points'] ?? 0;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isCorrect ? Colors.green.shade300 : Colors.red.shade200,
+          width: 1.5,
+        ),
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: isCorrect ? Colors.green.shade50 : Colors.red.shade50,
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  'Q$questionNumber: ',
+                  style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                Expanded(
+                  child: Text(
+                    question['text'] ?? 'No text',
+                    style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                Text(
+                  '$pointsEarned / $questionPoints pts',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isCorrect ? Colors.green.shade700 : Colors.red.shade700,
+                    fontSize: 15,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            _buildModernAnswerDetails(question, studentAnswerData, theme),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildModernAnswerDetails(Map<String, dynamic> question, Map<String, dynamic>? studentAnswerData, ThemeData theme) {
+    if (studentAnswerData == null) {
+      return const Text('No answer submitted.', style: TextStyle(fontStyle: FontStyle.italic));
+    }
+
+    final type = question['type'];
+
+    if (type == 'multiple-choice') {
+      return _buildModernMultipleChoiceAnswer(question, studentAnswerData, theme);
+    } else if (type == 'fill-in-the-blank') {
+      return _buildModernFillInTheBlankAnswer(question, studentAnswerData, theme);
+    }
+
+    return Text('Review for this question type ($type) is not yet supported.');
+  }
+
+  Widget _buildModernMultipleChoiceAnswer(Map<String, dynamic> question, Map<String, dynamic> studentAnswerData, ThemeData theme) {
+    final options = question['options'] as List<dynamic>? ?? [];
+    final correctOptionIds = List<String>.from(question['correctOptionIds'] ?? []);
+    final selectedOptionIds = List<String>.from(studentAnswerData['selectedOptionIds'] ?? (studentAnswerData['selectedOptionId'] != null ? [studentAnswerData['selectedOptionId']] : []));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: options.map((option) {
+        final optionId = option['optionId'];
+        final optionText = option['text'];
+        final isSelected = selectedOptionIds.contains(optionId);
+        final isCorrect = correctOptionIds.contains(optionId);
+
+        Color textColor = Colors.black87;
+        FontWeight fontWeight = FontWeight.normal;
+        IconData? icon;
+        Color? iconColor;
+
+        if (isSelected && isCorrect) {
+          textColor = Colors.green.shade700;
+          fontWeight = FontWeight.bold;
+          icon = Icons.check_circle;
+          iconColor = Colors.green.shade700;
+        } else if (isSelected && !isCorrect) {
+          textColor = Colors.red.shade700;
+          fontWeight = FontWeight.bold;
+          icon = Icons.cancel;
+          iconColor = Colors.red.shade700;
+        } else if (!isSelected && isCorrect) {
+          textColor = Colors.green.shade700;
+          fontWeight = FontWeight.w500;
+          icon = Icons.check_circle_outline;
+          iconColor = Colors.green.shade400;
+        } else {
+          textColor = Colors.grey.shade700;
+          icon = Icons.radio_button_unchecked;
+          iconColor = Colors.grey.shade400;
+        }
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2.5),
+          child: Row(
+            children: [
+              Icon(icon, color: iconColor, size: 22),
+              const SizedBox(width: 8),
+              Text(optionText, style: TextStyle(color: textColor, fontWeight: fontWeight, fontSize: 16)),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildModernFillInTheBlankAnswer(Map<String, dynamic> question, Map<String, dynamic> studentAnswerData, ThemeData theme) {
+    final studentAnswer = studentAnswerData['studentAnswer'] ?? 'Not answered';
+    final correctAnswers = List<String>.from(question['correctAnswers'] ?? []);
+    final isCorrect = studentAnswerData['isCorrect'] ?? false;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Student\'s Answer:', style: TextStyle(fontWeight: FontWeight.bold)),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(10),
+          margin: const EdgeInsets.symmetric(vertical: 6),
+          decoration: BoxDecoration(
+            color: isCorrect ? Colors.green.shade50 : Colors.red.shade50,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(studentAnswer, style: TextStyle(color: isCorrect ? Colors.green.shade800 : Colors.red.shade800, fontWeight: FontWeight.bold, fontSize: 16)),
+        ),
+        if (!isCorrect && correctAnswers.isNotEmpty) ...[
+          const Text('Correct Answer(s):', style: TextStyle(fontWeight: FontWeight.bold)),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            margin: const EdgeInsets.symmetric(vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(correctAnswers.join(' / '), style: TextStyle(color: Colors.grey.shade800, fontSize: 15)),
+          ),
+        ]
+      ],
     );
   }
 

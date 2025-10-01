@@ -707,13 +707,25 @@ class _ClassContentPageState extends State<ClassContentPage>
                 final now = DateTime.now();
                 bool isPastDeadline = false;
                 String? deadlineString;
+                DateTime? deadline;
 
-                if (assessment['deadline'] != null) {
-                  final deadline = (assessment['deadline'] as Timestamp)
-                      .toDate();
-                  deadlineString =
-                      'Deadline: ${_formatTimestamp(assessment['deadline'])}';
-                  isPastDeadline = now.isAfter(deadline);
+                final dynamic deadlineValue = assessment['deadline'];
+
+                if (deadlineValue != null) {
+                  if (deadlineValue is Timestamp) {
+                    deadline = deadlineValue.toDate();
+                  } else if (deadlineValue is String) {
+                    try {
+                      deadline = DateTime.parse(deadlineValue);
+                    } catch (e) {
+                      _logger.w('Invalid deadline format: $deadlineValue');
+                    }
+                  }
+
+                  if (deadline != null) {
+                    deadlineString = 'Deadline: ${_formatTimestamp(deadline)}';
+                    isPastDeadline = now.isAfter(deadline);
+                  }
                 }
 
                 return Container(
