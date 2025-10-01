@@ -30,6 +30,8 @@ class FirebaseService {
       StreamController<List<Map<String, dynamic>>>.broadcast();
   final StreamController<List<Map<String, dynamic>>> _submissionsController =
       StreamController<List<Map<String, dynamic>>>.broadcast();
+  final StreamController<List<Map<String, dynamic>>> _notificationsController =
+      StreamController<List<Map<String, dynamic>>>.broadcast();
 
   List<Map<String, dynamic>> _classesCache = [];
   List<Map<String, dynamic>> _announcementsCache = [];
@@ -37,6 +39,7 @@ class FirebaseService {
   Map<String, dynamic>? _classDocCache;
   List<Map<String, dynamic>> _materialsCache = [];
   List<Map<String, dynamic>> _submissionsCache = [];
+  List<Map<String, dynamic>> _notificationsCache = [];
 
   String? _currentTrainerId;
   String? _activeClassId;
@@ -54,6 +57,8 @@ class FirebaseService {
       _materialsController.stream;
   Stream<List<Map<String, dynamic>>> get submissionsStream =>
       _submissionsController.stream;
+  Stream<List<Map<String, dynamic>>> get notificationsStream =>
+      _notificationsController.stream;
 
   /// Simple getters for last cached values
   List<Map<String, dynamic>> get classesCache => _classesCache;
@@ -62,6 +67,7 @@ class FirebaseService {
   Map<String, dynamic>? get classDocCache => _classDocCache;
   List<Map<String, dynamic>> get materialsCache => _materialsCache;
   List<Map<String, dynamic>> get submissionsCache => _submissionsCache;
+  List<Map<String, dynamic>> get notificationsCache => _notificationsCache;
 
   /// Call once (or rely on singleton constructor) to enable automatic start/stop
   void initAuthListener() {
@@ -163,6 +169,24 @@ class FirebaseService {
       // we do not attach a global submissions listener here by default to avoid large scans.
     }
 
+    // Listen to unread notifications for this trainer
+    _realtimeSubs['notifications'] = FirebaseFirestore.instance
+        .collection('notifications')
+        .where('userId', isEqualTo: trainerId)
+        .where('isRead', isEqualTo: false)
+        .snapshots()
+        .listen(
+          (snapshot) {
+            _notificationsCache = snapshot.docs
+                .map((d) => {'id': d.id, ...d.data()})
+                .toList();
+            _notificationsController.add(_notificationsCache);
+          },
+          onError: (e) {
+            _logger.e('notifications stream error: $e');
+          },
+        );
+
     _logger.i(
       'Realtime sync started for trainer=$trainerId, activeClass=$activeClassId',
     );
@@ -252,6 +276,7 @@ class FirebaseService {
       await _classDocController.close();
       await _materialsController.close();
       await _submissionsController.close();
+      await _notificationsController.close();
     } catch (e) {
       _logger.w('Error closing controllers: $e');
     }
