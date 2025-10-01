@@ -1,0 +1,820 @@
+import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:logger/logger.dart';
+import 'package:flutter_sound/flutter_sound.dart'; // For audio playback
+import 'firebase_service.dart';
+
+class AssessmentReviewPage extends StatefulWidget {
+  final String assessmentId;
+  final String submissionId;
+
+  const AssessmentReviewPage({
+    Key? key,
+    required this.assessmentId,
+    required this.submissionId,
+  }) : super(key: key);
+
+  @override
+  State<AssessmentReviewPage> createState() => _AssessmentReviewPageState();
+}
+
+class _AssessmentReviewPageState extends State<AssessmentReviewPage>
+    with TickerProviderStateMixin {
+  final Logger _logger = Logger();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseService _firebaseService = FirebaseService();
+  final FlutterSoundPlayer _player = FlutterSoundPlayer();
+
+  // State variables
+  Map<String, dynamic>? assessmentData;
+  Map<String, dynamic>? submissionData;
+  bool loading = true;
+  String error = '';
+  bool isPlaying = false;
+
+  // Animation controllers
+  late AnimationController _fadeController;
+  late Animation<double> _fadeAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeAnimations();
+    _initializeAudio();
+    _fetchAssessmentAndSubmission();
+  }
+
+  void _initializeAnimations() {
+    _fadeController = AnimationController(
+      duration: const Duration(milliseconds: 600),
+      vsync: this,
+    );
+
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
+    );
+  }
+
+  Future<void> _initializeAudio() async {
+    try {
+      await _player.openPlayer();
+    } catch (e) {
+      _logger.e("Error initializing audio player: $e");
+    }
+  }
+
+  @override
+  void dispose() {
+    _player.closePlayer();
+    _fadeController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _fetchAssessmentAndSubmission() async {
+    setState(() {
+      loading = true;
+      error = '';
+    });
+
+    try {
+      // Fetch submission data
+      final submissionDoc = await _firestore
+          .collection('studentSubmissions')
+          .doc(widget.submissionId)
+          .get();
+
+      if (!submissionDoc.exists) {
+        throw Exception('Submission not found.');
+      }
+
+      final submission = submissionDoc.data()!;
+
+      // Fetch assessment data
+      final assessmentDoc = await _firestore
+          .collection('trainerAssessments')
+          .doc(widget.assessmentId)
+          .get();
+
+      if (!assessmentDoc.exists) {
+        throw Exception('Assessment not found.');
+      }
+
+      final assessment = assessmentDoc.data()!;
+
+      setState(() {
+        submissionData = submission;
+        assessmentData = assessment;
+        loading = false;
+      });
+
+      _fadeController.forward();
+    } catch (e) {
+      _logger.e("Error fetching data: $e");
+      setState(() {
+        loading = false;
+        error = 'Failed to load assessment review: ${e.toString()}';
+      });
+    }
+  }
+
+  Future<void> _playAudio(String audioUrl) async {
+    if (isPlaying) {
+      await _stopAudio();
+      return;
+    }
+
+    try {
+      setState(() {
+        isPlaying = true;
+      });
+
+      await _player.startPlayer(
+        fromURI: audioUrl,
+        whenFinished: () {
+          setState(() {
+            isPlaying = false;
+          });
+        },
+      );
+    } catch (e) {
+      _logger.e("Error playing audio: $e");
+      setState(() {
+        isPlaying = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error playing audio: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _stopAudio() async {
+    try {
+      await _player.stopPlayer();
+      setState(() {
+        isPlaying = false;
+      });
+    } catch (e) {
+      _logger.e("Error stopping audio: $e");
+    }
+  }
+
+  String _formatTimestamp(Timestamp? timestamp) {
+    if (timestamp == null) return 'N/A';
+    
+    final date = timestamp.toDate();
+    final now = DateTime.now();
+    final difference = now.difference(date);
+    
+    if (difference.inDays == 0) {
+      if (difference.inHours == 0) {
+        return '${difference.inMinutes} minutes ago';
+      }
+      return '${difference.inHours} hours ago';
+    } else if (difference.inDays == 1) {
+      return 'Yesterday';
+    } else {
+      return '${date.day}/${date.month}/${date.year}';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(assessmentData?['title'] ?? 'Assessment Review'),
+        backgroundColor: const Color(0xFF0077B3),
+        foregroundColor: Colors.white,
+        elevation: 0,
+      ),
+      body: loading
+          ? _buildLoadingScreen()
+          : error.isNotEmpty
+              ? _buildErrorScreen()
+              : _buildReviewContent(),
+    );
+  }
+
+  Widget _buildLoadingScreen() {
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(color: Color(0xFF0077B3)),
+          SizedBox(height: 16),
+          Text('Loading Assessment Review...'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorScreen() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const FaIcon(
+              FontAwesomeIcons.exclamationTriangle,
+              size: 64,
+              color: Colors.red,
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'Error Loading Review',
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              error,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 16),
+            ),
+            const SizedBox(height: 32),
+            ElevatedButton.icon(
+              onPressed: () => Navigator.pop(context),
+              icon: const FaIcon(FontAwesomeIcons.arrowLeft),
+              label: const Text('Go Back'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReviewContent() {
+    if (submissionData == null || assessmentData == null) return Container();
+
+    final isSpeakingAssessment = 
+        submissionData!['assessmentType'] == 'speaking_assessment';
+
+    return FadeTransition(
+      opacity: _fadeAnimation,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Assessment info card
+            _buildAssessmentInfoCard(),
+            
+            const SizedBox(height: 24),
+            
+            // Submission details
+            if (isSpeakingAssessment)
+              _buildSpeakingAssessmentReview()
+            else
+              _buildStandardAssessmentReview(),
+            
+            const SizedBox(height: 32),
+            
+            // Back button
+            Center(
+              child: ElevatedButton.icon(
+                onPressed: () => Navigator.pop(context),
+                icon: const FaIcon(FontAwesomeIcons.arrowLeft),
+                label: const Text('Back'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0077B3),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24, 
+                    vertical: 12,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAssessmentInfoCard() {
+    final submittedAt = submissionData!['submittedAt'] as Timestamp?;
+    final reviewedAt = submissionData!['reviewedAt'] as Timestamp?;
+    
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              assessmentData!['title'] ?? 'Assessment',
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF0077B3),
+              ),
+            ),
+            
+            if (assessmentData!['description'] != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                assessmentData!['description'],
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[700],
+                ),
+              ),
+            ],
+            
+            const SizedBox(height: 16),
+            
+            // Assessment info grid
+            Wrap(
+              spacing: 16,
+              runSpacing: 12,
+              children: [
+                _buildInfoChip(
+                  icon: FontAwesomeIcons.calendar,
+                  label: 'Submitted',
+                  value: _formatTimestamp(submittedAt),
+                ),
+                
+                _buildInfoChip(
+                  icon: FontAwesomeIcons.checkCircle,
+                  label: 'Status',
+                  value: submissionData!['isReviewed'] == true 
+                      ? 'Reviewed' 
+                      : 'Pending Review',
+                  color: submissionData!['isReviewed'] == true 
+                      ? Colors.green 
+                      : Colors.orange,
+                ),
+                
+                if (submissionData!['isReviewed'] == true && reviewedAt != null)
+                  _buildInfoChip(
+                    icon: FontAwesomeIcons.clock,
+                    label: 'Reviewed on',
+                    value: _formatTimestamp(reviewedAt),
+                  ),
+                
+                if (submissionData!['score'] != null)
+                  _buildInfoChip(
+                    icon: FontAwesomeIcons.star,
+                    label: 'Score',
+                    value: '${submissionData!['score']}${submissionData!['totalPossiblePoints'] != null ? '/${submissionData!['totalPossiblePoints']}' : ''}',
+                    color: Colors.deepPurple,
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoChip({
+    required IconData icon,
+    required String label,
+    required String value,
+    Color? color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+      decoration: BoxDecoration(
+        color: (color ?? Colors.blue).withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FaIcon(
+            icon,
+            size: 14,
+            color: color ?? Colors.blue,
+          ),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                ),
+              ),
+              Text(
+                value,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: color ?? Colors.blue,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSpeakingAssessmentReview() {
+    final audioUrl = submissionData!['audioUrl'];
+    final trainerFeedback = submissionData!['trainerFeedback'];
+    final aiFeedback = submissionData!['aiFeedback'];
+    final score = submissionData!['score'];
+    final questions = List<Map<String, dynamic>>.from(
+      submissionData!['questions'] ?? []);
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Questions/prompts
+        if (questions.isNotEmpty) ...[
+          const Text(
+            'Speaking Prompts',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 16),
+          
+          ...questions.asMap().entries.map((entry) {
+            final index = entry.key;
+            final question = entry.value;
+            return Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey[300]!),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Prompt ${index + 1}: ${question['title'] ?? ''}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(question['promptText'] ?? question['text'] ?? ''),
+                ],
+              ),
+            );
+          }).toList(),
+        ],
+        
+        // Audio player
+        if (audioUrl != null) ...[
+          const SizedBox(height: 24),
+          const Text(
+            'Your Recording',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 16),
+          
+          Card(
+            color: Colors.grey[100],
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Container(
+                    width: 50,
+                    height: 50,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0077B3),
+                      borderRadius: BorderRadius.circular(25),
+                    ),
+                    child: IconButton(
+                      icon: Icon(
+                        isPlaying ? Icons.stop : Icons.play_arrow,
+                        color: Colors.white,
+                      ),
+                      onPressed: () => _playAudio(audioUrl),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Your Speaking Response',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          isPlaying ? 'Playing...' : 'Tap to play your recording',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[700],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+        
+        // Trainer feedback
+        if (submissionData!['isReviewed'] == true) ...[
+          const SizedBox(height: 24),
+          const Text(
+            'Trainer Feedback',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 16),
+          
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.green[50],
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.green[200]!),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (score != null) ...[
+                  Row(
+                    children: [
+                      const Text(
+                        'Score: ',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.green,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '$score',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                
+                if (trainerFeedback != null) ...[
+                  const Text(
+                    'Feedback:',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(trainerFeedback),
+                ] else
+                  const Text(
+                    'No specific feedback provided by the trainer.',
+                    style: TextStyle(fontStyle: FontStyle.italic),
+                  ),
+              ],
+            ),
+          ),
+        ],
+        
+        // AI feedback
+        if (aiFeedback != null) ...[
+          const SizedBox(height: 24),
+          const Text(
+            'AI Feedback',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 16),
+          
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.blue[50],
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.blue[200]!),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const FaIcon(
+                      FontAwesomeIcons.robot,
+                      size: 16,
+                      color: Color(0xFF0077B3),
+                    ),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'AI Assessment',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF0077B3),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Text(aiFeedback),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildStandardAssessmentReview() {
+    final answers = List<Map<String, dynamic>>.from(
+        submissionData!['answers'] ?? []);
+    final score = submissionData!['score'];
+    final totalPossiblePoints = submissionData!['totalPossiblePoints'];
+    final trainerFeedback = submissionData!['trainerFeedback'];
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Score summary
+        if (score != null) ...[
+          Card(
+            color: Colors.green[50],
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: Colors.green[200]!),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  const Text(
+                    'Your Score',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      Text(
+                        '$score',
+                        style: const TextStyle(
+                          fontSize: 36,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green,
+                        ),
+                      ),
+                      if (totalPossiblePoints != null) ...[
+                        Text(
+                          '/$totalPossiblePoints',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.green[300],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  if (totalPossiblePoints != null) ...[
+                    const SizedBox(height: 8),
+                    LinearProgressIndicator(
+                      value: score / totalPossiblePoints,
+                      backgroundColor: Colors.green[100],
+                      color: Colors.green,
+                      minHeight: 8,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
+        
+        // Trainer feedback
+        if (trainerFeedback != null) ...[
+          const SizedBox(height: 24),
+          const Text(
+            'Trainer Feedback',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 16),
+          
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.blue[50],
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.blue[200]!),
+            ),
+            child: Text(trainerFeedback),
+          ),
+        ],
+        
+        // Answers section (simplified for brevity)
+        if (answers.isNotEmpty) ...[
+          const SizedBox(height: 24),
+          const Text(
+            'Your Answers',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 16),
+          
+          ...answers.asMap().entries.map((entry) {
+            final index = entry.key;
+            final answer = entry.value;
+            final isCorrect = answer['isCorrect'] ?? false;
+            
+            return Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: isCorrect ? Colors.green[50] : Colors.red[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: isCorrect ? Colors.green[300]! : Colors.red[300]!,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Question header with result
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Question ${index + 1}',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Row(
+                        children: [
+                          Icon(
+                            isCorrect ? Icons.check_circle : Icons.cancel,
+                            color: isCorrect ? Colors.green : Colors.red,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            isCorrect ? 'Correct' : 'Incorrect',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: isCorrect ? Colors.green : Colors.red,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        ],
+      ],
+    );
+  }
+}

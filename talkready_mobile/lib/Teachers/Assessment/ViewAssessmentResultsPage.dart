@@ -118,26 +118,70 @@ class _ViewAssessmentResultsPageState extends State<ViewAssessmentResultsPage> {
 
     if (_isLoading) {
       return Scaffold(
+        backgroundColor: const Color(0xFFF0FDFA),
         extendBodyBehindAppBar: true,
         appBar: AppBar(
-          title: const Text("Loading Results..."),
+          title: const Text(
+            "Loading Results...",
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 20,
+            ),
+          ),
           backgroundColor: Colors.transparent,
           elevation: 0,
           foregroundColor: Colors.white,
           flexibleSpace: Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
-                colors: [Color(0xFF8B5CF6),
-              Color(0xFF6366F1)],
+                colors: [Color(0xFF14B8A6), Color(0xFF0D9488)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
             ),
           ),
         ),
-        body: Center(
-          child: CircularProgressIndicator(
-            valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary),
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFFF0FDFA), Color(0xFFCCFDF7)],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF14B8A6).withOpacity(0.1),
+                        blurRadius: 20,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: const CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF14B8A6)),
+                    strokeWidth: 3,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  'Loading assessment results...',
+                  style: TextStyle(
+                    color: Color(0xFF0F766E),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       );
@@ -145,18 +189,59 @@ class _ViewAssessmentResultsPageState extends State<ViewAssessmentResultsPage> {
 
     if (_error != null) {
       return Scaffold(
+        backgroundColor: const Color(0xFFFEF2F2),
         appBar: AppBar(
-          title: const Text("Error"),
-          backgroundColor: theme.colorScheme.errorContainer,
-          foregroundColor: theme.colorScheme.onErrorContainer,
+          title: const Text(
+            "Error",
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          backgroundColor: Colors.red.shade400,
+          foregroundColor: Colors.white,
+          elevation: 0,
         ),
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Text(
-              _error!,
-              style: TextStyle(color: theme.colorScheme.error, fontSize: 16),
-              textAlign: TextAlign.center,
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFFFEF2F2), Color(0xFFFEE2E2)],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+          child: Center(
+            child: Container(
+              margin: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.red.withOpacity(0.1),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.error_outline,
+                    size: 64,
+                    color: Colors.red.shade400,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    _error!,
+                    style: TextStyle(
+                      color: Colors.red.shade700,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -181,49 +266,81 @@ class _ViewAssessmentResultsPageState extends State<ViewAssessmentResultsPage> {
         0;
 
     return Scaffold(
+      backgroundColor: const Color(0xFFF0FDFA),
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text(assessmentTitle,
-            style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.1)),
+        title: Text(
+          assessmentTitle,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            letterSpacing: 0.5,
+            fontSize: 20,
+          ),
+        ),
         backgroundColor: Colors.transparent,
         elevation: 0,
         foregroundColor: Colors.white,
+        centerTitle: true,
         flexibleSpace: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
-              colors: [Color(0xFF8B5CF6),
-              Color(0xFF6366F1)],
+              colors: [Color(0xFF14B8A6), Color(0xFF0D9488)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
           ),
         ),
-        actions: [
-          IconButton(
-          icon: const Icon(Icons.edit),
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => EditAssessmentPage(
-                  assessmentId: widget.assessmentId,
-                ),
-              ),
-            );
-          },
-          tooltip: "Edit assessment",
+        leading: Container(
+          margin: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.2),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: IconButton(
+            icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
+            onPressed: () => Navigator.pop(context),
+          ),
         ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _fetchData,
-            tooltip: "Refresh results",
-          )
+        actions: [
+          Container(
+            margin: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: IconButton(
+              icon: const Icon(Icons.edit, color: Colors.white),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => EditAssessmentPage(
+                      assessmentId: widget.assessmentId,
+                    ),
+                  ),
+                );
+              },
+              tooltip: "Edit assessment",
+            ),
+          ),
+          Container(
+            margin: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: IconButton(
+              icon: const Icon(Icons.refresh, color: Colors.white),
+              onPressed: _fetchData,
+              tooltip: "Refresh results",
+            ),
+          ),
         ],
       ),
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFFF8FAFF), Color(0xFFE3F0FF)],
+            colors: [Color(0xFFF0FDFA), Color(0xFFCCFDF7)],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
           ),
@@ -232,88 +349,237 @@ class _ViewAssessmentResultsPageState extends State<ViewAssessmentResultsPage> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 120, 16, 8),
-              child: Card(
-                // Reduced elevation for a softer shadow
-                elevation: 1,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                color: Colors.white.withOpacity(0.85),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(18),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                    child: Padding(
-                      padding: const EdgeInsets.all(18.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(assessmentDescription,
-                              style: theme.textTheme.bodyLarge?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant)),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              FaIcon(FontAwesomeIcons.chalkboard,
-                                  size: 16, color: theme.colorScheme.secondary),
-                              const SizedBox(width: 8),
-                              // Display the fetched class name
-                              Text(
-                                _fetchedClassName ?? 'Class Not Found',
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                      color: theme.colorScheme.onSurface,
-                                    ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              FaIcon(FontAwesomeIcons.listOl,
-                                  size: 16, color: theme.colorScheme.secondary),
-                              const SizedBox(width: 8),
-                              Text(
-                                  '${_assessmentDetails!['questions']?.length ?? 0} Questions',
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                      color: theme.colorScheme.onSurface)),
-                              const SizedBox(width: 20),
-                              FaIcon(FontAwesomeIcons.checkDouble,
-                                  size: 16, color: theme.colorScheme.secondary),
-                              const SizedBox(width: 8),
-                              Text('Total Points: $totalPossiblePoints',
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                      color: theme.colorScheme.onSurface)),
-                            ],
-                          ),
-                        ],
-                      ),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF14B8A6).withOpacity(0.08),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                      spreadRadius: 0,
                     ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(20),
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [Color(0xFF14B8A6), Color(0xFF0D9488)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(
+                                Icons.assessment,
+                                color: Colors.white,
+                                size: 24,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            const Text(
+                              "Assessment Overview",
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(20.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              assessmentDescription,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                color: Color(0xFF374151),
+                                height: 1.5,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    const Color(0xFF14B8A6).withOpacity(0.05),
+                                    const Color(0xFF0D9488).withOpacity(0.02),
+                                  ],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: const Color(0xFF14B8A6).withOpacity(0.2),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Column(
+                                children: [
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        Icons.class_,
+                                        size: 18,
+                                        color: const Color(0xFF0F766E),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          _fetchedClassName ?? 'Class Not Found',
+                                          style: const TextStyle(
+                                            color: Color(0xFF0F766E),
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 15,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Row(
+                                          children: [
+                                            Icon(
+                                              Icons.quiz_outlined,
+                                              size: 18,
+                                              color: const Color(0xFF0F766E),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              '${_assessmentDetails!['questions']?.length ?? 0} Questions',
+                                              style: const TextStyle(
+                                                color: Color(0xFF0F766E),
+                                                fontWeight: FontWeight.w500,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Row(
+                                        children: [
+                                          Icon(
+                                            Icons.grade_outlined,
+                                            size: 18,
+                                            color: const Color(0xFF0F766E),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            'Total Points: $totalPossiblePoints',
+                                            style: const TextStyle(
+                                              color: Color(0xFF0F766E),
+                                              fontWeight: FontWeight.w500,
+                                              fontSize: 14,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
             if (_submissions.isEmpty)
-              Padding(
-                padding: const EdgeInsets.all(20.0),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    FaIcon(FontAwesomeIcons.listOl,
-                        size: 60,
-                        color: theme.colorScheme.onSurfaceVariant
-                            .withOpacity(0.5)),
-                    const SizedBox(height: 20),
-                    Text('No submissions for this assessment yet.',
-                        style: theme.textTheme.titleMedium?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant)),
-                  ],
+              Expanded(
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.all(32),
+                    margin: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF14B8A6).withOpacity(0.05),
+                          blurRadius: 20,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                const Color(0xFF14B8A6).withOpacity(0.1),
+                                const Color(0xFF0D9488).withOpacity(0.05),
+                              ],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Icon(
+                            Icons.assignment_outlined,
+                            size: 64,
+                            color: const Color(0xFF14B8A6),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        const Text(
+                          'No Submissions Yet',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF0F766E),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Students haven\'t submitted any responses to this assessment yet.',
+                          style: TextStyle(
+                            color: Color(0xFF6B7280),
+                            fontSize: 15,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               )
             else
               Expanded(
                 child: RefreshIndicator(
                   onRefresh: _fetchData,
-                  color: theme.colorScheme.primary,
+                  color: const Color(0xFF14B8A6),
+                  backgroundColor: Colors.white,
                   child: ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8),
                     itemCount: _submissions.length,
                     itemBuilder: (context, idx) {
                       final sub = _submissions[idx];
@@ -323,79 +589,159 @@ class _ViewAssessmentResultsPageState extends State<ViewAssessmentResultsPage> {
                       final submissionTotalPossiblePoints =
                           sub['totalPossiblePoints'] ?? totalPossiblePoints;
                       final submittedAt = sub['submittedAt'];
-                      final assessmentType = sub['assessmentType'] ?? 'standard'; // Get assessment type
+                      final assessmentType = sub['assessmentType'] ?? 'standard';
 
                       return AnimatedContainer(
-                        duration: Duration(milliseconds: 350 + idx * 30),
-                        curve: Curves.easeInOut,
-                        child: Card(
-                          elevation: 2,
-                          margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16)),
-                          child: InkWell(
+                        duration: Duration(milliseconds: 300 + idx * 50),
+                        curve: Curves.easeOutCubic,
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
                             borderRadius: BorderRadius.circular(16),
-                            onTap: () {
-                              if (assessmentType == 'speaking_assessment') {
-                                // Navigate to the new speaking review page
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => ReviewSpeakingSubmissionPage(
-                                      submissionId: sub['id'],
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFF14B8A6).withOpacity(0.05),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                                spreadRadius: 0,
+                              ),
+                            ],
+                          ),
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(16),
+                              onTap: () {
+                                if (assessmentType == 'speaking_assessment') {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => ReviewSpeakingSubmissionPage(
+                                        submissionId: sub['id'],
+                                      ),
                                     ),
-                                  ),
-                                );
-                              } else {
-                                // Show the standard review dialog
-                                _showSubmissionDetails(context, sub);
-                              }
-                            },
-                            child: Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: Row(
-                                children: [
-                                  CircleAvatar(
-                                    backgroundColor: theme.colorScheme.primary.withOpacity(0.13),
-                                    child: FaIcon(FontAwesomeIcons.userGraduate,
-                                        color: theme.colorScheme.primary, size: 20),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                  );
+                                } else {
+                                  _showSubmissionDetails(context, sub);
+                                }
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          colors: [
+                                            const Color(0xFF14B8A6).withOpacity(0.15),
+                                            const Color(0xFF0D9488).withOpacity(0.10),
+                                          ],
+                                          begin: Alignment.topLeft,
+                                          end: Alignment.bottomRight,
+                                        ),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Icon(
+                                        assessmentType == 'speaking_assessment' 
+                                          ? Icons.mic
+                                          : Icons.person,
+                                        color: const Color(0xFF0F766E),
+                                        size: 22,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            studentName,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              color: Color(0xFF0F766E),
+                                              fontSize: 16,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            studentEmail,
+                                            style: TextStyle(
+                                              color: const Color(0xFF6B7280),
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: assessmentType == 'speaking_assessment' 
+                                                ? Colors.purple.withOpacity(0.1)
+                                                : const Color(0xFF14B8A6).withOpacity(0.1),
+                                              borderRadius: BorderRadius.circular(8),
+                                            ),
+                                            child: Text(
+                                              assessmentType == 'speaking_assessment' 
+                                                ? 'Speaking' 
+                                                : 'Standard',
+                                              style: TextStyle(
+                                                color: assessmentType == 'speaking_assessment' 
+                                                  ? Colors.purple.shade700
+                                                  : const Color(0xFF0F766E),
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.end,
                                       children: [
-                                        Text(studentName,
-                                            style: theme.textTheme.titleSmall?.copyWith(
-                                              fontWeight: FontWeight.w600,
-                                              color: theme.colorScheme.onSurface,
-                                            )),
-                                        const SizedBox(height: 4),
-                                        Text(studentEmail,
-                                            style: theme.textTheme.bodyMedium?.copyWith(
-                                              color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
-                                            )),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 6,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            gradient: LinearGradient(
+                                              colors: [
+                                                const Color(0xFF14B8A6),
+                                                const Color(0xFF0D9488),
+                                              ],
+                                              begin: Alignment.topLeft,
+                                              end: Alignment.bottomRight,
+                                            ),
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          child: Text(
+                                            'Score: $score',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.white,
+                                              fontSize: 14,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          _formatTimestamp(submittedAt),
+                                          style: const TextStyle(
+                                            color: Color(0xFF9CA3AF),
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
                                       ],
                                     ),
-                                  ),
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-                                    children: [
-                                      Text('Score: $score',
-                                          style: theme.textTheme.titleMedium?.copyWith(
-                                            fontWeight: FontWeight.bold,
-                                            color: theme.colorScheme.onSurface,
-                                          )),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        _formatTimestamp(submittedAt),
-                                        style: theme.textTheme.bodySmall?.copyWith(
-                                          color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
                           ),
@@ -416,96 +762,170 @@ class _ViewAssessmentResultsPageState extends State<ViewAssessmentResultsPage> {
     final questions = _assessmentDetails?['questions'] as List<dynamic>? ?? [];
     final studentAnswers = submission['answers'] as List<dynamic>? ?? [];
 
-    showDialog(
+    showGeneralDialog(
       context: context,
-      builder: (BuildContext context) {
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          child: Center(
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 420, maxHeight: 700),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(28),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.08),
-                    blurRadius: 24,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        CircleAvatar(
-                          backgroundColor: theme.colorScheme.primary.withOpacity(0.13),
-                          child: FaIcon(FontAwesomeIcons.userGraduate, color: theme.colorScheme.primary, size: 22),
-                          radius: 22,
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Text(
-                            submission['studentName'] ?? 'Unknown Student',
-                            style: theme.textTheme.titleLarge?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 22,
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          icon: const Icon(Icons.close, size: 26),
-                          splashRadius: 22,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Divider(thickness: 1.2, color: Colors.grey.shade200),
-                    const SizedBox(height: 8),
-                    _buildDetailRow('Email', submission['studentEmail'] ?? 'N/A', theme),
-                    _buildDetailRow('Score', '${submission['score'] ?? 0} / ${submission['totalPossiblePoints'] ?? 0}', theme),
-                    _buildDetailRow('Submitted', _formatTimestamp(submission['submittedAt']), theme),
-                    const SizedBox(height: 18),
-                    Text('Answers', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, fontSize: 18)),
-                    const SizedBox(height: 8),
-                    Expanded(
-                      child: ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: questions.length,
-                        itemBuilder: (context, index) {
-                          final question = questions[index];
-                          final studentAnswerData = studentAnswers.firstWhere(
-                            (ans) => ans['questionId'] == question['questionId'],
-                            orElse: () => null,
-                          );
-                          return _buildModernQuestionReviewCard(
-                            question,
-                            studentAnswerData,
-                            index + 1,
-                            theme,
-                          );
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        style: TextButton.styleFrom(
-                          foregroundColor: theme.colorScheme.primary,
-                          textStyle: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        child: const Text('Close'),
-                      ),
+      barrierDismissible: true,
+      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+      barrierColor: Colors.black.withOpacity(0.5),
+      pageBuilder: (context, animation, secondaryAnimation) {
+        return ScaleTransition(
+          scale: Tween<double>(begin: 0.7, end: 1.0).animate(
+            CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+          ),
+          child: FadeTransition(
+            opacity: animation,
+            child: Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding: const EdgeInsets.all(16),
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 500, maxHeight: 700),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 30,
+                      offset: const Offset(0, 15),
                     ),
                   ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(24),
+                  child: Column(
+                    children: [
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(24),
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [Color(0xFF14B8A6), Color(0xFF0D9488)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(
+                                Icons.person,
+                                color: Colors.white,
+                                size: 24,
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    submission['studentName'] ?? 'Unknown Student',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Submission Details',
+                                    style: TextStyle(
+                                      color: Colors.white.withOpacity(0.9),
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Container(
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: IconButton(
+                                onPressed: () => Navigator.of(context).pop(),
+                                icon: const Icon(
+                                  Icons.close,
+                                  color: Colors.white,
+                                  size: 24,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      const Color(0xFF14B8A6).withOpacity(0.05),
+                                      const Color(0xFF0D9488).withOpacity(0.02),
+                                    ],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                  ),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: const Color(0xFF14B8A6).withOpacity(0.2),
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Column(
+                                  children: [
+                                    _buildDetailRow('Email', submission['studentEmail'] ?? 'N/A', theme),
+                                    _buildDetailRow('Score', '${submission['score'] ?? 0} / ${submission['totalPossiblePoints'] ?? 0}', theme),
+                                    _buildDetailRow('Submitted', _formatTimestamp(submission['submittedAt']), theme),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+                              const Text(
+                                'Student Answers',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF0F766E),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Expanded(
+                                child: ListView.builder(
+                                  shrinkWrap: true,
+                                  itemCount: questions.length,
+                                  itemBuilder: (context, index) {
+                                    final question = questions[index];
+                                    final studentAnswerData = studentAnswers.firstWhere(
+                                      (ans) => ans['questionId'] == question['questionId'],
+                                      orElse: () => null,
+                                    );
+                                    return _buildModernQuestionReviewCard(
+                                      question,
+                                      studentAnswerData,
+                                      index + 1,
+                                      theme,
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -521,50 +941,103 @@ class _ViewAssessmentResultsPageState extends State<ViewAssessmentResultsPage> {
     final questionPoints = question['points'] ?? 0;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 18),
+      margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isCorrect ? Colors.green.shade300 : Colors.red.shade200,
-          width: 1.5,
+          color: isCorrect 
+            ? const Color(0xFF10B981).withOpacity(0.3)
+            : Colors.red.withOpacity(0.3),
+          width: 2,
         ),
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: isCorrect ? Colors.green.shade50 : Colors.red.shade50,
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        gradient: LinearGradient(
+          colors: isCorrect
+            ? [
+                const Color(0xFF10B981).withOpacity(0.05),
+                const Color(0xFF059669).withOpacity(0.02),
+              ]
+            : [
+                Colors.red.withOpacity(0.05),
+                Colors.red.withOpacity(0.02),
+              ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Text(
-                  'Q$questionNumber: ',
-                  style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
-                ),
-                Expanded(
-                  child: Text(
-                    question['text'] ?? 'No text',
-                    style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: isCorrect 
+                      ? const Color(0xFF10B981).withOpacity(0.15)
+                      : Colors.red.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    isCorrect ? Icons.check : Icons.close,
+                    color: isCorrect 
+                      ? const Color(0xFF059669)
+                      : Colors.red.shade700,
+                    size: 18,
                   ),
                 ),
-                Text(
-                  '$pointsEarned / $questionPoints pts',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: isCorrect ? Colors.green.shade700 : Colors.red.shade700,
-                    fontSize: 15,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Question $questionNumber',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: isCorrect 
+                            ? const Color(0xFF059669)
+                            : Colors.red.shade700,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        question['text'] ?? 'No text',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                          color: Color(0xFF374151),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: isCorrect
+                        ? [const Color(0xFF10B981), const Color(0xFF059669)]
+                        : [Colors.red.shade500, Colors.red.shade600],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '$pointsEarned / $questionPoints pts',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             _buildModernAnswerDetails(question, studentAnswerData, theme),
           ],
         ),
@@ -679,24 +1152,29 @@ class _ViewAssessmentResultsPageState extends State<ViewAssessmentResultsPage> {
 
   Widget _buildDetailRow(String label, String value, ThemeData theme) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 80,
+            width: 90,
             child: Text(
               '$label:',
-              style: theme.textTheme.bodyMedium?.copyWith(
+              style: const TextStyle(
                 fontWeight: FontWeight.w600,
-                color: theme.colorScheme.onSurfaceVariant,
+                color: Color(0xFF0F766E),
+                fontSize: 14,
               ),
             ),
           ),
           Expanded(
             child: Text(
               value,
-              style: theme.textTheme.bodyMedium,
+              style: const TextStyle(
+                color: Color(0xFF374151),
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
         ],

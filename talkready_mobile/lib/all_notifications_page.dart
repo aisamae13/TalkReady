@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:talkready_mobile/progress_page.dart';
 import 'dart:async';
+import 'class_content_page.dart';
 
 class AllNotificationsPage extends StatefulWidget {
   const AllNotificationsPage({super.key});
@@ -92,9 +94,122 @@ class _AllNotificationsPageState extends State<AllNotificationsPage> {
       }
     }
 
-    // Navigate to link if available
+    // Handle navigation based on link pattern
     if (data['link'] != null && data['link'] is String) {
-      Navigator.pushNamed(context, data['link']);
+      final link = data['link'] as String;
+      
+      try {
+        // Handle assessment submission review links
+        if (link.contains('/student/submission/') && link.contains('review')) {
+          // Extract submissionId from URL path
+          String submissionId = '';
+          if (link.contains('/student/submission/')) {
+            List<String> parts = link.split('/student/submission/');
+            if (parts.length > 1) {
+              submissionId = parts[1].split('/review').first;
+            }
+          }
+          
+          // Extract assessmentId from query parameters
+          String? assessmentId;
+          if (link.contains('assessmentId=')) {
+            assessmentId = link.split('assessmentId=')[1];
+            if (assessmentId.contains('&')) {
+              assessmentId = assessmentId.split('&').first;
+            }
+          }
+          
+          if (assessmentId != null && submissionId.isNotEmpty) {
+            debugPrint('Navigating to assessment review with ID: $assessmentId, submission: $submissionId');
+            
+            // Navigate to the assessment review page directly
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => AssessmentReviewPage(
+                  assessmentId: assessmentId!,
+                  submissionId: submissionId,
+                ),
+              ),
+            );
+            return;
+          }
+        }
+        
+        // Handle class content links
+        else if (link.contains('/student/class/')) {
+          // Extract classId from the link
+          String classId = '';
+          List<String> parts = link.split('/student/class/');
+          if (parts.length > 1) {
+            classId = parts[1];
+            
+            // Remove any content part or hash fragments
+            if (classId.contains('/content')) {
+              classId = classId.split('/content')[0];
+            }
+            
+            if (classId.contains('#')) {
+              classId = classId.split('#')[0];
+            }
+            
+            classId = classId.trim();
+          }
+          
+          if (classId.isNotEmpty) {
+            debugPrint('Navigating to class content: $classId');
+            // Get class details from Firestore
+            try {
+              final classDoc = await FirebaseFirestore.instance
+                  .collection('trainerClass')
+                  .doc(classId)
+                  .get();
+                  
+              if (classDoc.exists) {
+                final classData = classDoc.data() ?? {};
+                final className = classData['className'] ?? 'Class';
+                
+                // Navigate to the class content page
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ClassContentPage(
+                      classId: classId,
+                      className: className,
+                      classData: classData,
+                    ),
+                  ),
+                );
+                return;
+              } else {
+                throw Exception('Class not found');
+              }
+            } catch (e) {
+              debugPrint('Error fetching class data: $e');
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Could not find the class. It may have been deleted.'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+          }
+        }
+        
+        // Fallback to standard route navigation if specific patterns don't match
+        else {
+          Navigator.pushNamed(context, data['link']);
+        }
+        
+      } catch (e) {
+        debugPrint('Error navigating from notification: $e');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not open this notification content'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
