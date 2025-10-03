@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'welcome_page.dart';
-// For student flow
 
 class ChooseUserTypePage extends StatelessWidget {
   const ChooseUserTypePage({super.key});
@@ -17,16 +16,13 @@ class ChooseUserTypePage extends StatelessWidget {
           .doc(user.uid)
           .set({'userType': userType}, SetOptions(merge: true));
     }
-    // Navigate to WelcomePage first
-    await Navigator.push(
+
+    // Navigate to WelcomePage WITH userType
+    Navigator.pushReplacement(
       context,
-      MaterialPageRoute(builder: (context) => const WelcomePage()),
-    );
-    // Then navigate to onboarding
-    Navigator.pushNamed(
-      context,
-      '/onboarding',
-      arguments: {'userType': userType},
+      MaterialPageRoute(
+        builder: (context) => WelcomePage(userType: userType), // Pass userType here!
+      ),
     );
   }
 
@@ -47,7 +43,7 @@ class ChooseUserTypePage extends StatelessWidget {
           gradient: LinearGradient(
             colors: [
               Colors.white,
-              Color.fromARGB(255, 178, 211, 254), // sky blue
+              Color.fromARGB(255, 178, 211, 254),
             ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -58,7 +54,6 @@ class ChooseUserTypePage extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Glassmorphic Card
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16),
                   child: ClipRRect(
@@ -111,14 +106,14 @@ class ChooseUserTypePage extends StatelessWidget {
                             AnimatedUserTypeButton(
                               icon: Icons.school_rounded,
                               label: 'I am a Trainer',
-                              color: const Color(0xFF2E7D32), // green variant
+                              color: const Color(0xFF2E7D32),
                               onTap: () => _saveUserTypeAndNavigate(context, 'trainer'),
                             ),
                             const SizedBox(height: 22),
                             AnimatedUserTypeButton(
                               icon: Icons.person_2_rounded,
                               label: 'I am a Student',
-                              color: const Color(0xFF1565C0), // blue variant
+                              color: const Color(0xFF1565C0),
                               onTap: () => _saveUserTypeAndNavigate(context, 'student'),
                             ),
                           ],
@@ -222,7 +217,6 @@ class _AnimatedUserTypeButtonState extends State<AnimatedUserTypeButton>
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // icon circle
                 Container(
                   width: 46,
                   height: 46,

@@ -506,17 +506,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     }
   }
 
-  Color _getModuleColor(String moduleId) {
-    final colors = {
-      'module1': const Color(0xFF0077B3),
-      'module2': const Color(0xFF00A6CB),
-      'module3': const Color(0xFF4CAF50),
-      'module4': const Color(0xFFFF9800),
-      'module5': const Color(0xFF9C27B0),
-      'module6': const Color(0xFFE91E63),
-    };
-    return colors[moduleId] ?? const Color(0xFF0077B3);
-  }
 
   Future<void> _calculateEnhancedUserStats() async {
     final user = FirebaseAuth.instance.currentUser;
@@ -917,7 +906,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         .listen(
           (snapshot) {
             if (snapshot.exists && mounted) {
-              final userData = snapshot.data() as Map<String, dynamic>?;
+              final userData = snapshot.data();
               if (userData != null) {
                 final lessonAttempts =
                     userData['lessonAttempts'] as Map<String, dynamic>? ?? {};
@@ -1664,7 +1653,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         ),
         const SizedBox(height: 16),
         ...moduleProgress.entries.map((entry) {
-          final moduleId = entry.key;
           final module = entry.value;
           return Container(
             margin: const EdgeInsets.only(bottom: 12),
@@ -2454,146 +2442,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildFeaturedCoursesSection() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Featured For You',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF00568D),
-            ),
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 180,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              itemCount: _featuredCourses.length,
-              itemBuilder: (context, index) {
-                final course = _featuredCourses[index];
-                return Container(
-                  width: 140,
-                  margin: const EdgeInsets.only(right: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[50],
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey[200]!),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        height: 60,
-                        decoration: BoxDecoration(
-                          color: (course['color'] as Color).withOpacity(0.1),
-                          borderRadius: const BorderRadius.only(
-                            topLeft: Radius.circular(12),
-                            topRight: Radius.circular(12),
-                          ),
-                        ),
-                        child: Center(
-                          child: Icon(
-                            course['icon'] as IconData,
-                            size: 28,
-                            color: course['color'] as Color,
-                          ),
-                        ),
-                      ),
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.all(8),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                course['reason'] as String,
-                                style: TextStyle(
-                                  fontSize: 8,
-                                  color: Colors.grey[600],
-                                  fontStyle: FontStyle.italic,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                course['title'] as String,
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF004C70),
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 4),
-                              Expanded(
-                                child: Text(
-                                  course['description'] as String,
-                                  style: TextStyle(
-                                    fontSize: 9,
-                                    color: Colors.grey[600],
-                                  ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              SizedBox(
-                                width: double.infinity,
-                                height: 24,
-                                child: ElevatedButton(
-                                  onPressed: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (context) =>
-                                            const CoursesPage(),
-                                      ),
-                                    );
-                                  },
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF00568D),
-                                    foregroundColor: Colors.white,
-                                    padding: EdgeInsets.zero,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                  ),
-                                  child: const Text(
-                                    'Go to Course',
-                                    style: TextStyle(fontSize: 9),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildQuickNavigation() {
     final quickNavItems = [

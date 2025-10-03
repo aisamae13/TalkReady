@@ -1,3 +1,4 @@
 {
-    "cmake.sourceDirectory": "C:/Users/user/Desktop/TalkReady/talkready_mobile/linux"
+    "cmake.sourceDirectory": "C:/Users/user/Desktop/TalkReady/talkready_mobile/linux",
+    "cmake.ignoreCMakeListsMissing": true
 }
