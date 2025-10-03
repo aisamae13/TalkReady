@@ -6,16 +6,16 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/services.dart';
-import 'ai_bot.dart';
+import 'chatbot/screens/ai_bot.dart';
 import 'profile.dart';
 import 'package:logger/logger.dart';
 import 'courses_page.dart';
 import 'journal/journal_page.dart';
-import 'package:talkready_mobile/all_notifications_page.dart';
+import 'all_notifications_page.dart';
 import 'progress_page.dart';
-import 'package:talkready_mobile/custom_animated_bottom_bar.dart';
+import 'custom_animated_bottom_bar.dart';
 import 'package:shimmer/shimmer.dart';
-import 'package:talkready_mobile/MyEnrolledClasses.dart';
+import 'MyEnrolledClasses.dart';
 import '../services/daily_content_service.dart';
 import 'firebase_service.dart'; // Add this import
 

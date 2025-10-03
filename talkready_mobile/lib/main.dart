@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:talkready_mobile/homepage.dart';
+import '../homepage.dart';
 import 'firebase_options.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
-import 'package:talkready_mobile/courses_page.dart';
-import 'package:talkready_mobile/journal/journal_page.dart';
+import '../courses_page.dart';
+import '../journal/journal_page.dart';
 import 'landingpage.dart';
 import 'loginpage.dart';
 import 'welcome_page.dart';
@@ -13,92 +13,91 @@ import 'signup_page.dart';
 import 'splash_screen.dart';
 import 'forgotpass.dart';
 import 'package:logger/logger.dart';
-import 'package:talkready_mobile/Teachers/TrainerDashboard.dart';
-import 'package:talkready_mobile/chooseUserType.dart';
+import 'Teachers/TrainerDashboard.dart';
+import 'chooseUserType.dart';
 import 'onboarding_screen.dart';
-import 'package:talkready_mobile/all_notifications_page.dart';
+import 'all_notifications_page.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'firebase_service.dart'; // add if missing
+import 'firebase_service.dart';
+import 'package:showcaseview/showcaseview.dart';
 
 //For Courses Page
-import 'package:talkready_mobile/lessons/lesson_activity_log_page.dart';
+import '../lessons/lesson_activity_log_page.dart';
 
-import 'services/unified_progress_service.dart';
-import 'custom_animated_bottom_bar.dart';
-import 'package:talkready_mobile/assessment/module_assessment_page.dart';
+import '../assessment/module_assessment_page.dart';
 
-import 'package:talkready_mobile/modules/module1.dart';
-import 'package:talkready_mobile/lessons/lesson1_1.dart';
-import 'package:talkready_mobile/lessons/lesson1_1_activity_page.dart';
-import 'package:talkready_mobile/lessons/lesson1_2.dart';
-import 'package:talkready_mobile/lessons/lesson1_2_activity_page.dart';
-import 'package:talkready_mobile/lessons/lesson1_3.dart';
-import 'package:talkready_mobile/lessons/lesson1_3_activity_page.dart';
+import '../../modules/module1.dart';
+import '../lessons/lesson1_1.dart';
+import '../lessons/lesson1_1_activity_page.dart';
+import '../lessons/lesson1_2.dart';
+import '../lessons/lesson1_2_activity_page.dart';
+import '../lessons/lesson1_3.dart';
+import '../lessons/lesson1_3_activity_page.dart';
 
-import 'package:talkready_mobile/modules/module2.dart';
-import 'package:talkready_mobile/lessons/lesson2_1.dart';
-import 'package:talkready_mobile/lessons/lesson2_1_activity_page.dart';
-import 'package:talkready_mobile/lessons/lesson2_2.dart';
-import 'package:talkready_mobile/lessons/lesson2_2_activity_page.dart';
-import 'package:talkready_mobile/lessons/lesson2_3.dart';
-import 'package:talkready_mobile/lessons/lesson2_3_activity_page.dart';
+import '../modules/module2.dart';
+import '../lessons/lesson2_1.dart';
+import '../lessons/lesson2_1_activity_page.dart';
+import '../lessons/lesson2_2.dart';
+import '../lessons/lesson2_2_activity_page.dart';
+import '../lessons/lesson2_3.dart';
+import '../lessons/lesson2_3_activity_page.dart';
 
-import 'package:talkready_mobile/modules/module3.dart';
-import 'package:talkready_mobile/lessons/lesson3_1.dart';
-import 'package:talkready_mobile/lessons/lesson3_1_activity_page.dart';
-import 'package:talkready_mobile/lessons/lesson3_2.dart';
-import 'package:talkready_mobile/lessons/lesson3_2_activity_page.dart';
+import '../modules/module3.dart';
+import '../lessons/lesson3_1.dart';
+import '../lessons/lesson3_1_activity_page.dart';
+import '../lessons/lesson3_2.dart';
+import '../lessons/lesson3_2_activity_page.dart';
 
-import 'package:talkready_mobile/modules/module4.dart';
-import 'package:talkready_mobile/lessons/lesson4_1.dart';
-import 'package:talkready_mobile/lessons/lesson4_1_activity_page.dart';
-import 'package:talkready_mobile/lessons/lesson4_2.dart';
-import 'package:talkready_mobile/lessons/lesson4_2_activity_page.dart';
+import '../modules/module4.dart';
+import '../lessons/lesson4_1.dart';
+import '../lessons/lesson4_1_activity_page.dart';
+import '../lessons/lesson4_2.dart';
+import '../lessons/lesson4_2_activity_page.dart';
 
-import 'package:talkready_mobile/modules/module5.dart';
-import 'package:talkready_mobile/lessons/lesson5_1.dart';
-import 'package:talkready_mobile/lessons/lesson5_1_activity_page.dart';
-import 'package:talkready_mobile/lessons/lesson5_2.dart';
-import 'package:talkready_mobile/lessons/lesson5_2_activity_page.dart';
+import '../modules/module5.dart';
+import '../lessons/lesson5_1.dart';
+import '../lessons/lesson5_1_activity_page.dart';
+import '../lessons/lesson5_2.dart';
+import '../lessons/lesson5_2_activity_page.dart';
 
 // Add these imports after your existing lesson imports:
-import 'package:talkready_mobile/modules/module6.dart';
-import 'package:talkready_mobile/lessons/lesson6/lesson6_activity_log_page.dart';
-import 'package:talkready_mobile/lessons/lesson6/lesson6_landing_page.dart';
-import 'package:talkready_mobile/lessons/lesson6/lesson6_simulation_page.dart';
+import '../modules/module6.dart';
+import '../lessons/lesson6/lesson6_activity_log_page.dart';
+import '../lessons/lesson6/lesson6_landing_page.dart';
+import '../lessons/lesson6/lesson6_simulation_page.dart';
 
-import 'package:talkready_mobile/certificates/certificate_claim_page.dart';
-import 'package:talkready_mobile/certificates/certificate_view_page.dart';
+import '../certificates/certificate_claim_page.dart';
+import '../certificates/certificate_view_page.dart';
 
 // Add this import for MyEnrolledClasses
-import 'package:talkready_mobile/MyEnrolledClasses.dart';
+import '../MyEnrolledClasses.dart';
 
 // Assessment Page Imports
-import 'package:talkready_mobile/Teachers/Assessment/ClassAssessmentsListPage.dart';
-import 'package:talkready_mobile/Teachers/Assessment/CreateAssessmentPage.dart';
-import 'package:talkready_mobile/Teachers/Assessment/ViewAssessmentResultsPage.dart';
-import 'package:talkready_mobile/Teachers/Assessment/ReviewSpeakingSubmission.dart';
+import '../Teachers/Assessment/ClassAssessmentsListPage.dart';
+import '../Teachers/Assessment/CreateAssessmentPage.dart';
+import '../Teachers/Assessment/ViewAssessmentResultsPage.dart';
+import '../Teachers/Assessment/ReviewSpeakingSubmission.dart';
 
 // ClassManager Page Imports
-import 'package:talkready_mobile/Teachers/ClassManager/CreateClassForm.dart';
-import 'package:talkready_mobile/Teachers/ClassManager/MyClassesPage.dart';
-import 'package:talkready_mobile/Teachers/ClassManager/EditClassPage.dart';
-import 'package:talkready_mobile/Teachers/ClassManager/ManageClassStudents.dart';
-import 'package:talkready_mobile/Teachers/ClassManager/ManageClassContent.dart';
-import 'package:talkready_mobile/Teachers/Assessment/EditAssessmentPage.dart';
+import '../Teachers/ClassManager/CreateClassForm.dart';
+import '../Teachers/ClassManager/MyClassesPage.dart';
+import '../Teachers/ClassManager/EditClassPage.dart';
+import '../Teachers/ClassManager/ManageClassStudents.dart';
+import '../Teachers/ClassManager/ManageClassContent.dart';
+import '../Teachers/Assessment/EditAssessmentPage.dart';
 
 // Reports Page Import
-import 'package:talkready_mobile/Teachers/Reports/TrainerReports.dart';
+import '../Teachers/Reports/TrainerReports.dart';
 
 // Announcement Page Import
-import 'package:talkready_mobile/Teachers/Announcement/CreateAnnouncementPage.dart';
+import '../Teachers/Announcement/CreateAnnouncementPage.dart';
 
 // Content Page Imports
-import 'package:talkready_mobile/Teachers/Contents/QuickUploadMaterialPage.dart';
-import 'package:talkready_mobile/Teachers/Contents/SelectClassForContentPage.dart';
+import '../Teachers/Contents/QuickUploadMaterialPage.dart';
+import '../Teachers/Contents/SelectClassForContentPage.dart';
 
 // Add this import if not already present
-import 'package:talkready_mobile/progress_page.dart';
+import '../progress_page.dart';
 import 'profile.dart';
 
 final logger = Logger(
