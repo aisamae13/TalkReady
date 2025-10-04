@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:logger/logger.dart';
 import 'package:talkready_mobile/custom_animated_bottom_bar.dart';
+import 'package:talkready_mobile/pdf_generator_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:math' as math;
@@ -14,6 +15,7 @@ import 'courses_page.dart';
 import 'journal/journal_page.dart';
 import 'profile.dart';
 import 'package:talkready_mobile/MyEnrolledClasses.dart';
+import 'package:share_plus/share_plus.dart';
 
 // Assessment Review Page
 class AssessmentReviewPage extends StatefulWidget {
@@ -38,6 +40,14 @@ class _AssessmentReviewPageState extends State<AssessmentReviewPage> {
   String? _error;
   Map<String, dynamic>? _submissionDetails;
   Map<String, dynamic>? _assessmentDetails;
+
+
+  Color _getScoreColor(double score) {
+  if (score >= 90) return Colors.green;
+  if (score >= 75) return Colors.blue;
+  if (score >= 60) return Colors.orange;
+  return Colors.red;
+}
 
   @override
   void initState() {
@@ -279,6 +289,329 @@ class _AssessmentReviewPageState extends State<AssessmentReviewPage> {
       ),
     );
   }
+List<Widget> _buildSpeakingPrompts() {
+  final questions = _assessmentDetails?['questions'] as List?;
+  if (questions == null) return [];
+
+  return questions.map<Widget>((question) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.purple.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.purple.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (question['title'] != null)
+            Text(
+              question['title'],
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          if (question['promptText'] != null || question['text'] != null)
+            Text(question['promptText'] ?? question['text'] ?? ''),
+        ],
+      ),
+    );
+  }).toList();
+}
+
+  Widget _buildAIFeedbackSection() {
+  final aiFeedback = _submissionDetails?['aiFeedback'] as Map<String, dynamic>?;
+
+  if (aiFeedback == null) {
+    return const SizedBox.shrink(); // Don't show anything if no AI feedback
+  }
+
+  final audioQuality = aiFeedback['audioQuality'] as Map<String, dynamic>?;
+  final contextualAnalysis = aiFeedback['contextualAnalysis'] as Map<String, dynamic>?;
+  final overallScore = aiFeedback['overallScore'] as num? ?? 0;
+  final transcript = aiFeedback['transcript'] as String? ?? 'No transcript available';
+
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Colors.purple.shade50, Colors.indigo.shade50],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.purple.shade200),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.psychology, color: Colors.purple.shade700),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'AI Performance Analysis',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF6B21A8),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // Overall Score
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Overall AI Score',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  Text(
+                    '${overallScore.round()}%',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: _getScoreColor(overallScore.toDouble()),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            // Transcript
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'What you said:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '"$transcript"',
+                    style: const TextStyle(
+                      fontStyle: FontStyle.italic,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Speech Quality Metrics
+            if (audioQuality != null) ...[
+              const SizedBox(height: 12),
+              const Text(
+                'Speech Quality:',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _buildMiniScoreCard(
+                    'Clarity',
+                    audioQuality['speechClarity'] ?? 0,
+                  ),
+                  _buildMiniScoreCard(
+                    'Fluency',
+                    audioQuality['speechFluency'] ?? 0,
+                  ),
+                  _buildMiniScoreCard(
+                    'Expression',
+                    audioQuality['prosody'] ?? 0,
+                  ),
+                ],
+              ),
+            ],
+
+            // Strengths
+            if (contextualAnalysis?['strengths'] != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.check_circle, color: Colors.green.shade700, size: 16),
+                        const SizedBox(width: 4),
+                        const Text(
+                          'Strengths:',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    ...(contextualAnalysis!['strengths'] as List).map(
+                      (strength) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('• ', style: TextStyle(fontSize: 12)),
+                            Expanded(
+                              child: Text(
+                                strength,
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            // Improvement Areas
+            if (contextualAnalysis?['improvementAreas'] != null) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.lightbulb_outline, color: Colors.orange.shade700, size: 16),
+                        const SizedBox(width: 4),
+                        const Text(
+                          'Areas for Improvement:',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    ...(contextualAnalysis!['improvementAreas'] as List).map(
+                      (area) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('• ', style: TextStyle(fontSize: 12)),
+                            Expanded(
+                              child: Text(
+                                area,
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            // Suggestion
+            if (contextualAnalysis?['suggestion'] != null) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.tips_and_updates, color: Colors.blue.shade700, size: 16),
+                        const SizedBox(width: 4),
+                        const Text(
+                          'Suggestion:',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      contextualAnalysis!['suggestion'],
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    ],
+  );
+}
+
+Widget _buildMiniScoreCard(String label, num score) {
+  final normalizedScore = (score).round().clamp(0, 100);
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Column(
+      children: [
+        Text(
+          '$normalizedScore%',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+            color: _getScoreColor(normalizedScore.toDouble()),
+          ),
+        ),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 10, color: Colors.grey),
+        ),
+      ],
+    ),
+  );
+}
 
   Widget _buildQuestionsReview() {
     if (_submissionDetails?['assessmentType'] == 'speaking_assessment') {
@@ -288,147 +621,141 @@ class _AssessmentReviewPageState extends State<AssessmentReviewPage> {
     }
   }
 
-  Widget _buildSpeakingAssessmentReview() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+Widget _buildSpeakingAssessmentReview() {
+  return Card(
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Speaking Assessment Details',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 16),
+
+          // Show prompt/questions
+          if (_assessmentDetails?['questions'] != null) ...[
             const Text(
-              'Speaking Assessment Details',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              'Prompt:',
+              style: TextStyle(fontWeight: FontWeight.bold),
             ),
-            const SizedBox(height: 16),
-
-            // Show prompt/questions
-            if (_assessmentDetails?['questions'] != null) ...[
-              const Text(
-                'Prompt:',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              ..._buildSpeakingPrompts(),
-            ],
-
-            const SizedBox(height: 16),
-
-            // Audio submission info
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.blue.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.blue.shade200),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.mic, color: Colors.blue),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Text(
-                      'Audio response submitted',
-                      style: TextStyle(fontWeight: FontWeight.w500),
-                    ),
-                  ),
-                  if (_submissionDetails?['audioUrl'] != null)
-                    IconButton(
-                      icon: const Icon(Icons.play_arrow),
-                      onPressed: () =>
-                          _playAudio(_submissionDetails!['audioUrl']),
-                    ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            // Feedback section
-            _buildFeedbackSection(),
+            const SizedBox(height: 8),
+            ..._buildSpeakingPrompts(),
           ],
-        ),
+
+          const SizedBox(height: 16),
+
+          // Audio submission info
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.blue.shade200),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.mic, color: Colors.blue),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Audio response submitted',
+                    style: TextStyle(fontWeight: FontWeight.w500),
+                  ),
+                ),
+                if (_submissionDetails?['audioUrl'] != null)
+                  IconButton(
+                    icon: const Icon(Icons.play_arrow),
+                    onPressed: () =>
+                        _playAudio(_submissionDetails!['audioUrl']),
+                  ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // AI Feedback Section - NEW
+          _buildAIFeedbackSection(),
+
+          const SizedBox(height: 16),
+
+          // Trainer Feedback section
+          _buildFeedbackSection(),
+        ],
+      ),
+    ),
+  );
+}
+  Widget _buildFeedbackSection() {
+  final isReviewed = _submissionDetails?['isReviewed'] ?? false;
+
+  if (!isReviewed) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.orange.shade200),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.access_time, color: Colors.orange),
+          SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Awaiting trainer review',
+              style: TextStyle(fontWeight: FontWeight.w500),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  List<Widget> _buildSpeakingPrompts() {
-    final questions = _assessmentDetails!['questions'] as List;
-    return questions.map<Widget>((question) {
-      return Container(
-        margin: const EdgeInsets.only(bottom: 12),
+  final trainerFeedback = _submissionDetails?['trainerFeedback'];
+  final hasFeedback = trainerFeedback != null && trainerFeedback.toString().trim().isNotEmpty;
+
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const Text(
+        'Trainer Feedback',
+        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+      ),
+      const SizedBox(height: 8),
+      Container(
+        width: double.infinity,
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.purple.shade50,
+          color: hasFeedback ? Colors.green.shade50 : Colors.grey.shade50,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.purple.shade200),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (question['title'] != null)
-              Text(
-                question['title'],
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-            if (question['promptText'] != null || question['text'] != null)
-              Text(question['promptText'] ?? question['text'] ?? ''),
-          ],
-        ),
-      );
-    }).toList();
-  }
-
-  Widget _buildFeedbackSection() {
-    final isReviewed = _submissionDetails?['isReviewed'] ?? false;
-
-    if (!isReviewed) {
-      return Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.orange.shade50,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.orange.shade200),
-        ),
-        child: const Row(
-          children: [
-            Icon(Icons.access_time, color: Colors.orange),
-            SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'Awaiting trainer review',
-                style: TextStyle(fontWeight: FontWeight.w500),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Trainer Feedback',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 8),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.green.shade50,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.green.shade200),
-          ),
-          child: Text(
-            _submissionDetails?['trainerFeedback'] ??
-                'No feedback provided yet.',
+          border: Border.all(
+            color: hasFeedback ? Colors.green.shade200 : Colors.grey.shade300,
           ),
         ),
-      ],
-    );
-  }
-
+        child: hasFeedback
+            ? Text(trainerFeedback)
+            : const Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.grey, size: 20),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'The trainer did not provide written feedback for this submission.',
+                      style: TextStyle(
+                        color: Colors.grey,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    ],
+  );
+}
   Widget _buildStandardAssessmentReview() {
     final questions = _assessmentDetails?['questions'] as List? ?? [];
     final answers = _submissionDetails?['answers'] as List? ?? [];
@@ -722,6 +1049,7 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage>
   Map<String, List<Map<String, dynamic>>> _allUserAttempts = {};
   List<Map<String, dynamic>> _assessmentSubmissions = [];
   bool _isLoadingAssessments = true;
+  final PdfGeneratorService _pdfService = PdfGeneratorService();
 
   Map<String, dynamic> _overallStats = {
     'attemptedLessonsCount': 0,
@@ -736,7 +1064,6 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage>
 
     _allUserAttempts.entries.forEach((entry) {
       final lessonId = entry.key;
-      final attempts = entry.value;
 
       // Find which module this lesson belongs to
       String? lessonLevel;
@@ -1859,111 +2186,121 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage>
     }
   }
 
-  Widget _buildLessonProgressCard(
-    String lessonId,
-    List<Map<String, dynamic>> attempts,
-  ) {
-    final lessonTitle = _getLessonTitle(lessonId);
+Widget _buildLessonProgressCard(
+  String lessonId,
+  List<Map<String, dynamic>> attempts,
+) {
+  final lessonTitle = _getLessonTitle(lessonId);
 
-    // Calculate best percentage instead of raw score
-    final bestPercentage = attempts
-        .map((a) {
-          final score = (a['score'] as num?)?.toDouble() ?? 0;
-          final maxScore = _getMaxScoreForLesson(a);
-          return maxScore > 0 ? (score / maxScore * 100) : 0.0;
-        })
-        .reduce(math.max);
+  // Calculate best percentage instead of raw score
+  final bestPercentage = attempts
+      .map((a) {
+        final score = (a['score'] as num?)?.toDouble() ?? 0;
+        final maxScore = _getMaxScoreForLesson(a);
+        return maxScore > 0 ? (score / maxScore * 100) : 0.0;
+      })
+      .reduce(math.max);
 
-    final isExpanded = _expandedLesson[lessonId] ?? false;
+  final isExpanded = _expandedLesson[lessonId] ?? false;
 
-    return Card(
-      elevation: 1,
-      margin: const EdgeInsets.only(bottom: 8),
-      child: Column(
-        children: [
-          InkWell(
-            onTap: () =>
-                setState(() => _expandedLesson[lessonId] = !isExpanded),
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          lessonTitle,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
+  return Card(
+    elevation: 1,
+    margin: const EdgeInsets.only(bottom: 8),
+    child: Column(
+      children: [
+        InkWell(
+          onTap: () =>
+              setState(() => _expandedLesson[lessonId] = !isExpanded),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        lessonTitle,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '${attempts.length} attempt${attempts.length != 1 ? 's' : ''} • Best: ${bestPercentage.toStringAsFixed(1)}%',
-                          style: const TextStyle(
-                            color: Colors.grey,
-                            fontSize: 12,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        // Progress bar for best score
-                        LinearProgressIndicator(
-                          value: bestPercentage / 100,
-                          backgroundColor: Colors.grey.shade300,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            _getScoreColor(bestPercentage),
-                          ),
-                          minHeight: 4,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _getScoreColor(bestPercentage).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      _getPerformanceLabel(bestPercentage),
-                      style: TextStyle(
-                        color: _getScoreColor(bestPercentage),
-                        fontWeight: FontWeight.bold,
-                        fontSize: 10,
                       ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${attempts.length} attempt${attempts.length != 1 ? 's' : ''} • Best: ${bestPercentage.toStringAsFixed(1)}%',
+                        style: const TextStyle(
+                          color: Colors.grey,
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      // Progress bar for best score
+                      LinearProgressIndicator(
+                        value: bestPercentage / 100,
+                        backgroundColor: Colors.grey.shade300,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          _getScoreColor(bestPercentage),
+                        ),
+                        minHeight: 4,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ],
+                  ),
+                ),
+                // Share button
+                IconButton(
+                  icon: const Icon(Icons.share, size: 18),
+                  color: Colors.grey[600],
+                  onPressed: () => _shareLessonProgress(lessonId, attempts),
+                  tooltip: 'Share progress',
+                  padding: const EdgeInsets.all(4),
+                  constraints: const BoxConstraints(),
+                ),
+                const SizedBox(width: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _getScoreColor(bestPercentage).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    _getPerformanceLabel(bestPercentage),
+                    style: TextStyle(
+                      color: _getScoreColor(bestPercentage),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 10,
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Icon(
-                    isExpanded ? Icons.expand_less : Icons.expand_more,
-                    color: Colors.grey,
-                  ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  isExpanded ? Icons.expand_less : Icons.expand_more,
+                  color: Colors.grey,
+                ),
+              ],
             ),
           ),
+        ),
 
-          if (isExpanded) ...[
-            const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                children: attempts
-                    .map((attempt) => _buildAttemptSummary(attempt))
-                    .toList(),
-              ),
+        if (isExpanded) ...[
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              children: attempts
+                  .map((attempt) => _buildAttemptSummary(attempt))
+                  .toList(),
             ),
-          ],
+          ),
         ],
-      ),
-    );
-  }
+      ],
+    ),
+  );
+}
 
   Widget _buildAttemptSummary(Map<String, dynamic> attempt) {
     final score = (attempt['score'] as num?)?.toDouble() ?? 0;
@@ -2177,17 +2514,72 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage>
       ),
     );
   }
+void _shareLessonProgress(String lessonId, List<Map<String, dynamic>> attempts) {
+  final lessonTitle = _getLessonTitle(lessonId);
+  final bestPercentage = attempts
+      .map((a) {
+        final score = (a['score'] as num?)?.toDouble() ?? 0;
+        final maxScore = _getMaxScoreForLesson(a);
+        return maxScore > 0 ? (score / maxScore * 100) : 0.0;
+      })
+      .reduce(math.max);
 
-  void _shareAssessment(Map<String, dynamic> submission) {
-    // Placeholder for sharing functionality
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Sharing ${submission['assessmentTitle']} (feature coming soon)',
-        ),
-      ),
-    );
-  }
+  final totalAttempts = attempts.length;
+  final latestAttempt = attempts.last;
+  final latestScore = (latestAttempt['score'] as num?)?.toDouble() ?? 0;
+  final latestMaxScore = _getMaxScoreForLesson(latestAttempt);
+  final latestPercentage = latestMaxScore > 0 ? (latestScore / latestMaxScore * 100) : 0;
+
+  final shareText = '''
+TalkReady Lesson Progress
+
+Lesson: $lessonTitle
+
+Statistics:
+- Total Attempts: $totalAttempts
+- Best Score: ${bestPercentage.toStringAsFixed(1)}%
+- Latest Score: ${latestPercentage.toStringAsFixed(1)}%
+- Performance: ${_getPerformanceLabel(bestPercentage)}
+
+${bestPercentage >= 90 ? "Excellent work!" : bestPercentage >= 75 ? "Great progress!" : "Keep practicing!"}
+
+#TalkReady #Learning
+  '''.trim();
+
+  Share.share(
+    shareText,
+    subject: 'My Progress: $lessonTitle',
+  );
+}
+ void _shareAssessment(Map<String, dynamic> submission) {
+  final title = submission['assessmentTitle'] ?? 'Assessment';
+  final score = submission['score'] ?? 0;
+  final totalPoints = submission['totalPossiblePoints'] ?? 100;
+  final percentage = totalPoints > 0 ? (score / totalPoints * 100) : 0;
+  final className = submission['className'] ?? 'N/A';
+  final date = _formatSubmissionDate(submission['submittedAt']);
+
+  final shareText = '''
+📊 TalkReady Assessment Result
+
+📝 Assessment: $title
+🏫 Class: $className
+📅 Date: $date
+
+✅ Score: $score / $totalPoints
+📈 Percentage: ${percentage.toStringAsFixed(1)}%
+🎯 Performance: ${_getPerformanceLabel(percentage)}
+
+Keep up the great work! 🚀
+
+#TalkReady #Learning #Progress
+  '''.trim();
+
+  Share.share(
+    shareText,
+    subject: 'My TalkReady Assessment Result: $title',
+  );
+}
 
   void _showExportOptions() {
     showModalBottomSheet(
@@ -2224,24 +2616,90 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage>
     );
   }
 
-  Future<void> _handleDownloadFullHistoryPdf() async {
+Future<void> _handleDownloadFullHistoryPdf() async {
+  try {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('PDF generation coming soon!'),
-        backgroundColor: Colors.blue,
-      ),
+      const SnackBar(content: Text('Generating PDF...')),
     );
-  }
 
-  void _shareProgressSummary() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Progress sharing coming soon!'),
-        backgroundColor: Colors.blue,
-      ),
+    await _pdfService.generateProgressReportPdf(
+      overallStats: _overallStats,
+      allUserAttempts: _allUserAttempts,
+      assessmentSubmissions: _assessmentSubmissions,
+      userName: _currentUser?.displayName ?? _currentUser?.email ?? 'Student',
     );
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('PDF generated successfully!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
+  } catch (e) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error generating PDF: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 }
+
+void _shareProgressSummary() {
+  final attemptedLessons = _overallStats['attemptedLessonsCount'];
+  final totalAttempts = _overallStats['totalAttempts'];
+  final avgScore = _overallStats['averageScore'];
+
+  // Calculate assessment stats - ONLY reviewed assessments
+  final reviewedAssessments = _assessmentSubmissions
+      .where((s) => s['isReviewed'] == true)
+      .toList();
+
+  final totalAssessments = _assessmentSubmissions.length;
+  final pendingReview = totalAssessments - reviewedAssessments.length;
+
+  // Calculate average assessment score from REVIEWED submissions only
+  double avgAssessmentScore = 0;
+  if (reviewedAssessments.isNotEmpty) {
+    final totalScore = reviewedAssessments.fold<double>(
+      0,
+      (sum, s) {
+        final score = (s['score'] as num?)?.toDouble() ?? 0;
+        final total = (s['totalPossiblePoints'] as num?)?.toDouble() ?? 100;
+        return sum + (total > 0 ? (score / total * 100) : 0);
+      },
+    );
+    avgAssessmentScore = totalScore / reviewedAssessments.length;
+  }
+
+  final shareText = '''
+📚 My TalkReady Learning Progress
+
+🎓 AI Lessons:
+   • Lessons Attempted: $attemptedLessons
+   • Total Practice Attempts: $totalAttempts
+   • Average Score: $avgScore${avgScore == "N/A" ? "" : "%"}
+
+📝 Trainer Assessments:
+   • Total Submissions: $totalAssessments
+   • Reviewed: ${reviewedAssessments.length}${reviewedAssessments.isNotEmpty ? " (Average: ${avgAssessmentScore.toStringAsFixed(1)}%)" : ""}
+   • Pending Review: $pendingReview
+
+🚀 Keep learning and growing with TalkReady!
+
+#TalkReady #LearningJourney #Progress
+  '''.trim();
+
+  Share.share(
+    shareText,
+    subject: 'My TalkReady Learning Progress',
+  );
+}
+    }
 
 // Keep your existing COURSE_STRUCTURE_MOBILE and helper methods...
 const Map<String, Map<String, dynamic>> COURSE_STRUCTURE_MOBILE = {

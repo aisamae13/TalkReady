@@ -4,7 +4,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:logger/logger.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'firebase_service.dart';
 import 'take_assessment_page.dart'; // Add this import
 import 'take_speaking_assessment_page.dart'; // Add this import
 import 'notification_service.dart';
@@ -29,7 +28,6 @@ class _ClassContentPageState extends State<ClassContentPage>
     with TickerProviderStateMixin {
   final Logger _logger = Logger();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseService _firebaseService = FirebaseService();
 
   // State variables
   Map<String, dynamic>? classDetails;
@@ -43,6 +41,13 @@ class _ClassContentPageState extends State<ClassContentPage>
   bool isEnrolled = false;
   bool enrollmentChecked = false;
   String error = '';
+
+  bool _showAllAnnouncements = false;
+bool _showAllMaterials = false;
+bool _showAllAssessments = false;
+bool _showAllMembers = false;
+
+static const int _itemsToShow = 4;
 
   // Animation controllers
   late AnimationController _fadeController;
@@ -127,7 +132,7 @@ class _ClassContentPageState extends State<ClassContentPage>
 
     try {
       // Fetch all data in parallel
-      final futures = await Future.wait([
+     await Future.wait([
         _fetchClassDetails(),
         _fetchMaterials(),
         _fetchAssessments(),
@@ -255,14 +260,13 @@ class _ClassContentPageState extends State<ClassContentPage>
           if (userDoc.exists) {
             final userData = userDoc.data()!;
             members.add({
-              'id': studentId,
-              'displayName':
-                  userData['displayName'] ??
-                  '${userData['firstName'] ?? ''} ${userData['lastName'] ?? ''}'
-                      .trim() ??
-                  'Unnamed Member',
-              'email': userData['email'] ?? '',
-            });
+            'id': studentId,
+            'displayName':
+                '${userData['firstName'] ?? ''} ${userData['lastName'] ?? ''}'.trim().isNotEmpty
+                    ? '${userData['firstName'] ?? ''} ${userData['lastName'] ?? ''}'.trim()
+                    : userData['displayName'] ?? 'Unnamed Member',
+            'email': userData['email'] ?? '',
+          });
           }
         } catch (e) {
           _logger.w("Error fetching user data for $studentId: $e");
@@ -288,10 +292,10 @@ class _ClassContentPageState extends State<ClassContentPage>
         final data = doc.data()!;
         setState(() {
           trainerInfo = {
-            'name':
-                data['displayName'] ??
-                '${data['firstName'] ?? ''} ${data['lastName'] ?? ''}'.trim() ??
-                'Unknown Trainer',
+                'name':
+                '${data['firstName'] ?? ''} ${data['lastName'] ?? ''}'.trim().isNotEmpty
+                    ? '${data['firstName'] ?? ''} ${data['lastName'] ?? ''}'.trim()
+                    : data['displayName'] ?? 'Unknown Trainer',
           };
         });
       }
@@ -817,18 +821,24 @@ Widget _getFileIcon(String? fileType) {
     );
   }
 
-  Widget _buildAnnouncementsSection() {
-    return _buildSection(
-      title: 'Class Announcements',
-      icon: FontAwesomeIcons.bullhorn,
-      count: announcements.length,
-      child: announcements.isEmpty
-          ? _buildEmptyState(
-              icon: FontAwesomeIcons.bullhorn,
-              message: 'No announcements posted yet.',
-            )
-          : Column(
-              children: announcements.map((announcement) {
+ Widget _buildAnnouncementsSection() {
+  final itemsToDisplay = _showAllAnnouncements
+      ? announcements
+      : announcements.take(_itemsToShow).toList();
+  final hasMore = announcements.length > _itemsToShow;
+
+  return _buildSection(
+    title: 'Class Announcements',
+    icon: FontAwesomeIcons.bullhorn,
+    count: announcements.length,
+    child: announcements.isEmpty
+        ? _buildEmptyState(
+            icon: FontAwesomeIcons.bullhorn,
+            message: 'No announcements posted yet.',
+          )
+        : Column(
+            children: [
+              ...itemsToDisplay.map((announcement) {
                 return Container(
                   margin: const EdgeInsets.only(bottom: 16),
                   padding: const EdgeInsets.all(16),
@@ -864,22 +874,35 @@ Widget _getFileIcon(String? fileType) {
                   ),
                 );
               }).toList(),
-            ),
-    );
-  }
+              if (hasMore)
+                _buildShowMoreButton(
+                  isExpanded: _showAllAnnouncements,
+                  onTap: () => setState(() => _showAllAnnouncements = !_showAllAnnouncements),
+                  totalCount: announcements.length,
+                ),
+            ],
+          ),
+  );
+}
 
-  Widget _buildMaterialsSection() {
-    return _buildSection(
-      title: 'Class Materials',
-      icon: FontAwesomeIcons.bookOpen,
-      count: materials.length,
-      child: materials.isEmpty
-          ? _buildEmptyState(
-              icon: FontAwesomeIcons.bookOpen,
-              message: 'No materials uploaded yet.',
-            )
-          : Column(
-              children: materials.map((material) {
+ Widget _buildMaterialsSection() {
+  final itemsToDisplay = _showAllMaterials
+      ? materials
+      : materials.take(_itemsToShow).toList();
+  final hasMore = materials.length > _itemsToShow;
+
+  return _buildSection(
+    title: 'Class Materials',
+    icon: FontAwesomeIcons.bookOpen,
+    count: materials.length,
+    child: materials.isEmpty
+        ? _buildEmptyState(
+            icon: FontAwesomeIcons.bookOpen,
+            message: 'No materials uploaded yet.',
+          )
+        : Column(
+            children: [
+              ...itemsToDisplay.map((material) {
                 return Container(
                   margin: const EdgeInsets.only(bottom: 12),
                   child: Material(
@@ -938,22 +961,34 @@ Widget _getFileIcon(String? fileType) {
                   ),
                 );
               }).toList(),
-            ),
-    );
-  }
+              if (hasMore)
+                _buildShowMoreButton(
+                  isExpanded: _showAllMaterials,
+                  onTap: () => setState(() => _showAllMaterials = !_showAllMaterials),
+                  totalCount: materials.length,
+                ),
+            ],
+          ),
+  );
+}
+Widget _buildAssessmentsSection() {
+  final itemsToDisplay = _showAllAssessments
+      ? assessments
+      : assessments.take(_itemsToShow).toList();
+  final hasMore = assessments.length > _itemsToShow;
 
-  Widget _buildAssessmentsSection() {
-    return _buildSection(
-      title: 'Available Assessments',
-      icon: FontAwesomeIcons.clipboardCheck,
-      count: assessments.length,
-      child: assessments.isEmpty
-          ? _buildEmptyState(
-              icon: FontAwesomeIcons.clipboardCheck,
-              message: 'No assessments available yet.',
-            )
-          : Column(
-              children: assessments.map((assessment) {
+  return _buildSection(
+    title: 'Available Assessments',
+    icon: FontAwesomeIcons.clipboardCheck,
+    count: assessments.length,
+    child: assessments.isEmpty
+        ? _buildEmptyState(
+            icon: FontAwesomeIcons.clipboardCheck,
+            message: 'No assessments available yet.',
+          )
+        : Column(
+            children: [
+              ...itemsToDisplay.map((assessment) {
                 final now = DateTime.now();
                 bool isPastDeadline = false;
                 String? deadlineString;
@@ -1051,7 +1086,6 @@ Widget _getFileIcon(String? fileType) {
                           onPressed: isPastDeadline
                               ? null
                               : () {
-                                  // Check if it's a speaking assessment
                                   final assessmentType =
                                       assessment['assessmentType'] ??
                                       'standard_quiz';
@@ -1060,12 +1094,10 @@ Widget _getFileIcon(String? fileType) {
 
                                   bool isSpeakingAssessment = false;
 
-                                  // Check assessment type field
                                   if (assessmentType == 'speaking_assessment') {
                                     isSpeakingAssessment = true;
                                   }
 
-                                  // Also check if questions contain speaking prompts
                                   if (questions != null &&
                                       questions.isNotEmpty) {
                                     final firstQuestion = questions.first;
@@ -1124,22 +1156,35 @@ Widget _getFileIcon(String? fileType) {
                   ),
                 );
               }).toList(),
-            ),
-    );
-  }
+              if (hasMore)
+                _buildShowMoreButton(
+                  isExpanded: _showAllAssessments,
+                  onTap: () => setState(() => _showAllAssessments = !_showAllAssessments),
+                  totalCount: assessments.length,
+                ),
+            ],
+          ),
+  );
+}
 
-  Widget _buildClassMembersSection() {
-    return _buildSection(
-      title: 'Class Members',
-      icon: FontAwesomeIcons.users,
-      count: classMembers.length,
-      child: classMembers.isEmpty
-          ? _buildEmptyState(
-              icon: FontAwesomeIcons.users,
-              message: 'No other members found.',
-            )
-          : Column(
-              children: classMembers.map((member) {
+Widget _buildClassMembersSection() {
+  final itemsToDisplay = _showAllMembers
+      ? classMembers
+      : classMembers.take(_itemsToShow).toList();
+  final hasMore = classMembers.length > _itemsToShow;
+
+  return _buildSection(
+    title: 'Class Members',
+    icon: FontAwesomeIcons.users,
+    count: classMembers.length,
+    child: classMembers.isEmpty
+        ? _buildEmptyState(
+            icon: FontAwesomeIcons.users,
+            message: 'No other members found.',
+          )
+        : Column(
+            children: [
+              ...itemsToDisplay.map((member) {
                 return Container(
                   margin: const EdgeInsets.only(bottom: 8),
                   padding: const EdgeInsets.all(12),
@@ -1169,10 +1214,16 @@ Widget _getFileIcon(String? fileType) {
                   ),
                 );
               }).toList(),
-            ),
-    );
-  }
-
+              if (hasMore)
+                _buildShowMoreButton(
+                  isExpanded: _showAllMembers,
+                  onTap: () => setState(() => _showAllMembers = !_showAllMembers),
+                  totalCount: classMembers.length,
+                ),
+            ],
+          ),
+  );
+}
   Widget _buildSection({
     required String title,
     required IconData icon,
@@ -1270,4 +1321,51 @@ Widget _getFileIcon(String? fileType) {
       return 'Date N/A';
     }
   }
+}
+
+Widget _buildShowMoreButton({
+  required bool isExpanded,
+  required VoidCallback onTap,
+  required int totalCount,
+}) {
+  return Container(
+    margin: const EdgeInsets.only(top: 8),
+    child: Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            border: Border.all(color: const Color(0xFF0077B3).withOpacity(0.3)),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                isExpanded
+                    ? 'Show Less'
+                    : 'Show All ($totalCount)',
+                style: const TextStyle(
+                  color: Color(0xFF0077B3),
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(width: 8),
+              FaIcon(
+                isExpanded
+                    ? FontAwesomeIcons.chevronUp
+                    : FontAwesomeIcons.chevronDown,
+                size: 12,
+                color: const Color(0xFF0077B3),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
 }

@@ -576,36 +576,30 @@ class FirebaseService {
       return null;
     }
   }
+Future<void> deleteAssessmentWithCleanup(String assessmentId) async {
+  try {
+    // Delete the assessment
+    await _firestore
+        .collection('trainerAssessments')
+        .doc(assessmentId)
+        .delete();
 
-  Future<Map<String, dynamic>?> getStudentSubmissionDetails(
-    String submissionId,
-  ) async {
-    if (submissionId.isEmpty) {
-      _logger.w("Submission ID is missing for getStudentSubmissionDetails");
-      return null;
+    // Delete all related submissions
+    final submissionsSnapshot = await _firestore
+        .collection('studentSubmissions')
+        .where('assessmentId', isEqualTo: assessmentId)
+        .get();
+
+    for (var doc in submissionsSnapshot.docs) {
+      await doc.reference.delete();
     }
-    _logger.i("Fetching submission details for submissionId: $submissionId");
-    try {
-      final submissionRef = _firestore
-          .collection("studentSubmissions")
-          .doc(submissionId);
-      final docSnap = await submissionRef.get();
-      if (docSnap.exists) {
-        final data = docSnap.data() as Map<String, dynamic>;
-        // Convert Timestamp to DateTime if present
-        if (data['submittedAt'] is Timestamp) {
-          data['submittedAt'] = (data['submittedAt'] as Timestamp).toDate();
-        }
-        return {'id': docSnap.id, ...data};
-      } else {
-        _logger.w("Submission with ID $submissionId not found.");
-        return null;
-      }
-    } catch (e) {
-      _logger.e("Error fetching submission details for $submissionId: $e");
-      return null;
-    }
+
+    _logger.i('Deleted assessment $assessmentId and ${submissionsSnapshot.docs.length} related submissions');
+  } catch (e) {
+    _logger.e('Error deleting assessment with cleanup: $e');
+    rethrow;
   }
+}
 
   Future<Map<String, String>> uploadSpeakingAssessmentAudio(
     File audioFile,
@@ -631,105 +625,149 @@ class FirebaseService {
       throw Exception('Failed to upload audio: $e');
     }
   }
+Future<Map<String, dynamic>?> getStudentSubmissionDetails(
+  String submissionId,
+) async {
+  if (submissionId.isEmpty) {
+    _logger.w("Submission ID is missing for getStudentSubmissionDetails.");
+    return null;
+  }
 
-  Future<List<Map<String, dynamic>>> getStudentSubmissionsWithDetails(
-    String studentId,
-  ) async {
-    if (studentId.isEmpty) {
-      _logger.w("Student ID is missing for getStudentSubmissionsWithDetails.");
+  _logger.i("Fetching submission details for submissionId: $submissionId");
+
+  try {
+    final submissionDoc = await _firestore
+        .collection('studentSubmissions')
+        .doc(submissionId)
+        .get();
+
+    if (!submissionDoc.exists) {
+      _logger.w("Submission with ID $submissionId not found.");
+      return null;
+    }
+
+    Map<String, dynamic> submissionData = {
+      'id': submissionDoc.id,
+      ...submissionDoc.data()!,
+    };
+
+    // Convert Timestamp to DateTime if needed
+    if (submissionData['submittedAt'] is Timestamp) {
+      submissionData['submittedAt'] =
+          (submissionData['submittedAt'] as Timestamp).toDate();
+    }
+
+    return submissionData;
+  } catch (e) {
+    _logger.e("Error fetching submission details for $submissionId: $e");
+    return null;
+  }
+}
+Future<List<Map<String, dynamic>>> getStudentSubmissionsWithDetails(
+  String studentId,
+) async {
+  if (studentId.isEmpty) {
+    _logger.w("Student ID is missing for getStudentSubmissionsWithDetails.");
+    return [];
+  }
+  _logger.i("Fetching submissions with details for studentId: $studentId");
+  final submissionsRef = _firestore.collection("studentSubmissions");
+  final submissionsQuery = submissionsRef
+      .where("studentId", isEqualTo: studentId)
+      .orderBy("submittedAt", descending: true);
+
+  try {
+    final querySnapshot = await submissionsQuery.get();
+    if (querySnapshot.docs.isEmpty) {
+      _logger.i("No submissions found for student $studentId.");
       return [];
     }
-    _logger.i("Fetching submissions with details for studentId: $studentId");
-    final submissionsRef = _firestore.collection("studentSubmissions");
-    final submissionsQuery = submissionsRef
-        .where("studentId", isEqualTo: studentId)
-        .orderBy("submittedAt", descending: true);
 
-    try {
-      final querySnapshot = await submissionsQuery.get();
-      if (querySnapshot.docs.isEmpty) {
-        _logger.i("No submissions found for student $studentId.");
-        return [];
+    List<Map<String, dynamic>> submissionsWithDetails = [];
+
+    for (var submissionDoc in querySnapshot.docs) {
+      Map<String, dynamic> submissionData = {
+        'id': submissionDoc.id,
+        ...(submissionDoc.data()),
+      };
+
+      if (submissionData['submittedAt'] is Timestamp) {
+        submissionData['submittedAt'] =
+            (submissionData['submittedAt'] as Timestamp).toDate();
       }
 
-      List<Map<String, dynamic>> submissionsWithDetails = [];
+      // CRITICAL: Check assessmentId exists
+      if (submissionData['assessmentId'] == null) {
+        _logger.w(
+          "Submission ${submissionDoc.id} has no assessmentId. Skipping.",
+        );
+        continue;
+      }
 
-      for (var submissionDoc in querySnapshot.docs) {
-        Map<String, dynamic> submissionData = {
-          'id': submissionDoc.id,
-          ...(submissionDoc.data()),
-        };
-        if (submissionData['submittedAt'] is Timestamp) {
-          submissionData['submittedAt'] =
-              (submissionData['submittedAt'] as Timestamp).toDate();
-        }
+      // Check if assessment still exists - MOVED EARLIER
+      final assessmentDoc = await _firestore
+          .collection('trainerAssessments')
+          .doc(submissionData['assessmentId'])
+          .get();
 
-        String assessmentTitle = "Assessment Title Not Found";
-        String className = "Class Name Not Found";
-        String trainerName = "Trainer Name Not Found";
-        String? originalAssessmentTrainerId;
+      if (!assessmentDoc.exists) {
+        _logger.w(
+          "Assessment ${submissionData['assessmentId']} for submission ${submissionDoc.id} no longer exists. Skipping.",
+        );
+        continue; // Skip - don't add to results
+      }
 
-        if (submissionData['assessmentId'] != null) {
+      // Only proceed if assessment exists
+      String assessmentTitle = "Assessment Title Not Found";
+      String className = "Class Name Not Found";
+      String trainerName = "Trainer Name Not Found";
+
+      // Now fetch details - we know assessment exists
+      final assessmentData = assessmentDoc.data();
+      if (assessmentData != null) {
+        assessmentTitle = assessmentData['title'] ?? "Untitled Assessment";
+
+        if (assessmentData['classId'] != null) {
           try {
-            final assessmentDetails = await getAssessmentDetails(
-              submissionData['assessmentId'],
-            );
-            if (assessmentDetails != null) {
-              assessmentTitle =
-                  assessmentDetails['title'] ?? "Untitled Assessment";
-              originalAssessmentTrainerId = assessmentDetails['trainerId'];
-
-              if (assessmentDetails['classId'] != null) {
-                final classDetails = await getClassDetails(
-                  assessmentDetails['classId'],
+            final classDetails = await getClassDetails(assessmentData['classId']);
+            if (classDetails != null) {
+              className = classDetails['className'] ?? "Unnamed Class";
+              if (classDetails['trainerId'] != null) {
+                final trainerProfile = await getUserProfileById(
+                  classDetails['trainerId'],
                 );
-                if (classDetails != null) {
-                  className = classDetails['className'] ?? "Unnamed Class";
-                  if (classDetails['trainerId'] != null) {
-                    final trainerProfile = await getUserProfileById(
-                      classDetails['trainerId'],
-                    );
-                    if (trainerProfile != null) {
-                      trainerName =
-                          trainerProfile['displayName'] ??
-                          "${trainerProfile['firstName'] ?? ''} ${trainerProfile['lastName'] ?? ''}"
-                              .trim();
-                      if (trainerName.isEmpty) trainerName = "Unknown Trainer";
-                    }
-                  }
+                if (trainerProfile != null) {
+                  trainerName =
+                      trainerProfile['displayName'] ??
+                      "${trainerProfile['firstName'] ?? ''} ${trainerProfile['lastName'] ?? ''}"
+                          .trim();
+                  if (trainerName.isEmpty) trainerName = "Unknown Trainer";
                 }
               }
             }
           } catch (e) {
-            _logger.w(
-              "Could not fetch full details for assessmentId ${submissionData['assessmentId']}: $e",
-            );
+            _logger.w("Error fetching class/trainer details: $e");
           }
         }
-        submissionsWithDetails.add({
-          ...submissionData,
-          'assessmentTitle': assessmentTitle,
-          'className': className,
-          'trainerName': trainerName,
-        });
       }
-      _logger.i(
-        "Fetched ${submissionsWithDetails.length} submissions with details for student $studentId.",
-      );
-      return submissionsWithDetails;
-    } catch (e) {
-      _logger.e("Error fetching student submissions with details: $e");
-      if (e is FirebaseException &&
-          e.code == 'failed-precondition' &&
-          e.message!.contains("index")) {
-        _logger.e(
-          "Firestore query requires an index on 'studentSubmissions' for 'studentId' and 'submittedAt'. Please create it. The error message might contain a direct link.",
-        );
-        // Depending on your app's error handling, you might want to throw a more user-friendly error here.
-      }
-      return []; // Return empty on error
+
+      submissionsWithDetails.add({
+        ...submissionData,
+        'assessmentTitle': assessmentTitle,
+        'className': className,
+        'trainerName': trainerName,
+      });
     }
+
+    _logger.i(
+      "Fetched ${submissionsWithDetails.length} valid submissions for student $studentId.",
+    );
+    return submissionsWithDetails;
+  } catch (e) {
+    _logger.e("Error fetching student submissions with details: $e");
+    return [];
   }
+}
 
   Future<void> sendTrainerNotification(
     String trainerId,

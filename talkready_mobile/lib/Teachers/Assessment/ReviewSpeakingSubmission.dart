@@ -4,7 +4,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:logger/logger.dart';
-import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
@@ -40,7 +39,7 @@ class _ReviewSpeakingSubmissionPageState
   // Feedback State
   final TextEditingController _trainerFeedbackController =
       TextEditingController();
-  final TextEditingController _trainerScoreController = TextEditingController();
+  double? _currentScore;
   bool _isSaving = false;
 
   // Audio Player State
@@ -49,12 +48,29 @@ class _ReviewSpeakingSubmissionPageState
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
 
+
   @override
   void initState() {
     super.initState();
     _loadData();
     _setupAudioPlayerListeners();
   }
+
+Color _getScoreColor(double score) {
+  if (score >= 90) return Colors.green;
+  if (score >= 75) return Colors.blue;
+  if (score >= 60) return Colors.orange;
+  return Colors.red;
+}
+
+String _getPerformanceLabel(double score) {
+  if (score >= 95) return 'Excellent';
+  if (score >= 85) return 'Very Good';
+  if (score >= 75) return 'Good';
+  if (score >= 65) return 'Fair';
+  if (score >= 50) return 'Needs Work';
+  return 'Poor';
+}
 
   void _setupAudioPlayerListeners() {
     _audioPlayer.onPlayerStateChanged.listen((state) {
@@ -122,8 +138,7 @@ class _ReviewSpeakingSubmissionPageState
           _aiFeedback = submissionData['aiFeedback'];
           _trainerFeedbackController.text =
               submissionData['trainerFeedback'] ?? '';
-          _trainerScoreController.text =
-              submissionData['score']?.toString() ?? '';
+           _currentScore = (submissionData['score'] as num?)?.toDouble();
           _loading = false;
         });
       }
@@ -138,126 +153,134 @@ class _ReviewSpeakingSubmissionPageState
     }
   }
 
-  Future<void> _getAiEvaluation() async {
-    if (_submission?['audioUrl'] == null || _assessment?['questions'] == null) {
-      _showErrorSnackBar('Missing audio URL or assessment questions');
-      return;
-    }
-
-    final questions = _assessment!['questions'] as List;
-    if (questions.isEmpty) {
-      _showErrorSnackBar('No questions found in assessment');
-      return;
-    }
-
-    final firstQuestion = questions.first;
-    final promptText =
-        firstQuestion['promptText'] ?? firstQuestion['text'] ?? '';
-
-    if (promptText.isEmpty) {
-      _showErrorSnackBar('No prompt text found for evaluation');
-      return;
-    }
-
-    setState(() {
-      _isLoadingAiFeedback = true;
-      _error = '';
-    });
-
-    try {
-      _logger.i('Starting AI evaluation for submission ${widget.submissionId}');
-
-      final response = await http.post(
-        Uri.parse('http://192.168.254.103:5000/evaluate-speaking-contextual'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'audioUrl': _submission!['audioUrl'],
-          'promptText': promptText,
-          'evaluationContext':
-              firstQuestion['title'] ?? 'Customer service scenario',
-        }),
-      );
-
-      _logger.i('AI evaluation response status: ${response.statusCode}');
-
-      if (!mounted) return;
-
-      if (response.statusCode == 200) {
-        final feedbackResult = json.decode(response.body);
-
-        setState(() {
-          _aiFeedback = feedbackResult;
-          _isLoadingAiFeedback = false;
-        });
-
-        _logger.i('AI evaluation completed successfully');
-
-        _showSuccessSnackBar('AI evaluation completed successfully!');
-      } else {
-        final errorData = json.decode(response.body);
-        throw Exception(errorData['error'] ?? 'AI evaluation failed');
-      }
-    } catch (e) {
-      _logger.e('AI evaluation error: $e');
-      if (mounted) {
-        setState(() {
-          _error = 'AI Evaluation Error: ${e.toString()}';
-          _isLoadingAiFeedback = false;
-        });
-        _showErrorSnackBar('AI evaluation failed: ${e.toString()}');
-      }
-    }
+ Future<void> _getAiEvaluation() async {
+  if (_submission?['audioUrl'] == null || _assessment?['questions'] == null) {
+    _showErrorSnackBar('Missing audio URL or assessment questions');
+    return;
   }
 
-  Future<void> _publishFeedback() async {
-    if (_assessment == null) return;
+  final questions = _assessment!['questions'] as List;
+  if (questions.isEmpty) {
+    _showErrorSnackBar('No questions found in assessment');
+    return;
+  }
 
-    final questions = _assessment!['questions'] as List;
-    final totalPossiblePoints = questions.fold<num>(
-      0,
-      (sum, q) => sum + (q['points'] ?? 0),
+  final firstQuestion = questions.first;
+  final promptText =
+      firstQuestion['promptText'] ?? firstQuestion['text'] ?? '';
+
+  if (promptText.isEmpty) {
+    _showErrorSnackBar('No prompt text found for evaluation');
+    return;
+  }
+
+  setState(() {
+    _isLoadingAiFeedback = true;
+    _error = '';
+  });
+
+  try {
+    _logger.i('Starting AI evaluation for submission ${widget.submissionId}');
+
+    final response = await http.post(
+      Uri.parse('http://192.168.18.11:5000/evaluate-speaking-contextual'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({
+        'audioUrl': _submission!['audioUrl'],
+        'promptText': promptText,
+        'evaluationContext':
+            firstQuestion['title'] ?? 'Customer service scenario',
+      }),
     );
-    final score = double.tryParse(_trainerScoreController.text);
 
-    if (score == null) {
-      _showErrorSnackBar("Score must be a valid number.");
-      return;
-    }
+    _logger.i('AI evaluation response status: ${response.statusCode}');
 
-    if (score > totalPossiblePoints || score < 0) {
-      _showErrorSnackBar("Score must be between 0 and $totalPossiblePoints.");
-      return;
-    }
+    if (!mounted) return;
 
-    setState(() => _isSaving = true);
+    if (response.statusCode == 200) {
+      final feedbackResult = json.decode(response.body);
 
-    try {
-      final feedbackData = {
-        'aiFeedback': _aiFeedback,
-        'trainerFeedback': _trainerFeedbackController.text,
-        'score': score,
-        'isReviewed': true,
-        'reviewedAt': FieldValue.serverTimestamp(),
-      };
-
+      // Save to Firestore immediately so students can see it
       await _firestore
           .collection('studentSubmissions')
           .doc(widget.submissionId)
-          .update(feedbackData);
+          .update({
+        'aiFeedback': feedbackResult,
+        'aiFeedbackGeneratedAt': FieldValue.serverTimestamp(),
+        'hasAiFeedback': true, // Flag to easily check if AI feedback exists
+      });
 
-      if (mounted) {
-        _showSuccessSnackBar('Feedback published successfully!');
-        Navigator.pop(context);
-      }
-    } catch (e) {
-      _logger.e("Failed to publish feedback: $e");
-      _showErrorSnackBar('Failed to publish feedback: ${e.toString()}');
-    } finally {
-      if (mounted) {
-        setState(() => _isSaving = false);
-      }
+      setState(() {
+        _aiFeedback = feedbackResult;
+        _isLoadingAiFeedback = false;
+      });
+
+      _logger.i('AI evaluation completed and saved to database');
+
+      _showSuccessSnackBar('AI evaluation completed and saved!');
+    } else {
+      final errorData = json.decode(response.body);
+      throw Exception(errorData['error'] ?? 'AI evaluation failed');
+    }
+  } catch (e) {
+    _logger.e('AI evaluation error: $e');
+    if (mounted) {
+      setState(() {
+        _error = 'AI Evaluation Error: ${e.toString()}';
+        _isLoadingAiFeedback = false;
+      });
+      _showErrorSnackBar('AI evaluation failed: ${e.toString()}');
     }
   }
+}
+
+Future<void> _publishFeedback() async {
+  if (_assessment == null) return;
+
+  // NEW: Validate that score has been set
+  if (_currentScore == null) {
+    _showErrorSnackBar("Please set a score before publishing feedback.");
+    return;
+  }
+
+  final score = _currentScore!;
+
+  // Validate score is within 0-100 range
+  if (score > 100 || score < 0) {
+    _showErrorSnackBar("Score must be between 0 and 100.");
+    return;
+  }
+
+  setState(() => _isSaving = true);
+
+  try {
+    final feedbackData = {
+      'aiFeedback': _aiFeedback,
+      'trainerFeedback': _trainerFeedbackController.text,
+      'score': score,
+      'totalPossiblePoints': 100, // Fixed to 100 for percentage-based scoring
+      'isReviewed': true,
+      'reviewedAt': FieldValue.serverTimestamp(),
+    };
+
+    await _firestore
+        .collection('studentSubmissions')
+        .doc(widget.submissionId)
+        .update(feedbackData);
+
+    if (mounted) {
+      _showSuccessSnackBar('Feedback published successfully!');
+      Navigator.pop(context);
+    }
+  } catch (e) {
+    _logger.e("Failed to publish feedback: $e");
+    _showErrorSnackBar('Failed to publish feedback: ${e.toString()}');
+  } finally {
+    if (mounted) {
+      setState(() => _isSaving = false);
+    }
+  }
+}
 
   void _showErrorSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -283,7 +306,7 @@ class _ReviewSpeakingSubmissionPageState
   void dispose() {
     _audioPlayer.dispose();
     _trainerFeedbackController.dispose();
-    _trainerScoreController.dispose();
+
     super.dispose();
   }
 
@@ -292,6 +315,59 @@ class _ReviewSpeakingSubmissionPageState
     final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
     return "$minutes:$seconds";
   }
+
+ Widget _buildQuickScoreButton(String label, double score) {
+  final isSelected = _currentScore != null && (_currentScore! - score).abs() < 1;
+  return Expanded(
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: OutlinedButton(
+        onPressed: () {
+          setState(() {
+            _currentScore = score;
+          });
+        },
+        style: OutlinedButton.styleFrom(
+          backgroundColor: isSelected
+              ? _getScoreColor(score).withOpacity(0.1)
+              : Colors.white,
+          side: BorderSide(
+            color: isSelected
+                ? _getScoreColor(score)
+                : Colors.grey[300]!,
+            width: isSelected ? 2 : 1,
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: isSelected ? _getScoreColor(score) : Colors.grey[600],
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              '${score.round()}',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: isSelected ? _getScoreColor(score) : Colors.grey[800],
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
 
   Widget _buildAiFeedbackDisplay() {
     if (_aiFeedback == null) return const SizedBox.shrink();
@@ -700,7 +776,7 @@ class _ReviewSpeakingSubmissionPageState
   }
 
   Widget _buildScoreCard(String label, num score) {
-    final normalizedScore = (score as num).round().clamp(0, 100);
+    final normalizedScore = (score).round().clamp(0, 100);
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
@@ -970,80 +1046,115 @@ class _ReviewSpeakingSubmissionPageState
     );
   }
 
-  Widget _buildSubmissionCard(Map<String, dynamic>? prompt) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF14B8A6).withOpacity(0.08),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-            spreadRadius: 0,
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xFF14B8A6), Color(0xFF0D9488)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Icon(
-                      Icons.assignment,
-                      color: Colors.white,
-                      size: 24,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  const Text(
-                    "Student's Submission",
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                ],
+ Widget _buildSubmissionCard(Map<String, dynamic>? prompt) {
+  return Container(
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      boxShadow: [
+        BoxShadow(
+          color: const Color(0xFF14B8A6).withOpacity(0.08),
+          blurRadius: 20,
+          offset: const Offset(0, 8),
+          spreadRadius: 0,
+        ),
+      ],
+    ),
+    child: ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFF14B8A6), Color(0xFF0D9488)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.assignment,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Text(
+                  "Student's Submission",
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // FIRST: Speaking Prompt Title and Description (the actual scenario/question)
+                Row(
+                  children: [
+                    Icon(
+                      Icons.quiz_outlined,
+                      color: const Color(0xFF0F766E),
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      prompt?['title'] ?? 'Speaking Prompt',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: Color(0xFF0F766E),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (prompt?['promptText'] != null || prompt?['text'] != null) ...[
+                  Text(
+                    prompt!['promptText'] ?? prompt['text'] ?? '',
+                    style: const TextStyle(
+                      color: Color(0xFF374151),
+                      fontSize: 15,
+                      height: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                ],
+
+                // SECOND: Reference Text (what student should say)
+                if (prompt?['referenceText'] != null &&
+                    prompt!['referenceText'].toString().isNotEmpty) ...[
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
-                          const Color(0xFF14B8A6).withOpacity(0.1),
-                          const Color(0xFF0D9488).withOpacity(0.05),
+                          Colors.purple.withOpacity(0.1),
+                          Colors.purple.withOpacity(0.05),
                         ],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: const Color(0xFF14B8A6).withOpacity(0.2),
+                        color: Colors.purple.withOpacity(0.3),
                         width: 1,
                       ),
                     ),
@@ -1053,60 +1164,62 @@ class _ReviewSpeakingSubmissionPageState
                         Row(
                           children: [
                             Icon(
-                              Icons.quiz_outlined,
-                              color: const Color(0xFF0F766E),
+                              Icons.chat_bubble_outline,
+                              color: Colors.purple.shade700,
                               size: 20,
                             ),
                             const SizedBox(width: 8),
-                            Text(
-                              prompt?['title'] ?? 'Speaking Prompt',
-                              style: const TextStyle(
+                            const Text(
+                              "What the student should say:",
+                              style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 16,
-                                color: Color(0xFF0F766E),
+                                color: Colors.purple,
                               ),
                             ),
                           ],
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          prompt?['promptText'] ??
-                              prompt?['text'] ??
-                              'Speaking prompt will appear here',
+                          prompt['referenceText'],
                           style: const TextStyle(
                             color: Color(0xFF374151),
                             fontSize: 15,
                             height: 1.5,
+                            fontStyle: FontStyle.italic,
                           ),
                         ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 24),
-                  Row(
-                    children: [
-                      Icon(Icons.mic, color: const Color(0xFF0F766E), size: 20),
-                      const SizedBox(width: 8),
-                      const Text(
-                        "Student's Recording:",
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          color: Color(0xFF0F766E),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  _buildAudioPlayer(),
                 ],
-              ),
+
+                // Student's Recording
+                Row(
+                  children: [
+                    Icon(Icons.mic, color: const Color(0xFF0F766E), size: 20),
+                    const SizedBox(width: 8),
+                    const Text(
+                      "Student's Recording:",
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: Color(0xFF0F766E),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                _buildAudioPlayer(),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildAudioPlayer() {
     final audioUrl = _submission?['audioUrl'];
@@ -1453,61 +1566,136 @@ class _ReviewSpeakingSubmissionPageState
                           ),
                         ),
                         const SizedBox(height: 20),
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.star_outline,
-                              color: const Color(0xFF0F766E),
-                              size: 20,
-                            ),
-                            const SizedBox(width: 8),
-                            const Text(
-                              'Overall Score (out of 10)',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                                color: Color(0xFF0F766E),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: _trainerScoreController,
-                          keyboardType: TextInputType.number,
-                          decoration: InputDecoration(
-                            hintText: 'e.g., 8.5',
-                            hintStyle: TextStyle(
-                              color: Colors.grey.shade500,
-                              fontSize: 15,
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: const Color(0xFF14B8A6).withOpacity(0.3),
-                              ),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(
-                                color: const Color(0xFF14B8A6).withOpacity(0.3),
-                              ),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(
-                                color: Color(0xFF14B8A6),
-                                width: 2,
-                              ),
-                            ),
-                            filled: true,
-                            fillColor: Colors.white,
-                            prefixIcon: Icon(
-                              Icons.grade,
-                              color: const Color(0xFF14B8A6),
-                            ),
-                          ),
-                        ),
+                     Column(
+  crossAxisAlignment: CrossAxisAlignment.start,
+  children: [
+    Row(
+      children: [
+        Icon(
+          Icons.star_outline,
+          color: const Color(0xFF0F766E),
+          size: 20,
+        ),
+        const SizedBox(width: 8),
+        const Text(
+          'Overall Score',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+            color: Color(0xFF0F766E),
+          ),
+        ),
+      ],
+    ),
+    const SizedBox(height: 20),
+
+    // Score Display
+    Center(
+  child: Container(
+    padding: const EdgeInsets.all(20),
+    decoration: BoxDecoration(
+      color: _currentScore == null
+          ? Colors.grey.shade200
+          : _getScoreColor(_currentScore!).withOpacity(0.1),
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(
+        color: _currentScore == null
+            ? Colors.grey.shade400
+            : _getScoreColor(_currentScore!),
+        width: 2,
+      ),
+    ),
+    child: Column(
+      children: [
+        Text(
+          _currentScore == null ? '--' : '${_currentScore!.round()}',
+          style: TextStyle(
+            fontSize: 48,
+            fontWeight: FontWeight.bold,
+            color: _currentScore == null
+                ? Colors.grey.shade600
+                : _getScoreColor(_currentScore!),
+          ),
+        ),
+        Text(
+          'out of 100',
+          style: TextStyle(
+            fontSize: 14,
+            color: Colors.grey[600],
+          ),
+        ),
+        if (_currentScore != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            _getPerformanceLabel(_currentScore!),
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: _getScoreColor(_currentScore!),
+            ),
+          ),
+        ] else ...[
+          const SizedBox(height: 4),
+          Text(
+            'Move slider to set score',
+            style: TextStyle(
+              fontSize: 12,
+              fontStyle: FontStyle.italic,
+              color: Colors.orange.shade700,
+            ),
+          ),
+        ],
+      ],
+    ),
+  ),
+),
+
+    const SizedBox(height: 20),
+
+   // Slider
+SliderTheme(
+  data: SliderTheme.of(context).copyWith(
+    activeTrackColor: _currentScore == null
+        ? const Color(0xFF14B8A6)
+        : _getScoreColor(_currentScore!),
+    inactiveTrackColor: Colors.grey[300],
+    thumbColor: _currentScore == null
+        ? const Color(0xFF14B8A6)
+        : _getScoreColor(_currentScore!),
+    overlayColor: (_currentScore == null
+        ? const Color(0xFF14B8A6)
+        : _getScoreColor(_currentScore!)).withOpacity(0.2),
+    trackHeight: 8,
+    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 12),
+  ),
+  child: Slider(
+    value: _currentScore ?? 50.0,
+    min: 0,
+    max: 100,
+    divisions: 100,
+    label: _currentScore == null ? 'Set score' : '${_currentScore!.round()}',
+    onChanged: (value) {
+      setState(() {
+        _currentScore = value;
+      });
+    },
+  ),
+),
+
+    // Quick Score Buttons
+    const SizedBox(height: 12),
+    Row(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: [
+        _buildQuickScoreButton('Poor', 50),
+        _buildQuickScoreButton('Fair', 65),
+        _buildQuickScoreButton('Good', 75),
+        _buildQuickScoreButton('Great', 85),
+        _buildQuickScoreButton('Excellent', 95),
+      ],
+    ),
+  ],
+),
                       ],
                     ),
                   ),

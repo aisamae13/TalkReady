@@ -35,64 +35,90 @@ class _ViewAssessmentResultsPageState extends State<ViewAssessmentResultsPage> {
     _fetchData();
   }
 
-  Future<void> _fetchData() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
+Future<void> _fetchData() async {
+  setState(() {
+    _isLoading = true;
+    _error = null;
+  });
 
-    try {
-      // 1. Fetch the assessment details
-      final assessmentDoc = await FirebaseFirestore.instance
-          .collection('trainerAssessments')
-          .doc(widget.assessmentId)
+  try {
+    // 1. Fetch the assessment details
+    final assessmentDoc = await FirebaseFirestore.instance
+        .collection('trainerAssessments')
+        .doc(widget.assessmentId)
+        .get();
+
+    if (!assessmentDoc.exists) {
+      throw Exception("Assessment not found.");
+    }
+    _assessmentDetails = assessmentDoc.data();
+
+    // 2. Determine the classId from the assessment
+    final classId = _assessmentDetails?['classId'] as String?;
+
+    // 3. Fetch the className using the classId
+    if (widget.className != null) {
+      _fetchedClassName = widget.className;
+    } else if (classId != null) {
+      final classDoc = await FirebaseFirestore.instance
+          .collection('trainerClass')
+          .doc(classId)
           .get();
+      _fetchedClassName = classDoc.data()?['className'] as String?;
+    } else {
+      _fetchedClassName = 'N/A';
+    }
 
-      if (!assessmentDoc.exists) {
-        throw Exception("Assessment not found.");
-      }
-      _assessmentDetails = assessmentDoc.data();
+    // 4. Fetch student submissions with their IDs
+    final submissionQuery = await FirebaseFirestore.instance
+        .collection('studentSubmissions')
+        .where('assessmentId', isEqualTo: widget.assessmentId)
+        .get();
 
-      // 2. Determine the classId from the assessment
-      final classId = _assessmentDetails?['classId'] as String?;
+    // 5. For each submission, fetch the student's email
+    _submissions = [];
+    for (var doc in submissionQuery.docs) {
+      final submissionData = {'id': doc.id, ...doc.data()};
 
-      // 3. Fetch the className using the classId
-      // Use the className from the widget first as a fallback
-      if (widget.className != null) {
-        _fetchedClassName = widget.className;
-      } else if (classId != null) {
-        final classDoc = await FirebaseFirestore.instance
-            .collection('trainerClass')
-            .doc(classId)
-            .get();
-        _fetchedClassName = classDoc.data()?['className'] as String?;
+      // Fetch student email
+      final studentId = submissionData['studentId'];
+      if (studentId != null) {
+        try {
+          final studentDoc = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(studentId)
+              .get();
+
+          if (studentDoc.exists) {
+            final studentData = studentDoc.data() as Map<String, dynamic>;
+            submissionData['studentEmail'] = studentData['email'] ?? 'No Email';
+          } else {
+            submissionData['studentEmail'] = 'No Email';
+          }
+        } catch (e) {
+          submissionData['studentEmail'] = 'No Email';
+        }
       } else {
-        _fetchedClassName = 'N/A';
+        submissionData['studentEmail'] = 'No Email';
       }
 
-      // 4. Fetch student submissions with their IDs
-      final submissionQuery = await FirebaseFirestore.instance
-          .collection('studentSubmissions')
-          .where('assessmentId', isEqualTo: widget.assessmentId)
-          .get();
+      _submissions.add(submissionData);
+    }
 
-      _submissions = submissionQuery.docs.map((doc) {
-        return {'id': doc.id, ...doc.data()};
-      }).toList();
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = 'Failed to load data: $e';
-        });
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+  } catch (e) {
+    if (mounted) {
+      setState(() {
+        _error = 'Failed to load data: $e';
+      });
+    }
+  } finally {
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
+}
 
   String _formatTimestamp(dynamic timestamp) {
     if (timestamp == null) {
@@ -644,7 +670,7 @@ class _ViewAssessmentResultsPageState extends State<ViewAssessmentResultsPage> {
                                         borderRadius: BorderRadius.circular(12),
                                       ),
                                       child: Icon(
-                                        assessmentType == 'speaking_assessment' 
+                                        assessmentType == 'speaking_assessment'
                                           ? Icons.mic
                                           : Icons.person,
                                         color: const Color(0xFF0F766E),
@@ -680,17 +706,17 @@ class _ViewAssessmentResultsPageState extends State<ViewAssessmentResultsPage> {
                                               vertical: 2,
                                             ),
                                             decoration: BoxDecoration(
-                                              color: assessmentType == 'speaking_assessment' 
+                                              color: assessmentType == 'speaking_assessment'
                                                 ? Colors.purple.withOpacity(0.1)
                                                 : const Color(0xFF14B8A6).withOpacity(0.1),
                                               borderRadius: BorderRadius.circular(8),
                                             ),
                                             child: Text(
-                                              assessmentType == 'speaking_assessment' 
-                                                ? 'Speaking' 
+                                              assessmentType == 'speaking_assessment'
+                                                ? 'Speaking'
                                                 : 'Standard',
                                               style: TextStyle(
-                                                color: assessmentType == 'speaking_assessment' 
+                                                color: assessmentType == 'speaking_assessment'
                                                   ? Colors.purple.shade700
                                                   : const Color(0xFF0F766E),
                                                 fontSize: 11,
@@ -945,7 +971,7 @@ class _ViewAssessmentResultsPageState extends State<ViewAssessmentResultsPage> {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isCorrect 
+          color: isCorrect
             ? const Color(0xFF10B981).withOpacity(0.3)
             : Colors.red.withOpacity(0.3),
           width: 2,
@@ -974,14 +1000,14 @@ class _ViewAssessmentResultsPageState extends State<ViewAssessmentResultsPage> {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: isCorrect 
+                    color: isCorrect
                       ? const Color(0xFF10B981).withOpacity(0.15)
                       : Colors.red.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(
                     isCorrect ? Icons.check : Icons.close,
-                    color: isCorrect 
+                    color: isCorrect
                       ? const Color(0xFF059669)
                       : Colors.red.shade700,
                     size: 18,
@@ -996,7 +1022,7 @@ class _ViewAssessmentResultsPageState extends State<ViewAssessmentResultsPage> {
                         'Question $questionNumber',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
-                          color: isCorrect 
+                          color: isCorrect
                             ? const Color(0xFF059669)
                             : Colors.red.shade700,
                           fontSize: 14,

@@ -338,7 +338,6 @@ class _TakeAssessmentPageState extends State<TakeAssessmentPage>
       });
     }
   }
-
   Future<Map<String, dynamic>> _submitToFirebase(String studentId) async {
     // Get student details
     String studentName = "Unknown Student";
@@ -349,10 +348,10 @@ class _TakeAssessmentPageState extends State<TakeAssessmentPage>
       if (userDoc.exists) {
         final userData = userDoc.data()!;
         studentName =
-            userData['displayName'] ??
-            '${userData['firstName'] ?? ''} ${userData['lastName'] ?? ''}'
-                .trim();
-        if (studentName.isEmpty) studentName = "Unknown Student";
+            '${userData['firstName'] ?? ''} ${userData['lastName'] ?? ''}'.trim();
+        if (studentName.isEmpty) {
+          studentName = userData['displayName'] ?? "Unknown Student";
+        }
         studentEmail = userData['email'] ?? "No email";
       }
     } catch (e) {

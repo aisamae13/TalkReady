@@ -241,17 +241,16 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
                       .doc(trainerId)
                       .get();
 
-                  if (trainerDoc.exists) {
+                    if (trainerDoc.exists) {
                     Map<String, dynamic> trainerData =
-                        trainerDoc.data() as Map<String, dynamic>;
+                      trainerDoc.data() as Map<String, dynamic>;
                     classData['trainerName'] =
-                        trainerData['displayName'] ??
-                        '${trainerData['firstName'] ?? ''} ${trainerData['lastName'] ?? ''}'
-                            .trim();
+                      '${trainerData['firstName'] ?? ''} ${trainerData['lastName'] ?? ''}'
+                        .trim();
                     if (classData['trainerName'].toString().isEmpty) {
-                      classData['trainerName'] = 'Unknown Trainer';
+                      classData['trainerName'] = trainerData['displayName'] ?? 'Unknown Trainer';
                     }
-                  } else {
+                    } else {
                     classData['trainerName'] = 'Unknown Trainer';
                   }
                 } catch (e) {
@@ -620,8 +619,6 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
                           ),
                         ],
                       ),
-
-                      const SizedBox(height: 16),
 
                       // Content
                       if (loading)

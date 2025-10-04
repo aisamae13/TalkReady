@@ -151,7 +151,7 @@ class SpeakingPrompt {
     required this.title,
     required this.promptText,
     required this.referenceText,
-    this.points = 10,
+    this.points = 100,
     this.requiresReview = true, // Speaking assessments always require review
   });
 

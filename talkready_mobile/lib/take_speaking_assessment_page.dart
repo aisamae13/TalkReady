@@ -334,21 +334,20 @@ class _TakeSpeakingAssessmentPageState extends State<TakeSpeakingAssessmentPage>
       final uploadResult = await _uploadAudioFile(audioFile, user.uid);
       final downloadURL = uploadResult['downloadURL']!;
       final filePath = uploadResult['filePath']!;
-
       // Get student details
-      String studentName = user.displayName ?? "Unknown Student";
+      String studentName = "Unknown Student";
       try {
         final userDoc = await _firestore
-            .collection('users')
-            .doc(user.uid)
-            .get();
+        .collection('users')
+        .doc(user.uid)
+        .get();
         if (userDoc.exists) {
           final userData = userDoc.data()!;
           studentName =
-              userData['displayName'] ??
-              '${userData['firstName'] ?? ''} ${userData['lastName'] ?? ''}'
-                  .trim();
-          if (studentName.isEmpty) studentName = "Unknown Student";
+          '${userData['firstName'] ?? ''} ${userData['lastName'] ?? ''}'.trim();
+          if (studentName.isEmpty) {
+        studentName = userData['displayName'] ?? "Unknown Student";
+          }
         }
       } catch (e) {
         _logger.w("Could not fetch student name: $e");
