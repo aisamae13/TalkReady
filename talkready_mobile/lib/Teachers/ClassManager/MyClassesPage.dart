@@ -9,15 +9,20 @@ import 'package:talkready_mobile/firebase_service.dart';
 import 'ClassListItem.dart';
 import 'CreateClassForm.dart';
 import 'ManageClassContent.dart';
+import '../TrainerClassDashboardPage.dart';
 
 // Keep your existing Firebase service functions unchanged as fallback
-Future<List<Map<String, dynamic>>> getTrainerClassesFromService(String trainerId) async {
+Future<List<Map<String, dynamic>>> getTrainerClassesFromService(
+  String trainerId,
+) async {
   final snapshot = await FirebaseFirestore.instance
       .collection('trainerClass')
       .where('trainerId', isEqualTo: trainerId)
       .orderBy('createdAt', descending: true)
       .get();
-  final list = snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
+  final list = snapshot.docs
+      .map((doc) => {'id': doc.id, ...doc.data()})
+      .toList();
   // Ensure we have a robust client-side sort fallback in case createdAt is missing or not comparable
   list.sort((a, b) {
     DateTime dateA = DateTime.fromMillisecondsSinceEpoch(0);
@@ -25,12 +30,16 @@ Future<List<Map<String, dynamic>>> getTrainerClassesFromService(String trainerId
     final ca = a['createdAt'];
     final cb = b['createdAt'];
     try {
-      if (ca is Timestamp) dateA = ca.toDate();
-      else if (ca is DateTime) dateA = ca;
+      if (ca is Timestamp)
+        dateA = ca.toDate();
+      else if (ca is DateTime)
+        dateA = ca;
     } catch (_) {}
     try {
-      if (cb is Timestamp) dateB = cb.toDate();
-      else if (cb is DateTime) dateB = cb;
+      if (cb is Timestamp)
+        dateB = cb.toDate();
+      else if (cb is DateTime)
+        dateB = cb;
     } catch (_) {}
     // newest first
     return dateB.compareTo(dateA);
@@ -39,7 +48,10 @@ Future<List<Map<String, dynamic>>> getTrainerClassesFromService(String trainerId
 }
 
 Future<void> deleteClassFromService(String classId) async {
-  await FirebaseFirestore.instance.collection('trainerClass').doc(classId).delete();
+  await FirebaseFirestore.instance
+      .collection('trainerClass')
+      .doc(classId)
+      .delete();
 }
 
 class MyClassesPage extends StatefulWidget {
@@ -49,7 +61,8 @@ class MyClassesPage extends StatefulWidget {
   _MyClassesPageState createState() => _MyClassesPageState();
 }
 
-class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateMixin {
+class _MyClassesPageState extends State<MyClassesPage>
+    with TickerProviderStateMixin {
   final User? _currentUser = FirebaseAuth.instance.currentUser;
   final _searchController = TextEditingController();
 
@@ -84,48 +97,53 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
     );
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.3),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
-    );
+    _slideAnimation =
+        Tween<Offset>(begin: const Offset(0, 0.3), end: Offset.zero).animate(
+          CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
+        );
 
     // Use realtime sync as primary source for logged-in trainers.
     if (_currentUser != null) {
       try {
         // start realtime sync and subscribe to classes stream
         _firebaseService.startRealtimeSync(trainerId: _currentUser!.uid);
-        _classesSub = _firebaseService.classesStream.listen((data) {
-          if (!mounted) return;
-          // robust client-side sort fallback (newest first)
-          data.sort((a, b) {
-            DateTime dateA = DateTime.fromMillisecondsSinceEpoch(0);
-            DateTime dateB = DateTime.fromMillisecondsSinceEpoch(0);
-            final ca = a['createdAt'];
-            final cb = b['createdAt'];
-            try {
-              if (ca is Timestamp) dateA = ca.toDate();
-              else if (ca is DateTime) dateA = ca;
-            } catch (_) {}
-            try {
-              if (cb is Timestamp) dateB = cb.toDate();
-              else if (cb is DateTime) dateB = cb;
-            } catch (_) {}
-            return dateB.compareTo(dateA);
-          });
+        _classesSub = _firebaseService.classesStream.listen(
+          (data) {
+            if (!mounted) return;
+            // robust client-side sort fallback (newest first)
+            data.sort((a, b) {
+              DateTime dateA = DateTime.fromMillisecondsSinceEpoch(0);
+              DateTime dateB = DateTime.fromMillisecondsSinceEpoch(0);
+              final ca = a['createdAt'];
+              final cb = b['createdAt'];
+              try {
+                if (ca is Timestamp)
+                  dateA = ca.toDate();
+                else if (ca is DateTime)
+                  dateA = ca;
+              } catch (_) {}
+              try {
+                if (cb is Timestamp)
+                  dateB = cb.toDate();
+                else if (cb is DateTime)
+                  dateB = cb;
+              } catch (_) {}
+              return dateB.compareTo(dateA);
+            });
 
-          setState(() {
-            _classes = List.from(data);
-            _filteredClasses = List.from(_classes);
-            _fadeController.forward();
-            _slideController.forward();
-            _error = null;
-            _loading = false;
-          });
-        }, onError: (e) {
-          if (mounted) setState(() => _error = "Failed to sync classes: $e");
-        });
+            setState(() {
+              _classes = List.from(data);
+              _filteredClasses = List.from(_classes);
+              _fadeController.forward();
+              _slideController.forward();
+              _error = null;
+              _loading = false;
+            });
+          },
+          onError: (e) {
+            if (mounted) setState(() => _error = "Failed to sync classes: $e");
+          },
+        );
       } catch (e) {
         // If realtime setup fails, fall back to one-shot fetch
         if (mounted) {
@@ -200,10 +218,14 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
       _filteredClasses = List.from(_classes);
     } else {
       _filteredClasses = _classes.where((classItem) {
-        final className = classItem['className']?.toString().toLowerCase() ?? '';
+        final className =
+            classItem['className']?.toString().toLowerCase() ?? '';
         final subject = classItem['subject']?.toString().toLowerCase() ?? '';
-        final description = classItem['description']?.toString().toLowerCase() ?? '';
-        return className.contains(query) || subject.contains(query) || description.contains(query);
+        final description =
+            classItem['description']?.toString().toLowerCase() ?? '';
+        return className.contains(query) ||
+            subject.contains(query) ||
+            description.contains(query);
       }).toList();
     }
 
@@ -222,7 +244,9 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           title: Row(
             children: [
               Container(
@@ -248,7 +272,10 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
           actions: <Widget>[
             TextButton(
               style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 10,
+                ),
               ),
               child: const Text('Cancel'),
               onPressed: () => Navigator.of(context).pop(false),
@@ -257,16 +284,16 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
                 gradient: LinearGradient(
-                  colors: [
-                    const Color(0xFFFF6B6B),
-                    const Color(0xFFFF5252),
-                  ],
+                  colors: [const Color(0xFFFF6B6B), const Color(0xFFFF5252)],
                 ),
               ),
               child: TextButton(
                 style: TextButton.styleFrom(
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 10,
+                  ),
                 ),
                 child: const Text('Delete'),
                 onPressed: () => Navigator.of(context).pop(true),
@@ -294,12 +321,15 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
               ),
               backgroundColor: const Color(0xFF10B981),
               behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
           );
         }
       } catch (e) {
-        if (mounted) setState(() => _error = "Failed to delete class: ${e.toString()}");
+        if (mounted)
+          setState(() => _error = "Failed to delete class: ${e.toString()}");
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -307,12 +337,18 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
                 children: [
                   Icon(FontAwesomeIcons.xmark, color: Colors.white),
                   const SizedBox(width: 12),
-                  Expanded(child: Text('Failed to delete class "$className": ${e.toString()}')),
+                  Expanded(
+                    child: Text(
+                      'Failed to delete class "$className": ${e.toString()}',
+                    ),
+                  ),
                 ],
               ),
               backgroundColor: const Color(0xFFFF6B6B),
               behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
           );
         }
@@ -332,9 +368,7 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
         appBar: _buildModernAppBar(),
         body: Container(
           decoration: _buildBackgroundGradient(),
-          child: SafeArea(
-            child: _buildLoadingScreen(),
-          ),
+          child: SafeArea(child: _buildLoadingScreen()),
         ),
       );
     }
@@ -354,7 +388,8 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
                 Expanded(child: _buildErrorWidget(_error!))
               else if (_classes.isEmpty)
                 Expanded(child: _buildEmptyState())
-              else if (_filteredClasses.isEmpty && _searchController.text.isNotEmpty)
+              else if (_filteredClasses.isEmpty &&
+                  _searchController.text.isNotEmpty)
                 Expanded(child: _buildNoResultsState())
               else
                 Expanded(child: _buildClassesList()),
@@ -451,10 +486,7 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
         controller: _searchController,
         decoration: InputDecoration(
           hintText: "Search classes by name, subject, or description...",
-          hintStyle: TextStyle(
-            color: const Color(0xFF64748B),
-            fontSize: 15,
-          ),
+          hintStyle: TextStyle(color: const Color(0xFF64748B), fontSize: 15),
           prefixIcon: Container(
             margin: const EdgeInsets.all(12),
             padding: const EdgeInsets.all(8),
@@ -489,7 +521,10 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
                 )
               : null,
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+          contentPadding: const EdgeInsets.symmetric(
+            vertical: 16,
+            horizontal: 20,
+          ),
         ),
         style: TextStyle(
           fontSize: 15,
@@ -529,7 +564,9 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
               ),
               child: CircularProgressIndicator(
                 strokeWidth: 3,
-                valueColor: AlwaysStoppedAnimation<Color>(const Color(0xFF8B5CF6)),
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  const Color(0xFF8B5CF6),
+                ),
               ),
             ),
             const SizedBox(height: 24),
@@ -646,7 +683,9 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
                     onPressed: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => const CreateClassForm()),
+                        MaterialPageRoute(
+                          builder: (context) => const CreateClassForm(),
+                        ),
                       );
                       // No .then(_fetchClasses) -- let the realtime stream update the UI!
                     },
@@ -654,7 +693,10 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
                       backgroundColor: Colors.transparent,
                       foregroundColor: Colors.white,
                       elevation: 0,
-                      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 16,
+                        horizontal: 24,
+                      ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
                       ),
@@ -727,10 +769,7 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(14),
                 gradient: LinearGradient(
-                  colors: [
-                    const Color(0xFF64748B),
-                    const Color(0xFF475569),
-                  ],
+                  colors: [const Color(0xFF64748B), const Color(0xFF475569)],
                 ),
               ),
               child: ElevatedButton.icon(
@@ -744,7 +783,10 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
                   backgroundColor: Colors.transparent,
                   foregroundColor: Colors.white,
                   elevation: 0,
-                  padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 14,
+                    horizontal: 20,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
                   ),
@@ -815,10 +857,7 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(14),
                 gradient: LinearGradient(
-                  colors: [
-                    const Color(0xFF8B5CF6),
-                    const Color(0xFF6366F1),
-                  ],
+                  colors: [const Color(0xFF8B5CF6), const Color(0xFF6366F1)],
                 ),
               ),
               child: ElevatedButton.icon(
@@ -832,7 +871,10 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
                   backgroundColor: Colors.transparent,
                   foregroundColor: Colors.white,
                   elevation: 0,
-                  padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 14,
+                    horizontal: 20,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
                   ),
@@ -864,13 +906,11 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
                 curve: Curves.easeOutCubic,
                 child: GestureDetector(
                   onTap: () {
-                    final id = classData['id'] as String;
-                    // Use the same service instance to set active class
-                    _firebaseService.setActiveClass(id);
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => ManageClassContentPage(classId: id),
+                        builder: (context) =>
+                            TrainerClassDashboardPage(classId: classData['id']),
                       ),
                     );
                   },
@@ -892,10 +932,7 @@ class _MyClassesPageState extends State<MyClassesPage> with TickerProviderStateM
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
         gradient: LinearGradient(
-          colors: [
-            const Color(0xFF8B5CF6),
-            const Color(0xFF6366F1),
-          ],
+          colors: [const Color(0xFF8B5CF6), const Color(0xFF6366F1)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),

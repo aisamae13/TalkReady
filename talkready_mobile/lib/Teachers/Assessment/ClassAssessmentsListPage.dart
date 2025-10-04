@@ -1,401 +1,1059 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
-import 'CreateAssessmentPage.dart';
-import 'ViewAssessmentResultsPage.dart';
+import 'dart:async';
+import '../Assessment/CreateAssessmentPage.dart';
+import '../Assessment/EditAssessmentPage.dart';
+import '../Assessment/ViewAssessmentResultsPage.dart';
 
 class ClassAssessmentsListPage extends StatefulWidget {
   final String classId;
-  const ClassAssessmentsListPage({required this.classId, super.key});
+
+  const ClassAssessmentsListPage({super.key, required this.classId});
 
   @override
-  State<ClassAssessmentsListPage> createState() => _ClassAssessmentsListPageState();
+  State<ClassAssessmentsListPage> createState() =>
+      _ClassAssessmentsListPageState();
 }
 
-class _ClassAssessmentsListPageState extends State<ClassAssessmentsListPage> {
-  bool loading = true;
-  String? error;
-  List<Map<String, dynamic>> assessments = [];
-  Map<String, dynamic>? classDetails;
+class _ClassAssessmentsListPageState extends State<ClassAssessmentsListPage>
+    with TickerProviderStateMixin {
+  final User? _currentUser = FirebaseAuth.instance.currentUser;
 
-  // Add stream subscriptions for real-time updates
-  late Stream<QuerySnapshot> _assessmentsStream;
-  late Stream<DocumentSnapshot> _classStream;
+  Map<String, dynamic>? _classDetails;
+  List<Map<String, dynamic>> _assessments = [];
+  bool _loading = true;
+  String? _error;
+  String? _actionError;
+  String? _actionSuccess;
+
+  // Stream subscriptions for real-time updates
+  StreamSubscription<DocumentSnapshot>? _classSubscription;
+  StreamSubscription<QuerySnapshot>? _assessmentsSubscription;
+
+  // Animation controllers
+  late AnimationController _fadeController;
+  late AnimationController _slideController;
+  late Animation<double> _fadeAnimation;
+  late Animation<Offset> _slideAnimation;
 
   @override
   void initState() {
     super.initState();
-    _initializeStreams();
-    fetchClassDetails(); // Fetch class details once
+    _initializeAnimations();
+    _setupRealtimeListeners();
   }
 
-  void _initializeStreams() {
-    // Real-time stream for assessments
-    _assessmentsStream = FirebaseFirestore.instance
+  void _initializeAnimations() {
+    _fadeController = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    );
+    _slideController = AnimationController(
+      duration: const Duration(milliseconds: 600),
+      vsync: this,
+    );
+
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
+    );
+    _slideAnimation =
+        Tween<Offset>(begin: const Offset(0, 0.3), end: Offset.zero).animate(
+          CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
+        );
+  }
+
+  @override
+  void dispose() {
+    _fadeController.dispose();
+    _slideController.dispose();
+    _classSubscription?.cancel();
+    _assessmentsSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _setupRealtimeListeners() {
+    if (_currentUser == null) {
+      setState(() {
+        _error = "Please log in to view assessments.";
+        _loading = false;
+      });
+      return;
+    }
+
+    // Listen to class details
+    _classSubscription = FirebaseFirestore.instance
+        .collection('trainerClass')
+        .doc(widget.classId)
+        .snapshots()
+        .listen(
+          (classDoc) {
+            if (!mounted) return;
+
+            if (!classDoc.exists) {
+              setState(() {
+                _error = "Class not found.";
+                _loading = false;
+              });
+              return;
+            }
+
+            final classData = {'id': classDoc.id, ...classDoc.data()!};
+
+            // Check authorization
+            if (classData['trainerId'] != _currentUser!.uid) {
+              setState(() {
+                _error = "You are not authorized to view these assessments.";
+                _loading = false;
+              });
+              return;
+            }
+
+            setState(() {
+              _classDetails = classData;
+              _error = null;
+              if (_loading) _loading = false;
+            });
+          },
+          onError: (error) {
+            if (mounted) {
+              setState(() {
+                _error = "Failed to load class details: $error";
+                _loading = false;
+              });
+            }
+          },
+        );
+
+    // Listen to assessments
+    _assessmentsSubscription = FirebaseFirestore.instance
         .collection('trainerAssessments')
         .where('classId', isEqualTo: widget.classId)
         .orderBy('createdAt', descending: true)
-        .snapshots();
+        .snapshots()
+        .listen(
+          (snapshot) {
+            if (!mounted) return;
 
-    // Real-time stream for class details
-    _classStream = FirebaseFirestore.instance
-        .collection('trainerClass')
-        .doc(widget.classId)
-        .snapshots();
+            final assessments = snapshot.docs
+                .map((doc) => {'id': doc.id, ...doc.data()})
+                .toList();
+
+            setState(() {
+              _assessments = assessments;
+            });
+
+            // Start animations when data loads
+            if (!_fadeController.isCompleted) {
+              _fadeController.forward();
+              _slideController.forward();
+            }
+          },
+          onError: (error) {
+            if (mounted) {
+              setState(() {
+                _actionError = "Failed to load assessments: $error";
+              });
+            }
+          },
+        );
   }
 
-  Future<void> fetchClassDetails() async {
-    setState(() { loading = true; error = null; });
+  Future<void> _handleDeleteAssessment(
+    String assessmentId,
+    String title,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => _buildDeleteConfirmDialog(title),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() {
+      _actionError = null;
+      _actionSuccess = null;
+    });
+
     try {
-      final classDoc = await FirebaseFirestore.instance
-          .collection('trainerClass')
-          .doc(widget.classId)
-          .get();
-
-      if (!classDoc.exists) {
-        throw Exception("Class not found.");
-      }
-      if (mounted) {
-        setState(() {
-          classDetails = classDoc.data();
-          classDetails!['id'] = classDoc.id;
-          loading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          error = "Failed to load class details: ${e.toString()}";
-          loading = false;
-        });
-      }
-    }
-  }
-
-  // Keep this method for manual refresh
-  Future<void> fetchData() async {
-    setState(() { loading = true; error = null; });
-    try {
-      // Fetch class details
-      final classDoc = await FirebaseFirestore.instance
-          .collection('trainerClass')
-          .doc(widget.classId)
-          .get();
-
-      if (!classDoc.exists) {
-        throw Exception("Class not found.");
-      }
-      classDetails = classDoc.data();
-      classDetails!['id'] = classDoc.id;
-
-      // Fetch assessments
-      final assessmentsSnapshot = await FirebaseFirestore.instance
+      await FirebaseFirestore.instance
           .collection('trainerAssessments')
-          .where('classId', isEqualTo: widget.classId)
-          .orderBy('createdAt', descending: true)
-          .get();
+          .doc(assessmentId)
+          .delete();
 
-      assessments = assessmentsSnapshot.docs
-          .map((doc) => {'id': doc.id, ...doc.data()})
-          .toList();
+      setState(() {
+        _actionSuccess = 'Assessment "$title" deleted successfully.';
+      });
 
+      // Clear success message after 3 seconds
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted) {
+          setState(() {
+            _actionSuccess = null;
+          });
+        }
+      });
     } catch (e) {
-      error = "Failed to load assessments: ${e.toString()}";
-    }
-    if (mounted) {
-      setState(() { loading = false; });
+      setState(() {
+        _actionError = 'Failed to delete assessment: $e';
+      });
     }
   }
 
-  String _formatTimestamp(Timestamp? timestamp) {
-    if (timestamp == null) return 'N/A';
-    return DateFormat('MMM d, yyyy - hh:mm a').format(timestamp.toDate());
+  Widget _buildDeleteConfirmDialog(String title) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.red.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              FontAwesomeIcons.triangleExclamation,
+              color: Colors.red,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(child: Text('Delete Assessment')),
+        ],
+      ),
+      content: Text(
+        'Are you sure you want to permanently delete "$title"? This action cannot be undone.',
+        style: const TextStyle(height: 1.5),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            gradient: const LinearGradient(
+              colors: [Colors.red, Color(0xFFDC2626)],
+            ),
+          ),
+          child: TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            ),
+            child: const Text('Delete'),
+          ),
+        ),
+      ],
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    Widget buildEmptyState() => Center(
-      child: Padding(
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  colors: [theme.colorScheme.primary.withOpacity(0.15), theme.colorScheme.secondary.withOpacity(0.10)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-              ),
-              padding: const EdgeInsets.all(24),
-              child: FaIcon(FontAwesomeIcons.fileCircleXmark, size: 60, color: theme.colorScheme.primary.withOpacity(0.5)),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'No assessments found for this class yet.',
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.w600,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text('Create First Assessment'),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => CreateAssessmentPage(classId: widget.classId),
-                  ),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: theme.colorScheme.primary,
-                foregroundColor: theme.colorScheme.onPrimary,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                elevation: 4,
-                shadowColor: theme.colorScheme.primary.withOpacity(0.2),
-                textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-            ),
-          ],
+    if (_loading) {
+      return Scaffold(
+        extendBodyBehindAppBar: true,
+        appBar: _buildAppBar(),
+        body: Container(
+          decoration: _buildBackgroundGradient(),
+          child: SafeArea(child: _buildLoadingScreen()),
         ),
-      ),
-    );
+      );
+    }
 
-    Widget buildAssessmentCard(Map<String, dynamic> assessment, int idx) {
-      final title = assessment['title'] ?? 'Untitled Assessment';
-      final questionsCount = (assessment['questions'] as List?)?.length ?? 0;
-      final createdAt = assessment['createdAt'] as Timestamp?;
-
-      return AnimatedContainer(
-        duration: Duration(milliseconds: 350 + idx * 30),
-        curve: Curves.easeInOut,
-        child: Card(
-          elevation: 8,
-          margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-          color: Colors.white.withOpacity(0.85),
-          shadowColor: theme.colorScheme.primary.withOpacity(0.10),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(22),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-              child: ListTile(
-                contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-                leading: CircleAvatar(
-                  radius: 28,
-                  backgroundColor: theme.colorScheme.primary.withOpacity(0.13),
-                  child: FaIcon(FontAwesomeIcons.fileLines, color: theme.colorScheme.primary, size: 26),
-                ),
-                title: Text(
-                  title,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: theme.colorScheme.primary,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 6),
-                    Text(
-                      '$questionsCount Question${questionsCount == 1 ? '' : 's'}',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    if (createdAt != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4.0),
-                        child: Text(
-                          'Created: ${_formatTimestamp(createdAt)}',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant.withOpacity(0.7),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-                trailing: Icon(Icons.chevron_right, color: theme.colorScheme.primary, size: 28),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ViewAssessmentResultsPage(assessmentId: assessment['id']),
-                      settings: RouteSettings(arguments: assessment['id']),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
+    if (_error != null) {
+      return Scaffold(
+        extendBodyBehindAppBar: true,
+        appBar: _buildAppBar(),
+        body: Container(
+          decoration: _buildBackgroundGradient(),
+          child: SafeArea(child: _buildErrorScreen()),
         ),
       );
     }
 
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        title: Text(
-          classDetails != null
-            ? '${classDetails!['className'] ?? 'Class'}'
-            : 'trainerAssessments',
-          style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.1),
-        ),
-        backgroundColor: Colors.transparent,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: fetchData,
-            tooltip: "Refresh assessments",
-          )
-        ],
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFF8B5CF6),
-              Color(0xFF6366F1)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+      appBar: _buildAppBar(),
+      body: Container(
+        decoration: _buildBackgroundGradient(),
+        child: SafeArea(
+          child: RefreshIndicator(
+            onRefresh: () async {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Assessments refreshed!'),
+                  duration: Duration(seconds: 1),
+                ),
+              );
+            },
+            color: const Color(0xFF8B5CF6),
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 20),
+                  _buildHeader(),
+                  const SizedBox(height: 24),
+                  if (_actionError != null) _buildActionErrorBanner(),
+                  if (_actionSuccess != null) _buildActionSuccessBanner(),
+                  const SizedBox(height: 16),
+                  _buildAssessmentsList(),
+                ],
+              ),
             ),
           ),
         ),
       ),
-      body: Container(
+      floatingActionButton: _buildCreateAssessmentFAB(),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      title: const Text(
+        "All Assessments",
+        style: TextStyle(
+          fontWeight: FontWeight.w600,
+          fontSize: 20,
+          letterSpacing: 0.5,
+        ),
+      ),
+      centerTitle: true,
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      foregroundColor: Colors.white,
+      leading: IconButton(
+        icon: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.2),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Icon(FontAwesomeIcons.arrowLeft, size: 16),
+        ),
+        onPressed: () => Navigator.pop(context),
+      ),
+      flexibleSpace: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFFF8FAFF), Color(0xFFE3F0FF)],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
+            colors: [Color(0xFF8B5CF6), Color(0xFF6366F1)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
           ),
         ),
-        child: loading
-          ? Center(child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary)))
-          : error != null
-            ? Center(
+      ),
+    );
+  }
+
+  BoxDecoration _buildBackgroundGradient() {
+    return const BoxDecoration(
+      gradient: LinearGradient(
+        colors: [Color(0xFFF8FAFC), Color(0xFFE3F0FF)],
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+      ),
+    );
+  }
+
+  Widget _buildLoadingScreen() {
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    const Color(0xFF8B5CF6).withOpacity(0.1),
+                    const Color(0xFF6366F1).withOpacity(0.05),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF8B5CF6).withOpacity(0.1),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: const CircularProgressIndicator(
+                strokeWidth: 3,
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF8B5CF6)),
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              "Loading assessments...",
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF64748B),
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorScreen() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    const Color(0xFFFF6B6B).withOpacity(0.1),
+                    const Color(0xFFFF5252).withOpacity(0.05),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFFFF6B6B).withOpacity(0.1),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: const Icon(
+                FontAwesomeIcons.triangleExclamation,
+                size: 48,
+                color: Color(0xFFFF6B6B),
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'Something Went Wrong',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF1E293B),
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              _error!,
+              style: const TextStyle(
+                fontSize: 14,
+                color: Color(0xFF64748B),
+                height: 1.5,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return FadeTransition(
+      opacity: _fadeAnimation,
+      child: SlideTransition(
+        position: _slideAnimation,
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 15,
+                offset: const Offset(0, 6),
+              ),
+              BoxShadow(
+                color: const Color(0xFF8B5CF6).withOpacity(0.08),
+                blurRadius: 30,
+                offset: const Offset(0, 0),
+                spreadRadius: -5,
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF8B5CF6), Color(0xFF6366F1)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF8B5CF6).withOpacity(0.4),
+                      blurRadius: 8,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: const FaIcon(
+                  FontAwesomeIcons.clipboardList,
+                  color: Colors.white,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Text(
-                        error!,
-                        style: TextStyle(color: theme.colorScheme.error, fontSize: 16),
-                        textAlign: TextAlign.center
+                    const Text(
+                      'All Assessments',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1E293B),
+                        letterSpacing: 0.5,
                       ),
                     ),
-                    ElevatedButton.icon(
-                      onPressed: fetchData,
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('Retry'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: theme.colorScheme.primary,
-                        foregroundColor: Colors.white,
+                    const SizedBox(height: 4),
+                    Text(
+                      'Class: ${_classDetails?['className'] ?? 'Unknown'}',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: const Color(0xFF64748B),
                       ),
                     ),
                   ],
                 ),
-              )
-            : classDetails == null
-              ? const Center(child: Text("Class details not found."))
-              : StreamBuilder<QuerySnapshot>(
-                  stream: _assessmentsStream,
-                  builder: (context, snapshot) {
-                    if (snapshot.hasError) {
-                      return Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              'Error loading assessments: ${snapshot.error}',
-                              style: TextStyle(color: theme.colorScheme.error),
-                              textAlign: TextAlign.center,
-                            ),
-                            const SizedBox(height: 16),
-                            ElevatedButton.icon(
-                              onPressed: () {
-                                setState(() {
-                                  _initializeStreams();
-                                });
-                              },
-                              icon: const Icon(Icons.refresh),
-                              label: const Text('Retry'),
-                            ),
-                          ],
-                        ),
-                      );
-                    }
-
-                    if (snapshot.connectionState == ConnectionState.waiting && assessments.isEmpty) {
-                      return Center(
-                        child: CircularProgressIndicator(
-                          valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary)
-                        )
-                      );
-                    }
-
-                    if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                      return buildEmptyState();
-                    }
-
-                    // Update assessments list from stream
-                    final streamAssessments = snapshot.data!.docs
-                        .map((doc) => {'id': doc.id, ...doc.data() as Map<String, dynamic>})
-                        .toList();
-
-                    return RefreshIndicator(
-                      onRefresh: fetchData,
-                      color: theme.colorScheme.primary,
-                      child: ListView.builder(
-                        padding: const EdgeInsets.only(top: 100, left: 8, right: 8, bottom: 80),
-                        itemCount: streamAssessments.length,
-                        itemBuilder: (context, idx) => buildAssessmentCard(streamAssessments[idx], idx),
-                      ),
-                    );
-                  },
-                ),
-      ),
-      floatingActionButton: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(30),
-          boxShadow: [
-            BoxShadow(
-              color: theme.colorScheme.primary.withOpacity(0.25),
-              blurRadius: 16,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: FloatingActionButton.extended(
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => CreateAssessmentPage(classId: widget.classId),
               ),
-            );
-          },
-          label: const Text('New Assessment'),
-          icon: const Icon(Icons.add),
-          backgroundColor: const Color(0xFF6D5DF6),
-          foregroundColor: Colors.white,
-          elevation: 8,
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  Widget _buildActionErrorBanner() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.red.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.red.shade200),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            FontAwesomeIcons.triangleExclamation,
+            color: Colors.red.shade600,
+            size: 20,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Action Failed',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.red.shade800,
+                  ),
+                ),
+                Text(
+                  _actionError!,
+                  style: TextStyle(fontSize: 13, color: Colors.red.shade700),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionSuccessBanner() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.green.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.green.shade200),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            FontAwesomeIcons.checkCircle,
+            color: Colors.green.shade600,
+            size: 20,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Success',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.green.shade800,
+                  ),
+                ),
+                Text(
+                  _actionSuccess!,
+                  style: TextStyle(fontSize: 13, color: Colors.green.shade700),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAssessmentsList() {
+    if (_assessments.isEmpty) {
+      return _buildEmptyState();
+    }
+
+    return FadeTransition(
+      opacity: _fadeAnimation,
+      child: SlideTransition(
+        position: _slideAnimation,
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 15,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(16),
+            itemCount: _assessments.length,
+            separatorBuilder: (context, index) => const Divider(height: 24),
+            itemBuilder: (context, index) {
+              final assessment = _assessments[index];
+              return _buildAssessmentItem(assessment, index);
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAssessmentItem(Map<String, dynamic> assessment, int index) {
+    final title = assessment['title'] ?? 'Untitled Assessment';
+    final description = assessment['description'] ?? '';
+    final questionsCount = (assessment['questions'] as List?)?.length ?? 0;
+    final createdAt = assessment['createdAt'] as Timestamp?;
+
+    return AnimatedContainer(
+      duration: Duration(milliseconds: 200 + (index * 50)),
+      curve: Curves.easeOutCubic,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF8B5CF6).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const FaIcon(
+                    FontAwesomeIcons.clipboard,
+                    color: Color(0xFF8B5CF6),
+                    size: 16,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1E293B),
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Icon(
+                            FontAwesomeIcons.questionCircle,
+                            size: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '$questionsCount Questions',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Icon(
+                            FontAwesomeIcons.calendar,
+                            size: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            createdAt != null
+                                ? DateFormat.yMd().format(createdAt.toDate())
+                                : 'N/A',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (description.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                description,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey.shade700,
+                  height: 1.4,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildActionButton(
+                    icon: FontAwesomeIcons.eye,
+                    label: 'Results',
+                    color: const Color(0xFF0EA5E9),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => ViewAssessmentResultsPage(
+                            assessmentId: assessment['id'],
+                            className: _classDetails?['className'],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _buildActionButton(
+                    icon: FontAwesomeIcons.penToSquare,
+                    label: 'Edit',
+                    color: const Color(0xFFF59E0B),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => EditAssessmentPage(
+                            assessmentId: assessment['id'],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _buildActionButton(
+                    icon: FontAwesomeIcons.trashCan,
+                    label: 'Delete',
+                    color: const Color(0xFFEF4444),
+                    onPressed: () =>
+                        _handleDeleteAssessment(assessment['id'], title),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButton({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onPressed,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                FaIcon(icon, size: 12, color: color),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: color,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return FadeTransition(
+      opacity: _fadeAnimation,
+      child: SlideTransition(
+        position: _slideAnimation,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(32),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        const Color(0xFF8B5CF6).withOpacity(0.1),
+                        const Color(0xFF6366F1).withOpacity(0.05),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(24),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF8B5CF6).withOpacity(0.1),
+                        blurRadius: 20,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    FontAwesomeIcons.clipboardList,
+                    size: 64,
+                    color: Color(0xFF8B5CF6),
+                  ),
+                ),
+                const SizedBox(height: 32),
+                const Text(
+                  'No Assessments Yet',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF1E293B),
+                    letterSpacing: -0.5,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'There are no assessments created for "${_classDetails?['className'] ?? 'this class'}" yet.',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    color: Color(0xFF64748B),
+                    height: 1.5,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 32),
+                Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF8B5CF6), Color(0xFF6366F1)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF8B5CF6).withOpacity(0.4),
+                        blurRadius: 15,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: ElevatedButton.icon(
+                    icon: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Icon(FontAwesomeIcons.plus, size: 16),
+                    ),
+                    label: const Text(
+                      'Create First Assessment',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              CreateAssessmentPage(classId: widget.classId),
+                        ),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.transparent,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 16,
+                        horizontal: 24,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCreateAssessmentFAB() {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        gradient: const LinearGradient(
+          colors: [Color(0xFF10B981), Color(0xFF059669)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF10B981).withOpacity(0.4),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+            spreadRadius: 0,
+          ),
+          BoxShadow(
+            color: const Color(0xFF10B981).withOpacity(0.2),
+            blurRadius: 40,
+            offset: const Offset(0, 16),
+            spreadRadius: -8,
+          ),
+        ],
+      ),
+      child: FloatingActionButton.extended(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) =>
+                  CreateAssessmentPage(classId: widget.classId),
+            ),
+          );
+        },
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        icon: Container(
+          padding: const EdgeInsets.all(3),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.2),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Icon(FontAwesomeIcons.plus, size: 16),
+        ),
+        label: const Text(
+          'New Assessment',
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 16,
+            letterSpacing: 0.5,
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _formatDate(dynamic timestamp) {
+    if (timestamp is Timestamp) {
+      return DateFormat.yMd().format(timestamp.toDate());
+    } else if (timestamp is String) {
+      try {
+        return DateFormat.yMd().format(DateTime.parse(timestamp));
+      } catch (e) {
+        // Handle error silently
+      }
+    }
+    return "Not set";
   }
 }

@@ -39,7 +39,8 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
   Map<String, dynamic>? mostRecentClass;
   String? firstName;
   int _unreadNotificationsCount = 0; // New state variable
-  StreamSubscription<QuerySnapshot>? _notificationSubscription; // New subscription
+  StreamSubscription<QuerySnapshot>?
+  _notificationSubscription; // New subscription
 
   @override
   void initState() {
@@ -63,132 +64,138 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
         .where('trainerId', isEqualTo: currentUser!.uid)
         .orderBy('createdAt', descending: true)
         .snapshots()
-        .listen((snapshot) {
-      if (!mounted) return;
+        .listen(
+          (snapshot) {
+            if (!mounted) return;
 
-      int classCount = snapshot.docs.length;
-      int studentSum = 0;
-      int pendingSum = 0;
-      Map<String, dynamic>? recentClass;
+            int classCount = snapshot.docs.length;
+            int studentSum = 0;
+            int pendingSum = 0;
+            Map<String, dynamic>? recentClass;
 
-      for (var doc in snapshot.docs) {
-        final data = doc.data();
-        studentSum += (data['studentCount'] as int? ?? 0);
-        pendingSum += (data['pendingSubmissions'] as int? ?? 0);
-      }
+            for (var doc in snapshot.docs) {
+              final data = doc.data();
+              studentSum += (data['studentCount'] as int? ?? 0);
+              pendingSum += (data['pendingSubmissions'] as int? ?? 0);
+            }
 
-      if (snapshot.docs.isNotEmpty) {
-        final doc = snapshot.docs.first;
-        recentClass = {'id': doc.id, ...doc.data()};
-      }
+            if (snapshot.docs.isNotEmpty) {
+              final doc = snapshot.docs.first;
+              recentClass = {'id': doc.id, ...doc.data()};
+            }
 
-      setState(() {
-        activeClassesCount = classCount;
-        totalStudents = studentSum < 0 ? 0 : studentSum;
-        pendingSubmissions = pendingSum < 0 ? 0 : pendingSum;
-        mostRecentClass = recentClass;
-        loading = false;
-        error = null;
-      });
-    }, onError: (e) {
-      if (!mounted) return;
+            setState(() {
+              activeClassesCount = classCount;
+              totalStudents = studentSum < 0 ? 0 : studentSum;
+              pendingSubmissions = pendingSum < 0 ? 0 : pendingSum;
+              mostRecentClass = recentClass;
+              loading = false;
+              error = null;
+            });
+          },
+          onError: (e) {
+            if (!mounted) return;
 
-      setState(() {
-        error = "Could not load dashboard data. ${e.toString()}";
-        activeClassesCount = 0;
-        totalStudents = 0;
-        pendingSubmissions = 0;
-        loading = false;
-      });
-    });
+            setState(() {
+              error = "Could not load dashboard data. ${e.toString()}";
+              activeClassesCount = 0;
+              totalStudents = 0;
+              pendingSubmissions = 0;
+              loading = false;
+            });
+          },
+        );
   }
 
- void _setupNotificationListener() {
-  if (currentUser == null) {
-    debugPrint('❌ No current user - cannot setup notification listener');
-    return;
+  void _setupNotificationListener() {
+    if (currentUser == null) {
+      debugPrint('❌ No current user - cannot setup notification listener');
+      return;
+    }
+
+    debugPrint(
+      '🔔 Setting up notification listener for user: ${currentUser!.uid}',
+    );
+
+    _notificationSubscription = FirebaseFirestore.instance
+        .collection('notifications')
+        .where('userId', isEqualTo: currentUser!.uid)
+        .where('isRead', isEqualTo: false)
+        .snapshots()
+        .listen(
+          (snapshot) {
+            debugPrint(
+              '📬 Received notification snapshot: ${snapshot.docs.length} unread notifications',
+            );
+
+            if (mounted) {
+              setState(() {
+                _unreadNotificationsCount = snapshot.docs.length;
+              });
+              debugPrint(
+                '✅ Updated unread count to: $_unreadNotificationsCount',
+              );
+            }
+          },
+          onError: (e) {
+            debugPrint('❌ Error fetching notifications: $e');
+
+            // Check if it's an index error
+            if (e.toString().contains('index')) {
+              debugPrint('⚠️ FIRESTORE INDEX REQUIRED! Create an index for:');
+              debugPrint('   Collection: notifications');
+              debugPrint('   Fields: userId (Ascending), isRead (Ascending)');
+            }
+          },
+        );
   }
 
-  debugPrint('🔔 Setting up notification listener for user: ${currentUser!.uid}');
-
-  _notificationSubscription = FirebaseFirestore.instance
-      .collection('notifications')
-      .where('userId', isEqualTo: currentUser!.uid)
-      .where('isRead', isEqualTo: false)
-      .snapshots()
-      .listen(
-    (snapshot) {
-      debugPrint('📬 Received notification snapshot: ${snapshot.docs.length} unread notifications');
-
-      if (mounted) {
-        setState(() {
-          _unreadNotificationsCount = snapshot.docs.length;
-        });
-        debugPrint('✅ Updated unread count to: $_unreadNotificationsCount');
-      }
-    },
-    onError: (e) {
-      debugPrint('❌ Error fetching notifications: $e');
-
-      // Check if it's an index error
-      if (e.toString().contains('index')) {
-        debugPrint('⚠️ FIRESTORE INDEX REQUIRED! Create an index for:');
-        debugPrint('   Collection: notifications');
-        debugPrint('   Fields: userId (Ascending), isRead (Ascending)');
-      }
-    },
-  );
-}
-Future<bool> _onWillPop() async {
-  // Show exit confirmation dialog
-  final shouldExit = await showDialog<bool>(
-    context: context,
-    builder: (context) => AlertDialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
-      title: Row(
-        children: [
-          Icon(Icons.exit_to_app, color: Colors.blue.shade700),
-          const SizedBox(width: 12),
-          const Text('Exit TalkReady?'),
+  Future<bool> _onWillPop() async {
+    // Show exit confirmation dialog
+    final shouldExit = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.exit_to_app, color: Colors.blue.shade700),
+            const SizedBox(width: 12),
+            const Text('Exit TalkReady?'),
+          ],
+        ),
+        content: const Text(
+          'Are you sure you want to exit the app?',
+          style: TextStyle(fontSize: 16),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: Colors.grey[600], fontSize: 16),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text(
+              'Exit',
+              style: TextStyle(fontSize: 16, color: Colors.white),
+            ),
+          ),
         ],
       ),
-      content: const Text(
-        'Are you sure you want to exit the app?',
-        style: TextStyle(fontSize: 16),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
-          child: Text(
-            'Cancel',
-            style: TextStyle(
-              color: Colors.grey[600],
-              fontSize: 16,
-            ),
-          ),
-        ),
-        ElevatedButton(
-          onPressed: () => Navigator.of(context).pop(true),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.blue,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-          child: const Text(
-            'Exit',
-            style: TextStyle(fontSize: 16, color: Colors.white),
-          ),
-        ),
-      ],
-    ),
-  );
+    );
 
-  return shouldExit ?? false;
-}
+    return shouldExit ?? false;
+  }
+
   Future<void> fetchUserFirstName() async {
     if (currentUser == null) return;
     try {
@@ -260,10 +267,9 @@ Future<bool> _onWillPop() async {
         children: [
           Text(
             "Welcome back, $displayName!",
-            style: Theme.of(context)
-                .textTheme
-                .headlineMedium
-                ?.copyWith(color: Colors.blue[800]),
+            style: Theme.of(
+              context,
+            ).textTheme.headlineMedium?.copyWith(color: Colors.blue[800]),
           ),
           const SizedBox(height: 8),
           const Text("Here's an overview of your activities and tools."),
@@ -271,27 +277,42 @@ Future<bool> _onWillPop() async {
           Row(
             children: [
               Expanded(
-                child: _buildStatCard("Active Classes", activeClassesCount,
-                    FontAwesomeIcons.chalkboardUser, Colors.blue),
+                child: _buildStatCard(
+                  "Active Classes",
+                  activeClassesCount,
+                  FontAwesomeIcons.chalkboardUser,
+                  Colors.blue,
+                ),
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: _buildStatCard("Total Students", totalStudents,
-                    FontAwesomeIcons.users, Colors.green),
+                child: _buildStatCard(
+                  "Total Students",
+                  totalStudents,
+                  FontAwesomeIcons.users,
+                  Colors.green,
+                ),
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: _buildStatCard("Pending Submissions", pendingSubmissions,
-                    FontAwesomeIcons.fileCircleCheck, Colors.orange),
+                child: _buildStatCard(
+                  "Pending Submissions",
+                  pendingSubmissions,
+                  FontAwesomeIcons.fileCircleCheck,
+                  Colors.orange,
+                ),
               ),
             ],
           ),
           const SizedBox(height: 32),
-          const Text("Quick Actions",
-              style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87)),
+          const Text(
+            "Quick Actions",
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
           const SizedBox(height: 12),
           GridView.count(
             crossAxisCount: 3,
@@ -300,18 +321,48 @@ Future<bool> _onWillPop() async {
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             children: [
-              _quickAction(context, "My Classes", FontAwesomeIcons.layerGroup,
-                  "/trainer/classes", Colors.purple),
-              _quickAction(context, "Create Class", FontAwesomeIcons.plusCircle,
-                  "/trainer/classes/create", Colors.blue),
-              _quickAction(context, "Upload", FontAwesomeIcons.upload,
-                  "/trainer/content/upload", Colors.teal),
-              _quickAction(context, "Assessment", FontAwesomeIcons.filePen,
-                  "/create-assessment", Colors.indigo),
-              _quickAction(context, "Reports", FontAwesomeIcons.chartLine,
-                  "/trainer/reports", Colors.green),
-              _quickAction(context, "Announce", FontAwesomeIcons.bullhorn,
-                  "/trainer/announcements/create", Colors.orange),
+              _quickAction(
+                context,
+                "My Classes",
+                FontAwesomeIcons.layerGroup,
+                "/trainer/classes",
+                Colors.purple,
+              ),
+              _quickAction(
+                context,
+                "Create Class",
+                FontAwesomeIcons.plusCircle,
+                "/trainer/classes/create",
+                Colors.blue,
+              ),
+              _quickAction(
+                context,
+                "Upload",
+                FontAwesomeIcons.upload,
+                "/trainer/content/upload",
+                Colors.teal,
+              ),
+              _quickAction(
+                context,
+                "Assessment",
+                FontAwesomeIcons.filePen,
+                "/create-assessment",
+                Colors.indigo,
+              ),
+              _quickAction(
+                context,
+                "Reports",
+                FontAwesomeIcons.chartLine,
+                "/trainer/reports",
+                Colors.green,
+              ),
+              _quickAction(
+                context,
+                "Announce",
+                FontAwesomeIcons.bullhorn,
+                "/trainer/announcements/create",
+                Colors.orange,
+              ),
             ],
           ),
           const SizedBox(height: 25),
@@ -332,10 +383,7 @@ Future<bool> _onWillPop() async {
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [
-                    Colors.grey.shade50,
-                    Colors.grey.shade100,
-                  ],
+                  colors: [Colors.grey.shade50, Colors.grey.shade100],
                 ),
                 boxShadow: [
                   BoxShadow(
@@ -344,10 +392,7 @@ Future<bool> _onWillPop() async {
                     offset: const Offset(0, 5),
                   ),
                 ],
-                border: Border.all(
-                  color: Colors.grey.shade200,
-                  width: 1.5,
-                ),
+                border: Border.all(color: Colors.grey.shade200, width: 1.5),
               ),
               child: Padding(
                 padding: const EdgeInsets.all(32),
@@ -406,7 +451,10 @@ Future<bool> _onWillPop() async {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.blue.shade600,
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 12,
+                        ),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16),
                         ),
@@ -425,45 +473,48 @@ Future<bool> _onWillPop() async {
     );
   }
 
-@override
-Widget build(BuildContext context) {
-  return PopScope(
-    canPop: false, // Prevent default back navigation
-    onPopInvoked: (bool didPop) async {
-      if (didPop) return;
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false, // Prevent default back navigation
+      onPopInvoked: (bool didPop) async {
+        if (didPop) return;
 
-      // Show exit confirmation
-      final shouldExit = await _onWillPop();
-      if (shouldExit && context.mounted) {
-        // Exit the app using SystemNavigator
-        SystemNavigator.pop();
-      }
-    },
-    child: Scaffold(
-      backgroundColor: Colors.grey[100],
-      appBar: _buildAppBar(),
-      body: SafeArea(child: _buildDashboardContent()),
-      bottomNavigationBar: AnimatedBottomNavBar(
-        currentIndex: _selectedIndex,
-        onTap: _onItemTapped,
-        items: [
-          CustomBottomNavItem(icon: Icons.dashboard_rounded, label: 'Dashboard'),
-          CustomBottomNavItem(icon: Icons.person_rounded, label: 'Profile'),
-        ],
-        activeColor: Colors.white,
-        inactiveColor: Colors.grey[600]!,
-        notchColor: Colors.blue[700]!,
-        backgroundColor: Colors.white,
-        selectedIconSize: 28.0,
-        iconSize: 25.0,
-        barHeight: 55,
-        selectedIconPadding: 10,
-        animationDuration: const Duration(milliseconds: 300),
-        customNotchWidthFactor: 0.5,
+        // Show exit confirmation
+        final shouldExit = await _onWillPop();
+        if (shouldExit && context.mounted) {
+          // Exit the app using SystemNavigator
+          SystemNavigator.pop();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: Colors.grey[100],
+        appBar: _buildAppBar(),
+        body: SafeArea(child: _buildDashboardContent()),
+        bottomNavigationBar: AnimatedBottomNavBar(
+          currentIndex: _selectedIndex,
+          onTap: _onItemTapped,
+          items: [
+            CustomBottomNavItem(
+              icon: Icons.dashboard_rounded,
+              label: 'Dashboard',
+            ),
+            CustomBottomNavItem(icon: Icons.person_rounded, label: 'Profile'),
+          ],
+          activeColor: Colors.white,
+          inactiveColor: Colors.grey[600]!,
+          notchColor: Colors.blue[700]!,
+          backgroundColor: Colors.white,
+          selectedIconSize: 28.0,
+          iconSize: 25.0,
+          barHeight: 55,
+          selectedIconPadding: 10,
+          animationDuration: const Duration(milliseconds: 300),
+          customNotchWidthFactor: 0.5,
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
@@ -472,19 +523,19 @@ Widget build(BuildContext context) {
       foregroundColor: Colors.white,
       automaticallyImplyLeading: false,
       actions: [
-      NotificationBadge(
-        unreadCount: _unreadNotificationsCount,
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const AllNotificationsPage(),
-            ),
-          );
-        },
-      ),
-      const SizedBox(width: 8),
-    ],
+        NotificationBadge(
+          unreadCount: _unreadNotificationsCount,
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const AllNotificationsPage(),
+              ),
+            );
+          },
+        ),
+        const SizedBox(width: 8),
+      ],
     );
   }
 
@@ -499,11 +550,7 @@ Widget build(BuildContext context) {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.error_outline,
-              size: 64,
-              color: Colors.red[400],
-            ),
+            Icon(Icons.error_outline, size: 64, color: Colors.red[400]),
             const SizedBox(height: 16),
             Text(
               'Something went wrong',
@@ -516,10 +563,7 @@ Widget build(BuildContext context) {
             Text(
               errorMessage,
               textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.grey[600],
-                fontSize: 14,
-              ),
+              style: TextStyle(color: Colors.grey[600], fontSize: 14),
             ),
             const SizedBox(height: 24),
             ElevatedButton.icon(
@@ -529,7 +573,10 @@ Widget build(BuildContext context) {
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.blue[600],
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
@@ -675,10 +722,12 @@ Widget build(BuildContext context) {
   static const double kCardRadius = 16.0;
   static const EdgeInsets kCardPadding = EdgeInsets.all(12.0);
   static const double kButtonRadius = 12.0;
-  static const EdgeInsets kButtonPadding = EdgeInsets.symmetric(horizontal: 16, vertical: 12);
+  static const EdgeInsets kButtonPadding = EdgeInsets.symmetric(
+    horizontal: 16,
+    vertical: 12,
+  );
 
-  Widget _buildStatCard(
-      String title, int value, IconData icon, Color color) {
+  Widget _buildStatCard(String title, int value, IconData icon, Color color) {
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
@@ -720,7 +769,11 @@ Widget build(BuildContext context) {
             const SizedBox(height: 2),
             Text(
               "$value",
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: color),
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
             ),
           ],
         ),
@@ -728,8 +781,13 @@ Widget build(BuildContext context) {
     );
   }
 
-  Widget _quickAction(BuildContext context, String label, IconData icon,
-      String route, Color color) {
+  Widget _quickAction(
+    BuildContext context,
+    String label,
+    IconData icon,
+    String route,
+    Color color,
+  ) {
     return OpenContainer(
       transitionType: ContainerTransitionType.fadeThrough,
       openColor: Colors.white,
@@ -752,7 +810,10 @@ Widget build(BuildContext context) {
           case "/trainer/content/upload":
             return const QuickUploadMaterialPage();
           case "/create-assessment":
-            return const CreateAssessmentPage(classId: null, initialClassId: null,);
+            return const CreateAssessmentPage(
+              classId: null,
+              initialClassId: null,
+            );
           case "/trainer/reports":
             return const TrainerReportsPage();
           case "/trainer/announcements/create":
@@ -774,7 +835,9 @@ Widget build(BuildContext context) {
     final classId = cls['id'] as String?;
 
     if (classId == null) {
-      return const Card(child: ListTile(title: Text("Error: Class ID missing")));
+      return const Card(
+        child: ListTile(title: Text("Error: Class ID missing")),
+      );
     }
 
     return Container(
@@ -803,10 +866,7 @@ Widget build(BuildContext context) {
             offset: const Offset(-2, -2),
           ),
         ],
-        border: Border.all(
-          color: Colors.white.withOpacity(0.3),
-          width: 1,
-        ),
+        border: Border.all(color: Colors.white.withOpacity(0.3), width: 1),
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(20),
@@ -833,7 +893,10 @@ Widget build(BuildContext context) {
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
-                          colors: [Colors.blue.shade400, Colors.purple.shade400],
+                          colors: [
+                            Colors.blue.shade400,
+                            Colors.purple.shade400,
+                          ],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
@@ -871,7 +934,10 @@ Widget build(BuildContext context) {
                           ),
                           const SizedBox(height: 4),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 3,
+                            ),
                             decoration: BoxDecoration(
                               color: Colors.green.shade100,
                               borderRadius: BorderRadius.circular(10),
@@ -907,7 +973,10 @@ Widget build(BuildContext context) {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.orange.shade50,
                         borderRadius: BorderRadius.circular(16),
@@ -934,7 +1003,10 @@ Widget build(BuildContext context) {
                       ),
                     ),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.cyan.shade50,
                         borderRadius: BorderRadius.circular(16),
@@ -994,7 +1066,10 @@ Widget build(BuildContext context) {
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (context) => ManageClassContentPage(classId: classId),
+                                    builder: (context) =>
+                                        ManageClassContentPage(
+                                          classId: classId,
+                                        ),
                                   ),
                                 );
                               },
@@ -1007,7 +1082,9 @@ Widget build(BuildContext context) {
                               label: "Students",
                               color: Colors.orange,
                               onTap: () => Navigator.pushNamed(
-                                  context, '/trainer/classes/$classId/students'),
+                                context,
+                                '/trainer/classes/$classId/students',
+                              ),
                             ),
                           ),
                         ],
@@ -1020,7 +1097,10 @@ Widget build(BuildContext context) {
                           label: "Assessments",
                           color: Colors.indigo,
                           onTap: () => Navigator.pushNamed(
-                              context, '/class/$classId/assessments', arguments: classId),
+                            context,
+                            '/class/$classId/assessments',
+                            arguments: classId,
+                          ),
                           isFullWidth: true,
                         ),
                       ),
@@ -1051,18 +1131,12 @@ Widget build(BuildContext context) {
           padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [
-                color.withOpacity(0.1),
-                color.withOpacity(0.05),
-              ],
+              colors: [color.withOpacity(0.1), color.withOpacity(0.05)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: color.withOpacity(0.3),
-              width: 1,
-            ),
+            border: Border.all(color: color.withOpacity(0.3), width: 1),
             boxShadow: [
               BoxShadow(
                 color: color.withOpacity(0.1),
@@ -1081,11 +1155,7 @@ Widget build(BuildContext context) {
                   color: color.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: Icon(
-                  icon,
-                  color: color,
-                  size: 14,
-                ),
+                child: Icon(icon, color: color, size: 14),
               ),
               const SizedBox(width: 6),
               Flexible(
@@ -1128,7 +1198,8 @@ class AnimatedQuickAction extends StatefulWidget {
   State<AnimatedQuickAction> createState() => _AnimatedQuickActionState();
 }
 
-class _AnimatedQuickActionState extends State<AnimatedQuickAction> with SingleTickerProviderStateMixin {
+class _AnimatedQuickActionState extends State<AnimatedQuickAction>
+    with SingleTickerProviderStateMixin {
   bool _pressed = false;
   late AnimationController _controller;
   late Animation<double> _scaleAnim;
@@ -1141,12 +1212,14 @@ class _AnimatedQuickActionState extends State<AnimatedQuickAction> with SingleTi
       duration: const Duration(milliseconds: 220),
       vsync: this,
     );
-    _scaleAnim = Tween<double>(begin: 1.0, end: 1.07).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
-    );
-    _elevationAnim = Tween<double>(begin: 10, end: 26).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
-    );
+    _scaleAnim = Tween<double>(
+      begin: 1.0,
+      end: 1.07,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+    _elevationAnim = Tween<double>(
+      begin: 10,
+      end: 26,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
   }
 
   void _onTapDown(TapDownDetails details) {
@@ -1188,7 +1261,9 @@ class _AnimatedQuickActionState extends State<AnimatedQuickAction> with SingleTi
               height: 110,
               decoration: BoxDecoration(
                 color: widget.color.withOpacity(0.18),
-                borderRadius: BorderRadius.circular(_pressed ? kCardRadius + 8 : kCardRadius),
+                borderRadius: BorderRadius.circular(
+                  _pressed ? kCardRadius + 8 : kCardRadius,
+                ),
                 border: Border.all(
                   color: widget.color.withOpacity(0.25),
                   width: 1.5,
@@ -1213,7 +1288,10 @@ class _AnimatedQuickActionState extends State<AnimatedQuickAction> with SingleTi
                       highlightColor: Colors.transparent,
                       onTap: widget.onTap,
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 16,
+                          horizontal: 8,
+                        ),
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
@@ -1230,7 +1308,11 @@ class _AnimatedQuickActionState extends State<AnimatedQuickAction> with SingleTi
                                 ],
                               ),
                               padding: const EdgeInsets.all(12),
-                              child: Icon(widget.icon, color: widget.color, size: 30),
+                              child: Icon(
+                                widget.icon,
+                                color: widget.color,
+                                size: 30,
+                              ),
                             ),
                             const SizedBox(height: 14),
                             FittedBox(
@@ -1288,10 +1370,7 @@ class _QuickActionButton extends StatelessWidget {
         decoration: BoxDecoration(
           color: color.withOpacity(0.15),
           borderRadius: BorderRadius.circular(kCardRadius),
-          border: Border.all(
-            color: color.withOpacity(0.18),
-            width: 1.2,
-          ),
+          border: Border.all(color: color.withOpacity(0.18), width: 1.2),
           boxShadow: [
             BoxShadow(
               color: color.withOpacity(0.10),

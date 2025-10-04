@@ -5,12 +5,17 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:logger/logger.dart';
 import 'package:intl/intl.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class ReviewSpeakingSubmissionPage extends StatefulWidget {
   final String submissionId;
 
-  const ReviewSpeakingSubmissionPage({Key? key, required this.submissionId, String? assessmentId})
-      : super(key: key);
+  const ReviewSpeakingSubmissionPage({
+    Key? key,
+    required this.submissionId,
+    String? assessmentId,
+  }) : super(key: key);
 
   @override
   _ReviewSpeakingSubmissionPageState createState() =>
@@ -27,6 +32,10 @@ class _ReviewSpeakingSubmissionPageState
   String _error = '';
   Map<String, dynamic>? _submission;
   Map<String, dynamic>? _assessment;
+
+  // AI Evaluation State
+  Map<String, dynamic>? _aiFeedback;
+  bool _isLoadingAiFeedback = false;
 
   // Feedback State
   final TextEditingController _trainerFeedbackController =
@@ -110,8 +119,11 @@ class _ReviewSpeakingSubmissionPageState
         setState(() {
           _submission = submissionData;
           _assessment = assessmentData;
-          _trainerFeedbackController.text = submissionData['trainerFeedback'] ?? '';
-          _trainerScoreController.text = submissionData['score']?.toString() ?? '';
+          _aiFeedback = submissionData['aiFeedback'];
+          _trainerFeedbackController.text =
+              submissionData['trainerFeedback'] ?? '';
+          _trainerScoreController.text =
+              submissionData['score']?.toString() ?? '';
           _loading = false;
         });
       }
@@ -126,49 +138,137 @@ class _ReviewSpeakingSubmissionPageState
     }
   }
 
+  Future<void> _getAiEvaluation() async {
+    if (_submission?['audioUrl'] == null || _assessment?['questions'] == null) {
+      _showErrorSnackBar('Missing audio URL or assessment questions');
+      return;
+    }
+
+    final questions = _assessment!['questions'] as List;
+    if (questions.isEmpty) {
+      _showErrorSnackBar('No questions found in assessment');
+      return;
+    }
+
+    final firstQuestion = questions.first;
+    final promptText =
+        firstQuestion['promptText'] ?? firstQuestion['text'] ?? '';
+
+    if (promptText.isEmpty) {
+      _showErrorSnackBar('No prompt text found for evaluation');
+      return;
+    }
+
+    setState(() {
+      _isLoadingAiFeedback = true;
+      _error = '';
+    });
+
+    try {
+      _logger.i('Starting AI evaluation for submission ${widget.submissionId}');
+
+      final response = await http.post(
+        Uri.parse('http://192.168.254.103:5000/evaluate-speaking-contextual'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'audioUrl': _submission!['audioUrl'],
+          'promptText': promptText,
+          'evaluationContext':
+              firstQuestion['title'] ?? 'Customer service scenario',
+        }),
+      );
+
+      _logger.i('AI evaluation response status: ${response.statusCode}');
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        final feedbackResult = json.decode(response.body);
+
+        setState(() {
+          _aiFeedback = feedbackResult;
+          _isLoadingAiFeedback = false;
+        });
+
+        _logger.i('AI evaluation completed successfully');
+
+        _showSuccessSnackBar('AI evaluation completed successfully!');
+      } else {
+        final errorData = json.decode(response.body);
+        throw Exception(errorData['error'] ?? 'AI evaluation failed');
+      }
+    } catch (e) {
+      _logger.e('AI evaluation error: $e');
+      if (mounted) {
+        setState(() {
+          _error = 'AI Evaluation Error: ${e.toString()}';
+          _isLoadingAiFeedback = false;
+        });
+        _showErrorSnackBar('AI evaluation failed: ${e.toString()}');
+      }
+    }
+  }
+
   Future<void> _publishFeedback() async {
-    if (_submission == null) return;
+    if (_assessment == null) return;
+
+    final questions = _assessment!['questions'] as List;
+    final totalPossiblePoints = questions.fold<num>(
+      0,
+      (sum, q) => sum + (q['points'] ?? 0),
+    );
+    final score = double.tryParse(_trainerScoreController.text);
+
+    if (score == null) {
+      _showErrorSnackBar("Score must be a valid number.");
+      return;
+    }
+
+    if (score > totalPossiblePoints || score < 0) {
+      _showErrorSnackBar("Score must be between 0 and $totalPossiblePoints.");
+      return;
+    }
 
     setState(() => _isSaving = true);
 
     try {
-      final score = double.tryParse(_trainerScoreController.text);
-      if (score == null) {
-        throw Exception("Score must be a valid number.");
-      }
-
-      await _firestore
-          .collection('studentSubmissions')
-          .doc(widget.submissionId)
-          .update({
+      final feedbackData = {
+        'aiFeedback': _aiFeedback,
         'trainerFeedback': _trainerFeedbackController.text,
         'score': score,
         'isReviewed': true,
         'reviewedAt': FieldValue.serverTimestamp(),
-      });
+      };
+
+      await _firestore
+          .collection('studentSubmissions')
+          .doc(widget.submissionId)
+          .update(feedbackData);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Feedback published successfully!'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        _showSuccessSnackBar('Feedback published successfully!');
         Navigator.pop(context);
       }
     } catch (e) {
       _logger.e("Failed to publish feedback: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to publish feedback: ${e.toString()}'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      _showErrorSnackBar('Failed to publish feedback: ${e.toString()}');
     } finally {
       if (mounted) {
         setState(() => _isSaving = false);
       }
     }
+  }
+
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
+    );
+  }
+
+  void _showSuccessSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.green),
+    );
   }
 
   Future<void> _togglePlayAudio(String url) async {
@@ -193,6 +293,445 @@ class _ReviewSpeakingSubmissionPageState
     return "$minutes:$seconds";
   }
 
+  Widget _buildAiFeedbackDisplay() {
+    if (_aiFeedback == null) return const SizedBox.shrink();
+
+    final audioQuality = _aiFeedback!['audioQuality'] as Map<String, dynamic>?;
+    final contextualAnalysis =
+        _aiFeedback!['contextualAnalysis'] as Map<String, dynamic>?;
+    final overallScore = _aiFeedback!['overallScore'] as num? ?? 0;
+    final transcript =
+        _aiFeedback!['transcript'] as String? ?? 'No transcript available';
+
+    return Container(
+      margin: const EdgeInsets.only(top: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.indigo.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.indigo.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'AI Contextual Evaluation',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF4338CA),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Transcript
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'What the student said:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '"$transcript"',
+                  style: const TextStyle(
+                    fontStyle: FontStyle.italic,
+                    color: Colors.black54,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Overall Score
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.indigo.shade100,
+              borderRadius: BorderRadius.circular(8),
+              border: Border(
+                left: BorderSide(color: Colors.indigo.shade500, width: 4),
+              ),
+            ),
+            child: Center(
+              child: Column(
+                children: [
+                  Text(
+                    '${overallScore.round()}%',
+                    style: const TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF4338CA),
+                    ),
+                  ),
+                  const Text(
+                    'Overall Score',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF4338CA),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Speech Quality Analysis
+          if (audioQuality != null) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Speech Quality Analysis:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1E40AF),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      _buildScoreCard(
+                        'Clarity',
+                        audioQuality['speechClarity'] ?? 0,
+                      ),
+                      _buildScoreCard(
+                        'Fluency',
+                        audioQuality['speechFluency'] ?? 0,
+                      ),
+                      _buildScoreCard(
+                        'Expression',
+                        audioQuality['prosody'] ?? 0,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          // Response Quality Analysis
+          if (contextualAnalysis?['scores'] != null) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Response Quality Analysis:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF059669),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...(contextualAnalysis!['scores'] as Map<String, dynamic>)
+                      .entries
+                      .map(
+                        (entry) => Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  _formatCriterionName(entry.key),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                '${(entry.value as num).round()}%',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF059669),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          // Assessment
+          if (contextualAnalysis?['overallAssessment'] != null) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.yellow.shade50,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Assessment:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFFD97706),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    contextualAnalysis!['overallAssessment'],
+                    style: const TextStyle(color: Colors.black87),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          // Strengths and Improvements
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Strengths
+              if (contextualAnalysis?['strengths'] != null)
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '✅ Strengths:',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF059669),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        ...(contextualAnalysis!['strengths'] as List)
+                            .map(
+                              (strength) => Padding(
+                                padding: const EdgeInsets.only(bottom: 4),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      '• ',
+                                      style: TextStyle(
+                                        color: Color(0xFF059669),
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: Text(
+                                        strength,
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                            .toList(),
+                      ],
+                    ),
+                  ),
+                ),
+
+              const SizedBox(width: 8),
+
+              // Improvement Areas
+              if (contextualAnalysis?['improvementAreas'] != null)
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '🎯 Areas for Improvement:',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFFEA580C),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        ...(contextualAnalysis!['improvementAreas'] as List)
+                            .map(
+                              (area) => Padding(
+                                padding: const EdgeInsets.only(bottom: 4),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      '• ',
+                                      style: TextStyle(
+                                        color: Color(0xFFEA580C),
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: Text(
+                                        area,
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                            .toList(),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+
+          // Suggestion
+          if (contextualAnalysis?['suggestion'] != null) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.purple.shade50,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '💡 Suggestion:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF7C3AED),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    contextualAnalysis!['suggestion'],
+                    style: const TextStyle(color: Colors.black87),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          // Alternative Responses
+          if (contextualAnalysis?['appropriateAlternatives'] != null) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '💬 Alternative Responses:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1E40AF),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...(contextualAnalysis!['appropriateAlternatives'] as List)
+                      .map(
+                        (alternative) => Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border(
+                              left: BorderSide(
+                                color: Colors.blue.shade300,
+                                width: 4,
+                              ),
+                            ),
+                          ),
+                          child: Text(
+                            '"$alternative"',
+                            style: const TextStyle(
+                              fontStyle: FontStyle.italic,
+                              color: Colors.black87,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScoreCard(String label, num score) {
+    final normalizedScore = (score as num).round().clamp(0, 100);
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Column(
+        children: [
+          Text(
+            '$normalizedScore%',
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF1E40AF),
+            ),
+          ),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 12, color: Colors.black54),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatCriterionName(String key) {
+    // Convert camelCase to Title Case
+    return key
+        .replaceAllMapped(RegExp(r'([A-Z])'), (match) => ' ${match.group(1)}')
+        .trim();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -200,10 +739,7 @@ class _ReviewSpeakingSubmissionPageState
       appBar: AppBar(
         title: const Text(
           'Speaking Assessment Review',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
-          ),
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
         ),
         backgroundColor: Colors.white,
         foregroundColor: const Color(0xFF0F766E),
@@ -225,10 +761,7 @@ class _ReviewSpeakingSubmissionPageState
             borderRadius: BorderRadius.circular(12),
           ),
           child: IconButton(
-            icon: const Icon(
-              Icons.arrow_back_ios,
-              color: Color(0xFF0F766E),
-            ),
+            icon: const Icon(Icons.arrow_back_ios, color: Color(0xFF0F766E)),
             onPressed: () => Navigator.pop(context),
           ),
         ),
@@ -283,7 +816,8 @@ class _ReviewSpeakingSubmissionPageState
         ),
       );
     }
-    if (_error.isNotEmpty) {
+
+    if (_error.isNotEmpty && _aiFeedback == null) {
       return Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
@@ -310,11 +844,7 @@ class _ReviewSpeakingSubmissionPageState
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  Icons.error_outline,
-                  size: 64,
-                  color: Colors.red.shade400,
-                ),
+                Icon(Icons.error_outline, size: 64, color: Colors.red.shade400),
                 const SizedBox(height: 16),
                 Text(
                   _error,
@@ -331,6 +861,7 @@ class _ReviewSpeakingSubmissionPageState
         ),
       );
     }
+
     if (_submission == null || _assessment == null) {
       return const Center(child: Text("Submission data could not be loaded."));
     }
@@ -539,7 +1070,9 @@ class _ReviewSpeakingSubmissionPageState
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          prompt?['promptText'] ?? prompt?['text'] ?? 'Speaking prompt will appear here',
+                          prompt?['promptText'] ??
+                              prompt?['text'] ??
+                              'Speaking prompt will appear here',
                           style: const TextStyle(
                             color: Color(0xFF374151),
                             fontSize: 15,
@@ -552,11 +1085,7 @@ class _ReviewSpeakingSubmissionPageState
                   const SizedBox(height: 24),
                   Row(
                     children: [
-                      Icon(
-                        Icons.mic,
-                        color: const Color(0xFF0F766E),
-                        size: 20,
-                      ),
+                      Icon(Icons.mic, color: const Color(0xFF0F766E), size: 20),
                       const SizedBox(width: 8),
                       const Text(
                         "Student's Recording:",
@@ -685,17 +1214,23 @@ class _ReviewSpeakingSubmissionPageState
                     SliderTheme(
                       data: SliderTheme.of(context).copyWith(
                         activeTrackColor: const Color(0xFF14B8A6),
-                        inactiveTrackColor: const Color(0xFF14B8A6).withOpacity(0.2),
+                        inactiveTrackColor: const Color(
+                          0xFF14B8A6,
+                        ).withOpacity(0.2),
                         thumbColor: const Color(0xFF0D9488),
                         overlayColor: const Color(0xFF14B8A6).withOpacity(0.2),
                         trackHeight: 4,
-                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+                        thumbShape: const RoundSliderThumbShape(
+                          enabledThumbRadius: 8,
+                        ),
                       ),
                       child: Slider(
                         value: _position.inSeconds.toDouble(),
                         max: _duration.inSeconds.toDouble(),
                         onChanged: (value) async {
-                          await _audioPlayer.seek(Duration(seconds: value.toInt()));
+                          await _audioPlayer.seek(
+                            Duration(seconds: value.toInt()),
+                          );
                         },
                       ),
                     ),
@@ -769,6 +1304,7 @@ class _ReviewSpeakingSubmissionPageState
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // AI Evaluation Button
                   Container(
                     width: double.infinity,
                     decoration: BoxDecoration(
@@ -787,34 +1323,36 @@ class _ReviewSpeakingSubmissionPageState
                       ),
                     ),
                     child: ElevatedButton.icon(
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: const Row(
-                              children: [
-                                Icon(Icons.construction, color: Colors.white),
-                                SizedBox(width: 8),
-                                Text('AI Evaluation feature coming soon!'),
-                              ],
-                            ),
-                            backgroundColor: Colors.deepPurple,
-                            behavior: SnackBarBehavior.floating,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        );
-                      },
-                      icon: const FaIcon(FontAwesomeIcons.robot, size: 20),
-                      label: const Text(
-                        'Get AI Evaluation',
-                        style: TextStyle(
+                      onPressed: _isLoadingAiFeedback || _aiFeedback != null
+                          ? null
+                          : _getAiEvaluation,
+                      icon: _isLoadingAiFeedback
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : _aiFeedback != null
+                          ? const Icon(Icons.check, size: 20)
+                          : const FaIcon(FontAwesomeIcons.robot, size: 20),
+                      label: Text(
+                        _isLoadingAiFeedback
+                            ? 'Getting AI Evaluation...'
+                            : _aiFeedback != null
+                            ? 'AI Evaluation Complete'
+                            : 'Get AI Evaluation',
+                        style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.deepPurple,
+                        backgroundColor: _aiFeedback != null
+                            ? Colors.green
+                            : Colors.deepPurple,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(
@@ -824,6 +1362,24 @@ class _ReviewSpeakingSubmissionPageState
                       ),
                     ),
                   ),
+
+                  // Loading message
+                  if (_isLoadingAiFeedback) ...[
+                    const SizedBox(height: 12),
+                    const Center(
+                      child: Text(
+                        'AI is analyzing the audio...',
+                        style: TextStyle(
+                          color: Color(0xFF6B7280),
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ],
+
+                  // AI Feedback Display
+                  _buildAiFeedbackDisplay(),
+
                   const SizedBox(height: 24),
                   Container(
                     padding: const EdgeInsets.all(16),
@@ -1003,14 +1559,12 @@ class _ReviewSpeakingSubmissionPageState
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
                     color: Colors.white,
-                  ))
+                  ),
+                )
               : const FaIcon(FontAwesomeIcons.paperPlane, size: 18),
           label: Text(
             _isSaving ? 'Publishing...' : 'Publish Feedback',
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.transparent,
@@ -1026,4 +1580,4 @@ class _ReviewSpeakingSubmissionPageState
       ),
     );
   }
-} 
+}

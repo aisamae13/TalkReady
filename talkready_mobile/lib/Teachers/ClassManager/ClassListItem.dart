@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:ui';
 import 'package:flutter/services.dart';
 import 'ManageClassContent.dart';
+import '../TrainerClassDashboardPage.dart';
 
 class ClassListItemWidget extends StatefulWidget {
   final Map<String, dynamic> classData;
@@ -33,20 +34,12 @@ class _ClassListItemWidgetState extends State<ClassListItemWidget>
       duration: const Duration(milliseconds: 400),
       vsync: this,
     );
-    _scaleAnimation = Tween<double>(
-      begin: 0.8,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.easeOutBack,
-    ));
-    _fadeAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.easeOut,
-    ));
+    _scaleAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeOutBack),
+    );
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
+    );
     _animationController.forward();
   }
 
@@ -71,8 +64,11 @@ class _ClassListItemWidgetState extends State<ClassListItemWidget>
 
   @override
   Widget build(BuildContext context) {
-    final String className = widget.classData['className'] as String? ?? "Unnamed Class";
-    final String description = widget.classData['description'] as String? ?? "No description available.";
+    final String className =
+        widget.classData['className'] as String? ?? "Unnamed Class";
+    final String description =
+        widget.classData['description'] as String? ??
+        "No description available.";
     final int studentCount = widget.classData['studentCount'] as int? ?? 0;
     final String subject = widget.classData['subject'] as String? ?? "General";
     final String classId = widget.classData['id'] as String? ?? '';
@@ -83,7 +79,9 @@ class _ClassListItemWidgetState extends State<ClassListItemWidget>
         margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
         child: Card(
           elevation: 4,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           child: Container(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
@@ -123,10 +121,15 @@ class _ClassListItemWidgetState extends State<ClassListItemWidget>
           child: Opacity(
             opacity: _fadeAnimation.value,
             child: Container(
-              margin: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 16.0),
+              margin: const EdgeInsets.symmetric(
+                vertical: 12.0,
+                horizontal: 16.0,
+              ),
               child: Card(
                 elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(24),
+                ),
                 child: Container(
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(24),
@@ -161,14 +164,12 @@ class _ClassListItemWidgetState extends State<ClassListItemWidget>
                         color: Colors.transparent,
                         child: InkWell(
                           onTap: () {
-                            // Navigate to one of your existing routes that makes sense
-                            Navigator.pushNamed(context, '/trainer/classes/${widget.classData['id']}/content');
-
-                            // Or just show a snackbar instead of navigating
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Class dashboard coming soon!'),
-                                duration: Duration(seconds: 2),
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => TrainerClassDashboardPage(
+                                  classId: widget.classData['id'],
+                                ),
                               ),
                             );
                           },
@@ -265,10 +266,7 @@ class _ClassListItemWidgetState extends State<ClassListItemWidget>
           end: Alignment.centerRight,
         ),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Colors.purple.shade200,
-          width: 1,
-        ),
+        border: Border.all(color: Colors.purple.shade200, width: 1),
       ),
       child: Text(
         "Subject: $subject",
@@ -290,10 +288,7 @@ class _ClassListItemWidgetState extends State<ClassListItemWidget>
       decoration: BoxDecoration(
         color: Colors.grey.shade50.withOpacity(0.8),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: Colors.grey.shade200,
-          width: 1,
-        ),
+        border: Border.all(color: Colors.grey.shade200, width: 1),
       ),
       child: Text(
         description,
@@ -321,10 +316,7 @@ class _ClassListItemWidgetState extends State<ClassListItemWidget>
                 end: Alignment.centerRight,
               ),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: Colors.green.shade200,
-                width: 1,
-              ),
+              border: Border.all(color: Colors.green.shade200, width: 1),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -397,7 +389,8 @@ class _ClassListItemWidgetState extends State<ClassListItemWidget>
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => ManageClassContentPage(classId: widget.classData['id']),
+                  builder: (context) =>
+                      ManageClassContentPage(classId: widget.classData['id']),
                 ),
               );
             },
@@ -407,7 +400,10 @@ class _ClassListItemWidgetState extends State<ClassListItemWidget>
             label: "Students",
             colors: [Colors.green.shade400, Colors.green.shade600],
             onPressed: () {
-              Navigator.pushNamed(context, '/trainer/classes/$classId/students');
+              Navigator.pushNamed(
+                context,
+                '/trainer/classes/$classId/students',
+              );
             },
           ),
           _buildActionButton(
@@ -429,13 +425,15 @@ class _ClassListItemWidgetState extends State<ClassListItemWidget>
         if (useColumnLayout) {
           // Stack buttons vertically for narrow screens
           return Column(
-            children: buttons.map((button) =>
-              Container(
-                width: double.infinity,
-                margin: const EdgeInsets.only(bottom: 8),
-                child: button,
-              )
-            ).toList(),
+            children: buttons
+                .map(
+                  (button) => Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: button,
+                  ),
+                )
+                .toList(),
           );
         } else {
           // Use wrap for wider screens
@@ -454,11 +452,7 @@ class _ClassListItemWidgetState extends State<ClassListItemWidget>
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const FaIcon(
-          FontAwesomeIcons.tag,
-          size: 14,
-          color: Color(0xFF64748B),
-        ),
+        const FaIcon(FontAwesomeIcons.tag, size: 14, color: Color(0xFF64748B)),
         const SizedBox(width: 8),
         Text(
           'Code:',
@@ -481,7 +475,8 @@ class _ClassListItemWidgetState extends State<ClassListItemWidget>
         InkWell(
           onTap: () async {
             await Clipboard.setData(
-                ClipboardData(text: widget.classData['classCode']));
+              ClipboardData(text: widget.classData['classCode']),
+            );
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
@@ -535,11 +530,7 @@ class _ClassListItemWidgetState extends State<ClassListItemWidget>
               mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                FaIcon(
-                  icon,
-                  size: 14,
-                  color: Colors.white,
-                ),
+                FaIcon(icon, size: 14, color: Colors.white),
                 const SizedBox(width: 8),
                 Flexible(
                   child: Text(

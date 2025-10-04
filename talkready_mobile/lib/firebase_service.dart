@@ -607,33 +607,30 @@ class FirebaseService {
     }
   }
 
-Future<Map<String, String>> uploadSpeakingAssessmentAudio(
-  File audioFile, 
-  String studentId, 
-  String assessmentId, 
-  int timestamp
-) async {
-  try {
-    final fileName = 'speaking_assessment_${timestamp}.aac';
-    final filePath = 'studentSubmissions/$studentId/$assessmentId/$fileName';
-    
-    final storageRef = FirebaseStorage.instance.ref().child(filePath);
-    final uploadTask = storageRef.putFile(audioFile);
-    
-    final snapshot = await uploadTask.whenComplete(() => null);
-    final downloadURL = await snapshot.ref.getDownloadURL();
-    
-    _logger.i("Audio uploaded successfully: $downloadURL");
-    
-    return {
-      'downloadURL': downloadURL,
-      'filePath': filePath,
-    };
-  } catch (e) {
-    _logger.e("Error uploading audio: $e");
-    throw Exception('Failed to upload audio: $e');
+  Future<Map<String, String>> uploadSpeakingAssessmentAudio(
+    File audioFile,
+    String studentId,
+    String assessmentId,
+    int timestamp,
+  ) async {
+    try {
+      final fileName = 'speaking_assessment_${timestamp}.aac';
+      final filePath = 'studentSubmissions/$studentId/$assessmentId/$fileName';
+
+      final storageRef = FirebaseStorage.instance.ref().child(filePath);
+      final uploadTask = storageRef.putFile(audioFile);
+
+      final snapshot = await uploadTask.whenComplete(() => null);
+      final downloadURL = await snapshot.ref.getDownloadURL();
+
+      _logger.i("Audio uploaded successfully: $downloadURL");
+
+      return {'downloadURL': downloadURL, 'filePath': filePath};
+    } catch (e) {
+      _logger.e("Error uploading audio: $e");
+      throw Exception('Failed to upload audio: $e');
+    }
   }
-}
 
   Future<List<Map<String, dynamic>>> getStudentSubmissionsWithDetails(
     String studentId,

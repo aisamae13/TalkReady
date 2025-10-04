@@ -15,23 +15,28 @@ import 'package:firebase_storage/firebase_storage.dart' as firebase_storage;
 import '../../Teachers/Assessment/ClassAssessmentsListPage.dart';
 import '../../notification_service.dart';
 
-// Define a simple Question model for standard quizzes
 class Question {
   String id;
   String text;
-  String type; // e.g., 'multiple-choice', 'fill-in-the-blank'
+  String
+  type; // e.g., 'multiple-choice', 'fill-in-the-blank', 'speaking_prompt'
   List<String>? options; // For multiple-choice
   List<String>? correctAnswers; // Can be single or multiple
   int points;
   bool requiresReview;
-  String? questionImageUrl; // NEW
-  String? questionImagePath; // NEW
+  String? questionImageUrl;
+  String? questionImagePath;
 
-  // NEW: Fields for fill-in-the-blank type
+  // Fields for fill-in-the-blank type
   String? scenarioContext;
   String? textBeforeBlank;
   String? textAfterBlank;
   String? fillInInputMethod; // 'typing' or 'multiple-choice'
+
+  // NEW: Add these fields for speaking prompts
+  String? title;
+  String? promptText;
+  String? referenceText;
 
   Question({
     required this.id,
@@ -41,30 +46,94 @@ class Question {
     this.correctAnswers,
     this.points = 10,
     this.requiresReview = false,
-    this.questionImageUrl, // NEW
-    this.questionImagePath, // NEW
+    this.questionImageUrl,
+    this.questionImagePath,
     this.scenarioContext,
     this.textBeforeBlank,
     this.textAfterBlank,
     this.fillInInputMethod,
+    // NEW: Add these parameters
+    this.title,
+    this.promptText,
+    this.referenceText,
   });
 
   Map<String, dynamic> toMap() {
-    return {
-      'id': id,
+    final baseMap = {
+      'questionId': id,
       'text': text,
       'type': type,
-      'options': options,
-      'correctAnswers': correctAnswers,
+      'questionImageUrl': questionImageUrl,
+      'questionImagePath': questionImagePath,
       'points': points,
       'requiresReview': requiresReview,
-      'questionImageUrl': questionImageUrl, // NEW
-      'questionImagePath': questionImagePath, // NEW
-      'scenarioContext': scenarioContext,
-      'textBeforeBlank': textBeforeBlank,
-      'textAfterBlank': textAfterBlank,
-      'fillInInputMethod': fillInInputMethod,
     };
+
+    if (type == 'speaking_prompt') {
+      // Add speaking prompt specific fields
+      baseMap.addAll({
+        'title': title,
+        'promptText': promptText,
+        'referenceText': referenceText,
+      });
+    } else {
+      // Your existing logic for other question types
+      baseMap.addAll({
+        // Standardize option structure
+        'options': type == 'multiple-choice'
+            ? options
+                  ?.asMap()
+                  .entries
+                  .map(
+                    (e) => {
+                      'optionId': String.fromCharCode(65 + e.key),
+                      'text': e.value,
+                    },
+                  )
+                  .toList()
+            : (type == 'fill-in-the-blank' &&
+                  fillInInputMethod == 'multiple-choice')
+            ? correctAnswers
+                  ?.asMap()
+                  .entries
+                  .map(
+                    (e) => {
+                      'optionId': String.fromCharCode(65 + e.key),
+                      'text': e.value,
+                    },
+                  )
+                  .toList()
+            : null,
+
+        // Standardize correct answers
+        'correctOptionIds': type == 'multiple-choice'
+            ? correctAnswers
+                  ?.map((answer) {
+                    int index = options?.indexOf(answer) ?? -1;
+                    return index >= 0 ? String.fromCharCode(65 + index) : null;
+                  })
+                  .where((id) => id != null)
+                  .toList()
+            : null,
+
+        // FITB specific fields with consistent naming
+        'scenarioText': scenarioContext,
+        'questionTextBeforeBlank': textBeforeBlank,
+        'questionTextAfterBlank': textAfterBlank,
+        'correctAnswers':
+            type == 'fill-in-the-blank' && fillInInputMethod == 'typing'
+            ? correctAnswers
+            : null,
+        'answerInputMode': fillInInputMethod,
+        'correctOptionIdForFITB':
+            type == 'fill-in-the-blank' &&
+                fillInInputMethod == 'multiple-choice'
+            ? 'A'
+            : null,
+      });
+    }
+
+    return baseMap;
   }
 }
 
@@ -88,10 +157,11 @@ class SpeakingPrompt {
 
   Map<String, dynamic> toMap() {
     return {
-      'id': id,
+      'questionId': id, // Consistent with Question structure
       'title': title,
       'type': 'speaking_prompt',
       'promptText': promptText,
+      'text': promptText, // Duplicate for compatibility
       'referenceText': referenceText,
       'points': points,
       'requiresReview': requiresReview,
@@ -108,7 +178,8 @@ class CreateAssessmentPage extends StatefulWidget {
   State<CreateAssessmentPage> createState() => _CreateAssessmentPageState();
 }
 
-class _CreateAssessmentPageState extends State<CreateAssessmentPage> with TickerProviderStateMixin {
+class _CreateAssessmentPageState extends State<CreateAssessmentPage>
+    with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
@@ -116,7 +187,8 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
   // VVVV ADD THESE NEW CONTROLLERS VVVV
   final TextEditingController _promptTitleController = TextEditingController();
   final TextEditingController _promptTextController = TextEditingController();
-  final TextEditingController _referenceTextController = TextEditingController();
+  final TextEditingController _referenceTextController =
+      TextEditingController();
   // ^^^^ END OF NEW CONTROLLERS ^^^^
 
   String? _selectedClassId;
@@ -137,7 +209,8 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
   // Deadline
   DateTime? _deadline;
   final _deadlineFmt = DateFormat('yyyy-MM-dd HH:mm');
-  String? get _deadlineDisplay => _deadline == null ? null : _deadlineFmt.format(_deadline!);
+  String? get _deadlineDisplay =>
+      _deadline == null ? null : _deadlineFmt.format(_deadline!);
 
   // Header image (5MB limit)
   XFile? _assessmentHeaderXFile;
@@ -176,12 +249,10 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
     );
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.3),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
-    );
+    _slideAnimation =
+        Tween<Offset>(begin: const Offset(0, 0.3), end: Offset.zero).animate(
+          CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
+        );
 
     if (widget.classId == null && widget.initialClassId == null) {
       _fetchTrainerClasses();
@@ -212,10 +283,14 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
           .where('trainerId', isEqualTo: currentUser!.uid)
           .get();
       setState(() {
-        _trainerClasses = snapshot.docs.map((doc) => {
-          'id': doc.id,
-          'name': doc.data()['className'] ?? 'Unnamed Class'
-        }).toList();
+        _trainerClasses = snapshot.docs
+            .map(
+              (doc) => {
+                'id': doc.id,
+                'name': doc.data()['className'] ?? 'Unnamed Class',
+              },
+            )
+            .toList();
       });
     } catch (e) {
       setState(() {
@@ -227,7 +302,7 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
   // NEW: Add validation flags
   bool get _canAddQuestions {
     return _titleController.text.trim().isNotEmpty &&
-           (_selectedClassId != null || widget.classId != null);
+        (_selectedClassId != null || widget.classId != null);
   }
 
   void _addQuestion() {
@@ -259,90 +334,90 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
 
   // NEW: Show validation dialog
   void _showValidationDialog() {
-  showDialog(
-    context: context,
-    builder: (BuildContext context) {
-      return Dialog(
-        backgroundColor: Colors.transparent,
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 20,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF59E0B).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(50),
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
                 ),
-                child: Icon(
-                  FontAwesomeIcons.triangleExclamation,
-                  color: const Color(0xFFF59E0B),
-                  size: 32,
-                ),
-              ),
-              const SizedBox(height: 16),
-              // ADDED Center WIDGET HERE
-              Center(
-                child: Text(
-                  'Complete Basic Information',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: const Color(0xFF1E293B),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF59E0B).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(50),
+                  ),
+                  child: Icon(
+                    FontAwesomeIcons.triangleExclamation,
+                    color: const Color(0xFFF59E0B),
+                    size: 32,
                   ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Please fill in the assessment title and select a class before adding questions.',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: const Color(0xFF64748B),
-                  height: 1.5,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    // Auto-focus the title field if empty
-                    if (_titleController.text.trim().isEmpty) {
-                      FocusScope.of(context).requestFocus(FocusNode());
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFF59E0B),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                const SizedBox(height: 16),
+                // ADDED Center WIDGET HERE
+                Center(
+                  child: Text(
+                    'Complete Basic Information',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: const Color(0xFF1E293B),
                     ),
                   ),
-                  child: const Text('OK, Got It'),
                 ),
-              ),
-            ],
+                const SizedBox(height: 12),
+                Text(
+                  'Please fill in the assessment title and select a class before adding questions.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: const Color(0xFF64748B),
+                    height: 1.5,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      // Auto-focus the title field if empty
+                      if (_titleController.text.trim().isEmpty) {
+                        FocusScope.of(context).requestFocus(FocusNode());
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFF59E0B),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text('OK, Got It'),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-      );
-    },
-  );
-}
+        );
+      },
+    );
+  }
 
   void _editQuestion(int index) {
     final question = _questions[index];
@@ -450,7 +525,10 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
       return;
     }
     _headerImageError = null;
-    final picked = await _imagePicker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+    final picked = await _imagePicker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+    );
     if (picked == null) return;
 
     final size = await picked.length();
@@ -477,7 +555,10 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
 
     final basePath = 'assessments/temp_${currentUser!.uid}/header';
     try {
-      final res = await _uploadXFileToStorage(xfile: picked, basePath: basePath);
+      final res = await _uploadXFileToStorage(
+        xfile: picked,
+        basePath: basePath,
+      );
       setState(() {
         _assessmentHeaderImageUrl = res['url'];
         _assessmentHeaderImagePath = res['path'];
@@ -513,7 +594,10 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
       return;
     }
     _questionImageError = null;
-    final picked = await _imagePicker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+    final picked = await _imagePicker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+    );
     if (picked == null) return;
 
     final size = await picked.length();
@@ -541,7 +625,10 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
     final qId = questionId ?? 'temp_q_${DateTime.now().millisecondsSinceEpoch}';
     final basePath = 'assessments/temp_${currentUser!.uid}/questions/$qId';
     try {
-      final res = await _uploadXFileToStorage(xfile: picked, basePath: basePath);
+      final res = await _uploadXFileToStorage(
+        xfile: picked,
+        basePath: basePath,
+      );
       setState(() {
         _currentQuestionImageUrl = res['url'];
         _currentQuestionImagePath = res['path'];
@@ -573,87 +660,125 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
   // --- Build payload (call inside your save flow) ---
   Map<String, dynamic> _buildAssessmentPayload() {
     final basePayload = {
-        'trainerId': currentUser?.uid,
-        'classId': _selectedClassId ?? widget.classId,
-        'title': _titleController.text.trim(),
-        'description': _descriptionController.text.trim(),
-        'assessmentType': _assessmentType,
-        'status': 'published',
-        'createdAt': FieldValue.serverTimestamp(),
-        'deadline': _deadline?.toIso8601String(),
-        if (_assessmentHeaderImageUrl != null) 'assessmentHeaderImageUrl': _assessmentHeaderImageUrl,
-        if (_assessmentHeaderImagePath != null) 'assessmentHeaderImagePath': _assessmentHeaderImagePath,
+      'trainerId': currentUser?.uid,
+      'classId': _selectedClassId ?? widget.classId,
+      'title': _titleController.text.trim(),
+      'description': _descriptionController.text.trim(),
+      'assessmentType': _assessmentType,
+      'status': 'published',
+      'createdAt': FieldValue.serverTimestamp(),
+      'deadline': _deadline?.toIso8601String(),
+      if (_assessmentHeaderImageUrl != null)
+        'assessmentHeaderImageUrl': _assessmentHeaderImageUrl,
+      if (_assessmentHeaderImagePath != null)
+        'assessmentHeaderImagePath': _assessmentHeaderImagePath,
     };
 
     if (_assessmentType == 'standard_quiz') {
-        return basePayload..['questions'] = _questions.map((q) => q.toMap()).toList();
+      return basePayload
+        ..['questions'] = _questions.map((q) => q.toMap()).toList();
     } else {
-        // Assume only one speaking prompt per assessment
-        final speakingPrompt = SpeakingPrompt(
-            id: const Uuid().v4(),
-            title: _promptTitleController.text.trim(),
-            promptText: _promptTextController.text.trim(),
-            referenceText: _referenceTextController.text.trim(),
-        );
-        return basePayload..['questions'] = [speakingPrompt.toMap()];
+      // Assume only one speaking prompt per assessment
+      final speakingPrompt = SpeakingPrompt(
+        id: const Uuid().v4(),
+        title: _promptTitleController.text.trim(),
+        promptText: _promptTextController.text.trim(),
+        referenceText: _referenceTextController.text.trim(),
+      );
+      return basePayload..['questions'] = [speakingPrompt.toMap()];
     }
   }
 
   // Example save using payload
   Future<void> _saveAssessment() async {
-  if (!_formKey.currentState!.validate()) return;
-  if ((_selectedClassId ?? widget.classId) == null) {
-    setState(() => _error = 'Please select a class.');
-    return;
-  }
-
-  if (_assessmentType == 'standard_quiz' && _questions.isEmpty) {
-    setState(() => _error = 'Please add at least one question.');
-    return;
-  }
-  if (_assessmentType == 'speaking_assessment' && _promptTitleController.text.trim().isEmpty) {
-    setState(() => _error = 'Please add a title for the speaking prompt.');
-    return;
-  }
-  if (_assessmentType == 'speaking_assessment' && _promptTextController.text.trim().isEmpty) {
-    setState(() => _error = 'Please add the prompt text for the speaking assessment.');
-    return;
-  }
-
-  setState(() { _isLoading = true; _error = null; });
-  try {
-    final data = _buildAssessmentPayload();
-    final docRef = await FirebaseFirestore.instance
-        .collection('trainerAssessments')
-        .add(data);
-
-    // Get class name for notification
-    final classId = _selectedClassId ?? widget.classId!;
-    String? className;
-    if (_trainerClasses.isNotEmpty) {
-      final selectedClass = _trainerClasses.firstWhere(
-        (c) => c['id'] == classId,
-        orElse: () => {'name': 'your class'}
-      );
-      className = selectedClass['name'] as String?;
+    if (!_formKey.currentState!.validate()) return;
+    if ((_selectedClassId ?? widget.classId) == null) {
+      setState(() => _error = 'Please select a class.');
+      return;
     }
 
-    // Create notifications for students
-    await NotificationService.createNotificationsForStudents(
-      classId: classId,
-      message: 'New assessment: ${_titleController.text.trim()}',
-      className: className,
-      link: '/student/class/$classId',
-    );
+    // Validation based on assessment type
+    if (_assessmentType == 'standard_quiz' && _questions.isEmpty) {
+      setState(() => _error = 'Please add at least one question.');
+      return;
+    }
 
-    if (!mounted) return;
-    _showSuccessDialog(docRef.id);
-  } catch (e) {
-    if (mounted) setState(() => _error = 'Failed to save assessment: $e');
-  } finally {
-    if (mounted) setState(() => _isLoading = false);
+    if (_assessmentType == 'speaking_assessment') {
+      if (_promptTitleController.text.trim().isEmpty) {
+        setState(() => _error = 'Please add a title for the speaking prompt.');
+        return;
+      }
+      if (_promptTextController.text.trim().isEmpty) {
+        setState(
+          () => _error =
+              'Please add the prompt text for the speaking assessment.',
+        );
+        return;
+      }
+      // NOTE: No deadline validation here - it's optional!
+
+      // Create the speaking prompt
+      final speakingPrompt = SpeakingPrompt(
+        id: const Uuid().v4(),
+        title: _promptTitleController.text.trim(),
+        promptText: _promptTextController.text.trim(),
+        referenceText: _referenceTextController.text.trim(),
+      );
+
+      // Clear any existing questions and add the speaking prompt
+      _questions.clear();
+      _questions.add(
+        Question(
+          id: speakingPrompt.id,
+          text: speakingPrompt.promptText,
+          type: 'speaking_prompt',
+          points: speakingPrompt.points,
+          requiresReview: true,
+          title: speakingPrompt.title,
+          promptText: speakingPrompt.promptText,
+          referenceText: speakingPrompt.referenceText,
+        ),
+      );
+    }
+
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final data = _buildAssessmentPayload();
+      final docRef = await FirebaseFirestore.instance
+          .collection('trainerAssessments')
+          .add(data);
+
+      // Get class name for notification
+      final classId = _selectedClassId ?? widget.classId!;
+      String? className;
+      if (_trainerClasses.isNotEmpty) {
+        final selectedClass = _trainerClasses.firstWhere(
+          (c) => c['id'] == classId,
+          orElse: () => {'name': 'your class'},
+        );
+        className = selectedClass['name'] as String?;
+      }
+
+      // Create notifications for students
+      await NotificationService.createNotificationsForStudents(
+        classId: classId,
+        message: 'New assessment: ${_titleController.text.trim()}',
+        className: className,
+        link: '/student/class/$classId',
+      );
+
+      if (!mounted) return;
+      _showSuccessDialog(docRef.id);
+    } catch (e) {
+      if (mounted) setState(() => _error = 'Failed to save assessment: $e');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
-}
 
   void _showSuccessDialog(String assessmentId) {
     showDialog(
@@ -702,19 +827,13 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
                 const SizedBox(height: 12),
                 const Text(
                   'Assessment created successfully!',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.grey,
-                  ),
+                  style: TextStyle(fontSize: 16, color: Colors.grey),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 8),
                 const Text(
                   'What would you like to do next?',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
-                  ),
+                  style: TextStyle(fontSize: 14, color: Colors.grey),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 24),
@@ -724,7 +843,9 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
                       child: OutlinedButton(
                         onPressed: () {
                           Navigator.of(context).pop(); // Close dialog
-                          Navigator.of(context).pop(); // Go back to previous page
+                          Navigator.of(
+                            context,
+                          ).pop(); // Go back to previous page
                         },
                         style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 12),
@@ -845,10 +966,7 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
       flexibleSpace: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [
-              Color(0xFF8B5CF6),
-              Color(0xFF6366F1),
-            ],
+            colors: [Color(0xFF8B5CF6), Color(0xFF6366F1)],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -859,16 +977,23 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
 
   // Update the _buildBackgroundGradient method:
   BoxDecoration _buildBackgroundGradient() {
-    return const BoxDecoration(
-      color: Colors.white,
-    );
+    return const BoxDecoration(color: Colors.white);
   }
 
-  // NEW: Progress indicator showing completion status
   Widget _buildProgressIndicator() {
     bool titleComplete = _titleController.text.trim().isNotEmpty;
     bool classComplete = _selectedClassId != null || widget.classId != null;
-    bool questionsComplete = _questions.isNotEmpty;
+
+    bool questionsComplete;
+    if (_assessmentType == 'standard_quiz') {
+      questionsComplete = _questions.isNotEmpty;
+    } else {
+      // For speaking assessments, check if the form fields are filled
+      // NOTE: Deadline is NOT required for completion
+      questionsComplete =
+          _promptTitleController.text.trim().isNotEmpty &&
+          _promptTextController.text.trim().isNotEmpty;
+    }
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -894,7 +1019,13 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
               _buildProgressConnector(titleComplete),
               _buildProgressStep('Class', classComplete, titleComplete),
               _buildProgressConnector(classComplete),
-              _buildProgressStep('Questions', questionsComplete, classComplete),
+              _buildProgressStep(
+                _assessmentType == 'speaking_assessment'
+                    ? 'Prompt'
+                    : 'Questions',
+                questionsComplete,
+                classComplete,
+              ),
             ],
           ),
         ],
@@ -913,15 +1044,15 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
               color: isComplete
                   ? const Color(0xFF10B981)
                   : isEnabled
-                      ? const Color(0xFF8B5CF6).withOpacity(0.1)
-                      : Colors.grey[200],
+                  ? const Color(0xFF8B5CF6).withOpacity(0.1)
+                  : Colors.grey[200],
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
                 color: isComplete
                     ? const Color(0xFF10B981)
                     : isEnabled
-                        ? const Color(0xFF8B5CF6)
-                        : Colors.grey[300]!,
+                    ? const Color(0xFF8B5CF6)
+                    : Colors.grey[300]!,
                 width: 2,
               ),
             ),
@@ -929,13 +1060,13 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
               isComplete
                   ? FontAwesomeIcons.check
                   : isEnabled
-                      ? FontAwesomeIcons.circle
-                      : FontAwesomeIcons.lock,
+                  ? FontAwesomeIcons.circle
+                  : FontAwesomeIcons.lock,
               color: isComplete
                   ? Colors.white
                   : isEnabled
-                      ? const Color(0xFF8B5CF6)
-                      : Colors.grey[400],
+                  ? const Color(0xFF8B5CF6)
+                  : Colors.grey[400],
               size: 12,
             ),
           ),
@@ -947,8 +1078,8 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
               color: isComplete
                   ? const Color(0xFF10B981)
                   : isEnabled
-                      ? const Color(0xFF8B5CF6)
-                      : Colors.grey[400],
+                  ? const Color(0xFF8B5CF6)
+                  : Colors.grey[400],
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -961,9 +1092,7 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
     return Container(
       height: 2,
       width: 24,
-      color: isComplete
-          ? const Color(0xFF10B981)
-          : Colors.grey[300],
+      color: isComplete ? const Color(0xFF10B981) : Colors.grey[300],
     );
   }
 
@@ -1085,7 +1214,8 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
                 controller: _titleController,
                 label: 'Assessment Title',
                 icon: FontAwesomeIcons.fileSignature,
-                validator: (v) => v == null || v.trim().isEmpty ? 'Title is required' : null,
+                validator: (v) =>
+                    v == null || v.trim().isEmpty ? 'Title is required' : null,
                 isRequired: true,
               ),
               const SizedBox(height: 16),
@@ -1123,8 +1253,10 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
                       onChanged: (String? value) {
                         setState(() {
                           _assessmentType = value!;
-                          _questions.clear(); // Clear questions when type changes
-                          _promptTitleController.clear(); // Clear speaking prompt when type changes
+                          _questions
+                              .clear(); // Clear questions when type changes
+                          _promptTitleController
+                              .clear(); // Clear speaking prompt when type changes
                           _promptTextController.clear();
                           _referenceTextController.clear();
                         });
@@ -1155,14 +1287,13 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
               ),
               const SizedBox(height: 24),
 
-
               // VVVV START: Assessment Questions/Prompt Section VVVV
               if (_assessmentType == 'standard_quiz')
-                  _buildStandardQuizSection()
+                _buildStandardQuizSection()
               else if (_assessmentType == 'speaking_assessment')
-                  _buildSpeakingAssessmentSection(),
-              // ^^^^ END: Assessment Questions/Prompt Section ^^^^
+                _buildSpeakingAssessmentSection(),
 
+              // ^^^^ END: Assessment Questions/Prompt Section ^^^^
               const SizedBox(height: 24),
 
               // Save Button
@@ -1176,141 +1307,166 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
 
   // NEW: Build the Standard Quiz section
   Widget _buildStandardQuizSection() {
-      return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-              _buildAssessmentHeaderImagePicker(),
-              const SizedBox(height: 20),
-              _buildSubmissionDeadlinePicker(),
-              const SizedBox(height: 24),
-              Text(
-                  'Assessment Questions',
-                  style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1E293B),
-                  ),
-              ),
-              const SizedBox(height: 12),
-              if (_questions.isEmpty)
-                  Text(
-                      'No questions added yet. Tap "Add Question" to start.',
-                      style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-                  ),
-              if (_questions.isNotEmpty)
-                  ..._questions.asMap().entries.map((entry) {
-                      int index = entry.key;
-                      Question question = entry.value;
-                      return _buildQuestionCard(question, index);
-                  }).toList(),
-              const SizedBox(height: 16),
-              ElevatedButton.icon(
-                  onPressed: _addQuestion,
-                  icon: const Icon(Icons.add_circle, color: Colors.white),
-                  label: const Text('Add Question', style: TextStyle(color: Colors.white)),
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFF59E0B),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-              ),
-          ],
-      );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildAssessmentHeaderImagePicker(),
+        const SizedBox(height: 20),
+        _buildSubmissionDeadlinePicker(),
+        const SizedBox(height: 24),
+        Text(
+          'Assessment Questions',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF1E293B),
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (_questions.isEmpty)
+          Text(
+            'No questions added yet. Tap "Add Question" to start.',
+            style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+          ),
+        if (_questions.isNotEmpty)
+          ..._questions.asMap().entries.map((entry) {
+            int index = entry.key;
+            Question question = entry.value;
+            return _buildQuestionCard(question, index);
+          }).toList(),
+        const SizedBox(height: 16),
+        ElevatedButton.icon(
+          onPressed: _addQuestion,
+          icon: const Icon(Icons.add_circle, color: Colors.white),
+          label: const Text(
+            'Add Question',
+            style: TextStyle(color: Colors.white),
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFFF59E0B),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 12),
+          ),
+        ),
+      ],
+    );
   }
 
   // NEW: Build the Speaking Assessment section
   Widget _buildSpeakingAssessmentSection() {
-      return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-              _buildAssessmentHeaderImagePicker(),
-              const SizedBox(height: 20),
-              _buildSubmissionDeadlinePicker(),
-              const SizedBox(height: 24),
-              Text(
-                  'Speaking Prompt',
-                  style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1E293B),
-                  ),
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                  controller: _promptTitleController,
-                  decoration: InputDecoration(
-                      labelText: 'Prompt Title *',
-                      hintText: 'Describe the situation the student needs to respond to.',
-                      border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                      ),
-                      filled: true,
-                      fillColor: Colors.grey[50],
-                      prefixIcon: const Icon(Icons.title),
-                  ),
-                  validator: (value) {
-                      if (value == null || value.isEmpty) {
-                          return 'Please enter a title for the prompt.';
-                      }
-                      return null;
-                  },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                  controller: _promptTextController,
-                  maxLines: 4,
-                  decoration: InputDecoration(
-                      labelText: 'Prompt Text *',
-                      hintText: 'e.g., "Handling an Angry customer"',
-                      alignLabelWithHint: true,
-                      border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                      ),
-                      filled: true,
-                      fillColor: Colors.grey[50],
-                      prefixIcon: Padding(
-                          padding: const EdgeInsets.fromLTRB(12, 0, 0, 0),
-                          child: Icon(Icons.chat_bubble_outline),
-                      ),
-                  ),
-                  validator: (value) {
-                      if (value == null || value.isEmpty) {
-                          return 'Please enter the prompt text.';
-                      }
-                      return null;
-                  },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                  controller: _referenceTextController,
-                  maxLines: 4,
-                  decoration: InputDecoration(
-                      labelText: 'Reference Text for AI Review',
-                      hintText: 'Provide an ideal or correct text response for the AI to compare against.',
-                      alignLabelWithHint: true,
-                      border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                      ),
-                      filled: true,
-                      fillColor: Colors.grey[50],
-                      prefixIcon: Padding(
-                          padding: const EdgeInsets.fromLTRB(12, 0, 0, 0),
-                          child: Icon(Icons.mic),
-                      ),
-                  ),
-              ),
-          ],
-      );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildAssessmentHeaderImagePicker(),
+        const SizedBox(height: 20),
+        _buildSubmissionDeadlinePicker(),
+        const SizedBox(height: 24),
+        Text(
+          'Speaking Prompt',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF1E293B),
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: _promptTitleController,
+          onChanged: (value) {
+            // ADD THIS: Trigger rebuild when text changes
+            setState(() {
+              _error = null;
+            });
+          },
+          decoration: InputDecoration(
+            labelText: 'Prompt Title *',
+            hintText: 'Describe the situation the student needs to respond to.',
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            filled: true,
+            fillColor: Colors.grey[50],
+            prefixIcon: const Icon(Icons.title),
+          ),
+          validator: (value) {
+            if (value == null || value.isEmpty) {
+              return 'Please enter a title for the prompt.';
+            }
+            return null;
+          },
+        ),
+        const SizedBox(height: 16),
+        TextFormField(
+          controller: _promptTextController,
+          maxLines: 4,
+          onChanged: (value) {
+            // ADD THIS: Trigger rebuild when text changes
+            setState(() {
+              _error = null;
+            });
+          },
+          decoration: InputDecoration(
+            labelText: 'Prompt Text *',
+            hintText: 'e.g., "Handling an Angry customer"',
+            alignLabelWithHint: true,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            filled: true,
+            fillColor: Colors.grey[50],
+            prefixIcon: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 0, 0),
+              child: Icon(Icons.chat_bubble_outline),
+            ),
+          ),
+          validator: (value) {
+            if (value == null || value.isEmpty) {
+              return 'Please enter the prompt text.';
+            }
+            return null;
+          },
+        ),
+        const SizedBox(height: 16),
+        TextFormField(
+          controller: _referenceTextController,
+          maxLines: 4,
+          onChanged: (value) {
+            // ADD THIS: Even for optional fields, trigger rebuild
+            setState(() {});
+          },
+          decoration: InputDecoration(
+            labelText: 'Reference Text for AI Review',
+            hintText:
+                'Provide an ideal or correct text response for the AI to compare against.',
+            alignLabelWithHint: true,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            filled: true,
+            fillColor: Colors.grey[50],
+            prefixIcon: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 0, 0),
+              child: Icon(Icons.mic),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   // Simplified save button
   Widget _buildSaveButton() {
-    bool canSave = _titleController.text.trim().isNotEmpty &&
-                  (_selectedClassId != null || widget.classId != null);
+    bool canSave =
+        _titleController.text.trim().isNotEmpty &&
+        (_selectedClassId != null || widget.classId != null);
+
+    // Different validation for different assessment types
     if (_assessmentType == 'standard_quiz') {
-        canSave = canSave && _questions.isNotEmpty;
-    } else {
-        canSave = canSave && _promptTitleController.text.trim().isNotEmpty && _promptTextController.text.trim().isNotEmpty;
+      canSave = canSave && _questions.isNotEmpty;
+    } else if (_assessmentType == 'speaking_assessment') {
+      // For speaking assessments, check the form fields directly
+      // NOTE: Deadline is NOT required for speaking assessments
+      canSave =
+          canSave &&
+          _promptTitleController.text.trim().isNotEmpty &&
+          _promptTextController.text.trim().isNotEmpty;
+      // Removed any deadline requirement here
     }
 
     return SizedBox(
@@ -1334,22 +1490,13 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
           _isLoading
               ? 'Saving...'
               : canSave
-                  ? 'Save Assessment'
-                  : 'Locked',
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 14,
-          ),
+              ? 'Save Assessment'
+              : 'Complete Required Fields',
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
         ),
-        onPressed: _isLoading
-            ? null
-            : canSave
-                ? _saveAssessment
-                : null,
+        onPressed: _isLoading ? null : (canSave ? _saveAssessment : null),
         style: ElevatedButton.styleFrom(
-          backgroundColor: canSave
-              ? const Color(0xFF8B5CF6)
-              : Colors.grey[400],
+          backgroundColor: canSave ? const Color(0xFF8B5CF6) : Colors.grey[400],
           foregroundColor: Colors.white,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
@@ -1390,7 +1537,10 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Center(
-                      child: Text('Failed to load image', style: TextStyle(color: Colors.red)),
+                      child: Text(
+                        'Failed to load image',
+                        style: TextStyle(color: Colors.red),
+                      ),
                     ),
                   ),
                 ),
@@ -1425,16 +1575,30 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
               ),
               child: Center(
                 child: _isUploadingHeaderImage
-                    ? CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(const Color(0xFF8B5CF6)))
+                    ? CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          const Color(0xFF8B5CF6),
+                        ),
+                      )
                     : Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(FontAwesomeIcons.solidImage, size: 30, color: Colors.grey),
+                          Icon(
+                            FontAwesomeIcons.solidImage,
+                            size: 30,
+                            color: Colors.grey,
+                          ),
                           const SizedBox(height: 8),
-                          Text('Upload Header Image', style: TextStyle(color: Colors.grey, fontSize: 14)),
+                          Text(
+                            'Upload Header Image',
+                            style: TextStyle(color: Colors.grey, fontSize: 14),
+                          ),
                           if (_headerImageError != null) ...[
                             const SizedBox(height: 8),
-                            Text(_headerImageError!, style: TextStyle(color: Colors.red, fontSize: 12)),
+                            Text(
+                              _headerImageError!,
+                              style: TextStyle(color: Colors.red, fontSize: 12),
+                            ),
                           ],
                         ],
                       ),
@@ -1450,7 +1614,7 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Submission Deadline (Optional)',
+          'Submission Deadline (Optional)', // Make sure it says "Optional"
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w600,
@@ -1469,7 +1633,9 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
             if (pickedDate != null) {
               final TimeOfDay? pickedTime = await showTimePicker(
                 context: context,
-                initialTime: TimeOfDay.fromDateTime(_deadline ?? DateTime.now()),
+                initialTime: TimeOfDay.fromDateTime(
+                  _deadline ?? DateTime.now(),
+                ),
               );
               if (pickedTime != null) {
                 setState(() {
@@ -1487,13 +1653,18 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
           child: InputDecorator(
             decoration: InputDecoration(
               labelText: 'Select Date and Time',
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               filled: true,
               fillColor: Colors.grey[50],
               prefixIcon: const Icon(Icons.calendar_today),
+              // NO validator here - deadline is optional
             ),
             child: Text(
-              _deadline == null ? 'No deadline set' : _deadlineFmt.format(_deadline!),
+              _deadline == null
+                  ? 'No deadline set'
+                  : _deadlineFmt.format(_deadline!),
               style: TextStyle(
                 fontSize: 14,
                 color: _deadline == null ? Colors.grey[600] : Colors.black,
@@ -1511,7 +1682,10 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
                 });
               },
               icon: Icon(Icons.close, size: 16, color: Colors.red),
-              label: Text('Remove Deadline', style: TextStyle(color: Colors.red)),
+              label: Text(
+                'Remove Deadline',
+                style: TextStyle(color: Colors.red),
+              ),
             ),
           ),
       ],
@@ -1613,7 +1787,10 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
                 Row(
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: const Color(0xFF3B82F6).withOpacity(0.1),
                         borderRadius: BorderRadius.circular(4),
@@ -1629,7 +1806,10 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
                     ),
                     const SizedBox(width: 4),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: const Color(0xFF10B981).withOpacity(0.1),
                         borderRadius: BorderRadius.circular(4),
@@ -1646,7 +1826,10 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
                     if (q.requiresReview) ...[
                       const SizedBox(width: 4),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: const Color(0xFFF59E0B).withOpacity(0.1),
                           borderRadius: BorderRadius.circular(4),
@@ -1683,151 +1866,160 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
   }
 
   Widget _buildQuestionCard(Question question, int index) {
-      return Container(
-          margin: const EdgeInsets.only(bottom: 8),
-          decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.grey[200]!),
-          ),
-          child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                      Row(
-                          children: [
-                              Container(
-                                  width: 24,
-                                  height: 24,
-                                  decoration: BoxDecoration(
-                                      color: const Color(0xFF8B5CF6),
-                                      borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Center(
-                                      child: Text(
-                                          '${index + 1}',
-                                          style: const TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.bold,
-                                          ),
-                                      ),
-                                  ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                  child: Text(
-                                      question.text,
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.w500,
-                                          fontSize: 13,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                  ),
-                              ),
-                              SizedBox(
-                                  width: 60,
-                                  child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.end,
-                                      children: [
-                                          GestureDetector(
-                                              onTap: () => _editQuestion(index),
-                                              child: Container(
-                                                  width: 24,
-                                                  height: 24,
-                                                  decoration: BoxDecoration(
-                                                      color: const Color(0xFF8B5CF6).withOpacity(0.1),
-                                                      borderRadius: BorderRadius.circular(4),
-                                                  ),
-                                                  child: const Icon(
-                                                      FontAwesomeIcons.pencil,
-                                                      size: 10,
-                                                      color: Color(0xFF8B5CF6),
-                                                  ),
-                                              ),
-                                          ),
-                                          const SizedBox(width: 4),
-                                          GestureDetector(
-                                              onTap: () => _removeQuestion(index),
-                                              child: Container(
-                                                  width: 24,
-                                                  height: 24,
-                                                  decoration: BoxDecoration(
-                                                      color: Colors.red.withOpacity(0.1),
-                                                      borderRadius: BorderRadius.circular(4),
-                                                  ),
-                                                  child: const Icon(
-                                                      FontAwesomeIcons.trash,
-                                                      size: 10,
-                                                      color: Colors.red,
-                                                  ),
-                                              ),
-                                          ),
-                                      ],
-                                  ),
-                              ),
-                          ],
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey[200]!),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF8B5CF6),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Center(
+                    child: Text(
+                      '${index + 1}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
                       ),
-                      const SizedBox(height: 8),
-                      Row(
-                          children: [
-                              Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                      color: const Color(0xFF3B82F6).withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Text(
-                                      _getShortQuestionType(question.type),
-                                      style: const TextStyle(
-                                          fontSize: 9,
-                                          color: Color(0xFF3B82F6),
-                                          fontWeight: FontWeight.w500,
-                                      ),
-                                  ),
-                              ),
-                              const SizedBox(width: 4),
-                              Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                      color: const Color(0xFF10B981).withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Text(
-                                      '${question.points}pts',
-                                      style: const TextStyle(
-                                          fontSize: 9,
-                                          color: Color(0xFF10B981),
-                                          fontWeight: FontWeight.w500,
-                                      ),
-                                  ),
-                              ),
-                              if (question.requiresReview) ...[
-                                  const SizedBox(width: 4),
-                                  Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                      decoration: BoxDecoration(
-                                          color: const Color(0xFFF59E0B).withOpacity(0.1),
-                                          borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      child: const Text(
-                                          'Manual',
-                                          style: TextStyle(
-                                              fontSize: 9,
-                                              color: Color(0xFFF59E0B),
-                                              fontWeight: FontWeight.w500,
-                                          ),
-                                      ),
-                                  ),
-                              ],
-                          ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    question.text,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w500,
+                      fontSize: 13,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                SizedBox(
+                  width: 60,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      GestureDetector(
+                        onTap: () => _editQuestion(index),
+                        child: Container(
+                          width: 24,
+                          height: 24,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF8B5CF6).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Icon(
+                            FontAwesomeIcons.pencil,
+                            size: 10,
+                            color: Color(0xFF8B5CF6),
+                          ),
+                        ),
                       ),
-                  ],
-              ),
-          ),
-      );
+                      const SizedBox(width: 4),
+                      GestureDetector(
+                        onTap: () => _removeQuestion(index),
+                        child: Container(
+                          width: 24,
+                          height: 24,
+                          decoration: BoxDecoration(
+                            color: Colors.red.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Icon(
+                            FontAwesomeIcons.trash,
+                            size: 10,
+                            color: Colors.red,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF3B82F6).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    _getShortQuestionType(question.type),
+                    style: const TextStyle(
+                      fontSize: 9,
+                      color: Color(0xFF3B82F6),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    '${question.points}pts',
+                    style: const TextStyle(
+                      fontSize: 9,
+                      color: Color(0xFF10B981),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                if (question.requiresReview) ...[
+                  const SizedBox(width: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF59E0B).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      'Manual',
+                      style: TextStyle(
+                        fontSize: 9,
+                        color: Color(0xFFF59E0B),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildEmptyQuestionsState() {
@@ -1838,30 +2030,44 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: _canAddQuestions ? const Color(0xFF64748B).withOpacity(0.1) : Colors.grey.withOpacity(0.05),
+              color: _canAddQuestions
+                  ? const Color(0xFF64748B).withOpacity(0.1)
+                  : Colors.grey.withOpacity(0.05),
               borderRadius: BorderRadius.circular(16),
             ),
             child: Icon(
-              _canAddQuestions ? FontAwesomeIcons.questionCircle : FontAwesomeIcons.lock,
+              _canAddQuestions
+                  ? FontAwesomeIcons.questionCircle
+                  : FontAwesomeIcons.lock,
               size: 40,
-              color: _canAddQuestions ? const Color(0xFF64748B).withOpacity(0.6) : Colors.grey[400],
+              color: _canAddQuestions
+                  ? const Color(0xFF64748B).withOpacity(0.6)
+                  : Colors.grey[400],
             ),
           ),
           const SizedBox(height: 16),
           Text(
-            _canAddQuestions ? "Ready to add questions!" : "Complete basic information first",
+            _canAddQuestions
+                ? "Ready to add questions!"
+                : "Complete basic information first",
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
-              color: _canAddQuestions ? const Color(0xFF64748B) : Colors.grey[600],
+              color: _canAddQuestions
+                  ? const Color(0xFF64748B)
+                  : Colors.grey[600],
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            _canAddQuestions ? "Click 'Add Question' to create your first question" : "Fill in the assessment title and select a class to unlock questions",
+            _canAddQuestions
+                ? "Click 'Add Question' to create your first question"
+                : "Fill in the assessment title and select a class to unlock questions",
             style: TextStyle(
               fontSize: 13,
-              color: _canAddQuestions ? const Color(0xFF64748B).withOpacity(0.8) : const Color(0xFFF59E0B),
+              color: _canAddQuestions
+                  ? const Color(0xFF64748B).withOpacity(0.8)
+                  : const Color(0xFFF59E0B),
               height: 1.4,
             ),
             textAlign: TextAlign.center,
@@ -1913,37 +2119,52 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
             margin: const EdgeInsets.all(12),
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: isRequired && hasValue ? const Color(0xFF10B981).withOpacity(0.1) : const Color(0xFF8B5CF6).withOpacity(0.1),
+              color: isRequired && hasValue
+                  ? const Color(0xFF10B981).withOpacity(0.1)
+                  : const Color(0xFF8B5CF6).withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(
               isRequired && hasValue ? FontAwesomeIcons.check : icon,
-              color: isRequired && hasValue ? const Color(0xFF10B981) : const Color(0xFF8B5CF6),
+              color: isRequired && hasValue
+                  ? const Color(0xFF10B981)
+                  : const Color(0xFF8B5CF6),
               size: 16,
             ),
           ),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(
-              color: isRequired && !hasValue ? const Color(0xFFF59E0B).withOpacity(0.5) : Colors.grey[300]!,
+              color: isRequired && !hasValue
+                  ? const Color(0xFFF59E0B).withOpacity(0.5)
+                  : Colors.grey[300]!,
             ),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(
-              color: isRequired && !hasValue ? const Color(0xFFF59E0B).withOpacity(0.5) : Colors.grey[300]!,
+              color: isRequired && !hasValue
+                  ? const Color(0xFFF59E0B).withOpacity(0.5)
+                  : Colors.grey[300]!,
             ),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(
-              color: isRequired && hasValue ? const Color(0xFF10B981) : const Color(0xFF8B5CF6),
+              color: isRequired && hasValue
+                  ? const Color(0xFF10B981)
+                  : const Color(0xFF8B5CF6),
               width: 2,
             ),
           ),
           filled: true,
-          fillColor: isRequired && !hasValue ? const Color(0xFFFBBF24).withOpacity(0.05) : Colors.grey[50],
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          fillColor: isRequired && !hasValue
+              ? const Color(0xFFFBBF24).withOpacity(0.05)
+              : Colors.grey[50],
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 16,
+          ),
           isDense: true,
         ),
         validator: validator,
@@ -1975,37 +2196,54 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
             margin: const EdgeInsets.all(12),
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: hasValue ? const Color(0xFF10B981).withOpacity(0.1) : const Color(0xFF8B5CF6).withOpacity(0.1),
+              color: hasValue
+                  ? const Color(0xFF10B981).withOpacity(0.1)
+                  : const Color(0xFF8B5CF6).withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(
-              hasValue ? FontAwesomeIcons.check : FontAwesomeIcons.chalkboardUser,
-              color: hasValue ? const Color(0xFF10B981) : const Color(0xFF8B5CF6),
+              hasValue
+                  ? FontAwesomeIcons.check
+                  : FontAwesomeIcons.chalkboardUser,
+              color: hasValue
+                  ? const Color(0xFF10B981)
+                  : const Color(0xFF8B5CF6),
               size: 16,
             ),
           ),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(
-              color: !hasValue ? const Color(0xFFF59E0B).withOpacity(0.5) : Colors.grey[300]!,
+              color: !hasValue
+                  ? const Color(0xFFF59E0B).withOpacity(0.5)
+                  : Colors.grey[300]!,
             ),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(
-              color: !hasValue ? const Color(0xFFF59E0B).withOpacity(0.5) : Colors.grey[300]!,
+              color: !hasValue
+                  ? const Color(0xFFF59E0B).withOpacity(0.5)
+                  : Colors.grey[300]!,
             ),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(
-              color: hasValue ? const Color(0xFF10B981) : const Color(0xFF8B5CF6),
+              color: hasValue
+                  ? const Color(0xFF10B981)
+                  : const Color(0xFF8B5CF6),
               width: 2,
             ),
           ),
           filled: true,
-          fillColor: !hasValue ? const Color(0xFFFBBF24).withOpacity(0.05) : Colors.grey[50],
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          fillColor: !hasValue
+              ? const Color(0xFFFBBF24).withOpacity(0.05)
+              : Colors.grey[50],
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 16,
+          ),
         ),
         value: _selectedClassId,
         items: _trainerClasses.map((cls) {
@@ -2014,12 +2252,14 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
             child: Text(cls['name'] as String),
           );
         }).toList(),
-        onChanged: _isLoading ? null : (value) {
-          setState(() {
-            _selectedClassId = value;
-            _error = null;
-          });
-        },
+        onChanged: _isLoading
+            ? null
+            : (value) {
+                setState(() {
+                  _selectedClassId = value;
+                  _error = null;
+                });
+              },
         validator: (value) => value == null ? 'Please select a class' : null,
       ),
     );
@@ -2044,9 +2284,12 @@ class _QuestionEditorDialogState extends State<QuestionEditorDialog> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _questionTextController = TextEditingController();
   final TextEditingController _pointsController = TextEditingController();
-  final TextEditingController _scenarioContextController = TextEditingController();
-  final TextEditingController _textBeforeBlankController = TextEditingController();
-  final TextEditingController _textAfterBlankController = TextEditingController();
+  final TextEditingController _scenarioContextController =
+      TextEditingController();
+  final TextEditingController _textBeforeBlankController =
+      TextEditingController();
+  final TextEditingController _textAfterBlankController =
+      TextEditingController();
 
   String _selectedType = 'multiple-choice';
   String _previousSelectedType = 'multiple-choice'; // NEW: Add this line
@@ -2082,18 +2325,26 @@ class _QuestionEditorDialogState extends State<QuestionEditorDialog> {
         if (widget.existingQuestion!.correctAnswers != null) {
           _correctAnswers = List.filled(_options.length, false);
           for (int i = 0; i < _options.length; i++) {
-            if (widget.existingQuestion!.correctAnswers!.contains(_options[i])) {
+            if (widget.existingQuestion!.correctAnswers!.contains(
+              _options[i],
+            )) {
               _correctAnswers[i] = true;
             }
           }
         }
       } else if (_selectedType == 'fill-in-the-blank') {
-        _scenarioContextController.text = widget.existingQuestion!.scenarioContext ?? '';
-        _textBeforeBlankController.text = widget.existingQuestion!.textBeforeBlank ?? '';
-        _textAfterBlankController.text = widget.existingQuestion!.textAfterBlank ?? '';
-        _fillInInputMethod = widget.existingQuestion!.fillInInputMethod ?? 'typing';
+        _scenarioContextController.text =
+            widget.existingQuestion!.scenarioContext ?? '';
+        _textBeforeBlankController.text =
+            widget.existingQuestion!.textBeforeBlank ?? '';
+        _textAfterBlankController.text =
+            widget.existingQuestion!.textAfterBlank ?? '';
+        _fillInInputMethod =
+            widget.existingQuestion!.fillInInputMethod ?? 'typing';
         if (widget.existingQuestion!.correctAnswers != null) {
-          _acceptableAnswers = List.from(widget.existingQuestion!.correctAnswers!);
+          _acceptableAnswers = List.from(
+            widget.existingQuestion!.correctAnswers!,
+          );
         }
       }
     } else {
@@ -2160,7 +2411,9 @@ class _QuestionEditorDialogState extends State<QuestionEditorDialog> {
             content: const Text('Please mark at least one correct answer'),
             backgroundColor: Colors.orange,
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
           ),
         );
         return;
@@ -2173,8 +2426,12 @@ class _QuestionEditorDialogState extends State<QuestionEditorDialog> {
         }
       }
     } else if (_selectedType == 'fill-in-the-blank') {
-      options = _fillInInputMethod == 'multiple-choice' ? _acceptableAnswers.where((a) => a.trim().isNotEmpty).toList() : null;
-      correctAnswers = _acceptableAnswers.where((a) => a.trim().isNotEmpty).toList();
+      options = _fillInInputMethod == 'multiple-choice'
+          ? _acceptableAnswers.where((a) => a.trim().isNotEmpty).toList()
+          : null;
+      correctAnswers = _acceptableAnswers
+          .where((a) => a.trim().isNotEmpty)
+          .toList();
       requiresReview = true;
     }
     final newQuestion = Question(
@@ -2187,9 +2444,15 @@ class _QuestionEditorDialogState extends State<QuestionEditorDialog> {
       requiresReview: requiresReview,
       questionImageUrl: _currentQuestionImageUrl,
       questionImagePath: _currentQuestionImagePath,
-      scenarioContext: _scenarioContextController.text.trim().isEmpty ? null : _scenarioContextController.text.trim(),
-      textBeforeBlank: _textBeforeBlankController.text.trim().isEmpty ? null : _textBeforeBlankController.text.trim(),
-      textAfterBlank: _textAfterBlankController.text.trim().isEmpty ? null : _textAfterBlankController.text.trim(),
+      scenarioContext: _scenarioContextController.text.trim().isEmpty
+          ? null
+          : _scenarioContextController.text.trim(),
+      textBeforeBlank: _textBeforeBlankController.text.trim().isEmpty
+          ? null
+          : _textBeforeBlankController.text.trim(),
+      textAfterBlank: _textAfterBlankController.text.trim().isEmpty
+          ? null
+          : _textAfterBlankController.text.trim(),
       fillInInputMethod: _fillInInputMethod,
     );
     widget.onSave(newQuestion);
@@ -2217,7 +2480,10 @@ class _QuestionEditorDialogState extends State<QuestionEditorDialog> {
   }
 
   Future<void> _pickQuestionImage() async {
-    final picked = await _imagePicker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+    final picked = await _imagePicker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+    );
     if (picked == null) return;
     final size = await picked.length();
     if (size > 2 * 1024 * 1024) {
@@ -2237,7 +2503,10 @@ class _QuestionEditorDialogState extends State<QuestionEditorDialog> {
     }
     final basePath = 'assessments/question_media/${const Uuid().v4()}';
     try {
-      final res = await _uploadXFileToStorage(xfile: picked, basePath: basePath);
+      final res = await _uploadXFileToStorage(
+        xfile: picked,
+        basePath: basePath,
+      );
       if (mounted) {
         setState(() {
           _currentQuestionImageUrl = res['url'];
@@ -2311,37 +2580,52 @@ class _QuestionEditorDialogState extends State<QuestionEditorDialog> {
             margin: const EdgeInsets.all(12),
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: isRequired && hasValue ? const Color(0xFF10B981).withOpacity(0.1) : const Color(0xFF8B5CF6).withOpacity(0.1),
+              color: isRequired && hasValue
+                  ? const Color(0xFF10B981).withOpacity(0.1)
+                  : const Color(0xFF8B5CF6).withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(
               isRequired && hasValue ? FontAwesomeIcons.check : icon,
-              color: isRequired && hasValue ? const Color(0xFF10B981) : const Color(0xFF8B5CF6),
+              color: isRequired && hasValue
+                  ? const Color(0xFF10B981)
+                  : const Color(0xFF8B5CF6),
               size: 16,
             ),
           ),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(
-              color: isRequired && !hasValue ? const Color(0xFFF59E0B).withOpacity(0.5) : Colors.grey[300]!,
+              color: isRequired && !hasValue
+                  ? const Color(0xFFF59E0B).withOpacity(0.5)
+                  : Colors.grey[300]!,
             ),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(
-              color: isRequired && !hasValue ? const Color(0xFFF59E0B).withOpacity(0.5) : Colors.grey[300]!,
+              color: isRequired && !hasValue
+                  ? const Color(0xFFF59E0B).withOpacity(0.5)
+                  : Colors.grey[300]!,
             ),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(
-              color: isRequired && hasValue ? const Color(0xFF10B981) : const Color(0xFF8B5CF6),
+              color: isRequired && hasValue
+                  ? const Color(0xFF10B981)
+                  : const Color(0xFF8B5CF6),
               width: 2,
             ),
           ),
           filled: true,
-          fillColor: isRequired && !hasValue ? const Color(0xFFFBBF24).withOpacity(0.05) : Colors.grey[50],
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          fillColor: isRequired && !hasValue
+              ? const Color(0xFFFBBF24).withOpacity(0.05)
+              : Colors.grey[50],
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 16,
+          ),
           isDense: true,
         ),
         validator: validator,
@@ -2379,7 +2663,10 @@ class _QuestionEditorDialogState extends State<QuestionEditorDialog> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: const Center(
-                      child: Text('Failed to load image', style: TextStyle(color: Colors.red)),
+                      child: Text(
+                        'Failed to load image',
+                        style: TextStyle(color: Colors.red),
+                      ),
                     ),
                   ),
                 ),
@@ -2395,7 +2682,11 @@ class _QuestionEditorDialogState extends State<QuestionEditorDialog> {
                       color: Colors.red.withOpacity(0.8),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.close, color: Colors.white, size: 16),
+                    child: const Icon(
+                      Icons.close,
+                      color: Colors.white,
+                      size: 16,
+                    ),
                   ),
                 ),
               ),
@@ -2410,20 +2701,37 @@ class _QuestionEditorDialogState extends State<QuestionEditorDialog> {
               decoration: BoxDecoration(
                 color: Colors.grey[100],
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey[300]!, style: BorderStyle.solid),
+                border: Border.all(
+                  color: Colors.grey[300]!,
+                  style: BorderStyle.solid,
+                ),
               ),
               child: Center(
                 child: _isUploadingQuestionImage
-                    ? const CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF8B5CF6)))
+                    ? const CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          Color(0xFF8B5CF6),
+                        ),
+                      )
                     : Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(FontAwesomeIcons.solidImage, size: 24, color: Colors.grey),
+                          Icon(
+                            FontAwesomeIcons.solidImage,
+                            size: 24,
+                            color: Colors.grey,
+                          ),
                           const SizedBox(height: 8),
-                          Text('Upload Image', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                          Text(
+                            'Upload Image',
+                            style: TextStyle(color: Colors.grey, fontSize: 12),
+                          ),
                           if (_questionImageError != null) ...[
                             const SizedBox(height: 8),
-                            Text(_questionImageError!, style: TextStyle(color: Colors.red, fontSize: 10)),
+                            Text(
+                              _questionImageError!,
+                              style: TextStyle(color: Colors.red, fontSize: 10),
+                            ),
                           ],
                         ],
                       ),
@@ -2482,7 +2790,9 @@ class _QuestionEditorDialogState extends State<QuestionEditorDialog> {
                   label: 'Question Text',
                   icon: FontAwesomeIcons.question,
                   maxLines: 2,
-                  validator: (value) => value == null || value.trim().isEmpty ? 'Question text is required' : null,
+                  validator: (value) => value == null || value.trim().isEmpty
+                      ? 'Question text is required'
+                      : null,
                   isRequired: true,
                 ),
                 const SizedBox(height: 16),
@@ -2493,7 +2803,8 @@ class _QuestionEditorDialogState extends State<QuestionEditorDialog> {
                   label: 'Points',
                   icon: FontAwesomeIcons.star,
                   validator: (value) {
-                    if (value == null || value.isEmpty) return 'Points are required';
+                    if (value == null || value.isEmpty)
+                      return 'Points are required';
                     if (int.tryParse(value) == null) return 'Must be a number';
                     return null;
                   },
@@ -2504,18 +2815,19 @@ class _QuestionEditorDialogState extends State<QuestionEditorDialog> {
                 const SizedBox(height: 24),
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 300),
-                  transitionBuilder: (Widget child, Animation<double> animation) {
-                    final positionTween = Tween<Offset>(
-                      begin: _selectedType == 'fill-in-the-blank'
-                          ? const Offset(1.0, 0.0) // Slide from right
-                          : const Offset(-1.0, 0.0), // Slide from left
-                      end: Offset.zero,
-                    );
-                    return SlideTransition(
-                      position: positionTween.animate(animation),
-                      child: child,
-                    );
-                  },
+                  transitionBuilder:
+                      (Widget child, Animation<double> animation) {
+                        final positionTween = Tween<Offset>(
+                          begin: _selectedType == 'fill-in-the-blank'
+                              ? const Offset(1.0, 0.0) // Slide from right
+                              : const Offset(-1.0, 0.0), // Slide from left
+                          end: Offset.zero,
+                        );
+                        return SlideTransition(
+                          position: positionTween.animate(animation),
+                          child: child,
+                        );
+                      },
                   child: _selectedType == 'multiple-choice'
                       ? _buildMultipleChoiceSection()
                       : _buildFillInTheBlankSection(),
@@ -2554,7 +2866,9 @@ class _QuestionEditorDialogState extends State<QuestionEditorDialog> {
                   label: Text(
                     type.replaceAll('-', ' ').toUpperCase(),
                     style: TextStyle(
-                      color: isSelected ? Colors.white : const Color(0xFF64748B),
+                      color: isSelected
+                          ? Colors.white
+                          : const Color(0xFF64748B),
                     ),
                   ),
                   selected: isSelected,
@@ -2563,7 +2877,8 @@ class _QuestionEditorDialogState extends State<QuestionEditorDialog> {
                   onSelected: (selected) {
                     if (selected) {
                       setState(() {
-                        _previousSelectedType = _selectedType; // Update the previous type
+                        _previousSelectedType =
+                            _selectedType; // Update the previous type
                         _selectedType = type;
                       });
                     }
@@ -2617,7 +2932,8 @@ class _QuestionEditorDialogState extends State<QuestionEditorDialog> {
                       isDense: true,
                     ),
                     validator: (value) {
-                      if (_options.where((o) => o.trim().isNotEmpty).length < 2) {
+                      if (_options.where((o) => o.trim().isNotEmpty).length <
+                          2) {
                         return 'At least two options are required.';
                       }
                       return null;
@@ -2726,12 +3042,15 @@ class _QuestionEditorDialogState extends State<QuestionEditorDialog> {
           ],
         ),
         const SizedBox(height: 16),
-        if (_fillInInputMethod == 'typing' || _fillInInputMethod == 'multiple-choice')
+        if (_fillInInputMethod == 'typing' ||
+            _fillInInputMethod == 'multiple-choice')
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                _fillInInputMethod == 'typing' ? 'Acceptable Typed Answer(s) for the Blank' : 'Options for the Blank',
+                _fillInInputMethod == 'typing'
+                    ? 'Acceptable Typed Answer(s) for the Blank'
+                    : 'Options for the Blank',
                 style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
@@ -2752,11 +3071,15 @@ class _QuestionEditorDialogState extends State<QuestionEditorDialog> {
                             _acceptableAnswers[index] = value;
                           },
                           decoration: InputDecoration(
-                            labelText: '${_fillInInputMethod == 'typing' ? 'Answer' : 'Option'} ${index + 1}',
+                            labelText:
+                                '${_fillInInputMethod == 'typing' ? 'Answer' : 'Option'} ${index + 1}',
                             border: const OutlineInputBorder(),
                             isDense: true,
                           ),
-                          validator: (value) => _acceptableAnswers.where((a) => a.trim().isNotEmpty).isEmpty
+                          validator: (value) =>
+                              _acceptableAnswers
+                                  .where((a) => a.trim().isNotEmpty)
+                                  .isEmpty
                               ? 'At least one answer is required.'
                               : null,
                         ),
@@ -2787,7 +3110,9 @@ class _QuestionEditorDialogState extends State<QuestionEditorDialog> {
       width: double.infinity,
       child: ElevatedButton(
         onPressed: _saveQuestion,
-        child: Text(widget.existingQuestion == null ? 'Add Question' : 'Save Changes'),
+        child: Text(
+          widget.existingQuestion == null ? 'Add Question' : 'Save Changes',
+        ),
       ),
     );
   }
