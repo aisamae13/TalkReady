@@ -17,7 +17,8 @@ import 'custom_animated_bottom_bar.dart';
 import 'package:shimmer/shimmer.dart';
 import 'MyEnrolledClasses.dart';
 import '../services/daily_content_service.dart';
-import 'firebase_service.dart'; // Add this import
+import 'firebase_service.dart';
+import 'notification_badge.dart';
 
 // Helper function for creating a slide page route
 Route _createSlidingPageRoute({
@@ -56,7 +57,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   bool _isLoading = true;
   bool _hasError = false;
   String? _errorMessage;
-
+int _unreadNotificationsCount = 0;
+StreamSubscription<QuerySnapshot>? _notificationSubscription;
   // Enhanced user stats
   Duration _totalSpeakingTime = Duration.zero;
   int _currentStreak = 0;
@@ -152,6 +154,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     _setupAnimations();
     _initializeData();
     _setupRealTimeListener();
+    _setupNotificationListener(); // Add this line
   }
 
   void _setupAnimations() {
@@ -201,7 +204,56 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       }
     }
   }
+Future<bool> _onWillPop() async {
+  // Show exit confirmation dialog
+  final shouldExit = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      title: Row(
+        children: [
+          Icon(Icons.exit_to_app, color: Colors.blue.shade700),
+          const SizedBox(width: 12),
+          const Text('Exit TalkReady?'),
+        ],
+      ),
+      content: const Text(
+        'Are you sure you want to exit the app?',
+        style: TextStyle(fontSize: 16),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: Text(
+            'Cancel',
+            style: TextStyle(
+              color: Colors.grey[600],
+              fontSize: 16,
+            ),
+          ),
+        ),
+        ElevatedButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.blue,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+          child: const Text(
+            'Exit',
+            style: TextStyle(fontSize: 16, color: Colors.white),
+          ),
+        ),
+      ],
+    ),
+  );
 
+  return shouldExit ?? false;
+}
   Future<void> _fetchEnhancedProgress() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
@@ -921,60 +973,109 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           },
         );
   }
+void _setupNotificationListener() {
+  final user = FirebaseAuth.instance.currentUser;
+  if (user == null) {
+    debugPrint('❌ No current user - cannot setup notification listener');
+    return;
+  }
+
+  debugPrint('🔔 Setting up notification listener for user: ${user.uid}');
+
+  _notificationSubscription = FirebaseFirestore.instance
+      .collection('notifications')
+      .where('userId', isEqualTo: user.uid)
+      .where('isRead', isEqualTo: false)
+      .snapshots()
+      .listen(
+    (snapshot) {
+      debugPrint('📬 Received notification snapshot: ${snapshot.docs.length} unread notifications');
+
+      if (mounted) {
+        setState(() {
+          _unreadNotificationsCount = snapshot.docs.length;
+        });
+        debugPrint('✅ Updated unread count to: $_unreadNotificationsCount');
+      }
+    },
+    onError: (e) {
+      debugPrint('❌ Error fetching notifications: $e');
+
+      if (e.toString().contains('index')) {
+        debugPrint('⚠️ FIRESTORE INDEX REQUIRED! Create an index for:');
+        debugPrint('   Collection: notifications');
+        debugPrint('   Fields: userId (Ascending), isRead (Ascending)');
+      }
+    },
+  );
+}
 
   @override
   void dispose() {
     _fadeController.dispose();
     _slideController.dispose();
     _userDataSubscription?.cancel();
+    _notificationSubscription?.cancel();
     super.dispose();
   }
 
-  Widget _buildAppBarWithLogo() {
-    return Container(
-      padding: const EdgeInsets.only(top: 40, left: 16, right: 16, bottom: 10),
-      decoration: const BoxDecoration(
-        color: Color(0xFF0077B3),
-        borderRadius: BorderRadius.only(
-          bottomLeft: Radius.circular(20),
-          bottomRight: Radius.circular(20),
-        ),
+ Widget _buildAppBarWithLogo() {
+  return Container(
+    padding: const EdgeInsets.only(top: 40, left: 16, right: 16, bottom: 10),
+    decoration: const BoxDecoration(
+      color: Color(0xFF0077B3),
+      borderRadius: BorderRadius.only(
+        bottomLeft: Radius.circular(20),
+        bottomRight: Radius.circular(20),
       ),
-      child: Row(
-        children: [
-          Image.asset('images/TR Logo.png', height: 40, width: 40),
-          const SizedBox(width: 12),
-          const Text(
-            'TalkReady',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-            ),
+    ),
+    child: Row(
+      children: [
+        Image.asset('images/TR Logo.png', height: 40, width: 40),
+        const SizedBox(width: 12),
+        const Text(
+          'TalkReady',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
           ),
-          const Spacer(),
-          IconButton(
-            icon: const Icon(Icons.notifications, color: Colors.white),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const AllNotificationsPage(),
-                ),
-              );
-            },
-          ),
-        ],
+        ),
+        const Spacer(),
+        NotificationBadge(
+  unreadCount: _unreadNotificationsCount,
+  onTap: () {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const AllNotificationsPage(),
       ),
     );
-  }
+  },
+),
+      ],
+    ),
+  );
+}
 
-  @override
-  Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    final firstName = user?.displayName?.split(' ').first ?? 'User';
+ @override
+Widget build(BuildContext context) {
+  final user = FirebaseAuth.instance.currentUser;
+  final firstName = user?.displayName?.split(' ').first ?? 'User';
 
-    return Scaffold(
+  return PopScope(
+    canPop: false, // Prevent default back navigation
+    onPopInvoked: (bool didPop) async {
+      if (didPop) return;
+
+      // Show exit confirmation
+      final shouldExit = await _onWillPop();
+      if (shouldExit && context.mounted) {
+        // Exit the app using SystemNavigator
+        SystemNavigator.pop();
+      }
+    },
+    child: Scaffold(
       backgroundColor: Colors.grey[50],
       body: Column(
         children: [
@@ -1010,9 +1111,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         animationDuration: const Duration(milliseconds: 300),
         customNotchWidthFactor: 1.8,
       ),
-    );
-  }
-
+    ),
+  );
+}
   Widget _buildLoadingState() {
     return Center(
       child: Column(

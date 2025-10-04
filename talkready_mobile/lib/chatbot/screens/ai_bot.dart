@@ -559,85 +559,251 @@ class _AIBotScreenState extends State<AIBotScreen> {
     });
   }
 
-  Future<void> _showLearningFocusDialog() async {
-    setState(() => _showSuggestions = false);
+ Future<void> _showLearningFocusDialog() async {
+  setState(() => _showSuggestions = false);
 
-    var result = await showDialog(
-      context: context,
-      builder: (BuildContext context) => SimpleDialog(
-        title: const Text('Choose a Learning Focus'),
+  var result = await showDialog(
+    context: context,
+    builder: (BuildContext context) => Dialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Container(
+        padding: EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Title with blue styling
+            Row(
+              children: [
+                Icon(
+                  Icons.lightbulb_outline,
+                  color: Colors.blue.shade700,
+                  size: 28,
+                ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Choose a Learning Focus',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue.shade900,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 20),
+
+            // General Dialog option with blue styling
+            _buildFocusOption(
+              context: context,
+              title: "General Dialog Conversation",
+              icon: Icons.chat_bubble_outline,
+              onTap: () => Navigator.pop(context, 'General'),
+            ),
+
+            SizedBox(height: 12),
+            Divider(color: Colors.blue.shade100),
+            SizedBox(height: 12),
+
+            // Category options with blue styling
+            ...PromptCategory.values.map((category) {
+              IconData icon;
+              switch (category) {
+                case PromptCategory.vocabulary:
+                  icon = Icons.book_outlined;
+                  break;
+                case PromptCategory.pronunciation:
+                  icon = Icons.mic_outlined;
+                  break;
+                case PromptCategory.grammar:
+                  icon = Icons.spellcheck;
+                  break;
+                case PromptCategory.fluency:
+                  icon = Icons.speed;
+                  break;
+                case PromptCategory.rolePlay:
+                  icon = Icons.people_outline;
+                  break;
+              }
+
+              return Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: _buildFocusOption(
+                  context: context,
+                  title: Prompt.categoryToString(category),
+                  icon: icon,
+                  onTap: () => Navigator.pop(context, category),
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  if (result is PromptCategory) {
+    _showPromptsForCategoryDialog(result);
+  } else if (result == "General" || result == null) {
+    setState(() {
+      _currentLearningPrompt = null;
+      _currentPracticeMode = null;
+      _currentPracticePhrase = null;
+      _showSuggestions = true;
+    });
+    _addBotMessage("Okay, let's have a general chat. How can I help you today?");
+  }
+}
+
+Widget _buildFocusOption({
+  required BuildContext context,
+  required String title,
+  required IconData icon,
+  required VoidCallback onTap,
+}) {
+  return InkWell(
+    onTap: onTap,
+    borderRadius: BorderRadius.circular(12),
+    child: Container(
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Colors.blue.shade200,
+          width: 1,
+        ),
+      ),
+      child: Row(
         children: [
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, 'General'),
-            child: Text("General Dialog Conversation"),
+          Container(
+            padding: EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade100,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              icon,
+              color: Colors.blue.shade700,
+              size: 22,
+            ),
           ),
-          ...PromptCategory.values.map((category) => SimpleDialogOption(
-                onPressed: () => Navigator.pop(context, category),
-                child: Text(Prompt.categoryToString(category)),
-              )),
+          SizedBox(width: 14),
+          Expanded(
+            child: Text(
+              title,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                color: Colors.blue.shade900,
+              ),
+            ),
+          ),
+          Icon(
+            Icons.arrow_forward_ios,
+            size: 16,
+            color: Colors.blue.shade400,
+          ),
         ],
       ),
-    );
+    ),
+  );
+}
 
-    if (result is PromptCategory) {
-      _showPromptsForCategoryDialog(result);
-    } else if (result == "General" || result == null) {
-      setState(() {
-        _currentLearningPrompt = null;
-        _currentPracticeMode = null;
-        _currentPracticePhrase = null;
-        _showSuggestions = true;
-      });
-      _addBotMessage("Okay, let's have a general chat. How can I help you today?");
-    }
-  }
 
-  Future<void> _showPromptsForCategoryDialog(PromptCategory category) async {
-    final categoryPrompts = englishLearningPrompts.where((p) => p.category == category).toList();
+Future<void> _showPromptsForCategoryDialog(PromptCategory category) async {
+  final categoryPrompts = englishLearningPrompts.where((p) => p.category == category).toList();
 
-    if (categoryPrompts.isEmpty) {
-      _addBotMessage("Sorry, no exercises for ${Prompt.categoryToString(category)}.");
-      setState(() {
-        _currentLearningPrompt = null;
-        _currentPracticeMode = null;
-        _showSuggestions = true;
-      });
-      return;
-    }
-
-    Prompt? selectedPrompt = await showDialog<Prompt>(
-      context: context,
-      builder: (BuildContext context) => SimpleDialog(
-        title: Text('Choose a ${Prompt.categoryToString(category)} Prompt'),
-        children: categoryPrompts
-            .map((prompt) => SimpleDialogOption(
-                  onPressed: () => Navigator.pop(context, prompt),
-                  child: Text(prompt.title),
-                ))
-            .toList(),
-      ),
-    );
-
-    if (!mounted) return;
-
+  if (categoryPrompts.isEmpty) {
+    _addBotMessage("Sorry, no exercises for ${Prompt.categoryToString(category)}.");
     setState(() {
-      _currentLearningPrompt = selectedPrompt;
-      _currentPracticeMode = category;
-      _showSuggestions = false;
+      _currentLearningPrompt = null;
+      _currentPracticeMode = null;
+      _showSuggestions = true;
     });
-
-    if (selectedPrompt != null) {
-      if (selectedPrompt.category == PromptCategory.pronunciation) {
-        _addBotMessage("Let's practice your pronunciation! First, I'll suggest a phrase...");
-        final phrase = await _openAIService.generateCallCenterPhrase();
-        setState(() => _currentPracticePhrase = phrase);
-        _addBotMessage("Try saying: '$phrase'");
-      } else if (selectedPrompt.initialBotMessage != null) {
-        _addBotMessage(selectedPrompt.initialBotMessage!);
-      }
-    }
+    return;
   }
 
+  Prompt? selectedPrompt = await showDialog<Prompt>(
+    context: context,
+    builder: (BuildContext context) => Dialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Container(
+        padding: EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Title
+            Text(
+              'Choose a ${Prompt.categoryToString(category)} Prompt',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.blue.shade900,
+              ),
+            ),
+            SizedBox(height: 16),
+
+            // Prompt options
+            ...categoryPrompts.map((prompt) {
+              return Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: InkWell(
+                  onTap: () => Navigator.pop(context, prompt),
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    width: double.infinity,
+                    padding: EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.blue.shade200,
+                        width: 1,
+                      ),
+                    ),
+                    child: Text(
+                      prompt.title,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.blue.shade900,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  if (!mounted) return;
+
+  setState(() {
+    _currentLearningPrompt = selectedPrompt;
+    _currentPracticeMode = category;
+    _showSuggestions = false;
+  });
+
+  if (selectedPrompt != null) {
+    if (selectedPrompt.category == PromptCategory.pronunciation) {
+      _addBotMessage("Let's practice your pronunciation! First, I'll suggest a phrase...");
+      final phrase = await _openAIService.generateCallCenterPhrase();
+      setState(() => _currentPracticePhrase = phrase);
+      _addBotMessage("Try saying: '$phrase'");
+    } else if (selectedPrompt.initialBotMessage != null) {
+      _addBotMessage(selectedPrompt.initialBotMessage!);
+    }
+  }
+}
   void _handleSuggestionClick(SuggestionChip suggestion) {
     setState(() {
       _currentPracticeMode = suggestion.mode;

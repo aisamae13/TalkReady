@@ -7,6 +7,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:path/path.dart' as p;
+import '../../notification_service.dart';
 
 // Placeholder for your actual service functions.
 // You should move these to a separate services file (e.g., firebase_services.dart)
@@ -260,21 +261,32 @@ class _QuickUploadMaterialPageState extends State<QuickUploadMaterialPage> {
       };
 
       final newMaterialDoc = await addClassMaterialMetadata(
-        _currentUser.uid,
-        _selectedClassId!,
-        materialData,
-      );
+  _currentUser.uid,
+  _selectedClassId!,
+  materialData,
+);
 
-      if (mounted) {
-        final selectedClass = _trainerClasses.firstWhere((c) => c['id'] == _selectedClassId, orElse: () => {});
-        final className = selectedClass['className'] ?? 'the selected class';
-        setState(() {
-          _uploadSuccessMessage = 'Material "${newMaterialDoc['title']}" uploaded successfully to "$className"!';
-          _selectedFile = null; // Clear file for next upload
-          _fileNameDisplay = null;
-          // Title and description are kept if "Upload Another to This Class" is intended
-        });
-      }
+if (mounted) {
+  final selectedClass = _trainerClasses.firstWhere(
+    (c) => c['id'] == _selectedClassId,
+    orElse: () => {}
+  );
+  final className = selectedClass['className'] ?? 'your class';
+
+  // Create notifications for students
+  await NotificationService.createNotificationsForStudents(
+    classId: _selectedClassId!,
+    message: 'New material uploaded: ${newMaterialDoc['title']}',
+    className: className,
+    link: '/student/class/$_selectedClassId/content',
+  );
+
+  setState(() {
+    _uploadSuccessMessage = 'Material "${newMaterialDoc['title']}" uploaded successfully to "$className"!';
+    _selectedFile = null;
+    _fileNameDisplay = null;
+  });
+}
     } catch (e) {
       if (mounted) {
         setState(() {

@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'firebase_service.dart';
 import 'take_assessment_page.dart'; // Add this import
 import 'take_speaking_assessment_page.dart'; // Add this import
+import 'notification_service.dart';
 
 class ClassContentPage extends StatefulWidget {
   final String classId;
@@ -316,23 +317,246 @@ class _ClassContentPageState extends State<ClassContentPage>
       ).showSnackBar(SnackBar(content: Text('Could not open file: $e')));
     }
   }
+Future<void> _showLeaveClassDialog() async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (BuildContext dialogContext) {
+      return AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade100,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: FaIcon(
+                FontAwesomeIcons.doorOpen,
+                color: Colors.orange.shade700,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Text('Leave Class?'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Are you sure you want to leave this class?',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'You will lose access to:',
+              style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+            ),
+            const SizedBox(height: 8),
+            _buildLeaveWarningItem('Class materials and resources'),
+            _buildLeaveWarningItem('Assessments and assignments'),
+            _buildLeaveWarningItem('Class announcements'),
+            _buildLeaveWarningItem('Your progress in this class'),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Row(
+                children: [
+                  FaIcon(
+                    FontAwesomeIcons.circleInfo,
+                    size: 16,
+                    color: Colors.orange.shade700,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Your trainer will be notified',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.orange.shade700,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            ),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: const Text('Leave Class'),
+          ),
+        ],
+      );
+    },
+  );
 
-  Widget _getFileIcon(String? fileType) {
-    if (fileType == null)
-      return const FaIcon(FontAwesomeIcons.file, color: Colors.grey);
+  if (confirmed == true) {
+    await _handleLeaveClass();
+  }
+}
 
-    if (fileType.startsWith('application/pdf')) {
-      return const FaIcon(FontAwesomeIcons.filePdf, color: Colors.red);
-    } else if (fileType.startsWith('video/')) {
-      return const FaIcon(FontAwesomeIcons.fileVideo, color: Colors.blue);
-    } else if (fileType.startsWith('audio/')) {
-      return const FaIcon(FontAwesomeIcons.fileAudio, color: Colors.purple);
-    } else if (fileType.startsWith('image/')) {
-      return const FaIcon(FontAwesomeIcons.fileImage, color: Colors.green);
+Widget _buildLeaveWarningItem(String text) {
+  return Padding(
+    padding: const EdgeInsets.only(left: 8, bottom: 4),
+    child: Row(
+      children: [
+        const FaIcon(
+          FontAwesomeIcons.circleMinus,
+          size: 12,
+          color: Colors.red,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(fontSize: 13),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+Future<void> _handleLeaveClass() async {
+  final user = FirebaseAuth.instance.currentUser;
+  if (user == null) return;
+
+  // Show loading
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => const Center(
+      child: CircularProgressIndicator(),
+    ),
+  );
+
+  try {
+    // Get student name
+    String studentName = "A student";
+    try {
+      final userDoc = await _firestore.collection('users').doc(user.uid).get();
+      if (userDoc.exists) {
+        final userData = userDoc.data()!;
+        studentName = userData['displayName'] ??
+            '${userData['firstName'] ?? ''} ${userData['lastName'] ?? ''}'.trim();
+        if (studentName.isEmpty) studentName = "A student";
+      }
+    } catch (e) {
+      _logger.w("Could not fetch student name: $e");
     }
 
+    // Find and delete the enrollment
+    final enrollmentQuery = await _firestore
+        .collection('enrollments')
+        .where('studentId', isEqualTo: user.uid)
+        .where('classId', isEqualTo: widget.classId)
+        .get();
+
+    if (enrollmentQuery.docs.isNotEmpty) {
+      final enrollmentDoc = enrollmentQuery.docs.first;
+      await enrollmentDoc.reference.delete();
+
+      // Notify the trainer
+      final trainerId = classDetails?['trainerId'];
+      if (trainerId != null) {
+        await NotificationService.notifyUser(
+          userId: trainerId,
+          message: '$studentName left your class',
+          className: widget.className,
+          link: '/trainer/classes/${widget.classId}/students',
+        );
+      }
+
+      // Close loading dialog
+      // Navigate back to My Classes with result
+        Navigator.of(context).pop('left_class');
+
+      // Show success message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const FaIcon(FontAwesomeIcons.checkCircle, color: Colors.white),
+                const SizedBox(width: 12),
+                Text('You have left ${widget.className}'),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+
+        // Navigate back to My Classes
+        Navigator.of(context).pop();
+      }
+    } else {
+      // No enrollment found
+      if (mounted) {
+        Navigator.of(context).pop(); // Close loading
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Enrollment not found'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  } catch (e) {
+    _logger.e("Error leaving class: $e");
+    if (mounted) {
+      Navigator.of(context).pop(); // Close loading
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to leave class: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+}
+Widget _getFileIcon(String? fileType) {
+  if (fileType == null) {
     return const FaIcon(FontAwesomeIcons.file, color: Colors.grey);
   }
+
+  if (fileType.startsWith('application/pdf')) {
+    return const FaIcon(FontAwesomeIcons.filePdf, color: Colors.red);
+  } else if (fileType.startsWith('video/')) {
+    return const FaIcon(FontAwesomeIcons.fileVideo, color: Colors.blue);
+  } else if (fileType.startsWith('audio/')) {
+    return const FaIcon(FontAwesomeIcons.fileAudio, color: Colors.purple);
+  } else if (fileType.startsWith('image/')) {
+    return const FaIcon(FontAwesomeIcons.fileImage, color: Colors.green);
+  }
+
+  return const FaIcon(FontAwesomeIcons.file, color: Colors.grey);
+}
 
   @override
   Widget build(BuildContext context) {
@@ -447,12 +671,38 @@ class _ClassContentPageState extends State<ClassContentPage>
 
     // Main content
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.className),
-        backgroundColor: const Color(0xFF0077B3),
-        foregroundColor: Colors.white,
-        elevation: 0,
+  appBar: AppBar(
+    title: Text(widget.className),
+    backgroundColor: const Color(0xFF0077B3),
+    foregroundColor: Colors.white,
+    elevation: 0,
+    actions: [
+      PopupMenuButton<String>(
+        icon: const Icon(Icons.more_vert),
+        onSelected: (value) {
+          if (value == 'leave') {
+            _showLeaveClassDialog();
+          }
+        },
+        itemBuilder: (context) => [
+          const PopupMenuItem(
+            value: 'leave',
+            child: Row(
+              children: [
+                FaIcon(
+                  FontAwesomeIcons.doorOpen,
+                  color: Colors.orange,
+                  size: 18,
+                ),
+                SizedBox(width: 12),
+                Text('Leave Class'),
+              ],
+            ),
+          ),
+        ],
       ),
+    ],
+  ),
       body: FadeTransition(
         opacity: _fadeAnimation,
         child: RefreshIndicator(

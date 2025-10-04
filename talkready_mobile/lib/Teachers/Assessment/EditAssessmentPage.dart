@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../notification_service.dart';
 import 'dart:io';
 
 class Question {
@@ -306,108 +307,132 @@ class _EditAssessmentPageState extends State<EditAssessmentPage> {
     }
   }
 
-  Future<void> _updateAssessment() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
+ Future<void> _updateAssessment() async {
+  if (!_formKey.currentState!.validate()) {
+    return;
+  }
+
+  if (_questions.isEmpty && _assessmentType != 'speaking_assessment') {
+    setState(() {
+      _errorMessage = "Please add at least one question.";
+    });
+    return;
+  }
+
+  setState(() {
+    _isUpdating = true;
+    _errorMessage = null;
+    _successMessage = null;
+    _imageOperationMessage = 'Saving changes...';
+  });
+
+  try {
+    // 1. Handle header image upload/deletion first
+    String? finalHeaderImageUrl = _assessmentHeaderImageUrl;
+    String? finalHeaderImagePath = _assessmentHeaderImagePath;
+
+    if (_assessmentHeaderImageFile != null) {
+      // A new image has been selected. Upload it.
+      final storagePath = 'assessments/${widget.assessmentId}/header_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final newImageUrl = await _uploadImage(_assessmentHeaderImageFile!, storagePath);
+      if (newImageUrl == null) {
+        throw Exception("Header image upload failed.");
+      }
+
+      // If a previous image existed, delete it from storage.
+      if (_assessmentHeaderImagePath != null) {
+        await _deleteImageFromStorage(_assessmentHeaderImagePath);
+      }
+
+      finalHeaderImageUrl = newImageUrl;
+      finalHeaderImagePath = storagePath;
+    } else if (_assessmentHeaderImagePath != null && _assessmentHeaderImageUrl == null) {
+      // User removed the old image. Delete it from storage.
+      await _deleteImageFromStorage(_assessmentHeaderImagePath);
+      finalHeaderImagePath = null;
     }
 
-    if (_questions.isEmpty && _assessmentType != 'speaking_assessment') {
-      setState(() {
-        _errorMessage = "Please add at least one question.";
-      });
-      return;
+    // 2. Prepare the deadline
+    DateTime? deadline;
+    if (_submissionDeadlineController.text.isNotEmpty) {
+      try {
+        deadline = DateFormat('dd/MM/yyyy HH:mm').parseStrict(_submissionDeadlineController.text);
+      } catch (e) {
+        throw Exception("Invalid date format. Use dd/MM/yyyy HH:mm.");
+      }
+    }
+
+    // 3. Create the data map for Firestore
+    final assessmentDataToUpdate = {
+      'classId': _selectedClassId,
+      'title': _titleController.text.trim(),
+      'description': _descriptionController.text.trim(),
+      'assessmentType': _assessmentType,
+      'deadline': deadline != null ? Timestamp.fromDate(deadline) : null,
+      'assessmentHeaderImageUrl': finalHeaderImageUrl,
+      'assessmentHeaderImagePath': finalHeaderImagePath,
+      'questions': _questions.map((q) => q.toMap()).toList(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+
+    // 4. Update Firestore
+    await FirebaseFirestore.instance
+        .collection('trainerAssessments')
+        .doc(widget.assessmentId)
+        .update(assessmentDataToUpdate);
+
+    // 5. Get class name for notification
+    String? className;
+    try {
+      if (_selectedClassId != null) {
+        final classDoc = await FirebaseFirestore.instance
+            .collection('trainerClass')
+            .doc(_selectedClassId)
+            .get();
+        className = classDoc.data()?['className'] as String?;
+      }
+    } catch (e) {
+      debugPrint('Could not fetch class name: $e');
+    }
+
+    // 6. Create notifications for students
+    if (_selectedClassId != null) {
+      await NotificationService.createNotificationsForStudents(
+        classId: _selectedClassId!,
+        message: 'Assessment updated: ${_titleController.text.trim()}',
+        className: className,
+        link: '/student/class/$_selectedClassId',
+      );
     }
 
     setState(() {
-      _isUpdating = true;
-      _errorMessage = null;
-      _successMessage = null;
-      _imageOperationMessage = 'Saving changes...';
+      _successMessage = 'Assessment "${_titleController.text}" updated successfully!';
+      _assessmentHeaderImageUrl = finalHeaderImageUrl;
+      _assessmentHeaderImagePath = finalHeaderImagePath;
+      _assessmentHeaderImageFile = null;
     });
 
-    try {
-      // 1. Handle header image upload/deletion first
-      String? finalHeaderImageUrl = _assessmentHeaderImageUrl;
-      String? finalHeaderImagePath = _assessmentHeaderImagePath;
-
-      if (_assessmentHeaderImageFile != null) {
-        // A new image has been selected. Upload it.
-        final storagePath = 'assessments/${widget.assessmentId}/header_${DateTime.now().millisecondsSinceEpoch}.jpg';
-        final newImageUrl = await _uploadImage(_assessmentHeaderImageFile!, storagePath);
-        if (newImageUrl == null) {
-          throw Exception("Header image upload failed.");
-        }
-
-        // If a previous image existed, delete it from storage.
-        if (_assessmentHeaderImagePath != null) {
-          await _deleteImageFromStorage(_assessmentHeaderImagePath);
-        }
-
-        finalHeaderImageUrl = newImageUrl;
-        finalHeaderImagePath = storagePath;
-      } else if (_assessmentHeaderImagePath != null && _assessmentHeaderImageUrl == null) {
-        // User removed the old image. Delete it from storage.
-        await _deleteImageFromStorage(_assessmentHeaderImagePath);
-        finalHeaderImagePath = null;
+    // Navigate back after a delay
+    Future.delayed(Duration(seconds: 2), () {
+      if (mounted) {
+        Navigator.pop(context, true);
       }
-
-      // 2. Prepare the deadline
-      DateTime? deadline;
-      if (_submissionDeadlineController.text.isNotEmpty) {
-        try {
-          deadline = DateFormat('dd/MM/yyyy HH:mm').parseStrict(_submissionDeadlineController.text);
-        } catch (e) {
-          throw Exception("Invalid date format. Use dd/MM/yyyy HH:mm.");
-        }
-      }
-
-      // 3. Create the data map for Firestore
-      final assessmentDataToUpdate = {
-        'classId': _selectedClassId,
-        'title': _titleController.text.trim(),
-        'description': _descriptionController.text.trim(),
-        'assessmentType': _assessmentType,
-        'deadline': deadline != null ? Timestamp.fromDate(deadline) : null,
-        'assessmentHeaderImageUrl': finalHeaderImageUrl,
-        'assessmentHeaderImagePath': finalHeaderImagePath,
-        'questions': _questions.map((q) => q.toMap()).toList(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
-
-      // 4. Update Firestore
-      await FirebaseFirestore.instance
-          .collection('trainerAssessments')
-          .doc(widget.assessmentId)
-          .update(assessmentDataToUpdate);
-
-      setState(() {
-        _successMessage = 'Assessment "${_titleController.text}" updated successfully!';
-        _assessmentHeaderImageUrl = finalHeaderImageUrl;
-        _assessmentHeaderImagePath = finalHeaderImagePath;
-        _assessmentHeaderImageFile = null;
-      });
-
-      // Navigate back after a delay
-      Future.delayed(Duration(seconds: 2), () {
-        if (mounted) {
-          Navigator.pop(context, true);
-        }
-      });
-    } on FirebaseException catch (e) {
-      setState(() {
-        _errorMessage = 'Firebase error: ${e.message}';
-      });
-    } catch (e) {
-      setState(() {
-        _errorMessage = 'Failed to update assessment: $e';
-      });
-    } finally {
-      setState(() {
-        _isUpdating = false;
-        _imageOperationMessage = null;
-      });
-    }
+    });
+  } on FirebaseException catch (e) {
+    setState(() {
+      _errorMessage = 'Firebase error: ${e.message}';
+    });
+  } catch (e) {
+    setState(() {
+      _errorMessage = 'Failed to update assessment: $e';
+    });
+  } finally {
+    setState(() {
+      _isUpdating = false;
+      _imageOperationMessage = null;
+    });
   }
+}
 
   Future<void> _deleteAssessment() async {
     final confirmed = await showDialog<bool>(

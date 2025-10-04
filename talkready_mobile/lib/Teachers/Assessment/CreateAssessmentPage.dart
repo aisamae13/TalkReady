@@ -12,7 +12,8 @@ import 'package:uuid/uuid.dart';
 import 'package:firebase_storage/firebase_storage.dart' as firebase_storage;
 
 // Add the new imports
-import 'package:talkready_mobile/Teachers/Assessment/ClassAssessmentsListPage.dart';
+import '../../Teachers/Assessment/ClassAssessmentsListPage.dart';
+import '../../notification_service.dart';
 
 // Define a simple Question model for standard quizzes
 class Question {
@@ -600,38 +601,59 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage> with Ticker
 
   // Example save using payload
   Future<void> _saveAssessment() async {
-    if (!_formKey.currentState!.validate()) return;
-    if ((_selectedClassId ?? widget.classId) == null) {
-      setState(() => _error = 'Please select a class.');
-      return;
-    }
-    // VVVV UPDATE VALIDATION VVVV
-    if (_assessmentType == 'standard_quiz' && _questions.isEmpty) {
-        setState(() => _error = 'Please add at least one question.');
-        return;
-    }
-    if (_assessmentType == 'speaking_assessment' && _promptTitleController.text.trim().isEmpty) {
-        setState(() => _error = 'Please add a title for the speaking prompt.');
-        return;
-    }
-    if (_assessmentType == 'speaking_assessment' && _promptTextController.text.trim().isEmpty) {
-        setState(() => _error = 'Please add the prompt text for the speaking assessment.');
-        return;
-    }
-    // ^^^^ END OF UPDATED VALIDATION ^^^^
-
-    setState(() { _isLoading = true; _error = null; });
-    try {
-      final data = _buildAssessmentPayload();
-      final docRef = await FirebaseFirestore.instance.collection('trainerAssessments').add(data);
-      if (!mounted) return;
-      _showSuccessDialog(docRef.id);
-    } catch (e) {
-      if (mounted) setState(() => _error = 'Failed to save assessment: $e');
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
+  if (!_formKey.currentState!.validate()) return;
+  if ((_selectedClassId ?? widget.classId) == null) {
+    setState(() => _error = 'Please select a class.');
+    return;
   }
+
+  if (_assessmentType == 'standard_quiz' && _questions.isEmpty) {
+    setState(() => _error = 'Please add at least one question.');
+    return;
+  }
+  if (_assessmentType == 'speaking_assessment' && _promptTitleController.text.trim().isEmpty) {
+    setState(() => _error = 'Please add a title for the speaking prompt.');
+    return;
+  }
+  if (_assessmentType == 'speaking_assessment' && _promptTextController.text.trim().isEmpty) {
+    setState(() => _error = 'Please add the prompt text for the speaking assessment.');
+    return;
+  }
+
+  setState(() { _isLoading = true; _error = null; });
+  try {
+    final data = _buildAssessmentPayload();
+    final docRef = await FirebaseFirestore.instance
+        .collection('trainerAssessments')
+        .add(data);
+
+    // Get class name for notification
+    final classId = _selectedClassId ?? widget.classId!;
+    String? className;
+    if (_trainerClasses.isNotEmpty) {
+      final selectedClass = _trainerClasses.firstWhere(
+        (c) => c['id'] == classId,
+        orElse: () => {'name': 'your class'}
+      );
+      className = selectedClass['name'] as String?;
+    }
+
+    // Create notifications for students
+    await NotificationService.createNotificationsForStudents(
+      classId: classId,
+      message: 'New assessment: ${_titleController.text.trim()}',
+      className: className,
+      link: '/student/class/$classId',
+    );
+
+    if (!mounted) return;
+    _showSuccessDialog(docRef.id);
+  } catch (e) {
+    if (mounted) setState(() => _error = 'Failed to save assessment: $e');
+  } finally {
+    if (mounted) setState(() => _isLoading = false);
+  }
+}
 
   void _showSuccessDialog(String assessmentId) {
     showDialog(

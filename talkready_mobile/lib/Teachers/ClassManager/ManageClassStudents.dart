@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
+import '../../notification_service.dart';
 
 // --- Data Models (Simplified) ---
 class ClassDetails {
@@ -243,81 +244,111 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> with 
   }
 
   Future<void> _handleEnrollStudent(UserSearchResult studentToEnroll) async {
-    if (_classDetails == null || _currentUser == null) {
-      setState(() => _actionError = "Cannot enroll: Class/trainer info missing.");
-      return;
-    }
-    if (_enrollingStudentId == studentToEnroll.uid) return;
-
-    setState(() => _enrollingStudentId = studentToEnroll.uid);
-    _actionError = null;
-
-    try {
-      await enrollStudentInClassService(
-        widget.classId,
-        studentToEnroll.uid,
-        studentToEnroll.displayName ?? "Student",
-        studentToEnroll.email ?? "",
-        _currentUser.uid,
-      );
-
-      await _fetchClassAndStudentData(showLoading: false);
-      setState(() {
-         _searchResults.removeWhere((s) => s.uid == studentToEnroll.uid);
-         _searchController.clear();
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${studentToEnroll.displayName} enrolled successfully!'),
-            backgroundColor: const Color(0xFF10B981),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        );
-      }
-    } catch (e) {
-      setState(() => _actionError = "Enrollment failed: ${e.toString()}");
-    } finally {
-      if (mounted) setState(() => _enrollingStudentId = null);
-    }
+  if (_classDetails == null || _currentUser == null) {
+    setState(() => _actionError = "Cannot enroll: Class/trainer info missing.");
+    return;
   }
+  if (_enrollingStudentId == studentToEnroll.uid) return;
 
-  Future<void> _handleRemoveStudent(EnrolledStudent enrollment) async {
-    bool confirm = await _showModernConfirmDialog(
-      title: 'Remove Student',
-      content: 'Are you sure you want to remove ${enrollment.studentName} from the class?',
-      confirmText: 'Remove',
-      isDestructive: true,
+  setState(() => _enrollingStudentId = studentToEnroll.uid);
+  _actionError = null;
+
+  try {
+    // Enroll the student
+    await enrollStudentInClassService(
+      widget.classId,
+      studentToEnroll.uid,
+      studentToEnroll.displayName ?? "Student",
+      studentToEnroll.email ?? "",
+      _currentUser.uid,
     );
 
-    if (!confirm) return;
-    if (_removingEnrollmentId == enrollment.id) return;
+    // Send notification to the student about enrollment
+    final trainerName = _currentUser!.displayName ?? 'Your trainer';
 
-    setState(() => _removingEnrollmentId = enrollment.id);
-    _actionError = null;
+    await NotificationService.notifyStudentEnrollment(
+      studentId: studentToEnroll.uid,
+      className: _classDetails!.className,
+      classId: widget.classId,
+      trainerName: trainerName,
+    );
 
-    try {
-      await removeStudentFromClassService(enrollment.id, widget.classId);
-      await _fetchClassAndStudentData(showLoading: false);
+    debugPrint('📧 Enrollment notification sent to: ${studentToEnroll.displayName}');
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${enrollment.studentName} removed successfully!'),
-            backgroundColor: const Color(0xFFEF4444),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        );
-      }
-    } catch (e) {
-      setState(() => _actionError = "Removal failed: ${e.toString()}");
-    } finally {
-      if (mounted) setState(() => _removingEnrollmentId = null);
+    await _fetchClassAndStudentData(showLoading: false);
+    setState(() {
+       _searchResults.removeWhere((s) => s.uid == studentToEnroll.uid);
+       _searchController.clear();
+    });
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${studentToEnroll.displayName} enrolled successfully!'),
+          backgroundColor: const Color(0xFF10B981),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
     }
+  } catch (e) {
+    setState(() => _actionError = "Enrollment failed: ${e.toString()}");
+  } finally {
+    if (mounted) setState(() => _enrollingStudentId = null);
   }
+}
+
+  Future<void> _handleRemoveStudent(EnrolledStudent enrollment) async {
+  bool confirm = await _showModernConfirmDialog(
+    title: 'Remove Student',
+    content: 'Are you sure you want to remove ${enrollment.studentName} from the class?',
+    confirmText: 'Remove',
+    isDestructive: true,
+  );
+
+  if (!confirm) return;
+  if (_removingEnrollmentId == enrollment.id) return;
+
+  setState(() => _removingEnrollmentId = enrollment.id);
+  _actionError = null;
+
+  try {
+    // Remove student from class
+    await removeStudentFromClassService(enrollment.id, widget.classId);
+
+    // Send notification to the student about removal
+    if (_classDetails != null && _currentUser != null) {
+      // Get trainer name from Firebase Auth
+      final trainerName = _currentUser!.displayName ?? 'Your trainer';
+
+      await NotificationService.notifyStudentRemoval(
+        studentId: enrollment.studentId,
+        className: _classDetails!.className,
+        trainerName: trainerName,
+      );
+
+      debugPrint('📧 Removal notification sent to: ${enrollment.studentName}');
+    }
+
+    // Refresh the student list
+    await _fetchClassAndStudentData(showLoading: false);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${enrollment.studentName} removed successfully!'),
+          backgroundColor: const Color(0xFFEF4444),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+    }
+  } catch (e) {
+    setState(() => _actionError = "Removal failed: ${e.toString()}");
+  } finally {
+    if (mounted) setState(() => _removingEnrollmentId = null);
+  }
+}
 
   Future<bool> _showModernConfirmDialog({
     required String title,

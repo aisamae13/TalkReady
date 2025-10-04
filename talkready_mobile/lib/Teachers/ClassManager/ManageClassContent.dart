@@ -7,6 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import '../../notification_service.dart';
 import 'package:intl/intl.dart';
 import 'dart:ui';
 
@@ -221,87 +222,279 @@ class _ManageClassContentPageState extends State<ManageClassContentPage>
       });
     }
   }
+Future<void> _notifyStudentsAboutContent({
+  required String action,
+  required String contentTitle,
+}) async {
+  try {
+    final classDoc = await FirebaseFirestore.instance
+        .collection('trainerClass')
+        .doc(widget.classId)
+        .get();
 
+    final className = classDoc.data()?['className'] as String?;
+
+    await NotificationService.createNotificationsForStudents(
+      classId: widget.classId,
+      message: '$action: $contentTitle',
+      className: className,
+      link: '/student/class/${widget.classId}/content',
+    );
+  } catch (e) {
+    debugPrint('Failed to send notifications: $e');
+    // Don't throw - notifications are not critical
+  }
+}
   Future<void> _handleUpload() async {
-    if (_selectedFile == null) {
-      setState(() => _uploadError = "Please select a file.");
-      return;
-    }
-    if (_titleController.text.trim().isEmpty) {
-      setState(() => _uploadError = "Please enter a title for the material.");
-      return;
-    }
-    if (_currentUser == null) {
-      setState(() => _uploadError = "Authentication error.");
-      return;
-    }
+  if (_selectedFile == null) {
+    setState(() => _uploadError = "Please select a file.");
+    return;
+  }
+  if (_titleController.text.trim().isEmpty) {
+    setState(() => _uploadError = "Please enter a title for the material.");
+    return;
+  }
+  if (_currentUser == null) {
+    setState(() => _uploadError = "Authentication error.");
+    return;
+  }
 
+  setState(() {
+    _isUploading = true;
+    _uploadProgress = 0.0;
+    _uploadError = null;
+  });
+
+  try {
+    final uploadData = await uploadClassMaterialFileToStorage(
+      widget.classId,
+      _selectedFile!,
+      _selectedFileName ?? _selectedFile!.path.split('/').last,
+      (progress) => setState(() => _uploadProgress = progress),
+    );
+
+    final materialMetadata = {
+      'title': _titleController.text.trim(),
+      'description': _descriptionController.text.trim(),
+      'downloadURL': uploadData['downloadURL'],
+      'filePath': uploadData['filePath'],
+      'fileName': uploadData['fileName'],
+      'fileType': uploadData['fileType'],
+      'trainerId': _currentUser!.uid,
+    };
+
+    await addClassMaterialMetadataToFirestore(widget.classId, materialMetadata);
+
+    // Notify students about new material
+    await _notifyStudentsAboutContent(
+      action: 'New material added',
+      contentTitle: _titleController.text.trim(),
+    );
+
+    _titleController.clear();
+    _descriptionController.clear();
     setState(() {
-      _isUploading = true;
-      _uploadProgress = 0.0;
-      _uploadError = null;
+      _selectedFile = null;
+      _selectedFileName = null;
     });
 
-    try {
-      final uploadData = await uploadClassMaterialFileToStorage(
-        widget.classId,
-        _selectedFile!,
-        _selectedFileName ?? _selectedFile!.path.split('/').last,
-        (progress) => setState(() => _uploadProgress = progress),
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white),
+              SizedBox(width: 12),
+              Text('Material uploaded and students notified!'),
+            ],
+          ),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 3),
+        ),
       );
+    }
 
-      final materialMetadata = {
-        'title': _titleController.text.trim(),
-        'description': _descriptionController.text.trim(),
-        'downloadURL': uploadData['downloadURL'],
-        'filePath': uploadData['filePath'],
-        'fileName': uploadData['fileName'],
-        'fileType': uploadData['fileType'],
-        'trainerId': _currentUser!.uid,
-      };
-
-      await addClassMaterialMetadataToFirestore(widget.classId, materialMetadata);
-
-      _titleController.clear();
-      _descriptionController.clear();
+    await _fetchClassData(showLoading: false);
+  } catch (e) {
+    setState(() => _uploadError = "Upload failed: ${e.toString()}");
+  } finally {
+    if (mounted) {
       setState(() {
-        _selectedFile = null;
-        _selectedFileName = null;
+        _isUploading = false;
+        _uploadProgress = 0.0;
       });
-      await _fetchClassData(showLoading: false);
-    } catch (e) {
-      setState(() => _uploadError = "Upload failed: ${e.toString()}");
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isUploading = false;
-          _uploadProgress = 0.0;
-        });
-      }
     }
   }
+}
 
-  Future<void> _handleDeleteMaterial(ClassMaterial material) async {
-    bool confirm = await showDialog(
-      context: context,
-      builder: (ctx) => _buildModernDialog(material),
-    ) ?? false;
+Future<void> _handleDeleteMaterial(ClassMaterial material) async {
+  bool confirm = await showDialog(
+    context: context,
+    builder: (ctx) => _buildModernDialog(material),
+  ) ?? false;
 
-    if (!confirm) return;
+  if (!confirm) return;
 
-    setState(() => _isLoading = true);
-    _error = null;
-    try {
-      await deleteClassMaterialFileFromStorage(material.filePath);
-      await deleteClassMaterialMetadataFromFirestore(widget.classId, material.id);
-      await _fetchClassData(showLoading: false);
-    } catch (e) {
-      setState(() => _error = "Deletion failed: ${e.toString()}");
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+  setState(() => _isLoading = true);
+  _error = null;
+  try {
+    await deleteClassMaterialFileFromStorage(material.filePath);
+    await deleteClassMaterialMetadataFromFirestore(widget.classId, material.id);
+
+    // Notify students about deletion
+    await _notifyStudentsAboutContent(
+      action: 'Material removed',
+      contentTitle: material.title,
+    );
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white),
+              SizedBox(width: 12),
+              Text('Material deleted and students notified!'),
+            ],
+          ),
+          backgroundColor: Colors.orange,
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 3),
+        ),
+      );
     }
-  }
 
+    await _fetchClassData(showLoading: false);
+  } catch (e) {
+    setState(() => _error = "Deletion failed: ${e.toString()}");
+  } finally {
+    if (mounted) setState(() => _isLoading = false);
+  }
+}
+
+Future<void> _showUpdateMaterialDialog(ClassMaterial material) async {
+  final titleController = TextEditingController(text: material.title);
+  final descriptionController = TextEditingController(text: material.description ?? '');
+
+  showDialog(
+    context: context,
+    builder: (BuildContext dialogContext) {
+      return AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFF8B5CF6).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.edit,
+                color: Color(0xFF8B5CF6),
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Text('Update Material'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: titleController,
+              decoration: InputDecoration(
+                labelText: 'Material Title *',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: descriptionController,
+              decoration: InputDecoration(
+                labelText: 'Description',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              maxLines: 3,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (titleController.text.trim().isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Please enter a title'),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+                return;
+              }
+
+              Navigator.of(dialogContext).pop();
+
+              try {
+                await FirebaseFirestore.instance
+                    .collection('classMaterials')
+                    .doc(material.id)
+                    .update({
+                  'title': titleController.text.trim(),
+                  'description': descriptionController.text.trim(),
+                  'updatedAt': FieldValue.serverTimestamp(),
+                });
+
+                // Notify students about update
+                await _notifyStudentsAboutContent(
+                  action: 'Material updated',
+                  contentTitle: titleController.text.trim(),
+                );
+
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Row(
+                        children: [
+                          Icon(Icons.check_circle, color: Colors.white),
+                          SizedBox(width: 12),
+                          Text('Material updated and students notified!'),
+                        ],
+                      ),
+                      backgroundColor: Colors.blue,
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+
+                await _fetchClassData(showLoading: false);
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Update failed: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF8B5CF6),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Update'),
+          ),
+        ],
+      );
+    },
+  );
+}
   Widget _buildModernDialog(ClassMaterial material) {
     return AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -911,7 +1104,7 @@ class _ManageClassContentPageState extends State<ManageClassContentPage>
 
   Widget _buildUploadButton(bool isSmallScreen) {
     final canUpload = !_isUploading && _selectedFile != null && _titleController.text.trim().isNotEmpty;
-    
+
     return Container(
       height: isSmallScreen ? 48 : 52,
       constraints: const BoxConstraints(minWidth: 120),
@@ -1198,27 +1391,35 @@ class _ManageClassContentPageState extends State<ManageClassContentPage>
                     ),
                     const SizedBox(width: 8),
                     Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _MaterialIconButton(
-                          color: Colors.blue.shade50,
-                          iconColor: Colors.blue.shade600,
-                          icon: FontAwesomeIcons.download,
-                          tooltip: 'Download',
-                          onTap: () {
-                            // TODO
-                          },
-                        ),
-                        const SizedBox(height: 6),
-                        _MaterialIconButton(
-                          color: Colors.red.shade50,
-                          iconColor: Colors.red.shade600,
-                          icon: FontAwesomeIcons.trashCan,
-                          tooltip: 'Delete',
-                          onTap: () => _handleDeleteMaterial(material),
-                        ),
-                      ],
-                    ),
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _MaterialIconButton(
+                        color: Colors.blue.shade50,
+                        iconColor: Colors.blue.shade600,
+                        icon: FontAwesomeIcons.download,
+                        tooltip: 'Download',
+                        onTap: () {
+                          // TODO
+                        },
+                      ),
+                      const SizedBox(height: 6),
+                      _MaterialIconButton(
+                        color: Colors.green.shade50,
+                        iconColor: Colors.green.shade600,
+                        icon: FontAwesomeIcons.penToSquare, // Edit icon
+                        tooltip: 'Edit',
+                        onTap: () => _showUpdateMaterialDialog(material),
+                      ),
+                      const SizedBox(height: 6),
+                      _MaterialIconButton(
+                        color: Colors.red.shade50,
+                        iconColor: Colors.red.shade600,
+                        icon: FontAwesomeIcons.trashCan,
+                        tooltip: 'Delete',
+                        onTap: () => _handleDeleteMaterial(material),
+                      ),
+                    ],
+                  ),
                   ],
                 ),
                 if (material.description != null && material.description!.isNotEmpty) ...[

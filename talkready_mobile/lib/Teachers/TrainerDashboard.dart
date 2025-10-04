@@ -12,12 +12,14 @@ import 'ClassManager/CreateClassForm.dart';
 import '../custom_animated_bottom_bar.dart';
 import 'Reports/TrainerReports.dart';
 import 'Announcement/CreateAnnouncementPage.dart';
-import 'package:talkready_mobile/Teachers/Contents/QuickUploadMaterialPage.dart';
+import '../Teachers/Contents/QuickUploadMaterialPage.dart';
 import 'dart:ui';
 import 'ClassManager/ManageClassContent.dart';
 import 'package:shimmer/shimmer.dart';
 import '../firebase_service.dart';
-import '../all_notifications_page.dart'; // Import the notifications page
+import '../all_notifications_page.dart';
+import 'package:flutter/services.dart';
+import '../notification_badge.dart';
 
 class TrainerDashboard extends StatefulWidget {
   const TrainerDashboard({super.key});
@@ -101,28 +103,92 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
     });
   }
 
-  void _setupNotificationListener() {
-    if (currentUser == null) return;
-
-    _notificationSubscription = FirebaseFirestore.instance
-        .collection('notifications')
-        .where('userId', isEqualTo: currentUser!.uid)
-        .where('isRead', isEqualTo: false)
-        .snapshots()
-        .listen(
-      (snapshot) {
-        if (mounted) {
-          setState(() {
-            _unreadNotificationsCount = snapshot.docs.length;
-          });
-        }
-      },
-      onError: (e) {
-        debugPrint('Error fetching notification count: $e');
-      },
-    );
+ void _setupNotificationListener() {
+  if (currentUser == null) {
+    debugPrint('❌ No current user - cannot setup notification listener');
+    return;
   }
 
+  debugPrint('🔔 Setting up notification listener for user: ${currentUser!.uid}');
+
+  _notificationSubscription = FirebaseFirestore.instance
+      .collection('notifications')
+      .where('userId', isEqualTo: currentUser!.uid)
+      .where('isRead', isEqualTo: false)
+      .snapshots()
+      .listen(
+    (snapshot) {
+      debugPrint('📬 Received notification snapshot: ${snapshot.docs.length} unread notifications');
+
+      if (mounted) {
+        setState(() {
+          _unreadNotificationsCount = snapshot.docs.length;
+        });
+        debugPrint('✅ Updated unread count to: $_unreadNotificationsCount');
+      }
+    },
+    onError: (e) {
+      debugPrint('❌ Error fetching notifications: $e');
+
+      // Check if it's an index error
+      if (e.toString().contains('index')) {
+        debugPrint('⚠️ FIRESTORE INDEX REQUIRED! Create an index for:');
+        debugPrint('   Collection: notifications');
+        debugPrint('   Fields: userId (Ascending), isRead (Ascending)');
+      }
+    },
+  );
+}
+Future<bool> _onWillPop() async {
+  // Show exit confirmation dialog
+  final shouldExit = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      title: Row(
+        children: [
+          Icon(Icons.exit_to_app, color: Colors.blue.shade700),
+          const SizedBox(width: 12),
+          const Text('Exit TalkReady?'),
+        ],
+      ),
+      content: const Text(
+        'Are you sure you want to exit the app?',
+        style: TextStyle(fontSize: 16),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: Text(
+            'Cancel',
+            style: TextStyle(
+              color: Colors.grey[600],
+              fontSize: 16,
+            ),
+          ),
+        ),
+        ElevatedButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.blue,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+          child: const Text(
+            'Exit',
+            style: TextStyle(fontSize: 16, color: Colors.white),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  return shouldExit ?? false;
+}
   Future<void> fetchUserFirstName() async {
     if (currentUser == null) return;
     try {
@@ -359,9 +425,21 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
+@override
+Widget build(BuildContext context) {
+  return PopScope(
+    canPop: false, // Prevent default back navigation
+    onPopInvoked: (bool didPop) async {
+      if (didPop) return;
+
+      // Show exit confirmation
+      final shouldExit = await _onWillPop();
+      if (shouldExit && context.mounted) {
+        // Exit the app using SystemNavigator
+        SystemNavigator.pop();
+      }
+    },
+    child: Scaffold(
       backgroundColor: Colors.grey[100],
       appBar: _buildAppBar(),
       body: SafeArea(child: _buildDashboardContent()),
@@ -383,8 +461,9 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
         animationDuration: const Duration(milliseconds: 300),
         customNotchWidthFactor: 0.5,
       ),
-    );
-  }
+    ),
+  );
+}
 
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
@@ -393,48 +472,19 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
       foregroundColor: Colors.white,
       automaticallyImplyLeading: false,
       actions: [
-        if (currentUser != null)
-          Stack(
-            alignment: Alignment.center,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.notifications),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const AllNotificationsPage(),
-                    ),
-                  );
-                },
-              ),
-              if (_unreadNotificationsCount > 0)
-                Positioned(
-                  right: 11,
-                  top: 11,
-                  child: Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    constraints: const BoxConstraints(
-                      minWidth: 14,
-                      minHeight: 14,
-                    ),
-                    child: Text(
-                      '$_unreadNotificationsCount',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 8,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-      ],
+      NotificationBadge(
+        unreadCount: _unreadNotificationsCount,
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const AllNotificationsPage(),
+            ),
+          );
+        },
+      ),
+      const SizedBox(width: 8),
+    ],
     );
   }
 

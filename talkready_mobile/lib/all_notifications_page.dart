@@ -33,186 +33,247 @@ class _AllNotificationsPageState extends State<AllNotificationsPage> {
     super.dispose();
   }
 
-  void _startListeningToNotifications() {
-    if (_uid == null) {
-      setState(() {
-        _error = "Please log in to view your notifications.";
-        _loading = false;
-      });
-      return;
-    }
-
+void _startListeningToNotifications() {
+  if (_uid == null) {
     setState(() {
-      _loading = true;
-      _error = null;
+      _error = "Please log in to view your notifications.";
+      _loading = false;
     });
-
-    _notificationSubscription = FirebaseFirestore.instance
-        .collection('notifications')
-        .where('userId', isEqualTo: _uid)
-        .orderBy('createdAt', descending: true)
-        .snapshots()
-        .listen(
-      (snapshot) {
-        if (mounted) {
-          setState(() {
-            _notifications = snapshot.docs;
-            _loading = false;
-            _error = null;
-          });
-        }
-      },
-      onError: (error) {
-        if (mounted) {
-          setState(() {
-            _error = "Failed to load notifications. Please try again.";
-            _loading = false;
-          });
-        }
-      },
-    );
+    return;
   }
+
+  setState(() {
+    _loading = true;
+    _error = null;
+  });
+
+  _notificationSubscription = FirebaseFirestore.instance
+      .collection('notifications')
+      .where('userId', isEqualTo: _uid)
+      .orderBy('createdAt', descending: true)  // Remove the isRead filter
+      .snapshots()
+      .listen(
+    (snapshot) {
+      if (mounted) {
+        setState(() {
+          _notifications = snapshot.docs;
+          _loading = false;
+          _error = null;
+        });
+      }
+    },
+    onError: (error) {
+      if (mounted) {
+        setState(() {
+          _error = "Failed to load notifications. Please try again.";
+          _loading = false;
+        });
+      }
+    },
+  );
+}
 
   Future<void> _refreshNotifications() async {
     _startListeningToNotifications();
   }
 
   Future<void> _handleNotificationTap(DocumentSnapshot notif) async {
-    final data = notif.data() as Map<String, dynamic>;
+  final data = notif.data() as Map<String, dynamic>;
 
-    // Mark as read if unread
-    if (!(data['isRead'] ?? false)) {
-      try {
-        await notif.reference.update({
-          'isRead': true,
-          'readAt': FieldValue.serverTimestamp(),
-        });
-        // The stream will automatically update the UI
-      } catch (e) {
-        // Handle error silently or show a toast
-        debugPrint('Error marking notification as read: $e');
-      }
-    }
-
-    // Handle navigation based on link pattern
-    if (data['link'] != null && data['link'] is String) {
-      final link = data['link'] as String;
-      
-      try {
-        // Handle assessment submission review links
-        if (link.contains('/student/submission/') && link.contains('review')) {
-          // Extract submissionId from URL path
-          String submissionId = '';
-          if (link.contains('/student/submission/')) {
-            List<String> parts = link.split('/student/submission/');
-            if (parts.length > 1) {
-              submissionId = parts[1].split('/review').first;
-            }
-          }
-          
-          // Extract assessmentId from query parameters
-          String? assessmentId;
-          if (link.contains('assessmentId=')) {
-            assessmentId = link.split('assessmentId=')[1];
-            if (assessmentId.contains('&')) {
-              assessmentId = assessmentId.split('&').first;
-            }
-          }
-          
-          if (assessmentId != null && submissionId.isNotEmpty) {
-            debugPrint('Navigating to assessment review with ID: $assessmentId, submission: $submissionId');
-            
-            // Navigate to the assessment review page directly
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => AssessmentReviewPage(
-                  assessmentId: assessmentId!,
-                  submissionId: submissionId,
-                ),
-              ),
-            );
-            return;
-          }
-        }
-        
-        // Handle class content links
-        else if (link.contains('/student/class/')) {
-          // Extract classId from the link
-          String classId = '';
-          List<String> parts = link.split('/student/class/');
-          if (parts.length > 1) {
-            classId = parts[1];
-            
-            // Remove any content part or hash fragments
-            if (classId.contains('/content')) {
-              classId = classId.split('/content')[0];
-            }
-            
-            if (classId.contains('#')) {
-              classId = classId.split('#')[0];
-            }
-            
-            classId = classId.trim();
-          }
-          
-          if (classId.isNotEmpty) {
-            debugPrint('Navigating to class content: $classId');
-            // Get class details from Firestore
-            try {
-              final classDoc = await FirebaseFirestore.instance
-                  .collection('trainerClass')
-                  .doc(classId)
-                  .get();
-                  
-              if (classDoc.exists) {
-                final classData = classDoc.data() ?? {};
-                final className = classData['className'] ?? 'Class';
-                
-                // Navigate to the class content page
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => ClassContentPage(
-                      classId: classId,
-                      className: className,
-                      classData: classData,
-                    ),
-                  ),
-                );
-                return;
-              } else {
-                throw Exception('Class not found');
-              }
-            } catch (e) {
-              debugPrint('Error fetching class data: $e');
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Could not find the class. It may have been deleted.'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-            }
-          }
-        }
-        
-        // Fallback to standard route navigation if specific patterns don't match
-        else {
-          Navigator.pushNamed(context, data['link']);
-        }
-        
-      } catch (e) {
-        debugPrint('Error navigating from notification: $e');
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Could not open this notification content'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+  // Mark as read if unread
+  if (!(data['isRead'] ?? false)) {
+    try {
+      await notif.reference.update({
+        'isRead': true,
+        'readAt': FieldValue.serverTimestamp(),
+      });
+      // The stream will automatically update the UI
+    } catch (e) {
+      // Handle error silently or show a toast
+      debugPrint('Error marking notification as read: $e');
     }
   }
 
+  // Check notification type
+  final notificationType = data['type'] as String?;
+
+  // Handle removal notifications differently - just show a dialog
+  if (notificationType == 'removal') {
+    if (mounted) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              Icon(Icons.info_outline, color: Colors.orange.shade700),
+              const SizedBox(width: 12),
+              const Text('Class Removal'),
+            ],
+          ),
+          content: Text(
+            data['message'] ?? 'You have been removed from a class.',
+            style: const TextStyle(fontSize: 16),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text(
+                'OK',
+                style: TextStyle(fontSize: 16),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return; // Don't try to navigate
+  }
+
+  // Handle navigation based on link pattern (only if link exists)
+  if (data['link'] != null && data['link'] is String) {
+    final link = data['link'] as String;
+
+    try {
+      // Handle assessment submission review links
+      if (link.contains('/student/submission/') && link.contains('review')) {
+        // Extract submissionId from URL path
+        String submissionId = '';
+        if (link.contains('/student/submission/')) {
+          List<String> parts = link.split('/student/submission/');
+          if (parts.length > 1) {
+            submissionId = parts[1].split('/review').first;
+          }
+        }
+
+        // Extract assessmentId from query parameters
+        String? assessmentId;
+        if (link.contains('assessmentId=')) {
+          assessmentId = link.split('assessmentId=')[1];
+          if (assessmentId.contains('&')) {
+            assessmentId = assessmentId.split('&').first;
+          }
+        }
+
+        if (assessmentId != null && submissionId.isNotEmpty) {
+          debugPrint('Navigating to assessment review with ID: $assessmentId, submission: $submissionId');
+
+          // Navigate to the assessment review page directly
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => AssessmentReviewPage(
+                assessmentId: assessmentId!,
+                submissionId: submissionId,
+              ),
+            ),
+          );
+          return;
+        }
+      }
+
+      // Handle class content links
+      else if (link.contains('/student/class/')) {
+        // Extract classId from the link
+        String classId = '';
+        List<String> parts = link.split('/student/class/');
+        if (parts.length > 1) {
+          classId = parts[1];
+
+          // Remove any content part or hash fragments
+          if (classId.contains('/content')) {
+            classId = classId.split('/content')[0];
+          }
+
+          if (classId.contains('#')) {
+            classId = classId.split('#')[0];
+          }
+
+          classId = classId.trim();
+        }
+
+        if (classId.isNotEmpty) {
+          debugPrint('Navigating to class content: $classId');
+          // Get class details from Firestore
+          try {
+            final classDoc = await FirebaseFirestore.instance
+                .collection('trainerClass')
+                .doc(classId)
+                .get();
+
+            if (classDoc.exists) {
+              final classData = classDoc.data() ?? {};
+              final className = classData['className'] ?? 'Class';
+
+              // Navigate to the class content page
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => ClassContentPage(
+                    classId: classId,
+                    className: className,
+                    classData: classData,
+                  ),
+                ),
+              );
+              return;
+            } else {
+              throw Exception('Class not found');
+            }
+          } catch (e) {
+            debugPrint('Error fetching class data: $e');
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Could not find the class. It may have been deleted.'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        }
+      }
+
+      // Fallback to standard route navigation if specific patterns don't match
+      else {
+        // Try to navigate using named route
+        try {
+          Navigator.pushNamed(context, link);
+        } catch (e) {
+          debugPrint('Navigation error: $e');
+          // If navigation fails, just show a message
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('This notification has no associated page'),
+                backgroundColor: Colors.grey,
+              ),
+            );
+          }
+        }
+      }
+
+    } catch (e) {
+      debugPrint('Error navigating from notification: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not open this notification content'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  } else {
+    // No link provided - just show a message
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(data['message'] ?? 'Notification'),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+}
   Future<void> _deleteNotification(DocumentSnapshot notif) async {
     try {
       await notif.reference.delete();

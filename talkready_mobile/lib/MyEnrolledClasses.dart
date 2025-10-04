@@ -11,6 +11,7 @@ import 'courses_page.dart';
 import 'progress_page.dart';
 import 'profile.dart';
 import 'class_content_page.dart'; // Add this line
+import 'notification_service.dart';
 
 class MyEnrolledClasses extends StatefulWidget {
   const MyEnrolledClasses({super.key});
@@ -352,86 +353,88 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
   }
 
   Future<Map<String, dynamic>> joinClassWithCode(
-    String studentId,
-    String classCode,
-  ) async {
-    try {
-      // Find class by code
-      final QuerySnapshot classQuery = await _firestore
-          .collection('trainerClass')
-          .where('classCode', isEqualTo: classCode.toUpperCase())
-          .limit(1)
-          .get();
+  String studentId,
+  String classCode,
+) async {
+  try {
+    // Find class by code
+    final QuerySnapshot classQuery = await _firestore
+        .collection('trainerClass')
+        .where('classCode', isEqualTo: classCode.toUpperCase())
+        .limit(1)
+        .get();
 
-      if (classQuery.docs.isEmpty) {
-        throw Exception("Invalid class code. Please check and try again.");
-      }
-
-      final DocumentSnapshot classDoc = classQuery.docs.first;
-      final Map<String, dynamic> classData =
-          classDoc.data() as Map<String, dynamic>;
-      final String classId = classDoc.id;
-      final String trainerId = classData['trainerId'] ?? '';
-
-      // Check if student is already enrolled
-      final QuerySnapshot existingEnrollment = await _firestore
-          .collection('enrollments')
-          .where('studentId', isEqualTo: studentId)
-          .where('classId', isEqualTo: classId)
-          .get();
-
-      if (existingEnrollment.docs.isNotEmpty) {
-        throw Exception(
-          'You are already enrolled in "${classData['className']}".',
-        );
-      }
-
-      // Get student's details
-      DocumentSnapshot studentDoc = await _firestore
-          .collection('users')
-          .doc(studentId)
-          .get();
-
-      String studentName = "Student";
-      String studentEmail = "N/A";
-
-      if (studentDoc.exists) {
-        Map<String, dynamic> studentData =
-            studentDoc.data() as Map<String, dynamic>;
-        studentName =
-            studentData['displayName'] ??
-            '${studentData['firstName'] ?? ''} ${studentData['lastName'] ?? ''}'
-                .trim();
-        if (studentName.isEmpty) studentName = "Student";
-        studentEmail = studentData['email'] ?? "N/A";
-      }
-
-      // Create enrollment document
-      await _firestore.collection('enrollments').add({
-        'classId': classId,
-        'studentId': studentId,
-        'studentName': studentName,
-        'studentEmail': studentEmail,
-        'trainerId': trainerId,
-        'enrolledAt': FieldValue.serverTimestamp(),
-      });
-
-      // REMOVE THIS SECTION - Don't update trainerClass document
-      // await _firestore.collection('trainerClass').doc(classId).update({
-      //   'studentCount': FieldValue.increment(1),
-      //   'lastUpdated': FieldValue.serverTimestamp(),
-      // });
-
-      return {
-        'message': 'Successfully joined "${classData['className']}"!',
-        'className': classData['className'] ?? 'Unnamed Class',
-        'classId': classId,
-      };
-    } catch (e) {
-      _logger.e("Error in joinClassWithCode: $e");
-      rethrow;
+    if (classQuery.docs.isEmpty) {
+      throw Exception("Invalid class code. Please check and try again.");
     }
+
+    final DocumentSnapshot classDoc = classQuery.docs.first;
+    final Map<String, dynamic> classData =
+        classDoc.data() as Map<String, dynamic>;
+    final String classId = classDoc.id;
+    final String trainerId = classData['trainerId'] ?? '';
+
+    // Check if student is already enrolled
+    final QuerySnapshot existingEnrollment = await _firestore
+        .collection('enrollments')
+        .where('studentId', isEqualTo: studentId)
+        .where('classId', isEqualTo: classId)
+        .get();
+
+    if (existingEnrollment.docs.isNotEmpty) {
+      throw Exception(
+        'You are already enrolled in "${classData['className']}".',
+      );
+    }
+
+    // Get student's details
+    DocumentSnapshot studentDoc = await _firestore
+        .collection('users')
+        .doc(studentId)
+        .get();
+
+    String studentName = "Student";
+    String studentEmail = "N/A";
+
+    if (studentDoc.exists) {
+      Map<String, dynamic> studentData =
+          studentDoc.data() as Map<String, dynamic>;
+      studentName =
+          studentData['displayName'] ??
+          '${studentData['firstName'] ?? ''} ${studentData['lastName'] ?? ''}'
+              .trim();
+      if (studentName.isEmpty) studentName = "Student";
+      studentEmail = studentData['email'] ?? "N/A";
+    }
+
+    // Create enrollment document
+    await _firestore.collection('enrollments').add({
+      'classId': classId,
+      'studentId': studentId,
+      'studentName': studentName,
+      'studentEmail': studentEmail,
+      'trainerId': trainerId,
+      'enrolledAt': FieldValue.serverTimestamp(),
+    });
+
+    // Notify the trainer about new student enrollment
+    await NotificationService.notifyUser(
+      userId: trainerId,
+      message: '$studentName joined your class',
+      className: classData['className'],
+      link: '/trainer/classes/$classId/students',
+    );
+
+    return {
+      'message': 'Successfully joined "${classData['className']}"!',
+      'className': classData['className'] ?? 'Unnamed Class',
+      'classId': classId,
+    };
+  } catch (e) {
+    _logger.e("Error in joinClassWithCode: $e");
+    rethrow;
   }
+}
 
   @override
   Widget build(BuildContext context) {
@@ -873,10 +876,8 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
             Align(
               alignment: Alignment.centerRight,
               child: ElevatedButton.icon(
-                onPressed: () {
-                  // Create a proper class content page or navigate to an appropriate page
-                  // For now, let's navigate to a class detail page with the class data
-                  Navigator.push(
+                onPressed: () async {
+                  final result = await Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (context) => ClassContentPage(
@@ -886,7 +887,13 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
                       ),
                     ),
                   );
+
+                  // Automatically refresh if the student left the class
+                  if (result == 'left_class') {
+                    fetchClasses();
+                  }
                 },
+
                 icon: const FaIcon(FontAwesomeIcons.bookOpen, size: 14),
                 label: const Text('View Class'),
                 style: ElevatedButton.styleFrom(

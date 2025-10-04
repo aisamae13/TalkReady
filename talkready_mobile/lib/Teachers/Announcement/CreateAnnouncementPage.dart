@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../TrainerDashboard.dart';
+import '../../notification_service.dart';
 
 // Placeholder for your actual service functions.
 Future<List<Map<String, dynamic>>> getTrainerClasses(String trainerId) async {
@@ -16,7 +17,51 @@ Future<List<Map<String, dynamic>>> getTrainerClasses(String trainerId) async {
     throw Exception("Failed to load classes: ${e.toString()}");
   }
 }
+Future<void> createNotificationsForStudents({
+  required String classId,
+  required String message,
+  required String? className,
+  required String link,
+}) async {
+  try {
+    // Get all students enrolled in this class
+    final studentsSnapshot = await FirebaseFirestore.instance
+        .collection('trainerClass')
+        .doc(classId)
+        .collection('students')
+        .get();
 
+    if (studentsSnapshot.docs.isEmpty) {
+      debugPrint('No students found in class $classId');
+      return;
+    }
+
+    // Create notifications in batch
+    final batch = FirebaseFirestore.instance.batch();
+
+    for (var studentDoc in studentsSnapshot.docs) {
+      final studentId = studentDoc.id;
+      final notificationRef = FirebaseFirestore.instance
+          .collection('notifications')
+          .doc();
+
+      batch.set(notificationRef, {
+        'userId': studentId,
+        'message': message,
+        'className': className,
+        'link': link,
+        'isRead': false,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    }
+
+    await batch.commit();
+    debugPrint('✅ Created ${studentsSnapshot.docs.length} notifications');
+  } catch (e) {
+    debugPrint('❌ Error creating notifications: $e');
+    // Don't throw - notifications are not critical
+  }
+}
 Future<void> postClassAnnouncement({
   required String classId,
   required String title,
@@ -36,10 +81,19 @@ Future<void> postClassAnnouncement({
       'createdAt': FieldValue.serverTimestamp(),
       'status': 'published',
     });
+
+    // Create notifications for all students
+    await NotificationService.createNotificationsForStudents(
+      classId: classId,
+      message: 'New announcement: $title',
+      className: className,
+      link: '/student/class/$classId',
+    );
   } catch (e) {
     throw Exception("Failed to post announcement: ${e.toString()}");
   }
 }
+
 
 class CreateAnnouncementPage extends StatefulWidget {
   const CreateAnnouncementPage({super.key});
