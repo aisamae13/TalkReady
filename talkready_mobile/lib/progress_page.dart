@@ -1496,64 +1496,95 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage>
 
   Widget _buildAIAdvisorCard() {
     return Card(
+      elevation: 0,
       margin: const EdgeInsets.symmetric(vertical: 8),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.blue.shade100, width: 1),
+      ),
       child: Container(
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF6366F1), Color(0xFF8B5CF6), Color(0xFF0077B3)],
+          gradient: LinearGradient(
+            colors: [
+              Colors.white,
+              Colors.blue.shade50.withOpacity(0.3),
+            ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
         ),
         child: Padding(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Row(
+              Row(
                 children: [
-                  Icon(Icons.psychology, color: Colors.amber, size: 28),
-                  SizedBox(width: 12),
-                  Text(
-                    'Your AI Learning Advisor',
-                    style: TextStyle(
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF0077B3), Color(0xFF005f8c)],
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.psychology,
                       color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  const Expanded(
+                    child: Text(
+                      'Your AI Learning Advisor',
+                      style: TextStyle(
+                        color: Color(0xFF1a1a1a),
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
 
               if (_loadingAdvisor) ...[
-                const Row(
+                Row(
                   children: [
                     SizedBox(
                       width: 20,
                       height: 20,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.amber),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          Colors.blue.shade600,
+                        ),
                       ),
                     ),
-                    SizedBox(width: 12),
+                    const SizedBox(width: 12),
                     Text(
                       'Analyzing your progress...',
-                      style: TextStyle(color: Colors.white70),
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 15,
+                      ),
                     ),
                   ],
                 ),
               ] else if (_advisorError != null) ...[
                 Row(
                   children: [
-                    const Icon(Icons.error, color: Colors.redAccent),
+                    Icon(Icons.error_outline, color: Colors.red.shade400),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
                         _advisorError!,
-                        style: const TextStyle(color: Colors.white70),
+                        style: TextStyle(
+                          color: Colors.grey.shade700,
+                          fontSize: 15,
+                        ),
                       ),
                     ),
                   ],
@@ -1561,18 +1592,19 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage>
               ] else if (_aiAdvisorFeedback != null) ...[
                 Text(
                   _aiAdvisorFeedback!,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    height: 1.5,
+                  style: TextStyle(
+                    color: Colors.grey.shade800,
+                    fontSize: 15,
+                    height: 1.6,
+                    letterSpacing: 0.2,
                   ),
                 ),
               ] else ...[
-                const Text(
+                Text(
                   'Complete some lessons to receive personalized advice!',
                   style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: 16,
+                    color: Colors.grey.shade600,
+                    fontSize: 15,
                     fontStyle: FontStyle.italic,
                   ),
                 ),
@@ -1583,7 +1615,6 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage>
       ),
     );
   }
-
   Widget _buildOverallStatsCards() {
     return Row(
       children: [
@@ -1617,40 +1648,187 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage>
     );
   }
 
-  Widget _buildStatCard(
-    String title,
-    String value,
-    IconData icon,
-    Color color,
-  ) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: color, size: 28),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: color,
+ Widget _buildStatCard(
+  String title,
+  String value,
+  IconData icon,
+  Color color,
+) {
+  return Card(
+    elevation: 0,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(16),
+      side: BorderSide(color: Colors.grey.shade200, width: 1),
+    ),
+    child: Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: 24),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+              color: color,
+              letterSpacing: -0.5,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey.shade600,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+Widget _buildTrainerAssessmentsSection() {
+  return Card(
+    elevation: 0,
+    color: Colors.white,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(16),
+      side: BorderSide(color: const Color.fromARGB(255, 82, 177, 255), width: 1),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Trainer Assessments',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1a1a1a),
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Your formal assessment submissions',
+                      style: TextStyle(
+                        color: Colors.grey,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (_assessmentSubmissions.isNotEmpty)
+                Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0077B3).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: TextButton.icon(
+                    icon: const Icon(
+                      Icons.download,
+                      size: 18,
+                      color: Color(0xFF0077B3),
+                    ),
+                    label: const Text(
+                      'Export',
+                      style: TextStyle(color: Color(0xFF0077B3)),
+                    ),
+                    onPressed: _showExportOptions,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          if (_isLoadingAssessments) ...[
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: CircularProgressIndicator(),
               ),
             ),
-            Text(
-              title,
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
+          ] else if (_assessmentSubmissions.isEmpty) ...[
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.assignment_outlined,
+                      size: 64,
+                      color: Colors.grey.shade300,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'No assessments submitted yet',
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ] else ...[
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _assessmentSubmissions.length,
+              separatorBuilder: (context, index) => const SizedBox(height: 12),
+              itemBuilder: (context, index) {
+                return _buildAssessmentSubmissionCard(
+                  _assessmentSubmissions[index],
+                );
+              },
             ),
           ],
-        ),
+        ],
       ),
-    );
-  }
+    ),
+  );
+}
 
-  Widget _buildTrainerAssessmentsSection() {
-    return Card(
+Widget _buildAssessmentSubmissionCard(Map<String, dynamic> submission) {
+  final score = submission['score'] ?? 0;
+  final totalPoints = submission['totalPossiblePoints'] ?? 100;
+  final percentage = totalPoints > 0 ? (score / totalPoints * 100) : 0;
+
+  Color scoreColor = _getScoreColor(percentage);
+
+  return Container(
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: Colors.grey.shade200, width: 1),
+    ),
+    child: InkWell(
+      onTap: () => _navigateToReview(submission),
+      borderRadius: BorderRadius.circular(12),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -1659,506 +1837,615 @@ class _ProgressTrackerPageState extends State<ProgressTrackerPage>
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                Expanded(
+                  child: Text(
+                    submission['assessmentTitle'] ?? 'Assessment',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1a1a1a),
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: scoreColor.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    '$score / $totalPoints',
+                    style: TextStyle(
+                      color: scoreColor,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            if (submission['className'] != null &&
+                submission['className'] != 'Class Name Not Found')
+              Row(
+                children: [
+                  Icon(
+                    Icons.class_,
+                    size: 14,
+                    color: Colors.grey.shade600,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    submission['className'],
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+
+            const SizedBox(height: 12),
+
+            Row(
+              children: [
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: percentage / 100,
+                      backgroundColor: Colors.grey.shade200,
+                      valueColor: AlwaysStoppedAnimation<Color>(scoreColor),
+                      minHeight: 8,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: scoreColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    '${percentage.toStringAsFixed(0)}%',
+                    style: TextStyle(
+                      color: scoreColor,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            Row(
+              children: [
+                Expanded(
+                  child: Row(
                     children: [
-                      Text(
-                        'Trainer Assessments',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
+                      Icon(
+                        Icons.schedule,
+                        size: 14,
+                        color: Colors.grey.shade500,
                       ),
+                      const SizedBox(width: 6),
                       Text(
-                        'Your formal assessment submissions',
-                        style: TextStyle(color: Colors.grey),
+                        _formatSubmissionDate(submission['submittedAt']),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                        ),
                       ),
                     ],
                   ),
                 ),
-                if (_assessmentSubmissions.isNotEmpty)
-                  TextButton.icon(
-                    icon: const Icon(Icons.download, size: 18),
-                    label: const Text('Export'),
-                    onPressed: _showExportOptions,
-                  ),
+                Row(
+                  children: [
+                    TextButton(
+                      onPressed: () => _navigateToReview(submission),
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFF0077B3),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                      ),
+                      child: const Text(
+                        'Review',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    TextButton.icon(
+                      icon: const Icon(Icons.share, size: 16),
+                      label: const Text(
+                        'Share',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFF0077B3),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                      ),
+                      onPressed: () => _shareAssessment(submission),
+                    ),
+                  ],
+                ),
               ],
             ),
-            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+  Widget _buildAILessonsSection() {
+  if (_allUserAttempts.isEmpty) return const SizedBox.shrink();
 
-            if (_isLoadingAssessments) ...[
-              const Center(child: CircularProgressIndicator()),
-            ] else if (_assessmentSubmissions.isEmpty) ...[
-              const Center(
+  final levelGroups = _groupLessonsByLevel();
+
+  return Column(
+    children: [
+      // Header card
+      Card(
+        elevation: 0,
+        color: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: const Color.fromARGB(255, 82, 177, 255), width: 1),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF0077B3), Color(0xFF005f8c)],
+                  ),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.school,
+                  color: Colors.white,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 16),
+              const Expanded(
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.assignment, size: 48, color: Colors.grey),
-                    SizedBox(height: 8),
-                    Text('No assessments submitted yet'),
+                    Text(
+                      'Detailed Performance by Level & Module',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1a1a1a),
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Explore your progress through each learning module',
+                      style: TextStyle(
+                        color: Colors.grey,
+                        fontSize: 13,
+                      ),
+                    ),
                   ],
                 ),
               ),
-            ] else ...[
-              ListView.separated(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: _assessmentSubmissions.length,
-                separatorBuilder: (context, index) => const SizedBox(height: 8),
-                itemBuilder: (context, index) {
-                  return _buildAssessmentSubmissionCard(
-                    _assessmentSubmissions[index],
-                  );
-                },
-              ),
             ],
+          ),
+        ),
+      ),
+
+      const SizedBox(height: 16),
+
+      // Level sections
+      ...levelGroups.entries.map((levelEntry) {
+        return _buildLevelSection(levelEntry.key, levelEntry.value);
+      }).toList(),
+    ],
+  );
+}
+
+ Widget _buildLevelSection(
+  String level,
+  List<MapEntry<String, List<Map<String, dynamic>>>> lessons,
+) {
+  // Get modules for this level
+  final modulesForLevel = COURSE_STRUCTURE_MOBILE.entries
+      .where((entry) => entry.value['level'] == level)
+      .toList();
+
+  // Check if user has any progress in this level
+  final hasAnyProgress = lessons.isNotEmpty;
+
+  if (!hasAnyProgress) {
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 16),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.grey.shade200, width: 1),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    _getLevelColor(level).withOpacity(0.1),
+                    _getLevelColor(level).withOpacity(0.05),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: _getLevelColor(level).withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      _getLevelIcon(level),
+                      color: _getLevelColor(level),
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Text(
+                    '$level Level',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: _getLevelColor(level),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  color: Colors.grey.shade500,
+                  size: 20,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'You haven\'t started this level yet. Begin your journey to unlock new challenges!',
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontSize: 14,
+                      height: 1.5,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildAssessmentSubmissionCard(Map<String, dynamic> submission) {
-    final score = submission['score'] ?? 0;
-    final totalPoints = submission['totalPossiblePoints'] ?? 100;
-    final percentage = totalPoints > 0 ? (score / totalPoints * 100) : 0;
-
-    Color scoreColor = _getScoreColor(percentage);
-
-    return Card(
-      elevation: 1,
-      child: InkWell(
-        onTap: () => _navigateToReview(submission),
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Text(
-                      submission['assessmentTitle'] ?? 'Assessment',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: scoreColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      '$score / $totalPoints',
-                      style: TextStyle(
-                        color: scoreColor,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 8),
-
-              if (submission['className'] != null &&
-                  submission['className'] != 'Class Name Not Found')
-                Text(
-                  'Class: ${submission['className']}',
-                  style: const TextStyle(color: Colors.grey),
-                ),
-
-              const SizedBox(height: 8),
-
-              Row(
-                children: [
-                  Expanded(
-                    child: LinearProgressIndicator(
-                      value: percentage / 100,
-                      backgroundColor: Colors.grey[300],
-                      valueColor: AlwaysStoppedAnimation<Color>(scoreColor),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    '${percentage.toStringAsFixed(0)}%',
-                    style: TextStyle(
-                      color: scoreColor,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 8),
-
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    _formatSubmissionDate(submission['submittedAt']),
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
-                  ),
-                  Row(
-                    children: [
-                      TextButton(
-                        onPressed: () => _navigateToReview(submission),
-                        child: const Text('Review'),
-                      ),
-                      TextButton.icon(
-                        icon: const Icon(Icons.share, size: 16),
-                        label: const Text('Share'),
-                        onPressed: () => _shareAssessment(submission),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAILessonsSection() {
-    if (_allUserAttempts.isEmpty) return const SizedBox.shrink();
-
-    final levelGroups = _groupLessonsByLevel();
-
-    return Column(
+  return Card(
+    elevation: 0,
+    color: Colors.white,
+    margin: const EdgeInsets.only(bottom: 16),
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(16),
+      side: BorderSide(color: Colors.grey.shade200, width: 1),
+    ),
+    child: Column(
       children: [
-        // Header card
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.school, color: Color(0xFF0077B3)),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'Detailed Performance by Level & Module',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-                const Text(
-                  'Explore your progress through each learning module',
-                  style: TextStyle(color: Colors.grey),
-                ),
+        // Level header
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                _getLevelColor(level).withOpacity(0.1),
+                _getLevelColor(level).withOpacity(0.05),
               ],
             ),
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(16),
+              topRight: Radius.circular(16),
+            ),
           ),
-        ),
-
-        const SizedBox(height: 16),
-
-        // Level sections
-        ...levelGroups.entries.map((levelEntry) {
-          return _buildLevelSection(levelEntry.key, levelEntry.value);
-        }).toList(),
-      ],
-    );
-  }
-
-  Widget _buildLevelSection(
-    String level,
-    List<MapEntry<String, List<Map<String, dynamic>>>> lessons,
-  ) {
-    // Get modules for this level
-    final modulesForLevel = COURSE_STRUCTURE_MOBILE.entries
-        .where((entry) => entry.value['level'] == level)
-        .toList();
-
-    if (modulesForLevel.isEmpty) {
-      return Card(
-        margin: const EdgeInsets.only(bottom: 16),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
+          child: Row(
             children: [
               Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: _getLevelColor(level).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
+                  color: _getLevelColor(level).withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                child: Row(
-                  children: [
-                    Icon(
-                      _getLevelIcon(level),
-                      color: _getLevelColor(level),
-                      size: 24,
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      '$level Level',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: _getLevelColor(level),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'No progress yet. Start learning to see your achievements here!',
-                style: TextStyle(color: Colors.grey),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      child: Column(
-        children: [
-          // Level header
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: _getLevelColor(level).withOpacity(0.1),
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(8),
-                topRight: Radius.circular(8),
-              ),
-            ),
-            child: Row(
-              children: [
-                Icon(
+                child: Icon(
                   _getLevelIcon(level),
                   color: _getLevelColor(level),
                   size: 24,
                 ),
-                const SizedBox(width: 12),
-                Text(
-                  '$level Level',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: _getLevelColor(level),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Modules in this level
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: modulesForLevel.map((moduleEntry) {
-                return _buildModuleSection(moduleEntry.key, moduleEntry.value);
-              }).toList(),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildModuleSection(String moduleId, Map<String, dynamic> moduleData) {
-    final moduleLessons = moduleData['lessons'] as List<dynamic>? ?? [];
-    final moduleAssessment = moduleData['assessment'] as Map<String, dynamic>?;
-
-    // Check if any lessons in this module have progress
-    final hasProgress = moduleLessons.any((lesson) {
-      final lessonId = lesson['firestoreId'] as String;
-      return _allUserAttempts[lessonId]?.isNotEmpty ?? false;
-    });
-
-    // Check module assessment progress
-    final hasAssessmentProgress =
-        moduleAssessment != null &&
-        (_assessmentSubmissions.any(
-          (sub) => sub['assessmentId'] == moduleAssessment['id'],
-        ));
-
-    if (!hasProgress && !hasAssessmentProgress) {
-      return const SizedBox.shrink(); // Don't show modules with no progress
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 20),
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey.shade300),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Module header
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade50,
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(12),
-                topRight: Radius.circular(12),
-              ),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.book, color: Colors.indigo.shade600),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    moduleData['title'] as String,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.grey.shade800,
-                    ),
-                  ),
-                ),
-                TextButton.icon(
-                  onPressed: () {
-                    // Navigate to courses page and scroll to this module
-                    Navigator.pushReplacementNamed(context, '/courses');
-                  },
-                  icon: const Icon(Icons.launch, size: 16),
-                  label: const Text(
-                    'View Module',
-                    style: TextStyle(fontSize: 12),
-                  ),
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Module lessons
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                // Lessons
-                ...moduleLessons.map((lesson) {
-                  final lessonId = lesson['firestoreId'] as String;
-                  final attempts = _allUserAttempts[lessonId] ?? [];
-                  if (attempts.isEmpty) return const SizedBox.shrink();
-
-                  return _buildLessonProgressCard(lessonId, attempts);
-                }).toList(),
-
-                // Module Assessment
-                if (moduleAssessment != null && hasAssessmentProgress)
-                  _buildModuleAssessmentCard(moduleAssessment),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildModuleAssessmentCard(Map<String, dynamic> assessmentData) {
-    final assessmentId = assessmentData['id'] as String;
-    final assessmentTitle = assessmentData['title'] as String;
-
-    // Find assessment submissions for this assessment
-    final assessmentSubmissions = _assessmentSubmissions
-        .where((sub) => sub['assessmentId'] == assessmentId)
-        .toList();
-
-    if (assessmentSubmissions.isEmpty) return const SizedBox.shrink();
-
-    // Get the best submission
-    final bestSubmission = assessmentSubmissions.reduce((a, b) {
-      final scoreA = a['score'] ?? 0;
-      final scoreB = b['score'] ?? 0;
-      return scoreA > scoreB ? a : b;
-    });
-
-    final score = bestSubmission['score'] ?? 0;
-    final totalPoints = bestSubmission['totalPossiblePoints'] ?? 100;
-    final percentage = totalPoints > 0 ? (score / totalPoints * 100) : 0;
-
-    return Container(
-      margin: const EdgeInsets.only(top: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.yellow.shade50, Colors.orange.shade50],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        border: Border.all(color: Colors.yellow.shade300),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.emoji_events, color: Colors.amber.shade600),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  assessmentTitle,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.amber.shade800,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Text(
-                '${assessmentSubmissions.length} attempt${assessmentSubmissions.length != 1 ? 's' : ''}',
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
               ),
               const SizedBox(width: 16),
               Text(
-                'Best Score: $score / $totalPoints',
-                style: const TextStyle(
-                  fontSize: 12,
+                '$level Level',
+                style: TextStyle(
+                  fontSize: 20,
                   fontWeight: FontWeight.bold,
+                  color: _getLevelColor(level),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          LinearProgressIndicator(
-            value: percentage / 100,
-            backgroundColor: Colors.yellow.shade200,
-            valueColor: AlwaysStoppedAnimation<Color>(Colors.amber.shade600),
-            minHeight: 4,
+        ),
+
+        // Modules in this level
+        Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            children: modulesForLevel.map((moduleEntry) {
+              return _buildModuleSection(moduleEntry.key, moduleEntry.value);
+            }).toList(),
           ),
-        ],
-      ),
-    );
+        ),
+      ],
+    ),
+  );
+}
+
+ Widget _buildModuleSection(String moduleId, Map<String, dynamic> moduleData) {
+  final moduleLessons = moduleData['lessons'] as List<dynamic>? ?? [];
+  final moduleAssessment = moduleData['assessment'] as Map<String, dynamic>?;
+
+  // Check if any lessons in this module have progress
+  final hasProgress = moduleLessons.any((lesson) {
+    final lessonId = lesson['firestoreId'] as String;
+    return _allUserAttempts[lessonId]?.isNotEmpty ?? false;
+  });
+
+  // Check module assessment progress
+  final hasAssessmentProgress =
+      moduleAssessment != null &&
+      (_assessmentSubmissions.any(
+        (sub) => sub['assessmentId'] == moduleAssessment['id'],
+      ));
+
+  if (!hasProgress && !hasAssessmentProgress) {
+    return const SizedBox.shrink(); // Don't show modules with no progress
   }
+
+  return Container(
+    margin: const EdgeInsets.only(bottom: 20),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      border: Border.all(color: Colors.grey.shade200, width: 1),
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Module header
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(12),
+              topRight: Radius.circular(12),
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0077B3).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.book,
+                  color: const Color(0xFF0077B3),
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  moduleData['title'] as String,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF1a1a1a),
+                  ),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () {
+                  // Navigate to courses page and scroll to this module
+                  Navigator.pushReplacementNamed(context, '/courses');
+                },
+                icon: const Icon(Icons.launch, size: 14),
+                label: const Text(
+                  'View Module',
+                  style: TextStyle(fontSize: 12),
+                ),
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFF0077B3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Module lessons
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              // Lessons
+              ...moduleLessons.map((lesson) {
+                final lessonId = lesson['firestoreId'] as String;
+                final attempts = _allUserAttempts[lessonId] ?? [];
+                if (attempts.isEmpty) return const SizedBox.shrink();
+
+                return _buildLessonProgressCard(lessonId, attempts);
+              }).toList(),
+
+              // Module Assessment
+              if (moduleAssessment != null && hasAssessmentProgress)
+                _buildModuleAssessmentCard(moduleAssessment),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+ Widget _buildModuleAssessmentCard(Map<String, dynamic> assessmentData) {
+  final assessmentId = assessmentData['id'] as String;
+  final assessmentTitle = assessmentData['title'] as String;
+
+  // Find assessment submissions for this assessment
+  final assessmentSubmissions = _assessmentSubmissions
+      .where((sub) => sub['assessmentId'] == assessmentId)
+      .toList();
+
+  if (assessmentSubmissions.isEmpty) return const SizedBox.shrink();
+
+  // Get the best submission
+  final bestSubmission = assessmentSubmissions.reduce((a, b) {
+    final scoreA = a['score'] ?? 0;
+    final scoreB = b['score'] ?? 0;
+    return scoreA > scoreB ? a : b;
+  });
+
+  final score = bestSubmission['score'] ?? 0;
+  final totalPoints = bestSubmission['totalPossiblePoints'] ?? 100;
+  final percentage = totalPoints > 0 ? (score / totalPoints * 100) : 0;
+
+  return Container(
+    margin: const EdgeInsets.only(top: 12),
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      gradient: LinearGradient(
+        colors: [
+          Colors.amber.shade50,
+          Colors.orange.shade50.withOpacity(0.3),
+        ],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ),
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: Colors.amber.shade200, width: 1),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.amber.shade100,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                Icons.emoji_events,
+                color: Colors.amber.shade700,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                assessmentTitle,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.amber.shade900,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Icon(
+              Icons.repeat,
+              size: 14,
+              color: Colors.grey.shade600,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              '${assessmentSubmissions.length} attempt${assessmentSubmissions.length != 1 ? 's' : ''}',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey.shade700,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Icon(
+              Icons.star,
+              size: 14,
+              color: Colors.amber.shade700,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'Best: $score / $totalPoints',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey.shade800,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: LinearProgressIndicator(
+            value: percentage / 100,
+            backgroundColor: Colors.amber.shade200,
+            valueColor: AlwaysStoppedAnimation<Color>(Colors.amber.shade600),
+            minHeight: 6,
+          ),
+        ),
+      ],
+    ),
+  );
+}
 
   Color _getLevelColor(String level) {
     switch (level) {
@@ -2203,83 +2490,119 @@ Widget _buildLessonProgressCard(
 
   final isExpanded = _expandedLesson[lessonId] ?? false;
 
-  return Card(
-    elevation: 1,
-    margin: const EdgeInsets.only(bottom: 8),
+  return Container(
+    margin: const EdgeInsets.only(bottom: 12),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: Colors.grey.shade200, width: 1),
+    ),
     child: Column(
       children: [
         InkWell(
           onTap: () =>
               setState(() => _expandedLesson[lessonId] = !isExpanded),
+          borderRadius: BorderRadius.circular(12),
           child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
                         lessonTitle,
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
-                          fontSize: 14,
+                          fontSize: 15,
+                          color: Color(0xFF1a1a1a),
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${attempts.length} attempt${attempts.length != 1 ? 's' : ''} • Best: ${bestPercentage.toStringAsFixed(1)}%',
-                        style: const TextStyle(
-                          color: Colors.grey,
-                          fontSize: 12,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      // Progress bar for best score
-                      LinearProgressIndicator(
-                        value: bestPercentage / 100,
-                        backgroundColor: Colors.grey.shade300,
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          _getScoreColor(bestPercentage),
-                        ),
-                        minHeight: 4,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ],
-                  ),
-                ),
-                // Share button
-                IconButton(
-                  icon: const Icon(Icons.share, size: 18),
-                  color: Colors.grey[600],
-                  onPressed: () => _shareLessonProgress(lessonId, attempts),
-                  tooltip: 'Share progress',
-                  padding: const EdgeInsets.all(4),
-                  constraints: const BoxConstraints(),
-                ),
-                const SizedBox(width: 4),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _getScoreColor(bestPercentage).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    _getPerformanceLabel(bestPercentage),
-                    style: TextStyle(
-                      color: _getScoreColor(bestPercentage),
-                      fontWeight: FontWeight.bold,
-                      fontSize: 10,
                     ),
+                    Icon(
+                      isExpanded ? Icons.expand_less : Icons.expand_more,
+                      color: Colors.grey.shade600,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.repeat,
+                      size: 14,
+                      color: Colors.grey.shade500,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '${attempts.length} attempt${attempts.length != 1 ? 's' : ''}',
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Icon(
+                      Icons.emoji_events,
+                      size: 14,
+                      color: _getScoreColor(bestPercentage),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Best: ${bestPercentage.toStringAsFixed(1)}%',
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                // Progress bar for best score
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: bestPercentage / 100,
+                    backgroundColor: Colors.grey.shade200,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      _getScoreColor(bestPercentage),
+                    ),
+                    minHeight: 6,
                   ),
                 ),
-                const SizedBox(width: 8),
-                Icon(
-                  isExpanded ? Icons.expand_less : Icons.expand_more,
-                  color: Colors.grey,
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _getScoreColor(bestPercentage).withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        _getPerformanceLabel(bestPercentage),
+                        style: TextStyle(
+                          color: _getScoreColor(bestPercentage),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.share, size: 18),
+                      color: const Color(0xFF0077B3),
+                      onPressed: () => _shareLessonProgress(lessonId, attempts),
+                      tooltip: 'Share progress',
+                      padding: const EdgeInsets.all(4),
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -2287,9 +2610,9 @@ Widget _buildLessonProgressCard(
         ),
 
         if (isExpanded) ...[
-          const Divider(height: 1),
+          Divider(height: 1, color: Colors.grey.shade200),
           Padding(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(16),
             child: Column(
               children: attempts
                   .map((attempt) => _buildAttemptSummary(attempt))
@@ -2303,95 +2626,121 @@ Widget _buildLessonProgressCard(
 }
 
   Widget _buildAttemptSummary(Map<String, dynamic> attempt) {
-    final score = (attempt['score'] as num?)?.toDouble() ?? 0;
-    final attemptNumber = attempt['attemptNumber'] ?? 0;
-    final timestamp = attempt['attemptTimestamp'] as DateTime?;
+  final score = (attempt['score'] as num?)?.toDouble() ?? 0;
+  final attemptNumber = attempt['attemptNumber'] ?? 0;
+  final timestamp = attempt['attemptTimestamp'] as DateTime?;
 
-    // Get the maximum possible score for this lesson
-    final maxScore = _getMaxScoreForLesson(attempt);
-    final percentage = maxScore > 0 ? (score / maxScore * 100) : 0.0;
+  // Get the maximum possible score for this lesson
+  final maxScore = _getMaxScoreForLesson(attempt);
+  final percentage = maxScore > 0 ? (score / maxScore * 100) : 0.0;
 
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Attempt $attemptNumber',
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
+  return Container(
+    margin: const EdgeInsets.symmetric(vertical: 6),
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      color: Colors.grey.shade50,
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: Colors.grey.shade200, width: 1),
+    ),
+    child: Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Attempt $attemptNumber',
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF1a1a1a),
               ),
-              if (timestamp != null)
-                Text(
-                  _formatShortDate(timestamp),
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
+            ),
+            if (timestamp != null)
+              Row(
+                children: [
+                  Icon(
+                    Icons.calendar_today,
+                    size: 12,
+                    color: Colors.grey.shade500,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    _formatShortDate(timestamp),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(4),
                 child: LinearProgressIndicator(
                   value: percentage / 100,
                   backgroundColor: Colors.grey.shade300,
                   valueColor: AlwaysStoppedAnimation<Color>(
                     _getScoreColor(percentage),
                   ),
-                  minHeight: 6,
-                  borderRadius: BorderRadius.circular(3),
+                  minHeight: 8,
                 ),
               ),
-              const SizedBox(width: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: _getScoreColor(percentage).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  '${percentage.toStringAsFixed(1)}%',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: _getScoreColor(percentage),
-                  ),
-                ),
+            ),
+            const SizedBox(width: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: _getScoreColor(percentage).withOpacity(0.12),
+                borderRadius: BorderRadius.circular(20),
               ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Score: ${score.toStringAsFixed(0)} / $maxScore',
-                style: const TextStyle(fontSize: 11, color: Colors.grey),
-              ),
-              Text(
-                _getPerformanceLabel(percentage),
+              child: Text(
+                '${percentage.toStringAsFixed(1)}%',
                 style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
                   color: _getScoreColor(percentage),
                 ),
               ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Score: ${score.toStringAsFixed(0)} / $maxScore',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey.shade600,
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: _getScoreColor(percentage).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                _getPerformanceLabel(percentage),
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: _getScoreColor(percentage),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+}
 
   double _getMaxScoreForLesson(Map<String, dynamic> attempt) {
     // Try to get from the attempt data first

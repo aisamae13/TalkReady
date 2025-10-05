@@ -38,45 +38,48 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
   int pendingSubmissions = 0;
   Map<String, dynamic>? mostRecentClass;
   String? firstName;
-  int _unreadNotificationsCount = 0; // New state variable
-  StreamSubscription<QuerySnapshot>?
-  _notificationSubscription; // New subscription
+  int _unreadNotificationsCount = 0;
+  StreamSubscription<QuerySnapshot>? _notificationSubscription;
+  StreamSubscription<QuerySnapshot>? _dashboardSubscription; // NEW: Store dashboard subscription
 
   @override
   void initState() {
     super.initState();
     fetchUserFirstName();
     _setupRealtimeDashboardListener();
-    _setupNotificationListener(); // Initialize the new listener
+    _setupNotificationListener();
   }
 
   @override
   void dispose() {
     _notificationSubscription?.cancel();
+    _dashboardSubscription?.cancel(); // NEW: Cancel dashboard subscription
     super.dispose();
   }
 
   void _setupRealtimeDashboardListener() {
     if (currentUser == null) return;
 
-    FirebaseFirestore.instance
+    // Cancel existing subscription if any
+    _dashboardSubscription?.cancel();
+
+    // NEW: Store the subscription
+    _dashboardSubscription = FirebaseFirestore.instance
         .collection('trainerClass')
         .where('trainerId', isEqualTo: currentUser!.uid)
         .orderBy('createdAt', descending: true)
         .snapshots()
         .listen(
-          (snapshot) {
+          (snapshot) async {
             if (!mounted) return;
 
             int classCount = snapshot.docs.length;
             int studentSum = 0;
-            int pendingSum = 0;
             Map<String, dynamic>? recentClass;
 
             for (var doc in snapshot.docs) {
               final data = doc.data();
               studentSum += (data['studentCount'] as int? ?? 0);
-              pendingSum += (data['pendingSubmissions'] as int? ?? 0);
             }
 
             if (snapshot.docs.isNotEmpty) {
@@ -84,10 +87,30 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
               recentClass = {'id': doc.id, ...doc.data()};
             }
 
+            // Calculate pending submissions
+            int pendingSum = 0;
+            try {
+              final submissionsQuery = await FirebaseFirestore.instance
+                  .collection('studentSubmissions')
+                  .where('trainerId', isEqualTo: currentUser!.uid)
+                  .where('assessmentType', isEqualTo: 'speaking_assessment')
+                  .where('isReviewed', isEqualTo: false)
+                  .get();
+
+              pendingSum = submissionsQuery.docs.length;
+            } catch (e) {
+              print('Error fetching pending submissions: $e');
+              if (e.toString().contains('index')) {
+                print('⚠️ FIRESTORE INDEX REQUIRED! Create an index for:');
+                print('   Collection: studentSubmissions');
+                print('   Fields: trainerId (Ascending), assessmentType (Ascending), isReviewed (Ascending)');
+              }
+            }
+
             setState(() {
               activeClassesCount = classCount;
               totalStudents = studentSum < 0 ? 0 : studentSum;
-              pendingSubmissions = pendingSum < 0 ? 0 : pendingSum;
+              pendingSubmissions = pendingSum;
               mostRecentClass = recentClass;
               loading = false;
               error = null;
@@ -140,7 +163,6 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
           onError: (e) {
             debugPrint('❌ Error fetching notifications: $e');
 
-            // Check if it's an index error
             if (e.toString().contains('index')) {
               debugPrint('⚠️ FIRESTORE INDEX REQUIRED! Create an index for:');
               debugPrint('   Collection: notifications');
@@ -150,8 +172,25 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
         );
   }
 
+  // NEW: Pull-to-refresh handler
+  Future<void> _handleRefresh() async {
+    debugPrint('🔄 Manual refresh triggered');
+
+    // Refetch user first name
+    await fetchUserFirstName();
+
+    // The real-time listener will automatically update the data
+    // But we can manually trigger a refresh by re-setting up the listener
+    _setupRealtimeDashboardListener();
+    _setupNotificationListener();
+
+    // Add a small delay to show the refresh indicator
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    debugPrint('✅ Manual refresh completed');
+  }
+
   Future<bool> _onWillPop() async {
-    // Show exit confirmation dialog
     final shouldExit = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -254,221 +293,239 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
       return _buildDashboardWithShimmer();
     }
     if (error != null) {
-      return errorScreen(error!, () {
-        _setupRealtimeDashboardListener();
-      });
+      // NEW: Wrap error screen in RefreshIndicator
+      return RefreshIndicator(
+        onRefresh: _handleRefresh,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: SizedBox(
+            height: MediaQuery.of(context).size.height - 200,
+            child: errorScreen(error!, () {
+              _setupRealtimeDashboardListener();
+            }),
+          ),
+        ),
+      );
     }
 
     final displayName = firstName ?? "Trainer";
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            "Welcome back, $displayName!",
-            style: Theme.of(
-              context,
-            ).textTheme.headlineMedium?.copyWith(color: Colors.blue[800]),
-          ),
-          const SizedBox(height: 8),
-          const Text("Here's an overview of your activities and tools."),
-          const SizedBox(height: 24),
-          Row(
-            children: [
-              Expanded(
-                child: _buildStatCard(
-                  "Active Classes",
-                  activeClassesCount,
-                  FontAwesomeIcons.chalkboardUser,
+
+    // NEW: Wrap entire content in RefreshIndicator
+    return RefreshIndicator(
+      onRefresh: _handleRefresh,
+      color: Colors.blue[700],
+      backgroundColor: Colors.white,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(), // NEW: Always allow scrolling for pull-to-refresh
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "Welcome back, $displayName!",
+              style: Theme.of(
+                context,
+              ).textTheme.headlineMedium?.copyWith(color: Colors.blue[800]),
+            ),
+            const SizedBox(height: 8),
+            const Text("Here's an overview of your activities and tools."),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildStatCard(
+                    "Active Classes",
+                    activeClassesCount,
+                    FontAwesomeIcons.chalkboardUser,
+                    Colors.blue,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _buildStatCard(
+                    "Total Students",
+                    totalStudents,
+                    FontAwesomeIcons.users,
+                    Colors.green,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _buildStatCard(
+                    "Pending Submissions",
+                    pendingSubmissions,
+                    FontAwesomeIcons.fileCircleCheck,
+                    Colors.orange,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 32),
+            const Text(
+              "Quick Actions",
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 12),
+            GridView.count(
+              crossAxisCount: 3,
+              mainAxisSpacing: 14,
+              crossAxisSpacing: 14,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              children: [
+                _quickAction(
+                  context,
+                  "My Classes",
+                  FontAwesomeIcons.layerGroup,
+                  "/trainer/classes",
+                  Colors.purple,
+                ),
+                _quickAction(
+                  context,
+                  "Create Class",
+                  FontAwesomeIcons.plusCircle,
+                  "/trainer/classes/create",
                   Colors.blue,
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _buildStatCard(
-                  "Total Students",
-                  totalStudents,
-                  FontAwesomeIcons.users,
+                _quickAction(
+                  context,
+                  "Upload",
+                  FontAwesomeIcons.upload,
+                  "/trainer/content/upload",
+                  Colors.teal,
+                ),
+                _quickAction(
+                  context,
+                  "Assessment",
+                  FontAwesomeIcons.filePen,
+                  "/create-assessment",
+                  Colors.indigo,
+                ),
+                _quickAction(
+                  context,
+                  "Reports",
+                  FontAwesomeIcons.chartLine,
+                  "/trainer/reports",
                   Colors.green,
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _buildStatCard(
-                  "Pending Submissions",
-                  pendingSubmissions,
-                  FontAwesomeIcons.fileCircleCheck,
+                _quickAction(
+                  context,
+                  "Announce",
+                  FontAwesomeIcons.bullhorn,
+                  "/trainer/announcements/create",
                   Colors.orange,
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 32),
-          const Text(
-            "Quick Actions",
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
+              ],
             ),
-          ),
-          const SizedBox(height: 12),
-          GridView.count(
-            crossAxisCount: 3,
-            mainAxisSpacing: 14,
-            crossAxisSpacing: 14,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            children: [
-              _quickAction(
-                context,
-                "My Classes",
-                FontAwesomeIcons.layerGroup,
-                "/trainer/classes",
-                Colors.purple,
+            const SizedBox(height: 25),
+            const Text(
+              "My Most Recent Class",
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
               ),
-              _quickAction(
-                context,
-                "Create Class",
-                FontAwesomeIcons.plusCircle,
-                "/trainer/classes/create",
-                Colors.blue,
-              ),
-              _quickAction(
-                context,
-                "Upload",
-                FontAwesomeIcons.upload,
-                "/trainer/content/upload",
-                Colors.teal,
-              ),
-              _quickAction(
-                context,
-                "Assessment",
-                FontAwesomeIcons.filePen,
-                "/create-assessment",
-                Colors.indigo,
-              ),
-              _quickAction(
-                context,
-                "Reports",
-                FontAwesomeIcons.chartLine,
-                "/trainer/reports",
-                Colors.green,
-              ),
-              _quickAction(
-                context,
-                "Announce",
-                FontAwesomeIcons.bullhorn,
-                "/trainer/announcements/create",
-                Colors.orange,
-              ),
-            ],
-          ),
-          const SizedBox(height: 25),
-          const Text(
-            "My Most Recent Class",
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
             ),
-          ),
-          const SizedBox(height: 12),
-          if (mostRecentClass == null && !loading)
-            Container(
-              margin: const EdgeInsets.symmetric(vertical: 8),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(24),
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Colors.grey.shade50, Colors.grey.shade100],
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.grey.withOpacity(0.1),
-                    blurRadius: 15,
-                    offset: const Offset(0, 5),
+            const SizedBox(height: 12),
+            if (mostRecentClass == null && !loading)
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(24),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Colors.grey.shade50, Colors.grey.shade100],
                   ),
-                ],
-                border: Border.all(color: Colors.grey.shade200, width: 1.5),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(32),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.grey.withOpacity(0.2),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Icon(
-                        FontAwesomeIcons.graduationCap,
-                        size: 40,
-                        color: Colors.grey.shade400,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      "No classes found",
-                      style: TextStyle(
-                        color: Colors.grey.shade700,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      "Create your first class to get started!",
-                      style: TextStyle(
-                        color: Colors.grey.shade500,
-                        fontSize: 14,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 20),
-                    ElevatedButton.icon(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const CreateClassForm(),
-                          ),
-                        );
-                      },
-                      icon: const Icon(FontAwesomeIcons.plus, size: 16),
-                      label: const Text("Create Class"),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue.shade600,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 12,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                      ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.grey.withOpacity(0.1),
+                      blurRadius: 15,
+                      offset: const Offset(0, 5),
                     ),
                   ],
+                  border: Border.all(color: Colors.grey.shade200, width: 1.5),
                 ),
-              ),
-            )
-          else if (mostRecentClass != null)
-            _recentClassCard(context, mostRecentClass!),
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.grey.withOpacity(0.2),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          FontAwesomeIcons.graduationCap,
+                          size: 40,
+                          color: Colors.grey.shade400,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        "No classes found",
+                        style: TextStyle(
+                          color: Colors.grey.shade700,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        "Create your first class to get started!",
+                        style: TextStyle(
+                          color: Colors.grey.shade500,
+                          fontSize: 14,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 20),
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const CreateClassForm(),
+                            ),
+                          );
+                        },
+                        icon: const Icon(FontAwesomeIcons.plus, size: 16),
+                        label: const Text("Create Class"),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue.shade600,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else if (mostRecentClass != null)
+              _recentClassCard(context, mostRecentClass!),
 
-          const SizedBox(height: 20),
-        ],
+            const SizedBox(height: 20),
+          ],
+        ),
       ),
     );
   }
@@ -476,14 +533,12 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: false, // Prevent default back navigation
+      canPop: false,
       onPopInvoked: (bool didPop) async {
         if (didPop) return;
 
-        // Show exit confirmation
         final shouldExit = await _onWillPop();
         if (shouldExit && context.mounted) {
-          // Exit the app using SystemNavigator
           SystemNavigator.pop();
         }
       },

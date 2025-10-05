@@ -840,6 +840,7 @@ Widget _getFileIcon(String? fileType) {
             children: [
               ...itemsToDisplay.map((announcement) {
                 return Container(
+                  width: double.infinity,
                   margin: const EdgeInsets.only(bottom: 16),
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(

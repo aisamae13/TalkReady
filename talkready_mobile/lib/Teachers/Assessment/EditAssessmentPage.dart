@@ -3,10 +3,10 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../notification_service.dart';
+import 'CreateAssessmentPage.dart';
 import 'dart:io';
 
 class Question {
@@ -502,24 +502,143 @@ class _EditAssessmentPageState extends State<EditAssessmentPage> {
     }
   }
 
-  void _cloneAssessment() {
-    final assessmentData = {
-      'title': _titleController.text,
-      'description': _descriptionController.text,
-      'classId': _selectedClassId,
-      'assessmentType': _assessmentType,
-      'questions': _questions,
-      'deadline': _submissionDeadlineController.text,
-    };
 
-    // Navigate to create assessment page with cloned data
-    Navigator.pushNamed(
-      context,
-      '/trainer/assessments/new',
-      arguments: {'assessmentToClone': assessmentData},
-    );
-  }
+void _cloneAssessment() {
+  showDialog(
+    context: context,
+    builder: (BuildContext context) {
+      return AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.copy, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(width: 8),
+            const Text('Clone Assessment'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Create a copy of "${_titleController.text}"',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'This will create a new assessment with:',
+              style: TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 8),
+            _buildCloneInfoItem('Title prefixed with "Copy of"'),
+            _buildCloneInfoItem('All questions/prompts'),
+            _buildCloneInfoItem('Same description and settings'),
+            _buildCloneInfoItem('Header image reference'),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, size: 16, color: Colors.blue.shade700),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'You can modify the copy before saving',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.blue.shade700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.of(context).pop(); // Close dialog
+              _performClone();
+            },
+            icon: const Icon(Icons.copy),
+            label: const Text('Clone Assessment'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.primary,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      );
+    },
+  );
+}
+void _performClone() {
+  // Prepare cloned data
+  final clonedData = {
+    'title': _titleController.text,
+    'description': _descriptionController.text,
+    'assessmentType': _assessmentType,
+    'headerImageUrl': _assessmentHeaderImageUrl,
+    'deadline': _submissionDeadlineController.text,
+    'questions': _questions.map((q) => {
+      'questionId': q.questionId,
+      'text': q.text,
+      'type': q.type,
+      'points': q.points,
+      'questionImageUrl': q.questionImageUrl,
+      'options': q.options,
+      'correctOptionIds': q.correctOptionIds,
+      'correctAnswers': q.correctAnswers,
+      'scenarioText': q.scenarioText,
+      'questionTextBeforeBlank': q.questionTextBeforeBlank,
+      'questionTextAfterBlank': q.questionTextAfterBlank,
+      'answerInputMode': q.answerInputMode,
+      'correctOptionIdForFITB': q.correctOptionIdForFITB,
+      'title': q.title,
+      'promptText': q.promptText,
+      'requiresReview': q.type == 'fill-in-the-blank' || q.type == 'speaking_prompt',
+    }).toList(),
+  };
 
+  // Navigate to CreateAssessmentPage with cloned data
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (context) => CreateAssessmentPage(
+        initialClassId: _selectedClassId,
+        clonedData: clonedData,
+      ),
+    ),
+  ).then((value) {
+    if (value == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white),
+              const SizedBox(width: 8),
+              const Text('Assessment cloned successfully!'),
+            ],
+          ),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+      );
+    }
+  });
+}
   Future<void> _selectDateTime(BuildContext context) async {
     final date = await showDatePicker(
       context: context,
@@ -577,6 +696,23 @@ class _EditAssessmentPageState extends State<EditAssessmentPage> {
       _editingQuestionId = null;
     });
   }
+Widget _buildCloneInfoItem(String text) {
+  return Padding(
+    padding: const EdgeInsets.symmetric(vertical: 2),
+    child: Row(
+      children: [
+        Icon(Icons.check_circle, size: 16, color: Colors.green.shade600),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(fontSize: 13),
+          ),
+        ),
+      ],
+    ),
+  );
+}
 
   void _showAddQuestionDialog() {
     _resetQuestionForm();
@@ -859,12 +995,11 @@ class _EditAssessmentPageState extends State<EditAssessmentPage> {
             ),
           ),
         actions: [
-          if (_assessmentType == 'speaking_assessment')
-            IconButton(
-              onPressed: _cloneAssessment,
-              icon: const Icon(Icons.copy),
-              tooltip: 'Clone Assessment',
-            ),
+          IconButton(
+            onPressed: _cloneAssessment,
+            icon: const Icon(Icons.copy),
+            tooltip: 'Clone Assessment',
+          ),
         ],
       ),
       body: Form(
@@ -1292,7 +1427,6 @@ class _EditAssessmentPageState extends State<EditAssessmentPage> {
       ),
     );
   }
-
   Widget _buildQuestionCard(int index, Question question, ThemeData theme) {
     return Card(
       margin: const EdgeInsets.only(bottom: 16),

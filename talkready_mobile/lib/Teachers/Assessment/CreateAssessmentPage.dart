@@ -172,7 +172,13 @@ class SpeakingPrompt {
 class CreateAssessmentPage extends StatefulWidget {
   final String? classId;
   final String? initialClassId;
-  const CreateAssessmentPage({super.key, this.classId, this.initialClassId});
+  final Map<String, dynamic>? clonedData;  // ADD THIS LINE
+  const CreateAssessmentPage({
+    super.key,
+    this.classId,
+    this.initialClassId,
+    this.clonedData,  // ADD THIS LINE
+  });
 
   @override
   State<CreateAssessmentPage> createState() => _CreateAssessmentPageState();
@@ -232,37 +238,42 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage>
   late Animation<Offset> _slideAnimation;
 
   @override
-  void initState() {
-    super.initState();
-    _selectedClassId = widget.classId ?? widget.initialClassId;
+@override
+void initState() {
+  super.initState();
+  _selectedClassId = widget.classId ?? widget.initialClassId;
 
-    // Initialize animations
-    _fadeController = AnimationController(
-      duration: const Duration(milliseconds: 800),
-      vsync: this,
-    );
-    _slideController = AnimationController(
-      duration: const Duration(milliseconds: 600),
-      vsync: this,
-    );
+  // Initialize animations
+  _fadeController = AnimationController(
+    duration: const Duration(milliseconds: 800),
+    vsync: this,
+  );
+  _slideController = AnimationController(
+    duration: const Duration(milliseconds: 600),
+    vsync: this,
+  );
 
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
-    );
-    _slideAnimation =
-        Tween<Offset>(begin: const Offset(0, 0.3), end: Offset.zero).animate(
-          CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
-        );
+  _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+    CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
+  );
+  _slideAnimation =
+      Tween<Offset>(begin: const Offset(0, 0.3), end: Offset.zero).animate(
+        CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
+      );
 
-    if (widget.classId == null && widget.initialClassId == null) {
-      _fetchTrainerClasses();
-    }
-
-    // Start animations
-    _fadeController.forward();
-    _slideController.forward();
+  if (widget.classId == null && widget.initialClassId == null) {
+    _fetchTrainerClasses();
   }
 
+  // ADD THESE 3 LINES:
+  if (widget.clonedData != null) {
+    _loadClonedData();
+  }
+
+  // Start animations
+  _fadeController.forward();
+  _slideController.forward();
+}
   @override
   void dispose() {
     _fadeController.dispose();
@@ -298,7 +309,89 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage>
       });
     }
   }
+void _loadClonedData() {
+  final data = widget.clonedData!;
 
+  // Load basic info with "Copy of" prefix
+  _titleController.text = 'Copy of ${data['title'] ?? ''}';
+  _descriptionController.text = data['description'] ?? '';
+  _assessmentType = data['assessmentType'] ?? 'standard_quiz';
+
+  // Load header image URL (note: path will be different for the new assessment)
+  _assessmentHeaderImageUrl = data['headerImageUrl'];
+  _assessmentHeaderImagePath = null; // Don't copy the path, it will be new
+
+  // Load deadline if exists
+  if (data['deadline'] != null && data['deadline'].toString().isNotEmpty) {
+    try {
+      final deadlineStr = data['deadline'] as String;
+      // Parse the deadline format from EditAssessmentPage (dd/MM/yyyy HH:mm)
+      _deadline = DateFormat('dd/MM/yyyy HH:mm').parse(deadlineStr);
+    } catch (e) {
+      // If parsing fails, ignore the deadline
+      _deadline = null;
+    }
+  }
+
+  // Load questions based on assessment type
+  if (_assessmentType == 'speaking_assessment' && data['questions'] != null) {
+    final questions = data['questions'] as List<dynamic>;
+    if (questions.isNotEmpty) {
+      final firstQuestion = questions[0] as Map<String, dynamic>;
+      _promptTitleController.text = firstQuestion['title'] ?? '';
+      _promptTextController.text = firstQuestion['promptText'] ?? '';
+      _referenceTextController.text = firstQuestion['referenceText'] ?? '';
+    }
+  } else if (_assessmentType == 'standard_quiz' && data['questions'] != null) {
+    // Clone standard quiz questions
+    final questions = data['questions'] as List<dynamic>;
+    _questions.clear();
+    for (var q in questions) {
+      final questionMap = q as Map<String, dynamic>;
+
+      // Recreate the question with new ID
+      _questions.add(Question(
+        id: _uuid.v4(), // Generate new ID for cloned question
+        text: questionMap['text'] ?? '',
+        type: questionMap['type'] ?? 'multiple-choice',
+        points: questionMap['points'] ?? 10,
+        requiresReview: questionMap['requiresReview'] ?? false,
+
+        // For multiple choice
+        options: (questionMap['options'] as List<dynamic>?)
+            ?.map((o) {
+              if (o is Map) {
+                return o['text']?.toString() ?? '';
+              }
+              return o.toString();
+            })
+            .toList(),
+        correctAnswers: (questionMap['correctAnswers'] as List<dynamic>?)
+            ?.map((a) => a.toString())
+            .toList(),
+
+        // Image URL (but not path - will be new)
+        questionImageUrl: questionMap['questionImageUrl'],
+        questionImagePath: null, // Don't copy path
+
+        // Fill in the blank fields
+        scenarioContext: questionMap['scenarioText'],
+        textBeforeBlank: questionMap['questionTextBeforeBlank'],
+        textAfterBlank: questionMap['questionTextAfterBlank'],
+        fillInInputMethod: questionMap['answerInputMode'] ?? 'typing',
+
+        // Speaking prompt fields
+        title: questionMap['title'],
+        promptText: questionMap['promptText'],
+        referenceText: questionMap['referenceText'],
+      ));
+    }
+  }
+
+  setState(() {
+    // Trigger UI update
+  });
+}
   // NEW: Add validation flags
   bool get _canAddQuestions {
     return _titleController.text.trim().isNotEmpty &&

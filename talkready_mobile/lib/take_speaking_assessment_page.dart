@@ -359,6 +359,7 @@ class _TakeSpeakingAssessmentPageState extends State<TakeSpeakingAssessmentPage>
         'studentName': studentName,
         'assessmentId': widget.assessmentId,
         'classId': assessment!['classId'],
+        'trainerId': assessment!['trainerId'],
         'questions': assessment!['questions'],
         'assessmentType': 'speaking_assessment',
         'audioUrl': downloadURL,

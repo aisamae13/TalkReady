@@ -445,6 +445,7 @@ class _TakeAssessmentPageState extends State<TakeAssessmentPage>
       'studentEmail': studentEmail,
       'assessmentId': widget.assessmentId,
       'classId': assessment!['classId'],
+      'trainerId': assessment!['trainerId'],
       'assessmentType': assessment!['assessmentType'] ?? 'standard_quiz',
       'submittedAt': FieldValue.serverTimestamp(),
       'answers': processedAnswers,
