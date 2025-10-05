@@ -46,7 +46,7 @@ class _ChatMessageState extends State<ChatMessage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    Theme.of(context);
 
     // Handle Azure feedback messages
     if (widget.message.type == MessageType.azureFeedback && widget.message.metadata != null) {
@@ -132,7 +132,7 @@ class _ChatMessageState extends State<ChatMessage> {
                     padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     decoration: BoxDecoration(
                       color: widget.message.isUser
-                          ? theme.primaryColor.withOpacity(0.15)
+                          ? Color.fromARGB(255, 30, 122, 198).withOpacity(0.15)
                           : Colors.white,
                       borderRadius: BorderRadius.only(
                         topLeft: Radius.circular(16),
@@ -160,7 +160,7 @@ class _ChatMessageState extends State<ChatMessage> {
                           IconButton(
                             icon: Icon(
                               widget.isPlaying ? Icons.stop : Icons.play_arrow,
-                              color: theme.primaryColor,
+                              color: Color.fromARGB(255, 30, 122, 198), // Changed to match message bubble color
                             ),
                             onPressed: widget.onPlayAudio,
                             tooltip: widget.isPlaying ? 'Stop playback' : 'Play your recording',

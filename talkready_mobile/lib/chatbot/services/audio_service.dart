@@ -1,68 +1,34 @@
 import 'dart:io';
 import 'package:audioplayers/audioplayers.dart' as ap;
-import 'package:flutter_sound/flutter_sound.dart';
+import 'package:record/record.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:logger/logger.dart';
 
 class AudioService {
   final Logger logger;
-  late FlutterSoundRecorder _recorder;
-  late FlutterSoundPlayer _player;
+  late AudioRecorder _recorder;
   final ap.AudioPlayer _audioPlayer = ap.AudioPlayer();
 
   bool _isRecorderInitialized = false;
-  bool _isPlayerInitialized = false;
   String? _currentAudioFilePath;
 
   AudioService({required this.logger});
 
   bool get isRecorderInitialized => _isRecorderInitialized;
-  bool get isPlayerInitialized => _isPlayerInitialized;
   String? get currentAudioFilePath => _currentAudioFilePath;
+  ap.AudioPlayer get audioPlayer => _audioPlayer;  // ADD THIS GETTER
 
   Future<void> initialize() async {
-    _recorder = FlutterSoundRecorder();
-    _player = FlutterSoundPlayer();
-
-    await _initRecorder();
-    await _initPlayer();
+    _recorder = AudioRecorder();
     await requestPermissions();
-  }
-
-  Future<void> _initRecorder() async {
-    try {
-      await _recorder.openRecorder();
-      final tempDir = await getTemporaryDirectory();
-      _currentAudioFilePath = '${tempDir.path}/audio_${DateTime.now().millisecondsSinceEpoch}.aac';
-      _isRecorderInitialized = true;
-      logger.i('Recorder initialized successfully');
-    } catch (e) {
-      _isRecorderInitialized = false;
-      logger.e('Error initializing recorder: $e');
-      rethrow;
-    }
-  }
-
-  Future<void> _initPlayer() async {
-    try {
-      await _player.openPlayer();
-      _isPlayerInitialized = true;
-      logger.i('Player initialized successfully');
-    } catch (e) {
-      _isPlayerInitialized = false;
-      logger.e('Error initializing player: $e');
-      rethrow;
-    }
+    _isRecorderInitialized = true;
+    logger.i('Recorder initialized successfully');
   }
 
   Future<bool> requestPermissions() async {
-    Map<Permission, PermissionStatus> statuses = await [
-      Permission.microphone,
-    ].request();
-
-    if (statuses[Permission.microphone]!.isDenied ||
-        statuses[Permission.microphone]!.isPermanentlyDenied) {
+    final status = await Permission.microphone.request();
+    if (!status.isGranted) {
       logger.w('Microphone permission denied.');
       return false;
     }
@@ -75,17 +41,16 @@ class AudioService {
     }
 
     try {
-      if (_recorder.isRecording) {
-        await _recorder.stopRecorder();
-      }
-
       final tempDir = await getTemporaryDirectory();
-      _currentAudioFilePath = '${tempDir.path}/audio_${DateTime.now().millisecondsSinceEpoch}.aac';
+      _currentAudioFilePath = '${tempDir.path}/audio_${DateTime.now().millisecondsSinceEpoch}.wav';
 
-      await _recorder.startRecorder(
-        toFile: _currentAudioFilePath!,
-        codec: Codec.aacADTS,
-        sampleRate: 16000,
+      await _recorder.start(
+        const RecordConfig(
+          encoder: AudioEncoder.wav,
+          sampleRate: 16000,
+          numChannels: 1,
+        ),
+        path: _currentAudioFilePath!,
       );
 
       logger.d('Recording started: $_currentAudioFilePath');
@@ -98,16 +63,19 @@ class AudioService {
 
   Future<String?> stopRecording() async {
     try {
-      if (!_recorder.isRecording) {
-        logger.w('No active recording to stop.');
-        return null;
-      }
-
-      String? path = await _recorder.stopRecorder();
-      logger.d('Recording stopped: $path');
+      final path = await _recorder.stop();
 
       if (path != null && await File(path).exists()) {
-        _currentAudioFilePath = path;
+        final fileSize = await File(path).length();
+        logger.i('Recorded file size: $fileSize bytes');
+
+        if (fileSize < 1000) {
+          logger.e('Recording file too small: $fileSize bytes');
+          return null;
+        }
+
+        // Don't update _currentAudioFilePath here
+        logger.d('Recording stopped: $path');
         return path;
       }
 
@@ -120,13 +88,9 @@ class AudioService {
   }
 
   Future<void> playUserAudio(String audioPath) async {
-    if (!_isPlayerInitialized) {
-      throw Exception('Player not initialized');
-    }
-
     final file = File(audioPath);
     if (!await file.exists() || await file.length() == 0) {
-      throw Exception('Invalid audio file');
+      throw Exception('Invalid audio file: $audioPath');
     }
 
     try {
@@ -156,10 +120,6 @@ class AudioService {
         await _audioPlayer.stop();
         logger.i('AudioPlayer stopped.');
       }
-      if (_player.isPlaying) {
-        await _player.stopPlayer();
-        logger.i('FlutterSoundPlayer stopped.');
-      }
     } catch (e) {
       logger.e('Error stopping audio: $e');
       rethrow;
@@ -168,17 +128,7 @@ class AudioService {
 
   void dispose() {
     stopAllAudio();
-    if (_recorder.isRecording) {
-      _recorder.stopRecorder().catchError((e) {
-        logger.e('Error stopping recorder on dispose: $e');
-        return null;
-      });
-    }
-    _recorder.closeRecorder();
-    if (_player.isPlaying) {
-      _player.stopPlayer();
-    }
-    _player.closePlayer();
+    _recorder.dispose();
     _audioPlayer.release();
     _audioPlayer.dispose();
     logger.i('AudioService disposed.');

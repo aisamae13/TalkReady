@@ -21,7 +21,7 @@ class IconRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    Theme.of(context);
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
@@ -33,7 +33,7 @@ class IconRow extends StatelessWidget {
           targetShapeBorder: CircleBorder(),
           child: _buildIcon(
             Icons.keyboard_alt_outlined,
-            isTyping ? theme.colorScheme.primary.withOpacity(0.5) : theme.colorScheme.secondary,
+            isTyping ? Color(0xFF1976D2) : Color(0xFF2196F3),
             onKeyboardTap,
             isActive: isTyping,
             tooltip: 'Type message',
@@ -47,7 +47,7 @@ class IconRow extends StatelessWidget {
           targetShapeBorder: CircleBorder(),
           child: _buildIcon(
             isListening ? Icons.stop_circle_outlined : Icons.mic_none_outlined,
-            isListening ? Colors.red.shade400 : theme.primaryColor,
+            isListening ? Colors.red.shade400 : Color(0xFF2196F3),
             onMicTap,
             isActive: isListening,
             tooltip: isListening ? 'Stop recording' : 'Start recording',

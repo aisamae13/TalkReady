@@ -35,12 +35,12 @@ class TranscriptionService {
 
       request.fields['upload_preset'] = uploadPreset;
       request.files.add(
-        await http.MultipartFile.fromPath(
-          'file',
-          filePath,
-          filename: 'audio.aac',
-        ),
-      );
+      await http.MultipartFile.fromPath(
+        'file',
+        filePath,
+        filename: 'audio.wav',
+      ),
+    );
 
       logger.i('Uploading to Cloudinary: $filePath');
       final response = await request.send();
@@ -309,12 +309,14 @@ class TranscriptionService {
       }
 
       return {
-        'feedback': feedback,
-        'recognizedText': recognizedText,
-        'accuracyScore': accuracy,
-        'fluencyScore': fluency,
-        'completenessScore': completeness,
-      };
+      'feedback': feedback,
+      'recognizedText': recognizedText,
+      'accuracyScore': accuracy,
+      'fluencyScore': fluency,
+      'completenessScore': completeness,
+      'words': words,
+      'textRecognized': recognizedText,
+    };
     } catch (e) {
       logger.e('Pronunciation analysis error: $e');
       return {

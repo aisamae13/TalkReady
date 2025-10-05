@@ -16,7 +16,7 @@ class AzureFeedbackDisplay extends StatelessWidget {
     final accuracyScore = (feedback['accuracyScore'] as num?)?.toDouble() ?? 0.0;
     final fluencyScore = (feedback['fluencyScore'] as num?)?.toDouble() ?? 0.0;
     final completenessScore = (feedback['completenessScore'] as num?)?.toDouble() ?? 0.0;
-    final recognizedText = feedback['textRecognized'] as String? ?? 'Not recognized';
+    final recognizedText = feedback['recognizedText'] as String? ?? 'Not recognized';
     final words = feedback['words'] as List? ?? [];
 
     return Container(
