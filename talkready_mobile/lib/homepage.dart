@@ -1,7 +1,9 @@
 //home
 
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
+import 'dart:math' as _logger;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -194,14 +196,21 @@ StreamSubscription<QuerySnapshot>? _notificationSubscription;
         _slideController.forward();
       }
     } catch (e, stackTrace) {
-      logger.e('Error initializing homepage data: $e, stackTrace: $stackTrace');
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _hasError = true;
-          _errorMessage = 'Failed to load data. Please try again.';
-        });
-      }
+  logger.e('Error initializing homepage data: $e, stackTrace: $stackTrace');
+  String errorMessage = 'Failed to load data. Please try again.'; // Default message
+
+  if (e is SocketException) {
+    errorMessage = 'No internet connection. Please check your network.';
+  }
+  // You could add more 'else if' checks for other specific error types
+
+  if (mounted) {
+    setState(() {
+      _isLoading = false;
+      _hasError = true;
+      _errorMessage = errorMessage; // Use the specific message
+    });
+  }
     }
   }
 Future<bool> _onWillPop() async {
@@ -726,61 +735,21 @@ Future<bool> _onWillPop() async {
   }
 
   Future<void> _fetchDailyContent() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+  final user = FirebaseAuth.instance.currentUser;
+  if (user == null) return;
 
+  // It's safer to call setState only once at the beginning if needed
+  if (mounted) {
     setState(() {
       tipLoading = true;
     });
+  }
 
-    try {
-      // Prepare user progress summary for the server
-      Map<String, dynamic>? progressSummary;
-
-      // Fix: Get the lesson attempts data properly
-      final allLessonAttempts = await FirebaseService()
-          .getAllUserLessonAttempts();
-
-      if (allLessonAttempts.isNotEmpty) {
-        final skillScores = skillAnalysis.values
-            .map((skill) => skill['score'] as double)
-            .toList();
-        final averageScore = skillScores.isNotEmpty
-            ? skillScores.reduce((a, b) => a + b) / skillScores.length
-            : 50.0;
-
-        progressSummary = {
-          'totalLessons':
-              allLessonAttempts.keys.length, // Use allLessonAttempts
-          'averageScore': averageScore,
-          'weakestSkills': skillAnalysis.entries
-              .where((entry) => (entry.value['score'] as double) < 60)
-              .map(
-                (entry) => {
-                  'name': entry.key.split(' ').first,
-                  'score': entry.value['score'],
-                },
-              )
-              .take(3)
-              .toList(),
-          'strongestSkills': skillAnalysis.entries
-              .where((entry) => (entry.value['score'] as double) >= 70)
-              .map(
-                (entry) => {
-                  'name': entry.key.split(' ').first,
-                  'score': entry.value['score'],
-                },
-              )
-              .take(2)
-              .toList(),
-          'recentActivity': allLessonAttempts.keys
-              .take(5)
-              .toList(), // Last 5 lesson IDs
-        };
-      }
-
-      // Rest of your method remains the same...
-      // Calculate average score for motivation
+  try {
+    // --- Your logic for preparing progressSummary ---
+    Map<String, dynamic>? progressSummary;
+    final allLessonAttempts = await FirebaseService().getAllUserLessonAttempts();
+    if (allLessonAttempts.isNotEmpty) {
       final skillScores = skillAnalysis.values
           .map((skill) => skill['score'] as double)
           .toList();
@@ -788,39 +757,81 @@ Future<bool> _onWillPop() async {
           ? skillScores.reduce((a, b) => a + b) / skillScores.length
           : 50.0;
 
-      // Fetch both tip and motivation concurrently
-      final results = await Future.wait([
-        DailyContentService.fetchLearningTip(
-          userProgress: progressSummary,
-          currentStreak: _currentStreak,
-          averageScore: averageScore,
-        ),
-        DailyContentService.fetchDailyMotivation(
-          currentStreak: _currentStreak,
-          averageScore: averageScore,
-        ),
-      ]);
+      progressSummary = {
+        'totalLessons': allLessonAttempts.keys.length,
+        'averageScore': averageScore,
+        'weakestSkills': skillAnalysis.entries
+            .where((entry) => (entry.value['score'] as double) < 60)
+            .map((entry) => {
+                  'name': entry.key.split(' ').first,
+                  'score': entry.value['score'],
+                })
+            .take(3)
+            .toList(),
+        'strongestSkills': skillAnalysis.entries
+            .where((entry) => (entry.value['score'] as double) >= 70)
+            .map((entry) => {
+                  'name': entry.key.split(' ').first,
+                  'score': entry.value['score'],
+                })
+            .take(2)
+            .toList(),
+        'recentActivity': allLessonAttempts.keys.take(5).toList(),
+      };
+    }
+    // --- End of progressSummary logic ---
 
+    final skillScores = skillAnalysis.values
+        .map((skill) => skill['score'] as double)
+        .toList();
+    final averageScore = skillScores.isNotEmpty
+        ? skillScores.reduce((a, b) => a + b) / skillScores.length
+        : 50.0;
+
+    // Fetch both tip and motivation concurrently
+    final results = await Future.wait([
+      DailyContentService.fetchLearningTip(
+        userProgress: progressSummary,
+        currentStreak: _currentStreak,
+        averageScore: averageScore,
+      ),
+      DailyContentService.fetchDailyMotivation(
+        currentStreak: _currentStreak,
+        averageScore: averageScore,
+      ),
+    ]);
+
+    // Update the UI with the fetched data
+    if (mounted) {
       setState(() {
         dailyTip = results[0] ?? DailyContentService.getFallbackTip();
         dailyMotivation =
             results[1] ?? DailyContentService.getFallbackMotivation();
       });
+    }
 
-      logger.i('Daily content fetched successfully from server');
-    } catch (error) {
-      logger.e('Error fetching daily content: $error');
+    logger.i('Daily content fetched successfully from server');
+  } catch (e) {
+    _logger.e;
 
+    // FIX 1: Fallback logic moved to the 'catch' block.
+    // This now only runs if an error occurs.
+    if (mounted) {
       setState(() {
         dailyTip = DailyContentService.getFallbackTip();
         dailyMotivation = DailyContentService.getFallbackMotivation();
       });
-    } finally {
+    }
+  } finally {
+    // FIX 2: Only ONE 'finally' block.
+    // FIX 3: All state updates are inside a single 'mounted' check.
+    if (mounted) {
       setState(() {
         tipLoading = false;
       });
     }
   }
+}
 
   Future<void> _loadFeaturedCourses() async {
     final staticCourses = [

@@ -36,7 +36,7 @@ class UnifiedProgressService {
   // Add near top of class (configurable):
   static const String _fallbackLocalBase = 'http://192.168.254.103:5000'; // old
   // For emulator convenience:
-  static const String _emulatorBase = 'http://10.0.2.2:5000';
+  static const String _emulatorBase = 'http://192.168.254.103:5000';
 
   Duration get _networkTimeout => const Duration(seconds: 60);
 
@@ -75,11 +75,16 @@ class UnifiedProgressService {
   }
 
   /// Get user progress in the same format as the web app
-  Future<Map<String, dynamic>> getUserProgress() async {
+   Future<Map<String, dynamic>> getUserProgress() async {
     final uId = userId;
     if (uId == null) {
       _logger.w('User not authenticated');
-      return {};
+      // Return a map with the expected structure but empty content
+      return {
+        'lessonAttempts': <String, dynamic>{},
+        'moduleAssessmentAttempts': <String, dynamic>{},
+        'preAssessmentsCompleted': <String, dynamic>{},
+      };
     }
 
     try {
@@ -89,22 +94,39 @@ class UnifiedProgressService {
       if (!docSnap.exists) {
         _logger.i('No progress document found for user $uId');
         return {
-          'lessonAttempts': {},
-          'moduleAssessmentAttempts': {},
-          'preAssessmentsCompleted': {},
+          'lessonAttempts': <String, dynamic>{},
+          'moduleAssessmentAttempts': <String, dynamic>{},
+          'preAssessmentsCompleted': <String, dynamic>{},
         };
       }
 
       final data = docSnap.data() as Map<String, dynamic>;
 
+      // ✅ FIX: Safely access and convert nested maps to prevent runtime cast errors.
+      // This is crucial for new users or when fields are empty maps {}.
+      final lessonAttempts = data['lessonAttempts'];
+      final moduleAssessmentAttempts = data['moduleAssessmentAttempts'];
+      final preAssessmentsCompleted = data['preAssessmentsCompleted'];
+
       return {
-        'lessonAttempts': data['lessonAttempts'] ?? {},
-        'moduleAssessmentAttempts': data['moduleAssessmentAttempts'] ?? {},
-        'preAssessmentsCompleted': data['preAssessmentsCompleted'] ?? {},
+        'lessonAttempts': lessonAttempts is Map
+            ? Map<String, dynamic>.from(lessonAttempts)
+            : <String, dynamic>{},
+        'moduleAssessmentAttempts': moduleAssessmentAttempts is Map
+            ? Map<String, dynamic>.from(moduleAssessmentAttempts)
+            : <String, dynamic>{},
+        'preAssessmentsCompleted': preAssessmentsCompleted is Map
+            ? Map<String, dynamic>.from(preAssessmentsCompleted)
+            : <String, dynamic>{},
       };
     } catch (e) {
       _logger.e('Error getting user progress: $e');
-      return {};
+      // Return a default, safe structure on error to prevent crashes downstream.
+      return {
+        'lessonAttempts': <String, dynamic>{},
+        'moduleAssessmentAttempts': <String, dynamic>{},
+        'preAssessmentsCompleted': <String, dynamic>{},
+      };
     }
   }
 
@@ -198,8 +220,11 @@ class UnifiedProgressService {
       if (userProgressDoc.exists) {
         final data = userProgressDoc.data();
         if (data != null && data['moduleAssessmentAttempts'] is Map) {
+
+          // ✅ FIX: Safely convert the map instead of just casting it.
           final allModuleAttempts =
-              data['moduleAssessmentAttempts'] as Map<String, dynamic>;
+              Map<String, dynamic>.from(data['moduleAssessmentAttempts']);
+
           if (allModuleAttempts[assessmentId] is List) {
             // Ensure correct typing from List<dynamic> to List<Map<String, dynamic>>
             final attemptsList = List<dynamic>.from(

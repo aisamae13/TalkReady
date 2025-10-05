@@ -183,7 +183,7 @@ String _getPerformanceLabel(double score) {
     _logger.i('Starting AI evaluation for submission ${widget.submissionId}');
 
     final response = await http.post(
-      Uri.parse('http://192.168.18.11:5000/evaluate-speaking-contextual'),
+      Uri.parse('http://10.180.155.232:5000/evaluate-speaking-contextual'),
       headers: {'Content-Type': 'application/json'},
       body: json.encode({
         'audioUrl': _submission!['audioUrl'],

@@ -1242,19 +1242,19 @@ Future<void> _showRolePlaySetupDialog() async {
     }
   }
 
-  void _stopAudio() async {
-    try {
-      await _audioService.stopAllAudio();
+void _stopAudio() async {
+  try {
+    await _audioService.stopAllAudio();
+    if (mounted) {  // Add this check
       setState(() {
         _isProcessingTTS = false;
         _isPlayingUserAudio = false;
       });
-    } catch (e) {
-      logger.e('Error stopping audio: $e');
     }
+  } catch (e) {
+    logger.e('Error stopping audio: $e');
   }
-
-
+}
   void _showSnackBar(String message) {
     if (mounted && ScaffoldMessenger.maybeOf(context) != null) {
       ScaffoldMessenger.of(context).removeCurrentSnackBar();
