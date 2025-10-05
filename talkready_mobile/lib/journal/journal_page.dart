@@ -5,6 +5,7 @@ import 'package:logger/logger.dart';
 import 'mood_selection_page.dart';
 import 'journal_writing_page.dart';
 import 'journal_entries.dart';
+import 'journal_models.dart';
 import 'package:talkready_mobile/custom_animated_bottom_bar.dart';
 import '../homepage.dart';
 import '../courses_page.dart';
@@ -28,15 +29,15 @@ Route _createSlidingPageRoute({
   required Widget page,
   required int newIndex,
   required int oldIndex,
-  required Duration duration, // duration will be ignored
+  required Duration duration,
 }) {
   return PageRouteBuilder(
     pageBuilder: (context, animation, secondaryAnimation) => page,
     transitionsBuilder: (context, animation, secondaryAnimation, child) {
-      return child; // Return child directly for no animation
+      return child;
     },
-    transitionDuration: Duration.zero, // Instant transition
-    reverseTransitionDuration: Duration.zero, // Instant reverse transition
+    transitionDuration: Duration.zero,
+    reverseTransitionDuration: Duration.zero,
   );
 }
 
@@ -72,62 +73,10 @@ class Tag {
   }
 }
 
-// Updated JournalEntry class
-class JournalEntry {
-  final String mood;
-  final String? tagId;        // Store tag document ID instead of name
-  final String? tagName;      // Cache tag name for display
-  final String title;
-  final String content;
-  final DateTime timestamp;
-  bool isFavorite;
-  final String? id;
-
-  JournalEntry({
-    required this.mood,
-    this.tagId,
-    this.tagName,
-    required this.title,
-    required this.content,
-    required this.timestamp,
-    this.isFavorite = false,
-    this.id,
-  });
-
-  Map<String, dynamic> toMap() {
-    return {
-      'mood': mood,
-      'tagId': tagId,
-      'tagName': tagName,
-      'title': title,
-      'content': content,
-      'timestamp': Timestamp.fromDate(timestamp),
-      'isFavorite': isFavorite,
-    };
-  }
-
-  factory JournalEntry.fromMap(Map<String, dynamic> map, String id) {
-    logger.i('Loading entry from Firestore: mood=${map['mood']}, tagId=${map['tagId']}, tagName=${map['tagName']}');
-    if (map['mood'] == null) logger.w('Mood is null in Firestore data for entry ID: $id');
-    if (map['tagId'] == null && map['tagName'] == null) logger.w('Both tagId and tagName are null in Firestore data for entry ID: $id');
-    return JournalEntry(
-      id: id,
-      mood: map['mood'] ?? 'Not specified',
-      tagId: map['tagId'],
-      tagName: map['tagName'] ?? 'Not specified',
-      title: map['title'] ?? '',
-      content: map['content'] ?? '{}',
-      timestamp: (map['timestamp'] as Timestamp).toDate(),
-      isFavorite: map['isFavorite'] ?? false,
-    );
-  }
-}
-
 // Tag Service class
 class TagService {
   static Future<List<Tag>> loadUserTags(String userId) async {
     try {
-      // Load default tags first
       List<Tag> defaultTags = [
         Tag(id: 'default_personal', name: 'Personal', iconCodePoint: '58944', userId: userId),
         Tag(id: 'default_work', name: 'Work', iconCodePoint: '59475', userId: userId),
@@ -137,7 +86,6 @@ class TagService {
         Tag(id: 'default_plant', name: 'Plant', iconCodePoint: '59330', userId: userId),
       ];
 
-      // Load custom tags from Firestore
       final snapshot = await FirebaseFirestore.instance
           .collection('tags')
           .where('userId', isEqualTo: userId)
@@ -172,7 +120,6 @@ class TagService {
 
   static Future<Tag?> getTagById(String tagId) async {
     try {
-      // Check if it's a default tag
       if (tagId.startsWith('default_')) {
         Map<String, Map<String, String>> defaultTags = {
           'default_personal': {'name': 'Personal', 'iconCodePoint': '58944'},
@@ -194,7 +141,6 @@ class TagService {
         return null;
       }
 
-      // Load from Firestore for custom tags
       final doc = await FirebaseFirestore.instance
           .collection('tags')
           .doc(tagId)
@@ -221,7 +167,7 @@ class JournalPage extends StatefulWidget {
 class _JournalPageState extends State<JournalPage> {
   final List<JournalEntry> _entries = [];
   bool _isLoading = true;
-  int _selectedIndex = 3; // Journal is index 3 (updated to include My Classes)
+  int _selectedIndex = 3;
 
   @override
   void initState() {
@@ -406,13 +352,11 @@ class _JournalPageState extends State<JournalPage> {
         .catchError((e) => logger.e('Error updating favorite status: $e'));
   }
 
-  // Method to handle tag updates across all journal entries
   Future<void> _updateTagInAllJournals(String tagId, String newTagName) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
 
-      // Update all journal entries that use this tag
       final batch = FirebaseFirestore.instance.batch();
 
       final journalsSnapshot = await FirebaseFirestore.instance
@@ -432,13 +376,11 @@ class _JournalPageState extends State<JournalPage> {
     }
   }
 
-  // Method to clean up orphaned journal entries when tag is deleted
   Future<void> _handleTagDeletion(String tagId) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
 
-      // Set tagId to null for affected journals
       final batch = FirebaseFirestore.instance.batch();
 
       final journalsSnapshot = await FirebaseFirestore.instance
@@ -450,13 +392,12 @@ class _JournalPageState extends State<JournalPage> {
       for (var doc in journalsSnapshot.docs) {
         batch.update(doc.reference, {
           'tagId': null,
-          'tagName': 'Deleted Tag'
+          'tagName': 'Not specified'
         });
       }
 
       await batch.commit();
 
-      // Delete the tag
       await FirebaseFirestore.instance.collection('tags').doc(tagId).delete();
 
       logger.i('Deleted tag and updated ${journalsSnapshot.docs.length} journal entries');
@@ -464,6 +405,8 @@ class _JournalPageState extends State<JournalPage> {
       logger.e('Error handling tag deletion: $e');
     }
   }
+
+
 
   void _onItemTapped(int index) {
     if (_selectedIndex == index) return;
@@ -482,10 +425,9 @@ class _JournalPageState extends State<JournalPage> {
         nextPage = const CoursesPage();
         break;
       case 2:
-        nextPage = const MyEnrolledClasses(); // Include My Classes navigation
+        nextPage = const MyEnrolledClasses();
         break;
       case 3:
-        // Already on JournalPage
         return;
       case 4:
         nextPage = const ProgressTrackerPage();
@@ -503,7 +445,7 @@ class _JournalPageState extends State<JournalPage> {
         page: nextPage,
         newIndex: index,
         oldIndex: oldNavIndex,
-        duration: const Duration(milliseconds: 300), // This duration is now ignored
+        duration: const Duration(milliseconds: 300),
       ),
     );
   }
@@ -511,16 +453,11 @@ class _JournalPageState extends State<JournalPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Journal', style: TextStyle(color: Color(0xFF00568D))),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        automaticallyImplyLeading: false,
-      ),
+      backgroundColor: Colors.white,
       body: _isLoading
           ? const Center(
               child: CircularProgressIndicator(
-                color: Color(0xFF00568D),
+                color: Color(0xFF0078D4),
               ),
             )
           : Navigator(
@@ -528,65 +465,67 @@ class _JournalPageState extends State<JournalPage> {
               onGenerateRoute: (settings) {
                 switch (settings.name) {
                   case '/mood-selection':
-                    return MaterialPageRoute(
-                      builder: (context) => MoodSelectionPage(
-                        onMoodSelected: (mood, tagId, tagName) {
-                          logger.i('MoodSelectionPage callback - mood: $mood, tagId: $tagId, tagName: $tagName');
-                          Navigator.of(context).pushNamed(
-                            '/journal-writing',
-                            arguments: {
-                              'mood': mood,
-                              'tagId': tagId,
-                              'tagName': tagName,
-                              'entries': _entries,
-                              'addEntry': _addEntry,
-                              'updateEntry': _updateEntry,
-                              'deleteEntry': _deleteEntry,
-                              'toggleFavorite': _toggleFavorite,
-                            },
-                          );
-                        },
-                      ),
-                    );
+                  return MaterialPageRoute(
+                    builder: (context) => MoodSelectionPage(
+                      onMoodSelected: (mood, tagId, tagName) {
+                        logger.i('MoodSelectionPage callback - mood: $mood, tagId: $tagId, tagName: $tagName');
+                        Navigator.of(context).pushNamed(
+                          '/journal-writing',
+                          arguments: {
+                            'mood': mood,
+                            'tagId': tagId,
+                            'tagName': tagName,
+                            'entries': _entries,
+                            'addEntry': _addEntry,
+                            'updateEntry': _updateEntry,
+                            'deleteEntry': _deleteEntry,
+                            'toggleFavorite': _toggleFavorite,
+                          },
+                        );
+                      },
+                      onTagUpdated: _updateTagInAllJournals,
+                      onTagDeleted: _handleTagDeletion,
+                    ),
+                  );
 
                   case '/journal-writing':
-                    final args = settings.arguments as Map<String, dynamic>?;
-                    if (args == null ||
-                        !args.containsKey('mood') ||
-                        !args.containsKey('tagId') ||
-                        !args.containsKey('tagName') ||
-                        !args.containsKey('entries') ||
-                        !args.containsKey('addEntry') ||
-                        !args.containsKey('updateEntry') ||
-                        !args.containsKey('deleteEntry') ||
-                        !args.containsKey('toggleFavorite')) {
-                      logger.e('Missing arguments for JournalWritingPage: $args');
-                      return MaterialPageRoute(
-                        builder: (context) => const Scaffold(
-                          body: Center(child: Text('Error: Missing arguments')),
-                        ),
-                      );
-                    }
-                    final mood = args['mood'] as String?;
-                    final tagId = args['tagId'] as String?;
-                    final tagName = args['tagName'] as String?;
-                    if (mood == null || (tagId == null && tagName == null)) {
-                      logger.w('Navigating to JournalWritingPage with null mood or tag: mood=$mood, tagId=$tagId, tagName=$tagName');
-                    } else {
-                      logger.i('Navigating to JournalWritingPage with args: mood=$mood, tagId=$tagId, tagName=$tagName');
-                    }
+                  final args = settings.arguments as Map<String, dynamic>?;
+                  if (args == null ||
+                      !args.containsKey('mood') ||
+                      !args.containsKey('tagId') ||
+                      !args.containsKey('tagName') ||
+                      !args.containsKey('entries') ||
+                      !args.containsKey('addEntry') ||
+                      !args.containsKey('updateEntry') ||
+                      !args.containsKey('deleteEntry') ||
+                      !args.containsKey('toggleFavorite')) {
+                    logger.e('Missing arguments for JournalWritingPage: $args');
                     return MaterialPageRoute(
-                      builder: (context) => JournalWritingPage(
-                        mood: mood,
-                        tagId: tagId,
-                        tagName: tagName,
-                        entries: args['entries'] as List<JournalEntry>,
-                        addEntry: args['addEntry'] as Function(JournalEntry),
-                        updateEntry: args['updateEntry'] as Function(int, JournalEntry),
-                        deleteEntry: args['deleteEntry'] as Function(int),
-                        toggleFavorite: args['toggleFavorite'] as Function(int),
+                      builder: (context) => const Scaffold(
+                        body: Center(child: Text('Error: Missing arguments')),
                       ),
                     );
+                  }
+                  final mood = args['mood'] as String?;
+                  final tagId = args['tagId'] as String?;
+                  final tagName = args['tagName'] as String?;
+                  if (mood == null || (tagId == null && tagName == null)) {
+                    logger.w('Navigating to JournalWritingPage with null mood or tag: mood=$mood, tagId=$tagId, tagName=$tagName');
+                  } else {
+                    logger.i('Navigating to JournalWritingPage with args: mood=$mood, tagId=$tagId, tagName=$tagName');
+                  }
+                  return MaterialPageRoute(
+                    builder: (context) => JournalWritingPage(
+                      mood: mood,
+                      tagId: tagId,
+                      tagName: tagName,
+                      entries: args['entries'] as List<JournalEntry>,
+                      addEntry: (entry) => (args['addEntry'] as Function(JournalEntry))(entry),
+                      updateEntry: (index, entry) => (args['updateEntry'] as Function(int, JournalEntry))(index, entry),
+                      deleteEntry: (index) => (args['deleteEntry'] as Function(int))(index),
+                      toggleFavorite: (index) => (args['toggleFavorite'] as Function(int))(index),
+                    ),
+                  );
 
                   case '/journal-entries':
                     return MaterialPageRoute(
@@ -615,7 +554,7 @@ class _JournalPageState extends State<JournalPage> {
         items: [
           CustomBottomNavItem(icon: Icons.home, label: 'Home'),
           CustomBottomNavItem(icon: Icons.book, label: 'Courses'),
-          CustomBottomNavItem(icon: Icons.school, label: 'My Classes'), // Changed from Icons.class_ to Icons.school
+          CustomBottomNavItem(icon: Icons.school, label: 'My Classes'),
           CustomBottomNavItem(icon: Icons.library_books, label: 'Journal'),
           CustomBottomNavItem(icon: Icons.trending_up, label: 'Progress'),
           CustomBottomNavItem(icon: Icons.person, label: 'Profile'),

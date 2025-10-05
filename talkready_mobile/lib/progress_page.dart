@@ -2622,11 +2622,38 @@ Future<void> _handleDownloadFullHistoryPdf() async {
       const SnackBar(content: Text('Generating PDF...')),
     );
 
+    // Fetch user's first and last name from Firestore
+    String userName = 'Student';
+    if (_currentUser != null) {
+      try {
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(_currentUser!.uid)
+            .get();
+
+        if (userDoc.exists) {
+          final userData = userDoc.data();
+          final firstName = userData?['firstName'] ?? '';
+          final lastName = userData?['lastName'] ?? '';
+
+          if (firstName.isNotEmpty || lastName.isNotEmpty) {
+            userName = '$firstName $lastName'.trim();
+          } else {
+            // Fallback to email if names are not available
+            userName = _currentUser!.email ?? 'Student';
+          }
+        }
+      } catch (e) {
+        _logger.w('Error fetching user name: $e');
+        userName = _currentUser!.email ?? 'Student';
+      }
+    }
+
     await _pdfService.generateProgressReportPdf(
       overallStats: _overallStats,
       allUserAttempts: _allUserAttempts,
       assessmentSubmissions: _assessmentSubmissions,
-      userName: _currentUser?.displayName ?? _currentUser?.email ?? 'Student',
+      userName: userName,
     );
 
     if (mounted) {

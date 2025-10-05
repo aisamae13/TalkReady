@@ -1,38 +1,11 @@
+// enhanced_journal_writing_page.dart
 import 'dart:convert';
+import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:logger/logger.dart';
-import 'journal_page.dart';
-
-// Assuming JournalEntry class is defined in journal_page.dart or another file
-// and is available here.
-
-class AppTheme {
-  static const Color primaryColor = Color(0xFF00568D);
-  static const Color secondaryColor = Color(0xFF003F6A);
-  static const Color accentColor = Colors.yellow;
-  static const Color backgroundGradientStart = Color(0xFF00568D);
-  static const Color backgroundGradientMid = Colors.white;
-  static const Color backgroundGradientEnd = Color(0xFFE0FFD6);
-  static const Color containerGradientStart = Color(0xFFDEE3FF);
-  static const Color containerGradientEnd = Color(0xFFD8F6F7);
-  static const TextStyle titleStyle = TextStyle(
-    fontSize: 24,
-    color: primaryColor,
-    fontWeight: FontWeight.bold,
-  );
-  static const TextStyle dateStyle = TextStyle(
-    wordSpacing: 2,
-    letterSpacing: 1,
-    fontSize: 14,
-    color: primaryColor,
-    fontWeight: FontWeight.w500,
-  );
-  static const TextStyle moodTagStyle = TextStyle(
-    fontSize: 16,
-    fontStyle: FontStyle.italic,
-    color: primaryColor,
-  );
-}
+import 'journal_models.dart';
 
 class JournalWritingPage extends StatefulWidget {
   final String? mood;
@@ -69,6 +42,9 @@ class _JournalWritingPageState extends State<JournalWritingPage> {
   final FocusNode _focusNode = FocusNode();
   String? selectedPrompt;
   bool _isSaving = false;
+  Timer? _autoSaveTimer;
+  DateTime? _lastAutoSave;
+  bool _hasUnsavedChanges = false;
 
   bool _isBold = false;
   bool _isItalic = false;
@@ -77,6 +53,9 @@ class _JournalWritingPageState extends State<JournalWritingPage> {
 
   int _wordCount = 0;
   int _charCount = 0;
+
+  JournalTemplate? _selectedTemplate;
+  Map<String, String> _templateResponses = {};
 
   final List<String> prompts = [
     "What's on my mind right now?",
@@ -87,47 +66,121 @@ class _JournalWritingPageState extends State<JournalWritingPage> {
     "Five things you would like to do more",
   ];
 
-  final Map<String, String> promptResponses = {
-    "What's on my mind right now?": "I’ve been thinking about my goals for the week...",
-    "What do I need to hear today?": "You’re doing great—keep pushing forward!",
-    "3 things I want to appreciate today": "1. A sunny morning\n2. My cozy coffee\n3. A good book",
-    "A quote to live by?": "‘The only way to do great work is to love what you do.’ – Steve Jobs",
-    "What can I improve today?": "I could focus more on time management...",
-    "Five things you would like to do more": "1. Read\n2. Exercise\n3. Cook\n4. Travel\n5. Meditate",
-  };
-
   @override
   void initState() {
     super.initState();
     logger.i('Received mood: ${widget.mood}, tagId: ${widget.tagId}, tagName: ${widget.tagName}');
+
     if (widget.initialEntry != null) {
-      _titleController.text = widget.initialEntry!.title;
-      try {
-        final content = jsonDecode(widget.initialEntry!.content);
-        _textController.text = content['text'] ?? '';
-        _isBold = content['isBold'] ?? false;
-        _isItalic = content['isItalic'] ?? false;
-        _isUnderline = content['isUnderline'] ?? false;
-        _alignment = content['alignment'] ?? 'left';
-      } catch (e) {
-        logger.e('Failed to load entry: $e');
-        // ignore: use_build_context_synchronously
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Error loading entry')),
-        );
-      }
+      _loadEntry(widget.initialEntry!);
     }
+
     _updateCounts();
     _textController.addListener(_updateCounts);
+    _textController.addListener(_onContentChanged);
+    _titleController.addListener(_onContentChanged);
+
     _focusNode.addListener(() {
       if (_focusNode.hasFocus) {
         logger.i('TextField gained focus');
       }
     });
+
+    // Start auto-save timer
+    _startAutoSave();
   }
 
+  void _loadEntry(JournalEntry entry) {
+    _titleController.text = entry.title;
+    try {
+      final content = jsonDecode(entry.content);
+      _textController.text = content['text'] ?? '';
+      _isBold = content['isBold'] ?? false;
+      _isItalic = content['isItalic'] ?? false;
+      _isUnderline = content['isUnderline'] ?? false;
+      _alignment = content['alignment'] ?? 'left';
+
+      // Load template if exists
+      if (entry.templateId != null) {
+        _selectedTemplate = JournalTemplates.getTemplateById(entry.templateId!);
+        if (_selectedTemplate != null && content['templateResponses'] != null) {
+          _templateResponses = Map<String, String>.from(content['templateResponses']);
+        }
+      }
+    } catch (e) {
+      logger.e('Failed to load entry: $e');
+      if (mounted) {
+        _showErrorSnackBar('Error loading entry');
+      }
+    }
+  }
+
+  void _onContentChanged() {
+    if (!_hasUnsavedChanges) {
+      setState(() {
+        _hasUnsavedChanges = true;
+      });
+    }
+  }
+
+  void _startAutoSave() {
+    _autoSaveTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      if (_hasUnsavedChanges &&
+          (_textController.text.isNotEmpty || _titleController.text.isNotEmpty)) {
+        _saveAsDraft();
+      }
+    });
+  }
+Future<void> _saveToFirestore(JournalEntry entry, {bool isDraft = false}) async {
+  try {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw Exception('User not authenticated');
+    }
+
+    final docData = {
+      'userId': user.uid,
+      'mood': entry.mood,
+      'tagId': entry.tagId,
+      'tagName': entry.tagName,
+      'title': entry.title,
+      'content': entry.content,
+      'timestamp': entry.timestamp,
+      'isFavorite': entry.isFavorite,
+      'isDraft': isDraft,
+      'lastModified': entry.lastModified,
+      'templateId': entry.templateId,
+    };
+
+    if (widget.initialEntry != null) {
+      // Update existing entry
+      final querySnapshot = await FirebaseFirestore.instance
+          .collection('journal_entries')
+          .where('userId', isEqualTo: user.uid)
+          .where('timestamp', isEqualTo: widget.initialEntry!.timestamp)
+          .limit(1)
+          .get();
+
+      if (querySnapshot.docs.isNotEmpty) {
+        await querySnapshot.docs.first.reference.update(docData);
+        logger.i('Updated entry in Firestore');
+      } else {
+        await FirebaseFirestore.instance.collection('journal_entries').add(docData);
+        logger.i('Created new entry in Firestore (original not found)');
+      }
+    } else {
+      // Create new entry
+      await FirebaseFirestore.instance.collection('journal_entries').add(docData);
+      logger.i('Saved new entry to Firestore');
+    }
+  } catch (e) {
+    logger.e('Error saving to Firestore: $e');
+    rethrow;
+  }
+}
   @override
   void dispose() {
+    _autoSaveTimer?.cancel();
     _titleController.dispose();
     _textController.dispose();
     _focusNode.dispose();
@@ -140,28 +193,11 @@ class _JournalWritingPageState extends State<JournalWritingPage> {
       _wordCount = RegExp(r'\S+').allMatches(text).length;
       _charCount = text.length;
     });
-    logger.i('Word count: $_wordCount, Char count: $_charCount');
   }
 
-  int _getWordCount() => _wordCount;
-  int _getCharCount() => _charCount;
-
   String _getMonthName(int month) {
-    const months = [
-      '',
-      'January',
-      'February',
-      'March',
-      'April',
-      'May',
-      'June',
-      'July',
-      'August',
-      'September',
-      'October',
-      'November',
-      'December'
-    ];
+    const months = ['', 'January', 'February', 'March', 'April', 'May', 'June',
+                    'July', 'August', 'September', 'October', 'November', 'December'];
     return months[month];
   }
 
@@ -170,16 +206,20 @@ class _JournalWritingPageState extends State<JournalWritingPage> {
     return await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
-            title: const Text('Overwrite Content?'),
-            content: const Text('Selecting a new prompt will replace existing content. Continue?'),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            title: const Text(
+              'Overwrite Content?',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            content: const Text('This will replace your current content. Continue?'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel'),
+                child: const Text('Cancel', style: TextStyle(color: Color(0xFF605E5C))),
               ),
               TextButton(
                 onPressed: () => Navigator.pop(context, true),
-                child: const Text('Overwrite'),
+                child: const Text('Overwrite', style: TextStyle(color: Color(0xFF0078D4))),
               ),
             ],
           ),
@@ -187,30 +227,53 @@ class _JournalWritingPageState extends State<JournalWritingPage> {
         false;
   }
 
-  void _saveEntry() async {
-    final contentText = _textController.text.trim();
-    if (contentText.isEmpty) {
-      // ignore: use_build_context_synchronously
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Content is required')),
-      );
-      return;
-    }
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.error_outline, color: Colors.white),
+            const SizedBox(width: 12),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: const Color(0xFFE74856),
+        duration: const Duration(seconds: 3),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
 
-    setState(() {
-      _isSaving = true;
-    });
+  void _showSuccessSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle_outline, color: Colors.white),
+            const SizedBox(width: 12),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: const Color(0xFF10893E),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
 
-    final mood = widget.mood ?? 'Unknown';
-    final tag = widget.tagName ?? 'Unknown';
-    if (mood == 'Unknown' || tag == 'Unknown') {
-      logger.w('Saving entry with missing mood or tagName: mood=$mood, tagName=$tag');
-    }
+  Future<void> _saveAsDraft() async {
+  final contentText = _textController.text.trim();
+  if (contentText.isEmpty && _titleController.text.trim().isEmpty) {
+    return;
+  }
 
-    final newEntry = JournalEntry(
-      mood: mood,
+  setState(() => _isSaving = true);
+
+  try {
+    final draftEntry = JournalEntry(
+      mood: widget.mood ?? 'Not specified',
       tagId: widget.tagId,
-      tagName: tag,
+      tagName: widget.tagName ?? 'Not specified',
       title: _titleController.text.trim(),
       content: jsonEncode({
         'text': contentText,
@@ -218,53 +281,361 @@ class _JournalWritingPageState extends State<JournalWritingPage> {
         'isItalic': _isItalic,
         'isUnderline': _isUnderline,
         'alignment': _alignment,
+        'templateResponses': _templateResponses,
       }),
       timestamp: DateTime.now(),
       isFavorite: widget.initialEntry?.isFavorite ?? false,
+      isDraft: true,
+      lastModified: DateTime.now(),
+      templateId: _selectedTemplate?.id,
     );
 
-    logger.i('Saving entry with mood: ${newEntry.mood}, tagId: ${newEntry.tagId}, tagName: ${newEntry.tagName}');
+    // Save to Firestore
+    await _saveToFirestore(draftEntry, isDraft: true);
 
-    try {
-      if (widget.initialEntry != null) {
-        final index = widget.entries.indexWhere((e) => e == widget.initialEntry);
-        if (index != -1) {
-          widget.updateEntry(index, newEntry);
-          logger.i('Updated journal entry at index: $index');
-        } else {
-          widget.addEntry(newEntry);
-          logger.i('Added new entry as initial entry not found');
-        }
-      } else {
-        widget.addEntry(newEntry);
-        logger.i('Added new journal entry');
+    if (widget.initialEntry != null && widget.initialEntry!.isDraft) {
+      final index = widget.entries.indexWhere((e) => e == widget.initialEntry);
+      if (index != -1) {
+        widget.updateEntry(index, draftEntry);
       }
-      setState(() {
-        _titleController.clear();
-        _textController.clear();
-        _isBold = false;
-        _isItalic = false;
-        _isUnderline = false;
-        _alignment = 'left';
-        _isSaving = false;
-      });
-      // ignore: use_build_context_synchronously
-      Navigator.pushNamed(context, '/journal-entries');
-    } catch (e) {
-      logger.e('Error saving entry: $e');
-      // ignore: use_build_context_synchronously
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error saving entry')),
-      );
-      setState(() {
-        _isSaving = false;
-      });
+    } else {
+      widget.addEntry(draftEntry);
     }
+
+    setState(() {
+      _hasUnsavedChanges = false;
+      _lastAutoSave = DateTime.now();
+    });
+
+    logger.i('Draft saved successfully to Firestore');
+  } catch (e) {
+    logger.e('Error saving draft: $e');
+    _showErrorSnackBar('Failed to save draft: ${e.toString()}');
+  } finally {
+    setState(() => _isSaving = false);
+  }
+}
+
+ Future<void> _saveEntry({bool isDraft = false}) async {
+  final contentText = _textController.text.trim();
+  if (contentText.isEmpty) {
+    _showErrorSnackBar('Content is required');
+    return;
   }
 
+  setState(() => _isSaving = true);
+
+  try {
+    final newEntry = JournalEntry(
+      mood: widget.mood ?? 'Not specified',
+      tagId: widget.tagId,
+      tagName: widget.tagName ?? 'Not specified',
+      title: _titleController.text.trim(),
+      content: jsonEncode({
+        'text': contentText,
+        'isBold': _isBold,
+        'isItalic': _isItalic,
+        'isUnderline': _isUnderline,
+        'alignment': _alignment,
+        'templateResponses': _templateResponses,
+      }),
+      timestamp: DateTime.now(),
+      isFavorite: widget.initialEntry?.isFavorite ?? false,
+      isDraft: isDraft,
+      lastModified: DateTime.now(),
+      templateId: _selectedTemplate?.id,
+    );
+
+    // Save to Firestore
+    await _saveToFirestore(newEntry, isDraft: isDraft);
+
+    if (widget.initialEntry != null) {
+      final index = widget.entries.indexWhere((e) => e == widget.initialEntry);
+      if (index != -1) {
+        widget.updateEntry(index, newEntry);
+        logger.i('Updated journal entry at index: $index');
+      } else {
+        widget.addEntry(newEntry);
+        logger.i('Added new entry as initial entry not found');
+      }
+    } else {
+      widget.addEntry(newEntry);
+      logger.i('Added new journal entry');
+    }
+
+    setState(() {
+      _titleController.clear();
+      _textController.clear();
+      _isBold = false;
+      _isItalic = false;
+      _isUnderline = false;
+      _alignment = 'left';
+      _hasUnsavedChanges = false;
+      _selectedTemplate = null;
+      _templateResponses.clear();
+    });
+
+    _showSuccessSnackBar(isDraft ? 'Draft saved to Firestore' : 'Entry saved to Firestore');
+
+    // Small delay before navigation
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    if (mounted) {
+      Navigator.pushNamed(context, '/journal-entries');
+    }
+  } catch (e) {
+    logger.e('Error saving entry: $e');
+    _showErrorSnackBar('Failed to save entry: ${e.toString()}');
+  } finally {
+    setState(() => _isSaving = false);
+  }
+}
   void _navigateToEntries() {
-    logger.i('Navigating to JournalEntriesPage without saving');
+    logger.i('Navigating to JournalEntriesPage');
     Navigator.pushNamed(context, '/journal-entries');
+  }
+
+  void _showTemplateSelector() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Choose a Template',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF252423),
+              ),
+            ),
+            const SizedBox(height: 16),
+            ListView.builder(
+              shrinkWrap: true,
+              itemCount: JournalTemplates.templates.length,
+              itemBuilder: (context, index) {
+                final template = JournalTemplates.templates[index];
+                return InkWell(
+                  onTap: () async {
+                    if (!await _confirmOverwrite()) return;
+                    setState(() {
+                      _selectedTemplate = template;
+                      _templateResponses.clear();
+                    });
+                    Navigator.pop(context);
+                    _showTemplateEditor(template);
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF3F2F1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFEDEBE9)),
+                    ),
+                    child: Row(
+                      children: [
+                        Text(
+                          template.icon,
+                          style: const TextStyle(fontSize: 32),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                template.name,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF252423),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                template.description,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: Color(0xFF605E5C),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Icon(
+                          Icons.arrow_forward_ios,
+                          size: 16,
+                          color: Color(0xFF8A8886),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showTemplateEditor(JournalTemplate template) {
+    final controllers = template.sections
+        .map((s) => TextEditingController(text: _templateResponses[s.title] ?? ''))
+        .toList();
+
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        child: Container(
+          constraints: const BoxConstraints(maxHeight: 600),
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    template.icon,
+                    style: const TextStyle(fontSize: 32),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      template.name,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF252423),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Expanded(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: template.sections.length,
+                  itemBuilder: (context, index) {
+                    final section = template.sections[index];
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            section.prompt,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF252423),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: controllers[index],
+                            maxLines: 3,
+                            decoration: InputDecoration(
+                              hintText: section.placeholder ?? 'Your response...',
+                              hintStyle: const TextStyle(color: Color(0xFF8A8886)),
+                              filled: true,
+                              fillColor: const Color(0xFFFAF9F8),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(4),
+                                borderSide: const BorderSide(color: Color(0xFF8A8886)),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(4),
+                                borderSide: const BorderSide(
+                                  color: Color(0xFF0078D4),
+                                  width: 2,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        side: const BorderSide(color: Color(0xFF8A8886)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      child: const Text(
+                        'Cancel',
+                        style: TextStyle(
+                          color: Color(0xFF605E5C),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        // Compile responses
+                        final buffer = StringBuffer();
+                        for (int i = 0; i < template.sections.length; i++) {
+                          final section = template.sections[i];
+                          final response = controllers[i].text.trim();
+                          _templateResponses[section.title] = response;
+
+                          buffer.writeln('${section.title}:');
+                          buffer.writeln(response.isNotEmpty ? response : '(Not answered)');
+                          buffer.writeln();
+                        }
+
+                        _textController.text = buffer.toString().trim();
+                        _titleController.text = template.name;
+                        Navigator.pop(context);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0078D4),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        elevation: 0,
+                      ),
+                      child: const Text(
+                        'Use Template',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildToolbarButton({
@@ -273,497 +644,472 @@ class _JournalWritingPageState extends State<JournalWritingPage> {
     required VoidCallback onPressed,
     String? tooltip,
   }) {
-    return IconButton(
-      icon: Icon(
-        icon,
-        color: isActive ? AppTheme.primaryColor : Colors.grey,
-        size: 20,
+    return Container(
+      margin: const EdgeInsets.only(right: 4),
+      decoration: BoxDecoration(
+        color: isActive ? const Color(0xFF0078D4).withOpacity(0.1) : Colors.transparent,
+        borderRadius: BorderRadius.circular(4),
       ),
-      tooltip: tooltip,
-      onPressed: onPressed,
-      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: IconButton(
+        icon: Icon(
+          icon,
+          color: isActive ? const Color(0xFF0078D4) : const Color(0xFF605E5C),
+          size: 20,
+        ),
+        tooltip: tooltip,
+        onPressed: onPressed,
+        padding: const EdgeInsets.all(8),
+        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+      ),
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final wordCount = _getWordCount();
-    final charCount = _getCharCount();
-    logger.i('Word count: $wordCount, Char count: $charCount');
+  // In journal_writing_page.dart, replace the build method with this:
 
-    TextAlign textAlign;
-    switch (_alignment) {
-      case 'center':
-        textAlign = TextAlign.center;
-        break;
-      case 'right':
-        textAlign = TextAlign.right;
-        break;
-      case 'justify':
-        textAlign = TextAlign.justify;
-        break;
-      default:
-        textAlign = TextAlign.left;
-    }
+@override
+Widget build(BuildContext context) {
+  TextAlign textAlign;
+  switch (_alignment) {
+    case 'center':
+      textAlign = TextAlign.center;
+      break;
+    case 'right':
+      textAlign = TextAlign.right;
+      break;
+    case 'justify':
+      textAlign = TextAlign.justify;
+      break;
+    default:
+      textAlign = TextAlign.left;
+  }
 
-    return PopScope(
-      canPop: false,
-      onPopInvoked: (didPop) async {
-        if (didPop) return;
-        logger.i('System back button pressed on JournalWritingPage');
-        if (_textController.text.isNotEmpty || _titleController.text.isNotEmpty) {
-          final shouldDiscard = await showDialog<bool>(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Text('Discard Changes?'),
-              content: const Text('You have unsaved changes. Do you want to discard them?'),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text('Cancel'),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const Text('Discard'),
-                ),
-              ],
-            ),
-          );
-          if (shouldDiscard != true) return;
-        }
-        if (widget.initialEntry != null) {
-          // ignore: use_build_context_synchronously
-          Navigator.pushNamed(context, '/journal-entries');
-        } else {
-          // ignore: use_build_context_synchronously
-          Navigator.pushNamed(context, '/mood-selection');
-        }
-      },
-      child: Scaffold(
-        // This is fine, as it's outside the main scrolling area
-        floatingActionButton: Container(
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [AppTheme.primaryColor, AppTheme.secondaryColor],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(15),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.grey.withOpacity(0.3),
-                blurRadius: 8,
-                offset: const Offset(0, 4),
+  return PopScope(
+    canPop: false,
+    onPopInvoked: (didPop) async {
+      if (didPop) return;
+
+      if (_hasUnsavedChanges) {
+        final shouldSave = await showDialog<String>(
+          context: context,
+          builder: (context) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            title: const Text('Unsaved Changes', style: TextStyle(fontWeight: FontWeight.w600)),
+            content: const Text('Would you like to save your changes as a draft?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, 'discard'),
+                child: const Text('Discard', style: TextStyle(color: Color(0xFFE74856))),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, 'cancel'),
+                child: const Text('Cancel', style: TextStyle(color: Color(0xFF605E5C))),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, 'save'),
+                child: const Text('Save Draft', style: TextStyle(color: Color(0xFF0078D4))),
               ),
             ],
           ),
-          child: FloatingActionButton(
-            onPressed: () {
-              showModalBottomSheet(
-                context: context,
-                builder: (context) => Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        AppTheme.containerGradientStart.withOpacity(0.5),
-                        AppTheme.containerGradientEnd.withOpacity(0.5),
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(20.0),
-                    child: ListView(
-                      padding: const EdgeInsets.all(0),
-                      shrinkWrap: true,
-                      children: [
-                        Text(
-                          'Select your Prompts',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.primaryColor,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 10,
-                          children: prompts.map((prompt) {
-                            bool isSelected = selectedPrompt == prompt;
-                            return ChoiceChip(
-                              label: Text(prompt),
-                              selected: isSelected,
-                              selectedColor: AppTheme.primaryColor.withOpacity(0.5),
-                              backgroundColor: Colors.white.withOpacity(0.8),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(15),
-                                side: BorderSide(color: AppTheme.primaryColor.withOpacity(0.2)),
-                              ),
-                              elevation: 2,
-                              onSelected: (selected) async {
-                                if (selected) {
-                                  if (!await _confirmOverwrite()) return;
-                                  setState(() {
-                                    selectedPrompt = prompt;
-                                    final response = promptResponses[prompt] ?? 'Start writing...';
-                                    _textController.text = '$prompt\n\n$response';
-                                  });
-                                } else {
-                                  setState(() {
-                                    selectedPrompt = null;
-                                  });
-                                }
-                                // ignore: use_build_context_synchronously
-                                Navigator.pop(context);
-                              },
-                            );
-                          }).toList(),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            },
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-            child: const Icon(
-              Icons.lightbulb_outline,
-              color: Colors.white,
-              size: 30,
-            ),
-          ),
-        ),
-        body: Container(
-          width: double.infinity,
-          height: double.infinity,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppTheme.backgroundGradientStart.withOpacity(0.1),
-                AppTheme.backgroundGradientMid,
-                AppTheme.backgroundGradientEnd.withOpacity(0.3),
-              ],
-            ),
-          ),
-          // FIX: Use a Column to properly size the children, and Expanded/SingleChildScrollView for the main content.
-          child: SafeArea(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // --- Fixed Header Area (Not scrollable) ---
-                Padding(
-                  padding: const EdgeInsets.only(left: 20.0, right: 20.0, top: 10.0),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                     IconButton(
-                        icon: const Icon(Icons.arrow_back, color: AppTheme.primaryColor),
-                        onPressed: () {
-                          logger.i('Back button pressed on JournalWritingPage');
-                          // This triggers the system pop mechanism, which executes the PopScope logic.
-                          Navigator.pop(context);
-                        },
-                      ),
-                      StreamBuilder(
-                        stream: Stream.periodic(const Duration(seconds: 1)),
-                        builder: (context, snapshot) {
-                          final now = DateTime.now();
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            child: Text(
-                              '${now.day} ${_getMonthName(now.month)} ${now.year} | ${TimeOfDay.fromDateTime(now).format(context)}',
-                              style: AppTheme.dateStyle,
-                            ),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 10),
-                if (widget.mood != null || widget.tagName != null)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20.0),
-                    child: Text(
-                      'Mood: ${widget.mood ?? "Unknown"} | Tag: ${widget.tagName ?? "Unknown"}',
-                      style: AppTheme.moodTagStyle,
-                    ),
-                  ),
-                const SizedBox(height: 20),
+        );
 
-                // --- Scrollable Content Area (Uses all remaining space) ---
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(20.0, 0, 20.0, 20.0), // Padding adjusted
-                    child: Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            AppTheme.containerGradientStart.withOpacity(0.5),
-                            AppTheme.containerGradientEnd.withOpacity(0.5),
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
+        if (shouldSave == 'save') {
+          await _saveAsDraft();
+        } else if (shouldSave != 'discard') {
+          return;
+        }
+      }
+
+      if (widget.initialEntry != null) {
+        Navigator.pushNamed(context, '/journal-entries');
+      } else {
+        Navigator.pushNamed(context, '/mood-selection');
+      }
+    },
+    child: Scaffold(
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Header with Template Button
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border(
+                  bottom: BorderSide(color: const Color(0xFFEDEBE9), width: 1),
+                ),
+              ),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back, color: Color(0xFF605E5C)),
+                    onPressed: () {
+                      Navigator.pop(context);
+                    },
+                  ),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        StreamBuilder(
+                          stream: Stream.periodic(const Duration(seconds: 1)),
+                          builder: (context, snapshot) {
+                            final now = DateTime.now();
+                            return Text(
+                              '${now.day} ${_getMonthName(now.month)} ${now.year}',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF252423),
+                              ),
+                            );
+                          },
                         ),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: AppTheme.primaryColor.withOpacity(0.2)),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.grey.withOpacity(0.2),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Your Reflection',
-                            style: AppTheme.titleStyle,
-                          ),
-                          const SizedBox(height: 10),
-                          TextField(
-                            controller: _titleController,
-                            decoration: InputDecoration(
-                              hintText: 'TITLE...',
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                borderSide: BorderSide(color: Colors.grey.shade300),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                borderSide: const BorderSide(color: AppTheme.primaryColor),
-                              ),
-                              filled: true,
-                              fillColor: Colors.white,
-                            ),
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: AppTheme.primaryColor,
-                            ),
-                            onChanged: (value) {
-                              setState(() {});
-                            },
-                          ),
-                          const SizedBox(height: 10),
-                          SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.start,
-                              children: [
-                                _buildToolbarButton(
-                                  icon: Icons.format_bold,
-                                  isActive: _isBold,
-                                  onPressed: () {
-                                    setState(() {
-                                      _isBold = !_isBold;
-                                    });
-                                  },
-                                  tooltip: 'Bold',
-                                ),
-                                _buildToolbarButton(
-                                  icon: Icons.format_italic,
-                                  isActive: _isItalic,
-                                  onPressed: () {
-                                    setState(() {
-                                      _isItalic = !_isItalic;
-                                    });
-                                  },
-                                  tooltip: 'Italic',
-                                ),
-                                _buildToolbarButton(
-                                  icon: Icons.format_underline,
-                                  isActive: _isUnderline,
-                                  onPressed: () {
-                                    setState(() {
-                                      _isUnderline = !_isUnderline;
-                                    });
-                                  },
-                                  tooltip: 'Underline',
-                                ),
-                                _buildToolbarButton(
-                                  icon: Icons.format_align_left,
-                                  isActive: _alignment == 'left',
-                                  onPressed: () {
-                                    setState(() {
-                                      _alignment = 'left';
-                                    });
-                                  },
-                                  tooltip: 'Align Left',
-                                ),
-                                _buildToolbarButton(
-                                  icon: Icons.format_align_center,
-                                  isActive: _alignment == 'center',
-                                  onPressed: () {
-                                    setState(() {
-                                      _alignment = 'center';
-                                    });
-                                  },
-                                  tooltip: 'Align Center',
-                                ),
-                                _buildToolbarButton(
-                                  icon: Icons.format_align_right,
-                                  isActive: _alignment == 'right',
-                                  onPressed: () {
-                                    setState(() {
-                                      _alignment = 'right';
-                                    });
-                                  },
-                                  tooltip: 'Align Right',
-                                ),
-                                _buildToolbarButton(
-                                  icon: Icons.format_align_justify,
-                                  isActive: _alignment == 'justify',
-                                  onPressed: () {
-                                    setState(() {
-                                      _alignment = 'justify';
-                                    });
-                                  },
-                                  tooltip: 'Justify',
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          // Min/Max height constraints are no longer strictly needed but are fine.
-                          Container(
-                            constraints: BoxConstraints(
-                              minHeight: 200,
-                              maxHeight: MediaQuery.of(context).size.height * 0.4,
-                            ),
-                            decoration: BoxDecoration(
-                              border: Border.all(color: Colors.grey.shade300),
-                              borderRadius: BorderRadius.circular(10),
-                              color: Colors.white,
-                            ),
-                            child: TextField(
-                              controller: _textController,
-                              focusNode: _focusNode,
-                              maxLines: null,
-                              textAlign: textAlign,
-                              style: TextStyle(
-                                fontSize: 18,
-                                color: Colors.black,
-                                fontWeight: _isBold ? FontWeight.bold : FontWeight.normal,
-                                fontStyle: _isItalic ? FontStyle.italic : FontStyle.normal,
-                                decoration: _isUnderline ? TextDecoration.underline : TextDecoration.none,
-                              ),
-                              decoration: InputDecoration(
-                                hintText: 'Start typing...',
-                                hintStyle: TextStyle(color: Colors.grey.shade600),
-                                border: InputBorder.none,
-                                contentPadding: const EdgeInsets.all(8),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            if (widget.mood != null || widget.tagName != null)
                               Text(
-                                'Words: $wordCount',
-                                style: const TextStyle(color: Colors.grey, fontSize: 14),
+                                '${widget.mood ?? "None"} • ${widget.tagName ?? "None"}',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF605E5C),
+                                ),
                               ),
-                              Text(
-                                'Chars: $charCount',
-                                style: const TextStyle(color: Colors.grey, fontSize: 14),
+                            if (_lastAutoSave != null) ...[
+                              const Text(' • ', style: TextStyle(fontSize: 12, color: Color(0xFF8A8886))),
+                              const Icon(Icons.cloud_done, size: 12, color: Color(0xFF10893E)),
+                              const SizedBox(width: 4),
+                              const Text(
+                                'Saved',
+                                style: TextStyle(fontSize: 11, color: Color(0xFF10893E)),
+                              ),
+                            ] else if (_hasUnsavedChanges) ...[
+                              const Text(' • ', style: TextStyle(fontSize: 12, color: Color(0xFF8A8886))),
+                              const Text(
+                                'Unsaved',
+                                style: TextStyle(fontSize: 11, color: Color(0xFFFFC83D)),
                               ),
                             ],
-                          ),
-                          const SizedBox(height: 20),
-                          Center(
-                            child: Column(
-                              children: [
-                                Container(
-                                  decoration: BoxDecoration(
-                                    gradient: const LinearGradient(
-                                      colors: [AppTheme.primaryColor, AppTheme.secondaryColor],
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                    ),
-                                    borderRadius: BorderRadius.circular(15),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.grey.withOpacity(0.3),
-                                        blurRadius: 8,
-                                        offset: const Offset(0, 4),
-                                      ),
-                                    ],
-                                  ),
-                                  child: ElevatedButton(
-                                    onPressed: _isSaving ? null : _saveEntry,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.transparent,
-                                      shadowColor: Colors.transparent,
-                                      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(15),
-                                      ),
-                                    ),
-                                    child: _isSaving
-                                        ? const CircularProgressIndicator(color: Colors.white)
-                                        : Text(
-                                            widget.initialEntry != null ? 'Update Entry' : 'Save Entry',
-                                            style: const TextStyle(fontSize: 18, color: Colors.white),
-                                          ),
-                                  ),
-                                ),
-                                const SizedBox(height: 20),
-                                Container(
-                                  decoration: BoxDecoration(
-                                    gradient: const LinearGradient(
-                                      colors: [AppTheme.primaryColor, AppTheme.secondaryColor],
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                    ),
-                                    borderRadius: BorderRadius.circular(15),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.grey.withOpacity(0.3),
-                                        blurRadius: 8,
-                                        offset: const Offset(0, 4),
-                                      ),
-                                    ],
-                                  ),
-                                  child: ElevatedButton(
-                                    onPressed: _navigateToEntries,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.transparent,
-                                      shadowColor: Colors.transparent,
-                                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(15),
-                                      ),
-                                    ),
-                                    child: const Icon(
-                                      Icons.chevron_right,
-                                      color: Colors.white,
-                                      size: 24,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
-                ),
-              ],
+                  // Template Button in AppBar
+                  IconButton(
+                    icon: const Icon(Icons.article_outlined, color: Color(0xFF0078D4)),
+                    tooltip: 'Use Template',
+                    onPressed: _showTemplateSelector,
+                  ),
+                ],
+              ),
             ),
-          ),
+
+            // Content Area
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Template indicator
+                    if (_selectedTemplate != null)
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 16),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF8661C5).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFF8661C5).withOpacity(0.3)),
+                        ),
+                        child: Row(
+                          children: [
+                            Text(
+                              _selectedTemplate!.icon,
+                              style: const TextStyle(fontSize: 20),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'Using template: ${_selectedTemplate!.name}',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF8661C5),
+                                ),
+                              ),
+                            ),
+                            InkWell(
+                              onTap: () {
+                                setState(() {
+                                  _selectedTemplate = null;
+                                  _templateResponses.clear();
+                                });
+                              },
+                              child: const Icon(
+                                Icons.close,
+                                size: 16,
+                                color: Color(0xFF8661C5),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                    // Title Field
+                    TextField(
+                      controller: _titleController,
+                      decoration: const InputDecoration(
+                        hintText: 'Entry title',
+                        hintStyle: TextStyle(
+                          color: Color(0xFF8A8886),
+                          fontSize: 24,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                      style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF252423),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Formatting Toolbar
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFAF9F8),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Row(
+                          children: [
+                            _buildToolbarButton(
+                              icon: Icons.format_bold,
+                              isActive: _isBold,
+                              onPressed: () => setState(() => _isBold = !_isBold),
+                              tooltip: 'Bold',
+                            ),
+                            _buildToolbarButton(
+                              icon: Icons.format_italic,
+                              isActive: _isItalic,
+                              onPressed: () => setState(() => _isItalic = !_isItalic),
+                              tooltip: 'Italic',
+                            ),
+                            _buildToolbarButton(
+                              icon: Icons.format_underline,
+                              isActive: _isUnderline,
+                              onPressed: () => setState(() => _isUnderline = !_isUnderline),
+                              tooltip: 'Underline',
+                            ),
+                            Container(
+                              width: 1,
+                              height: 24,
+                              color: const Color(0xFFEDEBE9),
+                              margin: const EdgeInsets.symmetric(horizontal: 8),
+                            ),
+                            _buildToolbarButton(
+                              icon: Icons.format_align_left,
+                              isActive: _alignment == 'left',
+                              onPressed: () => setState(() => _alignment = 'left'),
+                              tooltip: 'Align Left',
+                            ),
+                            _buildToolbarButton(
+                              icon: Icons.format_align_center,
+                              isActive: _alignment == 'center',
+                              onPressed: () => setState(() => _alignment = 'center'),
+                              tooltip: 'Align Center',
+                            ),
+                            _buildToolbarButton(
+                              icon: Icons.format_align_right,
+                              isActive: _alignment == 'right',
+                              onPressed: () => setState(() => _alignment = 'right'),
+                              tooltip: 'Align Right',
+                            ),
+                            _buildToolbarButton(
+                              icon: Icons.format_align_justify,
+                              isActive: _alignment == 'justify',
+                              onPressed: () => setState(() => _alignment = 'justify'),
+                              tooltip: 'Justify',
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Text Editor
+                    TextField(
+                      controller: _textController,
+                      focusNode: _focusNode,
+                      maxLines: null,
+                      minLines: 10,
+                      textAlign: textAlign,
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: const Color(0xFF252423),
+                        fontWeight: _isBold ? FontWeight.bold : FontWeight.normal,
+                        fontStyle: _isItalic ? FontStyle.italic : FontStyle.normal,
+                        decoration: _isUnderline ? TextDecoration.underline : TextDecoration.none,
+                        height: 1.5,
+                      ),
+                      decoration: const InputDecoration(
+                        hintText: 'Start writing your thoughts...',
+                        hintStyle: TextStyle(
+                          color: Color(0xFF8A8886),
+                          fontSize: 16,
+                        ),
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Word and Character Count
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF3F2F1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '$_wordCount words',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF605E5C),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF3F2F1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '$_charCount characters',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF605E5C),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Bottom Action Buttons (Fixed - no overlap)
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, -2),
+                  ),
+                ],
+              ),
+              child: SafeArea(
+                top: false,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: _navigateToEntries,
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          side: const BorderSide(color: Color(0xFF0078D4)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                        child: const Text(
+                          'View Entries',
+                          style: TextStyle(
+                            color: Color(0xFF0078D4),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: _isSaving ? null : () => _saveEntry(isDraft: true),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          side: const BorderSide(color: Color(0xFFFFC83D)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                        child: const Text(
+                          'Save Draft',
+                          style: TextStyle(
+                            color: Color(0xFFFFC83D),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: _isSaving ? null : () => _saveEntry(isDraft: false),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0078D4),
+                          disabledBackgroundColor: const Color(0xFF8A8886),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: _isSaving
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                ),
+                              )
+                            : Text(
+                                widget.initialEntry != null ? 'Update' : 'Save',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }

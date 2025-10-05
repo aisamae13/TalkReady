@@ -1,12 +1,21 @@
+// enhanced_mood_selection_page.dart
 import 'package:flutter/material.dart';
 import 'package:logger/logger.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/services.dart';
 
 class MoodSelectionPage extends StatefulWidget {
- final Function(String?, String?, String?) onMoodSelected;
+  final Function(String?, String?, String?) onMoodSelected;
+  final Function(String, String)? onTagUpdated;
+  final Function(String)? onTagDeleted;
 
-  const MoodSelectionPage({super.key, required this.onMoodSelected});
+  const MoodSelectionPage({
+    super.key,
+    required this.onMoodSelected,
+    this.onTagUpdated,
+    this.onTagDeleted,
+  });
 
   @override
   State<MoodSelectionPage> createState() => _MoodSelectionPageState();
@@ -16,22 +25,16 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
   final Logger logger = Logger();
   String? selectedMood;
   String? selectedTag;
-  List<Map<String, dynamic>> tags = [
-    {'name': 'Personal', 'iconCodePoint': '58944'}, // Icons.person
-    {'name': 'Work', 'iconCodePoint': '59475'}, // Icons.work
-    {'name': 'Travel', 'iconCodePoint': '59126'}, // Icons.flight
-    {'name': 'Study', 'iconCodePoint': '58394'}, // Icons.book
-    {'name': 'Food', 'iconCodePoint': '59522'}, // Icons.restaurant
-    {'name': 'Plant', 'iconCodePoint': '59330'}, // Icons.local_florist
-  ];
+  List<Map<String, dynamic>> tags = [];
   bool _isLoadingTags = true;
+  bool _showTooltip = true;
 
-  final List<Map<String, String>> moods = [
-    {'name': 'Rad', 'emoji': '😊'},
-    {'name': 'Happy', 'emoji': '😄'},
-    {'name': 'Meh', 'emoji': '😐'},
-    {'name': 'Sad', 'emoji': '😢'},
-    {'name': 'Angry', 'emoji': '😠'},
+  final List<Map<String, dynamic>> moods = [
+    {'name': 'Rad', 'emoji': '😎', 'gradient': [Color(0xFF0078D4), Color(0xFF005A9E)]},
+    {'name': 'Happy', 'emoji': '😄', 'gradient': [Color(0xFF50E6FF), Color(0xFF0099BC)]},
+    {'name': 'Meh', 'emoji': '😐', 'gradient': [Color(0xFF8A8886), Color(0xFF605E5C)]},
+    {'name': 'Sad', 'emoji': '😢', 'gradient': [Color(0xFF4F6BED), Color(0xFF3B5998)]},
+    {'name': 'Angry', 'emoji': '😠', 'gradient': [Color(0xFFE74856), Color(0xFFC4314B)]},
   ];
 
   late Future<String> _userNameFuture;
@@ -41,30 +44,34 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
     super.initState();
     _userNameFuture = _fetchUserName();
     _loadTags();
+
+    // Show tooltip for 5 seconds on first load
+    Future.delayed(const Duration(seconds: 5), () {
+      if (mounted) {
+        setState(() => _showTooltip = false);
+      }
+    });
   }
 
- Future<void> _loadTags() async {
+  Future<void> _loadTags() async {
+    setState(() => _isLoadingTags = true);
+
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) {
-        logger.w('No authenticated user found for loading tags');
-        setState(() {
-          _isLoadingTags = false;
-        });
+        setState(() => _isLoadingTags = false);
         return;
       }
 
-      // Default tags with proper IDs
       List<Map<String, dynamic>> defaultTags = [
-        {'id': 'default_personal', 'name': 'Personal', 'iconCodePoint': '58944'},
-        {'id': 'default_work', 'name': 'Work', 'iconCodePoint': '59475'},
-        {'id': 'default_travel', 'name': 'Travel', 'iconCodePoint': '59126'},
-        {'id': 'default_study', 'name': 'Study', 'iconCodePoint': '58394'},
-        {'id': 'default_food', 'name': 'Food', 'iconCodePoint': '59522'},
-        {'id': 'default_plant', 'name': 'Plant', 'iconCodePoint': '59330'},
+        {'id': 'default_personal', 'name': 'Personal', 'icon': Icons.person_outline, 'isDefault': true},
+        {'id': 'default_work', 'name': 'Work', 'icon': Icons.work_outline, 'isDefault': true},
+        {'id': 'default_travel', 'name': 'Travel', 'icon': Icons.flight_takeoff, 'isDefault': true},
+        {'id': 'default_study', 'name': 'Study', 'icon': Icons.school_outlined, 'isDefault': true},
+        {'id': 'default_food', 'name': 'Food', 'icon': Icons.restaurant_outlined, 'isDefault': true},
+        {'id': 'default_plant', 'name': 'Plant', 'icon': Icons.eco_outlined, 'isDefault': true},
       ];
 
-      // Load custom tags from Firestore (consistent with journal_page.dart)
       final snapshot = await FirebaseFirestore.instance
           .collection('tags')
           .where('userId', isEqualTo: user.uid)
@@ -72,10 +79,17 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
 
       final customTags = snapshot.docs.map((doc) {
         final data = doc.data();
+        int? codePoint;
+        try {
+          codePoint = int.parse(data['iconCodePoint'] as String);
+        } catch (e) {
+          codePoint = Icons.label_outline.codePoint;
+        }
         return {
-          'id': doc.id,  // Include document ID
+          'id': doc.id,
           'name': data['name'] as String,
-          'iconCodePoint': data['iconCodePoint'] as String,
+          'icon': IconData(codePoint, fontFamily: 'MaterialIcons'),
+          'isDefault': false,
         };
       }).toList();
 
@@ -85,58 +99,214 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
           _isLoadingTags = false;
         });
       }
-      logger.i('Loaded ${customTags.length} custom tags from Firestore. Total tags: ${tags.length}');
     } catch (e) {
       logger.e('Error loading tags: $e');
       if (mounted) {
-        setState(() {
-          _isLoadingTags = false;
-        });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Error loading tags')),
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.white),
+                const SizedBox(width: 12),
+                Expanded(child: Text('Failed to load tags: ${e.toString()}')),
+              ],
+            ),
+            backgroundColor: const Color(0xFFE74856),
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+          ),
         );
       }
     }
   }
 
- Future<void> _addCustomTag(String name, IconData icon) async {
+  Future<void> _addCustomTag(String name, IconData icon) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
-      if (user == null) {
-        logger.w('No authenticated user found for adding custom tag');
-        return;
-      }
+      if (user == null) return;
 
-      final iconCodePoint = icon.codePoint.toString();
-
-      // Store in the main tags collection (consistent with journal_page.dart)
-      final docRef = await FirebaseFirestore.instance
-          .collection('tags')
-          .add({
+      final docRef = await FirebaseFirestore.instance.collection('tags').add({
         'name': name,
-        'iconCodePoint': iconCodePoint,
+        'iconCodePoint': icon.codePoint.toString(),
         'userId': user.uid,
       });
 
       if (mounted) {
         setState(() {
-          // Avoid adding duplicate tag if it somehow got added by another means
-          if (!tags.any((tag) => tag['name'] == name)) {
-            tags.add({
-              'id': docRef.id,  // Store the document ID
-              'name': name,
-              'iconCodePoint': iconCodePoint,
-            });
-          }
-          selectedTag = name; // Automatically select the newly added tag
+          tags.add({'id': docRef.id, 'name': name, 'icon': icon, 'isDefault': false});
+          selectedTag = name;
         });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle_outline, color: Colors.white),
+                const SizedBox(width: 12),
+                Expanded(child: Text('Tag "$name" created successfully')),
+              ],
+            ),
+            backgroundColor: const Color(0xFF10893E),
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       }
-      logger.i('Added custom tag: $name with ID: ${docRef.id} and iconCodePoint: $iconCodePoint');
     } catch (e) {
       logger.e('Error adding custom tag: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Error adding custom tag')),
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.white),
+                const SizedBox(width: 12),
+                Expanded(child: Text('Failed to create tag: ${e.toString()}')),
+              ],
+            ),
+            backgroundColor: const Color(0xFFE74856),
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _editCustomTag(String tagId, String oldName, String newName, IconData newIcon) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      await FirebaseFirestore.instance.collection('tags').doc(tagId).update({
+        'name': newName,
+        'iconCodePoint': newIcon.codePoint.toString(),
+      });
+
+      if (mounted) {
+        setState(() {
+          final index = tags.indexWhere((t) => t['id'] == tagId);
+          if (index != -1) {
+            tags[index]['name'] = newName;
+            tags[index]['icon'] = newIcon;
+            if (selectedTag == oldName) {
+              selectedTag = newName;
+            }
+          }
+        });
+      }
+
+      // Update all journal entries with this tag
+      if (widget.onTagUpdated != null) {
+        await widget.onTagUpdated!(tagId, newName);
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle_outline, color: Colors.white),
+                const SizedBox(width: 12),
+                Expanded(child: Text('Tag updated successfully')),
+              ],
+            ),
+            backgroundColor: const Color(0xFF10893E),
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      logger.e('Error editing custom tag: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.white),
+                const SizedBox(width: 12),
+                Expanded(child: Text('Failed to update tag: ${e.toString()}')),
+              ],
+            ),
+            backgroundColor: const Color(0xFFE74856),
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteCustomTag(String tagId, String tagName) async {
+    try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          title: const Text('Delete Tag', style: TextStyle(fontWeight: FontWeight.w600)),
+          content: Text('Are you sure you want to delete "$tagName"? Journal entries using this tag will be updated.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel', style: TextStyle(color: Color(0xFF605E5C))),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Delete', style: TextStyle(color: Color(0xFFE74856))),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmed != true) return;
+
+      if (mounted) {
+        setState(() {
+          tags.removeWhere((t) => t['id'] == tagId);
+          if (selectedTag == tagName) {
+            selectedTag = null;
+          }
+        });
+      }
+
+      // Handle deletion in Firestore and update affected journals
+      if (widget.onTagDeleted != null) {
+        await widget.onTagDeleted!(tagId);
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle_outline, color: Colors.white),
+                const SizedBox(width: 12),
+                Expanded(child: Text('Tag deleted successfully')),
+              ],
+            ),
+            backgroundColor: const Color(0xFF10893E),
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      logger.e('Error deleting custom tag: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.white),
+                const SizedBox(width: 12),
+                Expanded(child: Text('Failed to delete tag: ${e.toString()}')),
+              ],
+            ),
+            backgroundColor: const Color(0xFFE74856),
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+          ),
         );
       }
     }
@@ -145,527 +315,747 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
   Future<String> _fetchUserName() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
-      if (user == null) {
-        logger.w('No authenticated user found');
-        return 'User'; // Default name
-      }
+      if (user == null) return 'there';
 
       final doc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
           .get();
 
-      // Corrected: Access firstName directly from the document data
       final firstName = doc.data()?['firstName'] as String?;
-
-      if (firstName == null || firstName.isEmpty) {
-        logger.w('First name not found in Firestore or is empty');
-        return 'User'; // Default if not found or empty
-      }
-
-      logger.i('Fetched first name: $firstName');
-      return firstName;
+      return firstName?.isNotEmpty == true ? firstName! : 'there';
     } catch (e) {
-      logger.e('Error fetching first name: $e');
-      return 'User'; // Consistent default on error
+      logger.e('Error fetching user name: $e');
+      return 'there';
     }
   }
 
- void _navigateToJournalWriting(String? mood, String? tagId, String? tagName) {
-  logger.i('Navigating to JournalWritingPage with mood: $mood, tagId: $tagId, tagName: $tagName');
-  widget.onMoodSelected(mood, tagId, tagName);
-}
+  void _navigateToJournalWriting(String? mood, String? tagId, String? tagName) {
+    widget.onMoodSelected(mood, tagId, tagName);
+  }
 
-  @override
+  void _showAddTagDialog() {
+    String? customTagName;
+    IconData selectedIcon = Icons.label_outline;
+
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          constraints: const BoxConstraints(maxWidth: 400),
+          child: StatefulBuilder(
+            builder: (context, setDialogState) {
+              final availableIcons = [
+                Icons.favorite_outline,
+                Icons.star_outline,
+                Icons.wb_sunny_outlined,
+                Icons.nightlight_outlined,
+                Icons.fitness_center,
+                Icons.palette_outlined,
+                Icons.music_note_outlined,
+                Icons.camera_alt_outlined,
+              ];
+
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Create new tag',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF252423),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  TextField(
+                    onChanged: (value) => customTagName = value,
+                    decoration: InputDecoration(
+                      labelText: 'Tag name',
+                      labelStyle: const TextStyle(color: Color(0xFF605E5C)),
+                      filled: true,
+                      fillColor: const Color(0xFFFAF9F8),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(4),
+                        borderSide: const BorderSide(color: Color(0xFF8A8886)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(4),
+                        borderSide: const BorderSide(
+                          color: Color(0xFF0078D4),
+                          width: 2,
+                        ),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 16,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'Select icon',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF605E5C),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: availableIcons.map((icon) {
+                      final isSelected = selectedIcon == icon;
+                      return InkWell(
+                        onTap: () => setDialogState(() => selectedIcon = icon),
+                        borderRadius: BorderRadius.circular(4),
+                        child: Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? const Color(0xFF0078D4)
+                                : const Color(0xFFF3F2F1),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(
+                              color: isSelected
+                                  ? const Color(0xFF0078D4)
+                                  : const Color(0xFFEDEBE9),
+                              width: 1,
+                            ),
+                          ),
+                          child: Icon(
+                            icon,
+                            color: isSelected
+                                ? Colors.white
+                                : const Color(0xFF605E5C),
+                            size: 20,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 10,
+                          ),
+                        ),
+                        child: const Text(
+                          'Cancel',
+                          style: TextStyle(
+                            color: Color(0xFF605E5C),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: () {
+                          if (customTagName?.isNotEmpty == true) {
+                            _addCustomTag(customTagName!, selectedIcon);
+                            Navigator.pop(context);
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0078D4),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 10,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: const Text(
+                          'Create',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showEditTagDialog(String tagId, String currentName, IconData currentIcon) {
+    String? newTagName = currentName;
+    IconData selectedIcon = currentIcon;
+
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          constraints: const BoxConstraints(maxWidth: 400),
+          child: StatefulBuilder(
+            builder: (context, setDialogState) {
+              final availableIcons = [
+                Icons.favorite_outline,
+                Icons.star_outline,
+                Icons.wb_sunny_outlined,
+                Icons.nightlight_outlined,
+                Icons.fitness_center,
+                Icons.palette_outlined,
+                Icons.music_note_outlined,
+                Icons.camera_alt_outlined,
+              ];
+
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Edit tag',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF252423),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  TextField(
+                    controller: TextEditingController(text: currentName),
+                    onChanged: (value) => newTagName = value,
+                    decoration: InputDecoration(
+                      labelText: 'Tag name',
+                      labelStyle: const TextStyle(color: Color(0xFF605E5C)),
+                      filled: true,
+                      fillColor: const Color(0xFFFAF9F8),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(4),
+                        borderSide: const BorderSide(color: Color(0xFF8A8886)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(4),
+                        borderSide: const BorderSide(
+                          color: Color(0xFF0078D4),
+                          width: 2,
+                        ),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 16,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'Select icon',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF605E5C),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: availableIcons.map((icon) {
+                      final isSelected = selectedIcon == icon;
+                      return InkWell(
+                        onTap: () => setDialogState(() => selectedIcon = icon),
+                        borderRadius: BorderRadius.circular(4),
+                        child: Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? const Color(0xFF0078D4)
+                                : const Color(0xFFF3F2F1),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(
+                              color: isSelected
+                                  ? const Color(0xFF0078D4)
+                                  : const Color(0xFFEDEBE9),
+                              width: 1,
+                            ),
+                          ),
+                          child: Icon(
+                            icon,
+                            color: isSelected
+                                ? Colors.white
+                                : const Color(0xFF605E5C),
+                            size: 20,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 10,
+                          ),
+                        ),
+                        child: const Text(
+                          'Cancel',
+                          style: TextStyle(
+                            color: Color(0xFF605E5C),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: () {
+                          if (newTagName?.isNotEmpty == true) {
+                            _editCustomTag(tagId, currentName, newTagName!, selectedIcon);
+                            Navigator.pop(context);
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0078D4),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 10,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: const Text(
+                          'Save',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAppBarWithLogo() {
+    return Container(
+      padding: const EdgeInsets.only(top: 40, left: 16, right: 16, bottom: 10),
+      decoration: const BoxDecoration(
+        color: Color(0xFF0078D4),
+        borderRadius: BorderRadius.only(
+          bottomLeft: Radius.circular(20),
+          bottomRight: Radius.circular(20),
+        ),
+      ),
+      child: Row(
+        children: [
+          Image.asset('images/TR Logo.png', height: 40, width: 40),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Text(
+              'Journal',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () => _navigateToJournalWriting(null, null, null),
+            child: const Text(
+              'Skip',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+ @override
   Widget build(BuildContext context) {
     if (_isLoadingTags) {
       return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+        backgroundColor: Colors.white,
+        body: Center(
+          child: CircularProgressIndicator(color: Color(0xFF0078D4)),
+        ),
       );
     }
 
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              const Color(0xFF00568D).withOpacity(0.1),
-              Colors.white,
-              const Color(0xFFE0FFD6).withOpacity(0.3),
-            ],
-          ),
-        ),
-        child: SafeArea(
-          child: SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.all(20.0),
+      backgroundColor: Colors.white,
+      body: Column(
+        children: [
+          _buildAppBarWithLogo(),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end, // Align "Skip" to the right
+                  // Greeting
+                  FutureBuilder<String>(
+                    future: _userNameFuture,
+                    builder: (context, snapshot) {
+                      final name = snapshot.data ?? 'there';
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Hi, $name',
+                            style: const TextStyle(
+                              fontSize: 28,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF252423),
+                              letterSpacing: -0.5,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'How are you feeling today?',
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: Color(0xFF605E5C),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+
+                  // Mood Selection
+                  ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: moods.length,
+                    separatorBuilder: (context, index) => const SizedBox(height: 12),
+                    itemBuilder: (context, index) {
+                      final mood = moods[index];
+                      final isSelected = selectedMood == mood['name'];
+                      return InkWell(
+                        onTap: () {
+                          setState(() {
+                            selectedMood = isSelected ? null : mood['name'] as String;
+                          });
+                        },
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          height: 72,
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          decoration: BoxDecoration(
+                            gradient: isSelected
+                                ? LinearGradient(
+                                    colors: mood['gradient'] as List<Color>,
+                                    begin: Alignment.centerLeft,
+                                    end: Alignment.centerRight,
+                                  )
+                                : null,
+                            color: isSelected ? null : const Color(0xFFF3F2F1),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: isSelected
+                                  ? Colors.transparent
+                                  : const Color(0xFFEDEBE9),
+                              width: 1,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Text(
+                                mood['emoji'] as String,
+                                style: const TextStyle(fontSize: 32),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Text(
+                                  mood['name'] as String,
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                    color: isSelected
+                                        ? Colors.white
+                                        : const Color(0xFF252423),
+                                  ),
+                                ),
+                              ),
+                              if (isSelected)
+                                const Icon(
+                                  Icons.check_circle,
+                                  color: Colors.white,
+                                  size: 24,
+                                ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 40),
+
+                  // Category Selection
+                  const Text(
+                    'Select a category',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF252423),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+
+                  // Tooltip
+                  if (_showTooltip)
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0078D4).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: const Color(0xFF0078D4).withOpacity(0.3),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.info_outline, size: 16, color: Color(0xFF0078D4)),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'Long press custom tags to edit or delete',
+                              style: TextStyle(fontSize: 12, color: Color(0xFF0078D4)),
+                            ),
+                          ),
+                          InkWell(
+                            onTap: () => setState(() => _showTooltip = false),
+                            child: const Icon(Icons.close, size: 16, color: Color(0xFF0078D4)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(height: 16),
+
+                  // Tags List
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
                     children: [
-                      Flexible(
-                        child: SizedBox(
-                          width: 80,
-                          child: TextButton(
-                            onPressed: () {
-                              logger.i('Skip button pressed, navigating with no mood or tag');
-                              _navigateToJournalWriting(null, null, null);
-                            },
-                            child: const Text(
-                              'Skip',
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Color(0xFF00568D),
-                                decoration: TextDecoration.underline,
-                                decorationColor: Color(0xFF00568D),
+                      ...tags.map((tag) {
+                        final isSelected = selectedTag == tag['name'];
+                        final isDefault = tag['isDefault'] == true;
+                        return GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            setState(() {
+                              selectedTag = isSelected ? null : tag['name'] as String;
+                            });
+                          },
+                          onLongPress: !isDefault
+                              ? () {
+                                  HapticFeedback.mediumImpact();
+                                  showModalBottomSheet(
+                                    context: context,
+                                    shape: const RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                                    ),
+                                    builder: (context) => Container(
+                                      padding: const EdgeInsets.symmetric(vertical: 20),
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          ListTile(
+                                            leading: const Icon(Icons.edit, color: Color(0xFF0078D4)),
+                                            title: const Text('Edit Tag'),
+                                            onTap: () {
+                                              Navigator.pop(context);
+                                              _showEditTagDialog(
+                                                tag['id'] as String,
+                                                tag['name'] as String,
+                                                tag['icon'] as IconData,
+                                              );
+                                            },
+                                          ),
+                                          ListTile(
+                                            leading: const Icon(Icons.delete, color: Color(0xFFE74856)),
+                                            title: const Text('Delete Tag'),
+                                            onTap: () {
+                                              Navigator.pop(context);
+                                              _deleteCustomTag(
+                                                tag['id'] as String,
+                                                tag['name'] as String,
+                                              );
+                                            },
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                }
+                              : null,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? const Color(0xFF0078D4)
+                                  : const Color(0xFFF3F2F1),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: isSelected
+                                    ? const Color(0xFF0078D4)
+                                    : const Color(0xFFEDEBE9),
+                                width: 1,
                               ),
                             ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  tag['icon'] as IconData,
+                                  size: 18,
+                                  color: isSelected
+                                      ? Colors.white
+                                      : const Color(0xFF605E5C),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  tag['name'] as String,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: isSelected
+                                        ? Colors.white
+                                        : const Color(0xFF252423),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }),
+                      InkWell(
+                        onTap: _showAddTagDialog,
+                        borderRadius: BorderRadius.circular(20),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: const Color(0xFF0078D4),
+                              width: 1.5,
+                            ),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.add,
+                                size: 18,
+                                color: Color(0xFF0078D4),
+                              ),
+                              SizedBox(width: 8),
+                              Text(
+                                'Add new',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF0078D4),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 20),
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          const Color(0xFFDEE3FF).withOpacity(0.5),
-                          const Color(0xFFD8F6F7).withOpacity(0.5),
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: const Color(0xFF00568D).withOpacity(0.2)),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.grey.withOpacity(0.2),
-                          blurRadius: 8,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        FutureBuilder<String>(
-                          future: _userNameFuture,
-                          builder: (context, snapshot) {
-                            String greetingName = 'User'; // Default greeting name
-
-                            if (snapshot.connectionState == ConnectionState.done) {
-                              if (snapshot.hasError) {
-                                logger.e('Error in FutureBuilder fetching user name: ${snapshot.error}');
-                                // greetingName remains 'User' (or the default from _fetchUserName)
-                              } else if (snapshot.hasData && snapshot.data!.isNotEmpty) {
-                                greetingName = snapshot.data!;
-                              }
-                              // If data is null or empty, _fetchUserName should have returned 'User'
-                            }
-                            // While waiting, it will use the default 'User'
-
-                            return Text(
-                              'Hi, $greetingName! How are you feeling today?',
-                              style: const TextStyle(
-                                fontSize: 24,
-                                color: Color(0xFF00568D),
-                                fontWeight: FontWeight.bold,
-                              ),
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 20),
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 10,
-                          children: moods.map((mood) {
-                            bool isSelected = selectedMood == mood['name'];
-                            return ChoiceChip(
-                              label: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(mood['emoji']!, style: const TextStyle(fontSize: 20)),
-                                  const SizedBox(width: 5),
-                                  Text(mood['name']!, style: const TextStyle(fontSize: 16)),
-                                ],
-                              ),
-                              selected: isSelected,
-                              selectedColor: const Color(0xFF00568D).withOpacity(0.5),
-                              backgroundColor: Colors.white.withOpacity(0.8),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(15),
-                                side: BorderSide(color: const Color(0xFF00568D).withOpacity(0.2)),
-                              ),
-                              elevation: 2,
-                              onSelected: (selected) {
-                                setState(() {
-                                  selectedMood = selected ? mood['name'] : null;
-                                  logger.i('Selected mood: $selectedMood');
-                                });
-                              },
-                            );
-                          }).toList(),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 40),
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          const Color(0xFFE0FFD6).withOpacity(0.5),
-                          const Color(0xFFFFF0C3).withOpacity(0.5),
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: const Color(0xFF00568D).withOpacity(0.2)),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.grey.withOpacity(0.2),
-                          blurRadius: 8,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Choose a tag for the entry!',
-                          style: TextStyle(
-                            fontSize: 24,
-                            color: Color(0xFF00568D),
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 10,
-                          children: [
-                            ...tags.map((tag) {
-                              bool isSelected = selectedTag == tag['name'];
-                              int? codePoint;
-                              try {
-                                codePoint = int.parse(tag['iconCodePoint']);
-                              } catch (e) {
-                                logger.e('Invalid iconCodePoint for tag ${tag['name']}: ${tag['iconCodePoint']}');
-                                codePoint = Icons.tag.codePoint; // Default icon
-                              }
-                              return ChoiceChip(
-                                label: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                     IconData(codePoint, fontFamily: 'MaterialIcons'),
-                                      size: 20,
-                                      color: isSelected ? const Color(0xFF00568D) : Colors.grey,
-                                    ),
-                                    const SizedBox(width: 5),
-                                    Text(
-                                      tag['name']!,
-                                      style: const TextStyle(fontSize: 16),
-                                    ),
-                                  ],
-                                ),
-                                selected: isSelected,
-                                selectedColor: const Color(0xFF00568D).withOpacity(0.5),
-                                backgroundColor: Colors.white.withOpacity(0.8),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(15),
-                                  side: BorderSide(color: const Color(0xFF00568D).withOpacity(0.2)),
-                                ),
-                                elevation: 2,
-                                onSelected: (selected) {
-                                  setState(() {
-                                    selectedTag = selected ? tag['name'] : null;
-                                    logger.i('Selected tag: $selectedTag');
-                                  });
-                                },
-                              );
-                            }),
-                            ActionChip(
-                              label: const Text('Add your own tag!', style: TextStyle(fontSize: 16)),
-                              backgroundColor: Colors.white.withOpacity(0.8),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(15),
-                                side: BorderSide(color: const Color(0xFF00568D).withOpacity(0.2)),
-                              ),
-                              elevation: 2,
-                              onPressed: () {
-                                showDialog(
-                                  context: context,
-                                  builder: (context) {
-                                   String? customTagName; // Renamed to avoid conflict
-                                   IconData selectedIcon = Icons.tag;
-                                    return Dialog(
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                                      child: Container(
-                                        padding: const EdgeInsets.all(20),
-                                        decoration: BoxDecoration(
-                                          gradient: LinearGradient(
-                                            colors: [
-                                              const Color(0xFFDEE3FF).withOpacity(0.5),
-                                              const Color(0xFFD8F6F7).withOpacity(0.5),
-                                            ],
-                                            begin: Alignment.topLeft,
-                                            end: Alignment.bottomRight,
-                                          ),
-                                          borderRadius: BorderRadius.circular(20),
-                                          border: Border.all(color: const Color(0xFF00568D).withOpacity(0.2)),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: Colors.grey.withOpacity(0.2),
-                                              blurRadius: 8,
-                                              offset: const Offset(0, 4),
-                                            ),
-                                          ],
-                                        ),
-                                        child: StatefulBuilder(
-                                          builder: (context, setDialogState) {
-                                            return Column(
-                                              mainAxisSize: MainAxisSize.min,
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                const Text(
-                                                  'Add Custom Tag',
-                                                  style: TextStyle(
-                                                    fontSize: 20,
-                                                    color: Color(0xFF00568D),
-                                                    fontWeight: FontWeight.bold,
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 20),
-                                                TextField(
-                                                  onChanged: (value) {
-                                                    customTagName = value;
-                                                  },
-                                                  decoration: InputDecoration(
-                                                    hintText: 'Enter tag name',
-                                                    border: OutlineInputBorder(
-                                                      borderRadius: BorderRadius.circular(10),
-                                                      borderSide: BorderSide(color: Colors.grey.shade300),
-                                                    ),
-                                                    focusedBorder: OutlineInputBorder(
-                                                      borderRadius: BorderRadius.circular(10),
-                                                      borderSide: const BorderSide(color: Color(0xFF00568D)),
-                                                    ),
-                                                    filled: true,
-                                                    fillColor: Colors.white,
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 20),
-                                                const Text(
-                                                  'Choose an icon',
-                                                  style: TextStyle(
-                                                    fontSize: 16,
-                                                    color: Color(0xFF00568D),
-                                                    fontWeight: FontWeight.w600,
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 10),
-                                                Wrap(
-                                                  spacing: 10,
-                                                  runSpacing: 10,
-                                                  children: [
-                                                    Icons.tag,
-                                                    Icons.star,
-                                                    Icons.favorite,
-                                                    Icons.bookmark,
-                                                    Icons.music_note,
-                                                    Icons.sports_soccer, // Example: changed from Icons.sports
-                                                    Icons.restaurant, // Example: changed from Icons.local_dining
-                                                    Icons.pets,
-                                                  ].map((icon) {
-                                                    bool isSelected = selectedIcon == icon;
-                                                    return ChoiceChip(
-                                                      label: Icon(
-                                                        icon,
-                                                        color: isSelected ? const Color(0xFF00568D) : Colors.grey,
-                                                        size: 24,
-                                                      ),
-                                                      selected: isSelected,
-                                                      selectedColor: const Color(0xFF00568D).withOpacity(0.5),
-                                                      backgroundColor: Colors.white.withOpacity(0.8),
-                                                      shape: RoundedRectangleBorder(
-                                                        borderRadius: BorderRadius.circular(15),
-                                                        side: BorderSide(color: const Color(0xFF00568D).withOpacity(0.2)),
-                                                      ),
-                                                      elevation: 2,
-                                                      onSelected: (selected) {
-                                                        setDialogState(() {
-                                                          selectedIcon = icon;
-                                                        });
-                                                      },
-                                                    );
-                                                  }).toList(),
-                                                ),
-                                                const SizedBox(height: 20),
-                                                Row(
-                                                  mainAxisAlignment: MainAxisAlignment.center,
-                                                  children: [
-                                                    Flexible(
-                                                      child: Container(
-                                                        decoration: BoxDecoration(
-                                                          borderRadius: BorderRadius.circular(15),
-                                                          boxShadow: [
-                                                            BoxShadow(
-                                                              color: Colors.grey.withOpacity(0.3),
-                                                              blurRadius: 8,
-                                                              offset: const Offset(0, 4),
-                                                            ),
-                                                          ],
-                                                        ),
-                                                        child: ElevatedButton(
-                                                          onPressed: () => Navigator.pop(context),
-                                                          style: ElevatedButton.styleFrom(
-                                                            backgroundColor: Colors.grey.shade300,
-                                                            padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
-                                                            shape: RoundedRectangleBorder(
-                                                              borderRadius: BorderRadius.circular(15),
-                                                            ),
-                                                          ),
-                                                          child: const Text(
-                                                            'Cancel',
-                                                            style: TextStyle(fontSize: 16, color: Colors.black),
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                    const SizedBox(width: 20),
-                                                    Flexible(
-                                                      child: Container(
-                                                        decoration: BoxDecoration(
-                                                          gradient: const LinearGradient(
-                                                            colors: [
-                                                              Color(0xFF00568D),
-                                                              Color(0xFF003F6A),
-                                                            ],
-                                                            begin: Alignment.topLeft,
-                                                            end: Alignment.bottomRight,
-                                                          ),
-                                                          borderRadius: BorderRadius.circular(15),
-                                                          boxShadow: [
-                                                            BoxShadow(
-                                                              color: Colors.grey.withOpacity(0.3),
-                                                              blurRadius: 8,
-                                                              offset: const Offset(0, 4),
-                                                            ),
-                                                          ],
-                                                        ),
-                                                        child: ElevatedButton(
-                                                          onPressed: () {
-                                                            if (customTagName != null && customTagName!.isNotEmpty) {
-                                                              _addCustomTag(customTagName!, selectedIcon);
-                                                              // No need to call setState here for selectedTag,
-                                                              // _addCustomTag already handles it if mounted.
-                                                            }
-                                                            Navigator.pop(context);
-                                                          },
-                                                          style: ElevatedButton.styleFrom(
-                                                            backgroundColor: Colors.transparent,
-                                                            shadowColor: Colors.transparent,
-                                                            padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
-                                                            shape: RoundedRectangleBorder(
-                                                              borderRadius: BorderRadius.circular(15),
-                                                            ),
-                                                          ),
-                                                          child: const Text(
-                                                            'Add',
-                                                            style: TextStyle(fontSize: 16, color: Colors.white),
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ],
-                                            );
-                                          },
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                );
-                              },
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 40),
-                  Center(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: (selectedMood != null && selectedTag != null)
-                              ? [
-                                  const Color(0xFF00568D),
-                                  const Color(0xFF003F6A),
-                                ]
-                              : [
-                                  Colors.grey.shade400,
-                                  Colors.grey.shade600,
-                                ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(15),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.grey.withOpacity(0.3),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: ElevatedButton(
-                        onPressed: selectedMood != null && selectedTag != null
-                            ? () {
-                                logger.i('Continue button pressed with mood: $selectedMood, tag: $selectedTag');
-                                // Find the selected tag's ID from the tags list
-                                String? selectedTagId;
-                                if (selectedTag != null) {
-                                  final tag = tags.firstWhere((t) => t['name'] == selectedTag);
-                                  selectedTagId = tag['id']; // Use the actual tag ID
-                                }
-                                _navigateToJournalWriting(selectedMood!, selectedTagId, selectedTag!);
-                              }
-                            : null,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.transparent,
-                          shadowColor: Colors.transparent,
-                          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(15),
-                          ),
-                          disabledForegroundColor: Colors.white.withOpacity(0.7),
-                          disabledBackgroundColor: Colors.transparent, // Keep gradient for disabled state
-                        ),
-                        child: const Text(
-                          'Continue',
-                          style: TextStyle(fontSize: 18, color: Colors.white),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
                 ],
               ),
             ),
           ),
-        ),
+
+          // Bottom Button
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border(
+                top: BorderSide(
+                  color: const Color(0xFFEDEBE9),
+                  width: 1,
+                ),
+              ),
+            ),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: selectedMood != null && selectedTag != null
+                    ? () {
+                        String? selectedTagId;
+                        if (selectedTag != null) {
+                          final tag = tags.firstWhere(
+                            (t) => t['name'] == selectedTag,
+                          );
+                          selectedTagId = tag['id'] as String;
+                        }
+                        _navigateToJournalWriting(
+                          selectedMood!,
+                          selectedTagId,
+                          selectedTag!,
+                        );
+                      }
+                    : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0078D4),
+                  disabledBackgroundColor: const Color(0xFFF3F2F1),
+                  foregroundColor: Colors.white,
+                  disabledForegroundColor: const Color(0xFF8A8886),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  elevation: 0,
+                ),
+                child: const Text(
+                  'Continue',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

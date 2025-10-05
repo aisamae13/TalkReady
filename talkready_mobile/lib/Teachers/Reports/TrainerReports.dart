@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'dart:async';
 import '../Assessment/ViewAssessmentResultsPage.dart';
+import '../Assessment/ReviewSpeakingSubmission.dart';
 
 class TrainerReportsPage extends StatefulWidget {
   const TrainerReportsPage({super.key});
@@ -33,7 +34,6 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
 
-  // NEW: Add stream subscriptions for real-time updates
   StreamSubscription<QuerySnapshot>? _classesSubscription;
   StreamSubscription<QuerySnapshot>? _assessmentsSubscription;
   final Map<String, StreamSubscription<QuerySnapshot>> _submissionsSubscriptions = {};
@@ -56,7 +56,6 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
 
   @override
   void dispose() {
-    // NEW: Cancel all subscriptions
     _classesSubscription?.cancel();
     _assessmentsSubscription?.cancel();
     for (var subscription in _submissionsSubscriptions.values) {
@@ -75,7 +74,7 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
           _currentUser = user;
           _authLoading = false;
           if (user != null) {
-            _setupClassesListener(); // NEW: Use listener instead of fetch
+            _setupClassesListener();
           } else {
             _loadingClasses = false;
             _error = "Please log in to view reports.";
@@ -85,7 +84,6 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
     });
   }
 
-  // NEW: Real-time listener for classes
   void _setupClassesListener() {
     if (_currentUser == null || _currentUser!.uid.isEmpty) {
       if (mounted) {
@@ -129,7 +127,6 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
               _error = null;
             }
 
-            // Trigger animations
             _fadeController.forward();
             _slideController.forward();
           });
@@ -158,12 +155,9 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
     }
   }
 
-  // NEW: Real-time listener for assessments
   void _setupAssessmentsListener(String classId) {
-    // Cancel existing assessment listener
     _assessmentsSubscription?.cancel();
 
-    // Cancel all existing submissions listeners
     for (var subscription in _submissionsSubscriptions.values) {
       subscription.cancel();
     }
@@ -191,7 +185,6 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
             _assessmentError = null;
           });
 
-          // Set up submissions listeners for each assessment
           for (var assessment in assessments) {
             _setupSubmissionsListener(assessment['id'] as String);
           }
@@ -222,9 +215,7 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
     }
   }
 
-  // NEW: Real-time listener for submissions
   void _setupSubmissionsListener(String assessmentId) {
-    // Don't create duplicate listeners
     if (_submissionsSubscriptions.containsKey(assessmentId)) {
       return;
     }
@@ -236,6 +227,7 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
           .snapshots()
           .listen((snapshot) {
         if (mounted) {
+          // Submissions already contain studentEmail from the submission document
           List<Map<String, dynamic>> submissions = snapshot.docs.map((doc) => {
             'id': doc.id,
             ...doc.data()
@@ -263,10 +255,8 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
     }
   }
 
-  // UPDATED: Modified to use real-time listeners instead of one-time fetch
   void _fetchDataForSelectedClass() {
     if (_selectedClassId == null) {
-      // Cancel existing listeners when no class is selected
       _assessmentsSubscription?.cancel();
       for (var subscription in _submissionsSubscriptions.values) {
         subscription.cancel();
@@ -283,41 +273,41 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
       return;
     }
 
-    // Set up real-time listener for the selected class
     _setupAssessmentsListener(_selectedClassId!);
   }
 
-  // NEW: Method to handle real-time updates when navigating back from create assessment
-  void _handleAssessmentCreated() {
-    // The real-time listeners will automatically update the UI
-    // You can add a snackbar or other feedback here if needed
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Assessment created successfully!'),
-          backgroundColor: const Color(0xFF10B981),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    }
-  }
 
   Map<String, dynamic> _getAssessmentStats(String assessmentId) {
     final currentAssessment = _assessments.firstWhere((a) => a['id'] == assessmentId, orElse: () => {});
     final subs = _submissionsByAssessment[assessmentId] ?? [];
     final submissionCount = subs.length;
 
-    num totalPossiblePoints = (currentAssessment['questions'] as List?)
-            ?.fold<num>(0, (sum, q) => sum + ((q as Map)['points'] as num? ?? 0)) ?? 0;
+    // Check if this is a speaking assessment
+    final assessmentType = currentAssessment['assessmentType'] ?? 'standard_quiz';
+    final isSpeakingAssessment = assessmentType == 'speaking_assessment';
 
-    if (submissionCount > 0 && subs[0]['totalPossiblePoints'] != null) {
+    num totalPossiblePoints;
+
+    if (isSpeakingAssessment) {
+      // Speaking assessments are always out of 100
+      totalPossiblePoints = 100;
+    } else {
+      // Standard assessments calculate from questions
+      totalPossiblePoints = (currentAssessment['questions'] as List?)
+              ?.fold<num>(0, (sum, q) => sum + ((q as Map)['points'] as num? ?? 0)) ?? 0;
+
+      if (submissionCount > 0 && subs[0]['totalPossiblePoints'] != null) {
         totalPossiblePoints = subs[0]['totalPossiblePoints'] as num;
+      }
     }
 
     if (submissionCount == 0) {
-      return {'submissionCount': 0, 'averageScore': 'N/A', 'totalPossiblePoints': totalPossiblePoints};
+      return {
+        'submissionCount': 0,
+        'averageScore': 'N/A',
+        'totalPossiblePoints': totalPossiblePoints,
+        'isSpeakingAssessment': isSpeakingAssessment
+      };
     }
 
     final totalScoreSum = subs.fold<num>(0, (sum, sub) => sum + ((sub['score'] as num?) ?? 0));
@@ -326,9 +316,11 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
     return {
       'submissionCount': submissionCount,
       'averageScore': double.parse(averageScore.toStringAsFixed(1)),
-      'totalPossiblePoints': totalPossiblePoints
+      'totalPossiblePoints': totalPossiblePoints,
+      'isSpeakingAssessment': isSpeakingAssessment
     };
   }
+
 
   Widget _buildLoadingScreen(String message) {
     return Center(
@@ -342,8 +334,8 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    const Color(0xFF10B981).withOpacity(0.1), // Changed to green
-                    const Color(0xFF059669).withOpacity(0.05), // Changed to green
+                    const Color(0xFF10B981).withOpacity(0.1),
+                    const Color(0xFF059669).withOpacity(0.05),
                   ],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
@@ -351,7 +343,7 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFF10B981).withOpacity(0.1), // Changed to green
+                    color: const Color(0xFF10B981).withOpacity(0.1),
                     blurRadius: 20,
                     offset: const Offset(0, 8),
                   ),
@@ -359,7 +351,7 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
               ),
               child: CircularProgressIndicator(
                 strokeWidth: 3,
-                valueColor: AlwaysStoppedAnimation<Color>(const Color(0xFF10B981)), // Changed to green
+                valueColor: AlwaysStoppedAnimation<Color>(const Color(0xFF10B981)),
               ),
             ),
             const SizedBox(height: 24),
@@ -453,15 +445,15 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
                 borderRadius: BorderRadius.circular(14),
                 gradient: LinearGradient(
                   colors: [
-                    const Color(0xFF10B981), // Changed to green
-                    const Color(0xFF059669), // Changed to green
+                    const Color(0xFF10B981),
+                    const Color(0xFF059669),
                   ],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFF10B981).withOpacity(0.4), // Changed to green
+                    color: const Color(0xFF10B981).withOpacity(0.4),
                     blurRadius: 15,
                     offset: const Offset(0, 6),
                   ),
@@ -498,7 +490,7 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    Theme.of(context);
 
     if (_authLoading || (_loadingClasses && _currentUser != null)) {
       return Scaffold(
@@ -531,7 +523,6 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
                 children: [
                   const SizedBox(height: 20),
 
-                  // Show error widget prominently when there's an error
                   if (_error != null)
                     _buildErrorWidget("No Classes Found", _error!),
 
@@ -614,7 +605,7 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
       flexibleSpace: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFF10B981), Color(0xFF059669)], // Changed to green
+            colors: [Color(0xFF10B981), Color(0xFF059669)],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -626,7 +617,7 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
   BoxDecoration _buildBackgroundGradient() {
     return const BoxDecoration(
       gradient: LinearGradient(
-        colors: [Color(0xFFF0FDF4), Color(0xFFE6FFFA)], // Changed to green tints
+        colors: [Color(0xFFF0FDF4), Color(0xFFE6FFFA)],
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
       ),
@@ -640,15 +631,15 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            const Color(0xFF10B981).withOpacity(0.1), // Changed to green
-            const Color(0xFF059669).withOpacity(0.05), // Changed to green
+            const Color(0xFF10B981).withOpacity(0.1),
+            const Color(0xFF059669).withOpacity(0.05),
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: const Color(0xFF10B981).withOpacity(0.2), // Changed to green
+          color: const Color(0xFF10B981).withOpacity(0.2),
           width: 1.5,
         ),
       ),
@@ -657,12 +648,12 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: const Color(0xFF10B981).withOpacity(0.15), // Changed to green
+              color: const Color(0xFF10B981).withOpacity(0.15),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(
               FontAwesomeIcons.chalkboardUser,
-              color: const Color(0xFF10B981), // Changed to green
+              color: const Color(0xFF10B981),
               size: 20,
             ),
           ),
@@ -710,7 +701,7 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
             spreadRadius: 0,
           ),
           BoxShadow(
-            color: const Color(0xFF10B981).withOpacity(0.08), // Changed to green
+            color: const Color(0xFF10B981).withOpacity(0.08),
             blurRadius: 40,
             offset: const Offset(0, 0),
             spreadRadius: -10,
@@ -729,8 +720,8 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
-                        const Color(0xFF10B981), // Changed to green
-                        const Color(0xFF059669), // Changed to green
+                        const Color(0xFF10B981),
+                        const Color(0xFF059669),
                       ],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
@@ -785,12 +776,12 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
                     margin: const EdgeInsets.all(12),
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF10B981).withOpacity(0.1), // Changed to green
+                      color: const Color(0xFF10B981).withOpacity(0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Icon(
                       FontAwesomeIcons.chalkboardUser,
-                      color: const Color(0xFF10B981), // Changed to green
+                      color: const Color(0xFF10B981),
                       size: 16,
                     ),
                   ),
@@ -822,7 +813,7 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
                     setState(() {
                       _selectedClassId = value;
                       _selectedClassName = selectedClass['className'] as String?;
-                      _fetchDataForSelectedClass(); // This now sets up real-time listeners
+                      _fetchDataForSelectedClass();
                     });
                   } else {
                     setState(() {
@@ -831,7 +822,7 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
                       _assessments = [];
                       _submissionsByAssessment = {};
                       _assessmentError = null;
-                      _fetchDataForSelectedClass(); // This will cancel listeners
+                      _fetchDataForSelectedClass();
                     });
                   }
                 },
@@ -866,7 +857,8 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
           itemBuilder: (context, index) {
             final assessment = _assessments[index];
             final stats = _getAssessmentStats(assessment['id'] as String);
-            final totalQuestions = (assessment['questions'] as List?)?.length ?? 0;
+            final isSpeakingAssessment = stats['isSpeakingAssessment'] as bool;
+            final totalQuestions = isSpeakingAssessment ? 0 : (assessment['questions'] as List?)?.length ?? 0;
             final averageScore = stats['averageScore'];
             final totalPossiblePoints = stats['totalPossiblePoints'] as num;
 
@@ -914,8 +906,12 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
                               colors: [
-                                const Color(0xFF10B981).withOpacity(0.2), // Changed to green
-                                const Color(0xFF059669).withOpacity(0.1), // Changed to green
+                                (isSpeakingAssessment
+                                  ? Colors.purple.withOpacity(0.2)
+                                  : const Color(0xFF10B981).withOpacity(0.2)),
+                                (isSpeakingAssessment
+                                  ? Colors.purple.withOpacity(0.1)
+                                  : const Color(0xFF059669).withOpacity(0.1)),
                               ],
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
@@ -923,20 +919,49 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Icon(
-                            FontAwesomeIcons.clipboardList,
-                            color: const Color(0xFF10B981), // Changed to green
+                            isSpeakingAssessment
+                              ? FontAwesomeIcons.microphone
+                              : FontAwesomeIcons.clipboardList,
+                            color: isSpeakingAssessment
+                              ? Colors.purple
+                              : const Color(0xFF10B981),
                             size: 18,
                           ),
                         ),
                         const SizedBox(width: 16),
                         Expanded(
-                          child: Text(
-                            assessment['title'] as String? ?? 'Untitled Assessment',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: const Color(0xFF1E293B),
-                            ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                assessment['title'] as String? ?? 'Untitled Assessment',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: const Color(0xFF1E293B),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: (isSpeakingAssessment
+                                    ? Colors.purple.withOpacity(0.1)
+                                    : const Color(0xFF10B981).withOpacity(0.1)),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  isSpeakingAssessment ? 'Speaking Assessment' : 'Standard Assessment',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: isSpeakingAssessment
+                                      ? Colors.purple.shade700
+                                      : const Color(0xFF10B981),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
@@ -946,15 +971,19 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
                     // Stats Row
                     Row(
                       children: [
-                        _buildStatChip(
-                          icon: FontAwesomeIcons.circleQuestion,
-                          label: "$totalQuestions Question${totalQuestions != 1 ? 's' : ''}",
-                          color: const Color(0xFF10B981), // Changed to green
-                        ),
-                        const SizedBox(width: 12),
+                        if (!isSpeakingAssessment) ...[
+                          _buildStatChip(
+                            icon: FontAwesomeIcons.circleQuestion,
+                            label: "$totalQuestions Question${totalQuestions != 1 ? 's' : ''}",
+                            color: const Color(0xFF10B981),
+                          ),
+                          const SizedBox(width: 12),
+                        ],
                         _buildStatChip(
                           icon: FontAwesomeIcons.star,
-                          label: "${stats['totalPossiblePoints']} Points",
+                          label: isSpeakingAssessment
+                            ? "100 Points"
+                            : "${stats['totalPossiblePoints']} Points",
                           color: const Color(0xFFF59E0B),
                         ),
                       ],
@@ -1021,15 +1050,15 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
                         borderRadius: BorderRadius.circular(14),
                         gradient: LinearGradient(
                           colors: [
-                            const Color(0xFF10B981), // Changed to green
-                            const Color(0xFF059669), // Changed to green
+                            const Color(0xFF10B981),
+                            const Color(0xFF059669),
                           ],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFF10B981).withOpacity(0.3), // Changed to green
+                            color: const Color(0xFF10B981).withOpacity(0.3),
                             blurRadius: 15,
                             offset: const Offset(0, 6),
                           ),
@@ -1045,16 +1074,54 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
                           ),
                         ),
                         onPressed: () {
+                        final assessmentType = assessment['assessmentType'] ?? 'standard_quiz';
+
+                        if (assessmentType == 'speaking_assessment') {
+                          // For speaking assessments, show a list of submissions to choose from
+                          final submissions = _submissionsByAssessment[assessment['id']] ?? [];
+
+                          if (submissions.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('No submissions yet for this assessment')),
+                            );
+                            return;
+                          }
+
+                          // If only one submission, go directly to it
+                          if (submissions.length == 1) {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => ReviewSpeakingSubmissionPage(
+                                  submissionId: submissions[0]['id'],
+                                ),
+                              ),
+                            );
+                          } else {
+                            // Multiple submissions - go to the standard results page that lists them
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => ViewAssessmentResultsPage(
+                                  assessmentId: assessment['id'],
+                                  className: _selectedClassName,
+                                ),
+                              ),
+                            );
+                          }
+                        } else {
+                          // Standard assessments go to results page
                           Navigator.push(
                             context,
                             MaterialPageRoute(
                               builder: (context) => ViewAssessmentResultsPage(
                                 assessmentId: assessment['id'],
-                                className: _selectedClassName, // Pass class name if available
+                                className: _selectedClassName,
                               ),
                             ),
                           );
-                        },
+                        }
+                      },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.transparent,
                           foregroundColor: Colors.white,
@@ -1127,8 +1194,8 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  const Color(0xFF10B981).withOpacity(0.1), // Changed to green
-                  const Color(0xFF059669).withOpacity(0.05), // Changed to green
+                  const Color(0xFF10B981).withOpacity(0.1),
+                  const Color(0xFF059669).withOpacity(0.05),
                 ],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
@@ -1138,7 +1205,7 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
             child: Icon(
               FontAwesomeIcons.clipboardList,
               size: 40,
-              color: const Color(0xFF10B981), // Changed to green
+              color: const Color(0xFF10B981),
             ),
           ),
           const SizedBox(height: 20),
@@ -1166,15 +1233,15 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
               borderRadius: BorderRadius.circular(14),
               gradient: LinearGradient(
                 colors: [
-                  const Color(0xFF10B981), // Changed to green
-                  const Color(0xFF059669), // Changed to green
+                  const Color(0xFF10B981),
+                  const Color(0xFF059669),
                 ],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFF10B981).withOpacity(0.3), // Changed to green
+                  color: const Color(0xFF10B981).withOpacity(0.3),
                   blurRadius: 15,
                   offset: const Offset(0, 6),
                 ),
@@ -1215,15 +1282,15 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            const Color(0xFF10B981).withOpacity(0.05), // Changed to green
-            const Color(0xFF059669).withOpacity(0.02), // Changed to green
+            const Color(0xFF10B981).withOpacity(0.05),
+            const Color(0xFF059669).withOpacity(0.02),
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: const Color(0xFF10B981).withOpacity(0.2), // Changed to green
+          color: const Color(0xFF10B981).withOpacity(0.2),
           width: 1.5,
         ),
       ),
@@ -1234,8 +1301,8 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  const Color(0xFF10B981).withOpacity(0.2), // Changed to green
-                  const Color(0xFF059669).withOpacity(0.1), // Changed to green
+                  const Color(0xFF10B981).withOpacity(0.2),
+                  const Color(0xFF059669).withOpacity(0.1),
                 ],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
@@ -1245,7 +1312,7 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
             child: Icon(
               FontAwesomeIcons.chartBar,
               size: 32,
-              color: const Color(0xFF10B981), // Changed to green
+              color: const Color(0xFF10B981),
             ),
           ),
           const SizedBox(height: 20),
