@@ -273,12 +273,32 @@ if (mounted) {
   );
   final className = selectedClass['className'] ?? 'your class';
 
+  // Get trainer's name from Firestore
+  String trainerName = 'Your trainer';
+  try {
+    final trainerDoc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(_currentUser!.uid)
+        .get();
+
+    if (trainerDoc.exists) {
+      final trainerData = trainerDoc.data()!;
+      trainerName = '${trainerData['firstName'] ?? ''} ${trainerData['lastName'] ?? ''}'.trim();
+      if (trainerName.isEmpty) {
+        trainerName = trainerData['displayName'] ?? 'Your trainer';
+      }
+    }
+  } catch (e) {
+    debugPrint('Could not fetch trainer name: $e');
+  }
+
   // Create notifications for students
   await NotificationService.createNotificationsForStudents(
     classId: _selectedClassId!,
-    message: 'New material uploaded: ${newMaterialDoc['title']}',
+    message: '$trainerName uploaded new material: ${newMaterialDoc['title']}',
     className: className,
     link: '/student/class/$_selectedClassId/content',
+    type: 'material',
   );
 
   setState(() {

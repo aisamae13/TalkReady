@@ -41,7 +41,6 @@ class OpenAIService {
         messages.add({'role': 'user', 'content': userInput});
       }
 
-      // Define available functions for ALL practice modes
       final functions = enablePracticeFunctions ? [
         {
           'name': 'exit_practice_mode',
@@ -85,7 +84,6 @@ class OpenAIService {
         final choice = data['choices'][0];
         final message = choice['message'];
 
-        // Check if AI called a function
         if (message['function_call'] != null) {
           final functionName = message['function_call']['name'];
           final functionArgs = jsonDecode(message['function_call']['arguments']);
@@ -100,7 +98,6 @@ class OpenAIService {
           };
         }
 
-        // Regular text response
         final aiResponse = message['content'] ?? 'How can I help you?';
         logger.i('OpenAI response: $aiResponse');
 
@@ -121,7 +118,6 @@ class OpenAIService {
     }
   }
 
-  // Keep the original method for backwards compatibility
   Future<String> getOpenAIResponse(
     String prompt,
     List<Message> conversationHistory, {
@@ -137,19 +133,11 @@ class OpenAIService {
   }
 
   String cleanAIResponse(String response) {
-    // Remove markdown bold
     response = response.replaceAll(RegExp(r'\*\*([^*]+)\*\*'), r'$1');
     response = response.replaceAll(RegExp(r'\*([^*]+)\*'), r'$1');
-
-    // Remove bullet points and dashes at start of lines
     response = response.replaceAll(RegExp(r'^\s*[-•*]\s+', multiLine: true), '');
-
-    // Remove numbered lists
     response = response.replaceAll(RegExp(r'^\s*\d+\.\s+', multiLine: true), '');
-
-    // Remove headers (lines starting with #)
     response = response.replaceAll(RegExp(r'^#+\s+', multiLine: true), '');
-
     return response.trim();
   }
 
@@ -196,6 +184,60 @@ class OpenAIService {
     } catch (e) {
       logger.e('Phrase generation failed: $e');
       return "Could you please repeat that?";
+    }
+  }
+
+  // NEW: Generate fluency reading passage
+  Future<String> generateFluencyPassage() async {
+    final apiKey = dotenv.env['OPENAI_API_KEY'] ?? '';
+    if (apiKey.isEmpty) throw Exception('OpenAI key missing');
+
+    try {
+      final response = await http.post(
+        Uri.parse('https://api.openai.com/v1/chat/completions'),
+        headers: {
+          'Authorization': 'Bearer $apiKey',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'model': 'gpt-4',
+          'messages': [
+            {
+              'role': 'system',
+              'content': '''
+              Generate a customer service reading passage (2-3 sentences, 20-35 words total) for English fluency practice.
+
+              Requirements:
+              - Professional customer service context
+              - Natural flow and rhythm
+              - Mix of statement and question
+              - Use common customer service vocabulary
+
+              Examples:
+              - "Thank you for contacting our support team. I understand you're having trouble with your account. Let me help you resolve this issue right away."
+              - "We appreciate your patience while we review your request. Your satisfaction is important to us. Is there anything else I can assist you with today?"
+
+              Return ONLY the passage. No quotes, numbering, or extra text.
+            '''
+            }
+          ],
+          'temperature': 0.8,
+          'max_tokens': 60,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final passage = jsonDecode(response.body)['choices'][0]['message']['content']
+            .trim()
+            .replaceAll('"', '');
+        logger.i('Generated fluency passage: $passage');
+        return passage;
+      } else {
+        throw Exception('OpenAI error: ${response.statusCode}');
+      }
+    } catch (e) {
+      logger.e('Fluency passage generation failed: $e');
+      return "Welcome to our customer service. How may I help you today? I'm here to assist with any questions you may have.";
     }
   }
 
@@ -269,10 +311,13 @@ If the user indicates they want to stop (e.g., "stop", "enough", "done", "change
         basePersonality += '''
 
 FLUENCY PRACTICE MODE - CRITICAL RULES:
-1. ALWAYS provide text to read (2-3 sentences) in double quotes
-2. Format: Brief intro + "Read this smoothly: "[2-3 sentences]""
+1. ALWAYS provide a reading passage (2-3 sentences) in double quotes
+2. Format: Brief intro/feedback (1 sentence) + "Read this smoothly: "[passage]""
 3. After feedback, IMMEDIATELY provide new text to practice
-4. NEVER respond without quoted text for fluency practice
+4. Keep passages natural and conversational (20-35 words)
+5. Focus on customer service scenarios
+6. The passage must be in double quotes ("like this") so it can be extracted
+7. Example: "Great flow! Now try: "Thank you for calling. I understand your concern. Let me check that for you right away.""
 
 EXCEPTION - User wants to stop:
 If the user wants to exit, call the exit_practice_mode function.
@@ -317,7 +362,7 @@ If the user wants to exit the role-play, call the exit_practice_mode function.
       }
 
       if (practiceTargetText != null) {
-        basePersonality += '\nCurrent practice phrase: "$practiceTargetText"';
+        basePersonality += '\nCurrent practice text: "$practiceTargetText"';
       }
     }
 
@@ -341,14 +386,25 @@ ROLE-PLAY SESSION INFO:
       final accuracy = context['accuracyScore']?.toStringAsFixed(0) ?? '0';
       final fluency = context['fluencyScore']?.toStringAsFixed(0) ?? '0';
       final recognizedText = context['recognizedText'] ?? '';
+      final isFluentMode = context['isFluencyMode'] == true;
 
-      basePersonality += '''
+      if (isFluentMode) {
+        basePersonality += '''
+
+The user just practiced reading fluency. They got Fluency: $fluency%, Accuracy: $accuracy%.
+Their recognized text was "$recognizedText" and the target passage was "$practiceTargetText".
+
+Give brief, friendly feedback (1-2 sentences) about their reading fluency and flow. Don't repeat the scores since they see a detailed display. Then IMMEDIATELY provide a new passage to practice in double quotes. Example: "Nice rhythm! Now read: "[new passage]""
+''';
+      } else {
+        basePersonality += '''
 
 The user just practiced pronunciation. They got Accuracy: $accuracy%, Fluency: $fluency%.
 Their recognized text was "$recognizedText" and the target was "$practiceTargetText".
 
 Give brief, friendly feedback (1-2 sentences) about their pronunciation. Don't repeat the scores since they see a detailed display. Then IMMEDIATELY provide a new phrase to practice in double quotes. Example: "Good job on that! Now try: "[new phrase]""
 ''';
+      }
     }
 
     return basePersonality;
@@ -375,7 +431,8 @@ Give brief, friendly feedback (1-2 sentences) about their pronunciation. Don't r
       "practice saying:", "say this:", "read this:",
       "here's the sentence:", "the sentence is:",
       "practice this:", "read aloud:", "let's try:",
-      "practice:", "read smoothly:"
+      "practice:", "read smoothly:", "now try:",
+      "now read:"
     ];
 
     for (final preface in prefaces) {

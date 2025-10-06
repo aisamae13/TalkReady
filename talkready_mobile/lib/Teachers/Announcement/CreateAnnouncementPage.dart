@@ -82,12 +82,31 @@ Future<void> postClassAnnouncement({
       'status': 'published',
     });
 
+    // Get trainer's name
+    String trainerName = 'Your trainer';
+    try {
+      final trainerDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(trainerId)
+          .get();
+
+      if (trainerDoc.exists) {
+        final trainerData = trainerDoc.data()!;
+        trainerName = '${trainerData['firstName'] ?? ''} ${trainerData['lastName'] ?? ''}'.trim();
+        if (trainerName.isEmpty) {
+          trainerName = trainerData['displayName'] ?? 'Your trainer';
+        }
+      }
+    } catch (e) {
+      debugPrint('Could not fetch trainer name: $e');
+    }
+
     // Create notifications for all students
     await NotificationService.createNotificationsForStudents(
       classId: classId,
-      message: 'New announcement: $title',
+      message: '$trainerName posted a new announcement: $title',
       className: className,
-      link: '/student/class/$classId',
+      link: '/student/class/$classId#announcements',
     );
   } catch (e) {
     throw Exception("Failed to post announcement: ${e.toString()}");

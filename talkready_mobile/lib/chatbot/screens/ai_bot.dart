@@ -364,7 +364,6 @@ Future<void> _processAudioRecording(String audioPath) async {
   try {
     _showSnackBar('Processing...');
 
-    // Verify the audio file exists before proceeding
     final audioFile = File(audioPath);
     if (!await audioFile.exists()) {
       logger.e('Audio file does not exist at path: $audioPath');
@@ -374,7 +373,7 @@ Future<void> _processAudioRecording(String audioPath) async {
 
     final audioUrl = await _transcriptionService.uploadToCloudinary(audioPath);
 
-    // CHECK THE FLAG: Only do pronunciation assessment if we're expecting it
+    // CHECK: Pronunciation or Fluency assessment
     if (_isAwaitingPronunciationPractice &&
         (_currentPracticeMode == PromptCategory.pronunciation ||
          _currentPracticeMode == PromptCategory.fluency)) {
@@ -389,7 +388,7 @@ Future<void> _processAudioRecording(String audioPath) async {
           text: transcript,
           isUser: true,
           timestamp: DateTime.now().toIso8601String(),
-          audioPath: audioPath,  // Store the verified path
+          audioPath: audioPath,
         );
 
         setState(() {
@@ -400,13 +399,23 @@ Future<void> _processAudioRecording(String audioPath) async {
         await _firebaseChatService.addMessageToSession(userMessage, audioUrl: audioUrl);
         _scrollToBottom();
 
+        // Generate feedback using Azure
         final feedback = await _transcriptionService.generatePronunciationFeedback(
           audioUrl,
           transcript,
           _currentPracticePhrase,
         );
 
-        _addAzureFeedbackMessage(feedback);
+        // Determine which feedback display to use
+        final isFluencyMode = _currentPracticeMode == PromptCategory.fluency;
+
+        if (isFluencyMode) {
+          _addAzureFluencyMessage(feedback);
+        } else {
+          _addAzureFeedbackMessage(feedback);
+        }
+
+        // Generate AI response with context
         await _generateAIResponse(
           transcript,
           context: {
@@ -414,6 +423,7 @@ Future<void> _processAudioRecording(String audioPath) async {
             'accuracyScore': feedback['accuracyScore'],
             'fluencyScore': feedback['fluencyScore'],
             'recognizedText': transcript,
+            'isFluencyMode': isFluencyMode,
           },
         );
       } else {
@@ -429,7 +439,7 @@ Future<void> _processAudioRecording(String audioPath) async {
           text: transcript,
           isUser: true,
           timestamp: DateTime.now().toIso8601String(),
-          audioPath: audioPath,  // Store the verified path
+          audioPath: audioPath,
         );
 
         setState(() {
@@ -448,6 +458,26 @@ Future<void> _processAudioRecording(String audioPath) async {
     logger.e('Error processing audio: $e');
     _addBotMessage("Error processing audio: ${e.toString()}");
   }
+}
+
+void _addAzureFluencyMessage(Map<String, dynamic> feedback) {
+  final azureMessage = Message(
+    id: 'azure-fluency-${DateTime.now().millisecondsSinceEpoch}',
+    text: feedback['feedback'] ?? '',
+    isUser: false,
+    timestamp: DateTime.now().toIso8601String(),
+    type: MessageType.azureFluency, // NEW type
+    metadata: {
+      ...feedback,
+      'originalText': _currentPracticePhrase,
+    },
+  );
+
+  setState(() {
+    _messages.add(azureMessage);
+    _pruneMessages();
+  });
+  _scrollToBottom();
 }
   void _addAzureFeedbackMessage(Map<String, dynamic> feedback) {
     final azureMessage = Message(
@@ -972,9 +1002,7 @@ Widget _buildFocusOption({
   );
 }
 Future<void> _showPromptsForCategoryDialog(PromptCategory category) async {
-  // Special handling for Role-Play category
   if (category == PromptCategory.rolePlay) {
-    // Add user message showing they selected Role-Play
     final userMessage = Message(
       id: 'user-${DateTime.now().millisecondsSinceEpoch}',
       text: "Let's do a customer service role-play.",
@@ -994,7 +1022,6 @@ Future<void> _showPromptsForCategoryDialog(PromptCategory category) async {
     return;
   }
 
-  // Original code for other categories
   final categoryPrompts = englishLearningPrompts.where((p) => p.category == category).toList();
 
   if (categoryPrompts.isEmpty) {
@@ -1064,7 +1091,6 @@ Future<void> _showPromptsForCategoryDialog(PromptCategory category) async {
 
   if (!mounted) return;
 
-  // Add user message showing what they selected
   if (selectedPrompt != null) {
     final userMessage = Message(
       id: 'user-${DateTime.now().millisecondsSinceEpoch}',
@@ -1089,15 +1115,22 @@ Future<void> _showPromptsForCategoryDialog(PromptCategory category) async {
   });
 
   if (selectedPrompt != null) {
-    if (selectedPrompt.category == PromptCategory.pronunciation) {
-      _addBotMessage("Let's practice your pronunciation! First, I'll suggest a phrase...");
-      final phrase = await _openAIService.generateCallCenterPhrase();
-      setState(() => _currentPracticePhrase = phrase);
-      _addBotMessage("Try saying: '$phrase'");
-    } else if (selectedPrompt.initialBotMessage != null) {
-      _addBotMessage(selectedPrompt.initialBotMessage!);
-    }
+  if (selectedPrompt.category == PromptCategory.pronunciation) {
+    _addBotMessage("Let's practice your pronunciation! First, I'll suggest a phrase...");
+    final phrase = await _openAIService.generateCallCenterPhrase();
+    setState(() => _currentPracticePhrase = phrase);
+    _addBotMessage("Try saying: '$phrase'");
+    setState(() => _isAwaitingPronunciationPractice = true);
+  } else if (selectedPrompt.category == PromptCategory.fluency) {
+    _addBotMessage("Let's work on reading fluency! I'll give you a passage...");
+    final passage = await _openAIService.generateFluencyPassage();
+    setState(() => _currentPracticePhrase = passage);
+    _addBotMessage("Read this smoothly: '$passage'");
+    setState(() => _isAwaitingPronunciationPractice = true);
+  } else if (selectedPrompt.initialBotMessage != null) {
+    _addBotMessage(selectedPrompt.initialBotMessage!);
   }
+}
 }
 Future<void> _showRolePlaySetupDialog() async {
   int? selectedDuration = await showDialog<int>(

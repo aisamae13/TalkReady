@@ -1,12 +1,10 @@
+// Updated chat_message.dart to handle both feedback types
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
-import 'package:logger/logger.dart';
 import '../models/message.dart';
 import 'azure_feedback_display.dart';
+import 'azure_fluency_display.dart'; // NEW import
 
-final logger = Logger();
-
-class ChatMessage extends StatefulWidget {
+class ChatMessage extends StatelessWidget {
   final Message message;
   final ImageProvider? userProfileImage;
   final VoidCallback? onPlayAudio;
@@ -21,79 +19,27 @@ class ChatMessage extends StatefulWidget {
   });
 
   @override
-  State<ChatMessage> createState() => _ChatMessageState();
-}
-
-class _ChatMessageState extends State<ChatMessage> {
-  bool _showTimestamp = false;
-
-  String _formatTimestamp(String? isoTimestamp) {
-    if (isoTimestamp == null) return 'Unknown time';
-    try {
-      final dateTime = DateTime.parse(isoTimestamp).toLocal();
-      if (DateTime.now().difference(dateTime).inDays == 0) {
-        return DateFormat('h:mm a').format(dateTime);
-      } else if (DateTime.now().difference(dateTime).inDays == 1) {
-        return 'Yesterday, ${DateFormat('h:mm a').format(dateTime)}';
-      } else {
-        return DateFormat('MMM d, h:mm a').format(dateTime);
-      }
-    } catch (e) {
-      logger.e('Error parsing timestamp: $e');
-      return 'Invalid time';
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    Theme.of(context);
-
-    // Handle Azure feedback messages
-    if (widget.message.type == MessageType.azureFeedback && widget.message.metadata != null) {
-      return Padding(
-        padding: EdgeInsets.symmetric(vertical: 6, horizontal: 8),
-        child: AzureFeedbackDisplay(
-          feedback: widget.message.metadata!,
-          originalText: widget.message.metadata?['originalText'] ?? '',
-        ),
-      );
+    if (message.typing) {
+      return _buildTypingIndicator();
     }
 
-    // Handle typing indicator
-    if (widget.message.typing) {
+    // Handle Azure Pronunciation Feedback
+    if (message.type == MessageType.azureFeedback) {
       return Padding(
-        padding: EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+        padding: const EdgeInsets.only(bottom: 16.0),
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             CircleAvatar(
-              radius: 18,
+              backgroundColor: Colors.blue.shade100,
               backgroundImage: AssetImage('images/talkready_bot.png'),
-              backgroundColor: Colors.blueGrey[50],
             ),
-            SizedBox(width: 10),
-            Container(
-              padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.grey[200],
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.0,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.grey),
-                    ),
-                  ),
-                  SizedBox(width: 8),
-                  Text(
-                    widget.message.text,
-                    style: TextStyle(fontSize: 15, color: Colors.grey[600], fontStyle: FontStyle.italic),
-                  ),
-                ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: AzureFeedbackDisplay(
+                feedback: message.metadata ?? {},
+                originalText: message.metadata?['originalText'],
               ),
             ),
           ],
@@ -101,106 +47,172 @@ class _ChatMessageState extends State<ChatMessage> {
       );
     }
 
-    return GestureDetector(
-      onTap: () {
-        setState(() => _showTimestamp = !_showTimestamp);
-      },
-      child: Padding(
-        padding: EdgeInsets.symmetric(vertical: 6, horizontal: 8),
-        child: Column(
-          crossAxisAlignment: widget.message.isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+    // Handle Azure Fluency Feedback (NEW)
+    if (message.type == MessageType.azureFluency) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 16.0),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              mainAxisAlignment: widget.message.isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
-              crossAxisAlignment: CrossAxisAlignment.start,
+            CircleAvatar(
+              backgroundColor: Colors.blue.shade100,
+              backgroundImage: AssetImage('images/talkready_bot.png'),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: AzureFluencyDisplay(
+                feedback: message.metadata ?? {},
+                originalText: message.metadata?['originalText'],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Regular message display
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment:
+            message.isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        children: [
+          if (!message.isUser) ...[
+            CircleAvatar(
+              backgroundColor: Colors.blue.shade100,
+              backgroundImage: AssetImage('images/talkready_bot.png'),
+            ),
+            const SizedBox(width: 12),
+          ],
+          Flexible(
+            child: Column(
+              crossAxisAlignment: message.isUser
+                  ? CrossAxisAlignment.end
+                  : CrossAxisAlignment.start,
               children: [
-                if (!widget.message.isUser) ...[
-                  CircleAvatar(
-                    radius: 18,
-                    backgroundImage: AssetImage('images/talkready_bot.png'),
-                    backgroundColor: Colors.blueGrey[50],
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
                   ),
-                  SizedBox(width: 10),
-                ],
-                Flexible(
-                  child: Container(
-                    constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
-                    margin: EdgeInsets.only(
-                      top: widget.message.isUser ? 2 : 4,
-                      bottom: 2,
-                    ),
-                    padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: widget.message.isUser
-                          ? Color.fromARGB(255, 30, 122, 198).withOpacity(0.15)
-                          : Colors.white,
-                      borderRadius: BorderRadius.only(
-                        topLeft: Radius.circular(16),
-                        topRight: Radius.circular(16),
-                        bottomLeft: widget.message.isUser ? Radius.circular(16) : Radius.circular(4),
-                        bottomRight: widget.message.isUser ? Radius.circular(4) : Radius.circular(16),
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.grey.withOpacity(0.1),
-                          blurRadius: 3,
-                          offset: Offset(0, 1),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.message.text,
-                          style: TextStyle(fontSize: 15, color: Colors.black87),
-                        ),
-                        if (widget.message.isUser && widget.message.audioPath != null && widget.onPlayAudio != null) ...[
-                          SizedBox(height: 8),
-                          IconButton(
-                            icon: Icon(
-                              widget.isPlaying ? Icons.stop : Icons.play_arrow,
-                              color: Color.fromARGB(255, 30, 122, 198), // Changed to match message bubble color
-                            ),
-                            onPressed: widget.onPlayAudio,
-                            tooltip: widget.isPlaying ? 'Stop playback' : 'Play your recording',
-                          ),
-                        ],
-                      ],
+                  decoration: BoxDecoration(
+                    color: message.isUser
+                        ? const Color.fromARGB(255, 41, 115, 178)
+                        : Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Text(
+                    message.text,
+                    style: TextStyle(
+                      fontSize: 15,
+                      color: message.isUser ? Colors.white : Colors.black87,
                     ),
                   ),
                 ),
-                if (widget.message.isUser) ...[
-                  SizedBox(width: 10),
-                  CircleAvatar(
-                    radius: 18,
-                    backgroundColor: Colors.grey.shade300,
-                    backgroundImage: widget.userProfileImage,
-                    child: widget.userProfileImage == null
-                        ? Text(
-                            widget.message.text.isNotEmpty ? widget.message.text[0].toUpperCase() : 'U',
-                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                          )
-                        : null,
+                if (message.isUser && message.audioPath != null && onPlayAudio != null) ...[
+                  const SizedBox(height: 8),
+                  GestureDetector(
+                    onTap: isPlaying ? null : onPlayAudio,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: isPlaying ? Colors.grey.shade300 : Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isPlaying ? Colors.grey.shade400 : Colors.blue.shade300,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            isPlaying ? Icons.volume_up : Icons.play_arrow,
+                            size: 16,
+                            color: isPlaying ? Colors.grey.shade600 : Colors.blue.shade700,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            isPlaying ? 'Playing...' : 'Play recording',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isPlaying ? Colors.grey.shade600 : Colors.blue.shade700,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ],
               ],
             ),
-            if (_showTimestamp)
-              Padding(
-                padding: EdgeInsets.only(
-                  top: 4,
-                  left: widget.message.isUser ? 0 : 58,
-                  right: widget.message.isUser ? 58 : 0,
-                ),
-                child: Text(
-                  _formatTimestamp(widget.message.timestamp),
-                  style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
-                ),
-              ),
+          ),
+          if (message.isUser) ...[
+            const SizedBox(width: 12),
+            CircleAvatar(
+              backgroundColor: Colors.grey.shade300,
+              backgroundImage: userProfileImage,
+              child: userProfileImage == null
+                  ? Icon(Icons.person, color: Colors.grey.shade600, size: 20)
+                  : null,
+            ),
           ],
-        ),
+        ],
       ),
+    );
+  }
+
+  Widget _buildTypingIndicator() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            backgroundColor: Colors.blue.shade100,
+            child: Icon(Icons.smart_toy, color: Colors.blue.shade700, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade200,
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildDot(0),
+                const SizedBox(width: 4),
+                _buildDot(1),
+                const SizedBox(width: 4),
+                _buildDot(2),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDot(int index) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.0, end: 1.0),
+      duration: const Duration(milliseconds: 600),
+      builder: (context, value, child) {
+        return Opacity(
+          opacity: (value + index * 0.3) % 1.0,
+          child: Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade600,
+              shape: BoxShape.circle,
+            ),
+          ),
+        );
+      },
     );
   }
 }

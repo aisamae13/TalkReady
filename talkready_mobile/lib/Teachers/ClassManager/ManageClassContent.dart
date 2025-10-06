@@ -10,8 +10,9 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../../notification_service.dart';
 import 'package:intl/intl.dart';
 import 'dart:ui';
-
+import 'package:dio/dio.dart';
 import 'ManageClassStudents.dart';
+import 'package:file_saver/file_saver.dart';
 
 // --- Data Models ---
 class ClassMaterial {
@@ -189,7 +190,7 @@ class _ManageClassContentPageState extends State<ManageClassContentPage>
 
     try {
       final details = await fetchClassDetailsFromService(widget.classId);
-      if (details.trainerId != _currentUser!.uid) {
+      if (details.trainerId != _currentUser.uid) {
         setState(() {
           _error = "You are not authorized to manage content for this class.";
           _isLoading = false;
@@ -239,6 +240,7 @@ Future<void> _notifyStudentsAboutContent({
       message: '$action: $contentTitle',
       className: className,
       link: '/student/class/${widget.classId}/content',
+      type: 'material',
     );
   } catch (e) {
     debugPrint('Failed to send notifications: $e');
@@ -266,30 +268,49 @@ Future<void> _notifyStudentsAboutContent({
   });
 
   try {
-    final uploadData = await uploadClassMaterialFileToStorage(
-      widget.classId,
-      _selectedFile!,
-      _selectedFileName ?? _selectedFile!.path.split('/').last,
-      (progress) => setState(() => _uploadProgress = progress),
-    );
+  final uploadData = await uploadClassMaterialFileToStorage(
+    widget.classId,
+    _selectedFile!,
+    _selectedFileName ?? _selectedFile!.path.split('/').last,
+    (progress) => setState(() => _uploadProgress = progress),
+  );
 
-    final materialMetadata = {
-      'title': _titleController.text.trim(),
-      'description': _descriptionController.text.trim(),
-      'downloadURL': uploadData['downloadURL'],
-      'filePath': uploadData['filePath'],
-      'fileName': uploadData['fileName'],
-      'fileType': uploadData['fileType'],
-      'trainerId': _currentUser!.uid,
-    };
+  final materialMetadata = {
+    'title': _titleController.text.trim(),
+    'description': _descriptionController.text.trim(),
+    'downloadURL': uploadData['downloadURL'],
+    'filePath': uploadData['filePath'],
+    'fileName': uploadData['fileName'],
+    'fileType': uploadData['fileType'],
+    'trainerId': _currentUser.uid,
+  };
 
-    await addClassMaterialMetadataToFirestore(widget.classId, materialMetadata);
+  await addClassMaterialMetadataToFirestore(widget.classId, materialMetadata);
 
-    // Notify students about new material
-    await _notifyStudentsAboutContent(
-      action: 'New material added',
-      contentTitle: _titleController.text.trim(),
-    );
+  // Get trainer's name from Firestore
+  String trainerName = 'Your trainer';
+  try {
+    final trainerDoc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(_currentUser.uid)
+        .get();
+
+    if (trainerDoc.exists) {
+      final trainerData = trainerDoc.data()!;
+      trainerName = '${trainerData['firstName'] ?? ''} ${trainerData['lastName'] ?? ''}'.trim();
+      if (trainerName.isEmpty) {
+        trainerName = trainerData['displayName'] ?? 'Your trainer';
+      }
+    }
+  } catch (e) {
+    debugPrint('Could not fetch trainer name: $e');
+  }
+
+  // Notify students about new material
+  await _notifyStudentsAboutContent(
+    action: 'New material added by $trainerName',
+    contentTitle: _titleController.text.trim(),
+  );
 
     _titleController.clear();
     _descriptionController.clear();
@@ -328,6 +349,211 @@ Future<void> _notifyStudentsAboutContent({
   }
 }
 
+Future<void> _handleDownloadMaterial(ClassMaterial material) async {
+  double downloadProgress = 0.0;
+  bool isDownloading = false;
+
+  try {
+    // Show downloading dialog with progress
+    if (mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext dialogContext) {
+          return StatefulBuilder(
+            builder: (context, setDialogState) {
+              return AlertDialog(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                title: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade100,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        Icons.download,
+                        color: Colors.blue.shade700,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'Downloading',
+                        style: TextStyle(fontSize: 18),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      material.fileName,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 24),
+                    Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        SizedBox(
+                          width: 80,
+                          height: 80,
+                          child: CircularProgressIndicator(
+                            value: isDownloading ? downloadProgress : null,
+                            strokeWidth: 6,
+                            backgroundColor: Colors.grey.shade200,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.blue.shade600,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          isDownloading
+                              ? '${(downloadProgress * 100).toStringAsFixed(0)}%'
+                              : '...',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue.shade700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      isDownloading
+                          ? 'Downloading file...'
+                          : 'Preparing download...',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      );
+    }
+
+    // Download file to memory using Dio
+    final dio = Dio();
+    final response = await dio.get(
+      material.downloadURL,
+      options: Options(responseType: ResponseType.bytes),
+      onReceiveProgress: (received, total) {
+        if (total != -1 && mounted) {
+          final progress = received / total;
+          // Update the dialog progress
+          if (Navigator.of(context).canPop()) {
+            // Find and update the dialog
+            final dialogContext = context;
+            if (dialogContext.mounted) {
+              // Use setState if we stored the setDialogState callback
+              downloadProgress = progress;
+              isDownloading = true;
+              // Force rebuild by popping and showing updated dialog
+              // Or use a better state management approach
+            }
+          }
+          debugPrint('Download progress: ${(progress * 100).toStringAsFixed(0)}%');
+        }
+      },
+    );
+
+    // Close downloading dialog
+    if (mounted && Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+
+    // Save file with system dialog
+    await FileSaver.instance.saveAs(
+      name: material.fileName,
+      bytes: response.data,
+      fileExtension: material.fileName.split('.').last,
+      mimeType: MimeType.other,
+    );
+
+    // Show success message
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Download complete!',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Saved: ${material.fileName}',
+                      style: const TextStyle(fontSize: 11),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 4),
+          action: SnackBarAction(
+            label: 'OK',
+            textColor: Colors.white,
+            onPressed: () {},
+          ),
+        ),
+      );
+    }
+  } catch (e) {
+    // Close downloading dialog if still open
+    if (mounted && Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.error_outline, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text('Download failed: ${e.toString()}'),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
+    debugPrint('Download error: $e');
+  }
+}
+
 Future<void> _handleDeleteMaterial(ClassMaterial material) async {
   bool confirm = await showDialog(
     context: context,
@@ -338,15 +564,34 @@ Future<void> _handleDeleteMaterial(ClassMaterial material) async {
 
   setState(() => _isLoading = true);
   _error = null;
-  try {
-    await deleteClassMaterialFileFromStorage(material.filePath);
-    await deleteClassMaterialMetadataFromFirestore(widget.classId, material.id);
+ try {
+  await deleteClassMaterialFileFromStorage(material.filePath);
+  await deleteClassMaterialMetadataFromFirestore(widget.classId, material.id);
 
-    // Notify students about deletion
-    await _notifyStudentsAboutContent(
-      action: 'Material removed',
-      contentTitle: material.title,
-    );
+  // Get trainer's name from Firestore
+  String trainerName = 'Your trainer';
+  try {
+    final trainerDoc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(_currentUser!.uid)
+        .get();
+
+    if (trainerDoc.exists) {
+      final trainerData = trainerDoc.data()!;
+      trainerName = '${trainerData['firstName'] ?? ''} ${trainerData['lastName'] ?? ''}'.trim();
+      if (trainerName.isEmpty) {
+        trainerName = trainerData['displayName'] ?? 'Your trainer';
+      }
+    }
+  } catch (e) {
+    debugPrint('Could not fetch trainer name: $e');
+  }
+
+  // Notify students about deletion
+  await _notifyStudentsAboutContent(
+    action: 'Material removed by $trainerName',
+    contentTitle: material.title,
+  );
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -377,120 +622,381 @@ Future<void> _showUpdateMaterialDialog(ClassMaterial material) async {
   final titleController = TextEditingController(text: material.title);
   final descriptionController = TextEditingController(text: material.description ?? '');
 
+  // State variables for the new file inside the dialog
+  File? newSelectedFile;
+  String? newSelectedFileName;
+  bool isUpdating = false;
+
   showDialog(
     context: context,
+    barrierDismissible: false,
     builder: (BuildContext dialogContext) {
-      return AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: const Color(0xFF8B5CF6).withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                Icons.edit,
-                color: Color(0xFF8B5CF6),
-                size: 24,
-              ),
-            ),
-            const SizedBox(width: 12),
-            const Text('Update Material'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: titleController,
-              decoration: InputDecoration(
-                labelText: 'Material Title *',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: descriptionController,
-              decoration: InputDecoration(
-                labelText: 'Description',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              maxLines: 3,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              if (titleController.text.trim().isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Please enter a title'),
-                    backgroundColor: Colors.orange,
+      return StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF8B5CF6).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                );
-                return;
-              }
+                  child: const Icon(
+                    Icons.edit,
+                    color: Color(0xFF8B5CF6),
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Update Material',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Title field
+                  TextField(
+                    controller: titleController,
+                    enabled: !isUpdating,
+                    decoration: InputDecoration(
+                      labelText: 'Material Title *',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      prefixIcon: const Icon(Icons.title),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
 
-              Navigator.of(dialogContext).pop();
+                  // Description field
+                  TextField(
+                    controller: descriptionController,
+                    enabled: !isUpdating,
+                    decoration: InputDecoration(
+                      labelText: 'Description',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      prefixIcon: const Icon(Icons.description),
+                    ),
+                    maxLines: 3,
+                  ),
+                  const SizedBox(height: 16),
 
-              try {
-                await FirebaseFirestore.instance
-                    .collection('classMaterials')
-                    .doc(material.id)
-                    .update({
-                  'title': titleController.text.trim(),
-                  'description': descriptionController.text.trim(),
-                  'updatedAt': FieldValue.serverTimestamp(),
-                });
+                  // Current file section
+                  const Text(
+                    'Current File:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: Color(0xFF1E293B),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.blue.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade100,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: FaIcon(
+                            _getFileIcon(material.fileName),
+                            color: Colors.blue.shade700,
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                material.fileName,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Uploaded: ${_formatTimestamp(material.createdAt)}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey.shade700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: Icon(
+                            Icons.download,
+                            color: Colors.blue.shade700,
+                          ),
+                          onPressed: isUpdating
+                              ? null
+                              : () {
+                                  Navigator.of(dialogContext).pop();
+                                  _handleDownloadMaterial(material);
+                                },
+                          tooltip: 'Download current file',
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
 
-                // Notify students about update
-                await _notifyStudentsAboutContent(
-                  action: 'Material updated',
-                  contentTitle: titleController.text.trim(),
-                );
+                  // Replace file section
+                  const Text(
+                    'Replace File (Optional):',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: Color(0xFF1E293B),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: newSelectedFileName != null
+                            ? Colors.green.shade300
+                            : Colors.grey.shade300,
+                      ),
+                      color: newSelectedFileName != null
+                          ? Colors.green.shade50
+                          : Colors.grey.shade50,
+                    ),
+                    child: ListTile(
+                      leading: Icon(
+                        Icons.attach_file,
+                        color: newSelectedFileName != null
+                            ? Colors.green.shade700
+                            : const Color(0xFF8B5CF6),
+                      ),
+                      title: Text(
+                        newSelectedFileName ?? 'Select new file to replace',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: newSelectedFileName != null
+                              ? Colors.black87
+                              : Colors.grey.shade600,
+                          fontWeight: newSelectedFileName != null
+                              ? FontWeight.w600
+                              : FontWeight.normal,
+                        ),
+                      ),
+                      subtitle: Text(
+                        newSelectedFileName != null
+                            ? 'Tap to change or tap X to cancel'
+                            : 'Current file will be kept if not selected',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      trailing: newSelectedFileName != null
+                          ? IconButton(
+                              icon: const Icon(Icons.close, color: Colors.red),
+                              onPressed: isUpdating
+                                  ? null
+                                  : () {
+                                      setDialogState(() {
+                                        newSelectedFile = null;
+                                        newSelectedFileName = null;
+                                      });
+                                    },
+                              tooltip: 'Cancel file replacement',
+                            )
+                          : const Icon(Icons.upload_file),
+                      onTap: isUpdating
+                          ? null
+                          : () async {
+                              FilePickerResult? result =
+                                  await FilePicker.platform.pickFiles();
+                              if (result != null) {
+                                setDialogState(() {
+                                  newSelectedFile = File(result.files.single.path!);
+                                  newSelectedFileName = result.files.single.name;
+                                });
+                              }
+                            },
+                    ),
+                  ),
 
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Row(
+                  if (isUpdating)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 16.0),
+                      child: Column(
                         children: [
-                          Icon(Icons.check_circle, color: Colors.white),
-                          SizedBox(width: 12),
-                          Text('Material updated and students notified!'),
+                          LinearProgressIndicator(),
+                          SizedBox(height: 8),
+                          Text(
+                            'Updating material...',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
+                            ),
+                          ),
                         ],
                       ),
-                      backgroundColor: Colors.blue,
-                      behavior: SnackBarBehavior.floating,
                     ),
-                  );
-                }
-
-                await _fetchClassData(showLoading: false);
-              } catch (e) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Update failed: $e'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF8B5CF6),
-              foregroundColor: Colors.white,
+                ],
+              ),
             ),
-            child: const Text('Update'),
-          ),
-        ],
+            actions: [
+              TextButton(
+                onPressed: isUpdating ? null : () => Navigator.of(dialogContext).pop(),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: isUpdating
+                    ? null
+                    : () async {
+                        if (titleController.text.trim().isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Title cannot be empty.'),
+                              backgroundColor: Colors.orange,
+                            ),
+                          );
+                          return;
+                        }
+
+                        setDialogState(() => isUpdating = true);
+
+                        try {
+                          Map<String, dynamic> dataToUpdate = {
+                            'title': titleController.text.trim(),
+                            'description': descriptionController.text.trim(),
+                            'updatedAt': FieldValue.serverTimestamp(),
+                          };
+
+                          // If a new file was selected, upload it
+                          if (newSelectedFile != null) {
+                            final newUploadData = await uploadClassMaterialFileToStorage(
+                              widget.classId,
+                              newSelectedFile!,
+                              newSelectedFileName!,
+                              (progress) {},
+                            );
+
+                            dataToUpdate.addAll({
+                              'downloadURL': newUploadData['downloadURL'],
+                              'filePath': newUploadData['filePath'],
+                              'fileName': newUploadData['fileName'],
+                              'fileType': newUploadData['fileType'],
+                            });
+                          }
+
+                          await FirebaseFirestore.instance
+                              .collection('classMaterials')
+                              .doc(material.id)
+                              .update(dataToUpdate);
+
+                          // Delete old file ONLY if new file was uploaded
+                          if (newSelectedFile != null) {
+                            try {
+                              await deleteClassMaterialFileFromStorage(material.filePath);
+                            } catch (e) {
+                              debugPrint('Warning: Could not delete old file: $e');
+                            }
+                          }
+
+                          Navigator.of(dialogContext).pop();
+
+                          // Get trainer's name from Firestore
+                          String trainerName = 'Your trainer';
+                          try {
+                            final trainerDoc = await FirebaseFirestore.instance
+                                .collection('users')
+                                .doc(_currentUser!.uid)
+                                .get();
+
+                            if (trainerDoc.exists) {
+                              final trainerData = trainerDoc.data()!;
+                              trainerName = '${trainerData['firstName'] ?? ''} ${trainerData['lastName'] ?? ''}'.trim();
+                              if (trainerName.isEmpty) {
+                                trainerName = trainerData['displayName'] ?? 'Your trainer';
+                              }
+                            }
+                          } catch (e) {
+                            debugPrint('Could not fetch trainer name: $e');
+                          }
+
+                          await _notifyStudentsAboutContent(
+                            action: 'Material updated by $trainerName',
+                            contentTitle: titleController.text.trim(),
+                          );
+
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Row(
+                                  children: [
+                                    Icon(Icons.check_circle, color: Colors.white),
+                                    SizedBox(width: 12),
+                                    Text('Material updated successfully!'),
+                                  ],
+                                ),
+                                backgroundColor: Colors.blue,
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                          }
+
+                          await _fetchClassData(showLoading: false);
+                        } catch (e) {
+                          setDialogState(() => isUpdating = false);
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Update failed: $e'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        }
+                      },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF8B5CF6),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: isUpdating
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Text('Update'),
+              ),
+            ],
+          );
+        },
       );
     },
   );
@@ -1398,9 +1904,7 @@ Future<void> _showUpdateMaterialDialog(ClassMaterial material) async {
                         iconColor: Colors.blue.shade600,
                         icon: FontAwesomeIcons.download,
                         tooltip: 'Download',
-                        onTap: () {
-                          // TODO
-                        },
+                        onTap: () => _handleDownloadMaterial(material),
                       ),
                       const SizedBox(height: 6),
                       _MaterialIconButton(

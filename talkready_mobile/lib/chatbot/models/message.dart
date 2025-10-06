@@ -1,3 +1,4 @@
+// Updated message.dart with fluency message type
 class Message {
   final String id;
   final String text;
@@ -86,6 +87,7 @@ class Message {
 enum MessageType {
   text,
   audio,
-  azureFeedback,
+  azureFeedback,      // For pronunciation feedback
+  azureFluency,       // NEW: For fluency feedback
   systemIntermediate,
 }

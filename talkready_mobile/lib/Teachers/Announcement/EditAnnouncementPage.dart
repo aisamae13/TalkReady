@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import '../../notification_service.dart';
 
 Future<Map<String, dynamic>?> getAnnouncementById(String announcementId) async {
   try {
@@ -23,6 +24,9 @@ Future<void> updateClassAnnouncement({
   required String announcementId,
   required String title,
   required String content,
+  required String trainerId,
+  required String classId,
+  String? className,
 }) async {
   try {
     await FirebaseFirestore.instance
@@ -33,6 +37,33 @@ Future<void> updateClassAnnouncement({
       'content': content,
       'updatedAt': FieldValue.serverTimestamp(),
     });
+
+    // Get trainer's name
+    String trainerName = 'Your trainer';
+    try {
+      final trainerDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(trainerId)
+          .get();
+
+      if (trainerDoc.exists) {
+        final trainerData = trainerDoc.data()!;
+        trainerName = '${trainerData['firstName'] ?? ''} ${trainerData['lastName'] ?? ''}'.trim();
+        if (trainerName.isEmpty) {
+          trainerName = trainerData['displayName'] ?? 'Your trainer';
+        }
+      }
+    } catch (e) {
+      debugPrint('Could not fetch trainer name: $e');
+    }
+
+    // Notify students about the update
+    await NotificationService.createNotificationsForStudents(
+      classId: classId,
+      message: '$trainerName updated an announcement: $title',
+      className: className,
+      link: '/student/class/$classId#announcements',
+    );
   } catch (e) {
     throw Exception("Failed to update announcement: ${e.toString()}");
   }
@@ -153,27 +184,30 @@ class _EditAnnouncementPageState extends State<EditAnnouncementPage>
     }
   }
 
-  Future<void> _handleUpdateAnnouncement() async {
-    if (_currentUser == null) {
-      setState(() {
-        _updateError = "User not logged in.";
-      });
-      return;
-    }
+Future<void> _handleUpdateAnnouncement() async {
+  if (_currentUser == null) {
+    setState(() {
+      _updateError = "User not logged in.";
+    });
+    return;
+  }
 
-    if (_formKey.currentState?.validate() ?? false) {
-      setState(() {
-        _isUpdating = true;
-        _updateError = null;
-        _updateSuccess = null;
-      });
+  if (_formKey.currentState?.validate() ?? false) {
+    setState(() {
+      _isUpdating = true;
+      _updateError = null;
+      _updateSuccess = null;
+    });
 
-      try {
-        await updateClassAnnouncement(
-          announcementId: widget.announcementId,
-          title: _titleController.text.trim(),
-          content: _contentController.text.trim(),
-        );
+    try {
+      await updateClassAnnouncement(
+        announcementId: widget.announcementId,
+        title: _titleController.text.trim(),
+        content: _contentController.text.trim(),
+        trainerId: _currentUser.uid,
+        classId: _announcement!['classId'], // Add this
+        className: _announcement!['className'], // Add this
+      );
 
         if (mounted) {
           setState(() {

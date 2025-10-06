@@ -6,6 +6,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:logger/logger.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import '../../notification_service.dart';
 
 class ReviewSpeakingSubmissionPage extends StatefulWidget {
   final String submissionId;
@@ -268,8 +269,55 @@ Future<void> _publishFeedback() async {
         .doc(widget.submissionId)
         .update(feedbackData);
 
+    // Get trainer's name from Firestore
+    String trainerName = 'Your trainer';
+    try {
+      final trainerDoc = await _firestore
+          .collection('users')
+          .doc(_auth.currentUser!.uid)
+          .get();
+
+      if (trainerDoc.exists) {
+        final trainerData = trainerDoc.data()!;
+        trainerName = '${trainerData['firstName'] ?? ''} ${trainerData['lastName'] ?? ''}'.trim();
+        if (trainerName.isEmpty) {
+          trainerName = trainerData['displayName'] ?? 'Your trainer';
+        }
+      }
+    } catch (e) {
+      _logger.e('Could not fetch trainer name: $e');
+    }
+
+    // Get class name for notification
+    String? className;
+    try {
+      if (_assessment!['classId'] != null) {
+        final classDoc = await _firestore
+            .collection('trainerClass')
+            .doc(_assessment!['classId'])
+            .get();
+        className = classDoc.data()?['className'] as String?;
+      }
+    } catch (e) {
+      _logger.e('Could not fetch class name: $e');
+    }
+
+    // Notify the student about the feedback
+    try {
+      final studentId = _submission!['studentId'];
+      await NotificationService.notifyUser(
+        userId: studentId,
+        message: '$trainerName reviewed your speaking assessment: ${_assessment!['title']}',
+        className: className,
+        link: '/student/class/${_assessment!['classId']}',
+      );
+    } catch (e) {
+      _logger.e('Failed to send notification to student: $e');
+      // Don't throw - notification failure shouldn't stop feedback publishing
+    }
+
     if (mounted) {
-      _showSuccessSnackBar('Feedback published successfully!');
+      _showSuccessSnackBar('Feedback published and student notified!');
       Navigator.pop(context);
     }
   } catch (e) {

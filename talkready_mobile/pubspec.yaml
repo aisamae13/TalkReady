@@ -72,7 +72,8 @@ dependencies:
   pdf: ^3.11.3
   printing: ^5.14.2
   flutter_spinkit: ^5.2.0
-
+  dio: ^5.9.0
+  file_saver: ^0.3.1
   # Optional: For advanced audio processing (if needed for Azure Speech API)
   # Note: Azure Speech API may require a custom package or platform-specific integration
 

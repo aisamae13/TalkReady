@@ -102,16 +102,21 @@ Future<DocumentReference> enrollStudentInClassService(String classId, String stu
     'trainerId': trainerId,
     'enrolledAt': FieldValue.serverTimestamp(),
   });
+
+  // Only update the student array - don't touch studentCount
   await FirebaseFirestore.instance.collection('trainerClass').doc(classId).update({
-    'student': FieldValue.arrayUnion([studentId])
+    'student': FieldValue.arrayUnion([studentId]),
   });
+
   return enrollmentRef;
 }
 
-Future<void> removeStudentFromClassService(String enrollmentId, String classId) async {
+Future<void> removeStudentFromClassService(String enrollmentId, String classId, String studentId) async {
   await FirebaseFirestore.instance.collection('enrollments').doc(enrollmentId).delete();
+
+  // Remove from student array - don't touch studentCount
   await FirebaseFirestore.instance.collection('trainerClass').doc(classId).update({
-    'studentCount': FieldValue.increment(-1),
+    'student': FieldValue.arrayRemove([studentId]),
   });
 }
 
@@ -263,9 +268,26 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> with 
       _currentUser.uid,
     );
 
-    // Send notification to the student about enrollment
-    final trainerName = _currentUser!.displayName ?? 'Your trainer';
+    // Get trainer's name from Firestore
+    String trainerName = 'Your trainer';
+    try {
+      final trainerDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(_currentUser!.uid)
+          .get();
 
+      if (trainerDoc.exists) {
+        final trainerData = trainerDoc.data()!;
+        trainerName = '${trainerData['firstName'] ?? ''} ${trainerData['lastName'] ?? ''}'.trim();
+        if (trainerName.isEmpty) {
+          trainerName = trainerData['displayName'] ?? 'Your trainer';
+        }
+      }
+    } catch (e) {
+      debugPrint('Could not fetch trainer name: $e');
+    }
+
+    // Send notification to the student about enrollment
     await NotificationService.notifyStudentEnrollment(
       studentId: studentToEnroll.uid,
       className: _classDetails!.className,
@@ -297,8 +319,7 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> with 
     if (mounted) setState(() => _enrollingStudentId = null);
   }
 }
-
-  Future<void> _handleRemoveStudent(EnrolledStudent enrollment) async {
+Future<void> _handleRemoveStudent(EnrolledStudent enrollment) async {
   bool confirm = await _showModernConfirmDialog(
     title: 'Remove Student',
     content: 'Are you sure you want to remove ${enrollment.studentName} from the class?',
@@ -314,13 +335,29 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> with 
 
   try {
     // Remove student from class
-    await removeStudentFromClassService(enrollment.id, widget.classId);
+    await removeStudentFromClassService(enrollment.id, widget.classId, enrollment.studentId);
 
-    // Send notification to the student about removal
+    // Get trainer's name from Firestore
+    String trainerName = 'Your trainer';
     if (_classDetails != null && _currentUser != null) {
-      // Get trainer name from Firebase Auth
-      final trainerName = _currentUser!.displayName ?? 'Your trainer';
+      try {
+        final trainerDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(_currentUser!.uid)
+            .get();
 
+        if (trainerDoc.exists) {
+          final trainerData = trainerDoc.data()!;
+          trainerName = '${trainerData['firstName'] ?? ''} ${trainerData['lastName'] ?? ''}'.trim();
+          if (trainerName.isEmpty) {
+            trainerName = trainerData['displayName'] ?? 'Your trainer';
+          }
+        }
+      } catch (e) {
+        debugPrint('Could not fetch trainer name: $e');
+      }
+
+      // Send notification to the student about removal
       await NotificationService.notifyStudentRemoval(
         studentId: enrollment.studentId,
         className: _classDetails!.className,
@@ -349,7 +386,6 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> with 
     if (mounted) setState(() => _removingEnrollmentId = null);
   }
 }
-
   Future<bool> _showModernConfirmDialog({
     required String title,
     required String content,
@@ -1065,7 +1101,7 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> with 
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    "Enrolled Students (${_classDetails?.studentCount ?? _enrolledStudents.length})",
+                    "Enrolled Students (${_enrolledStudents.length})", // Use actual list length
                     style: const TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,

@@ -33,264 +33,273 @@ class _AllNotificationsPageState extends State<AllNotificationsPage> {
     super.dispose();
   }
 
-void _startListeningToNotifications() {
-  if (_uid == null) {
+  void _startListeningToNotifications() {
+    if (_uid == null) {
+      setState(() {
+        _error = "Please log in to view your notifications.";
+        _loading = false;
+      });
+      return;
+    }
+
     setState(() {
-      _error = "Please log in to view your notifications.";
-      _loading = false;
+      _loading = true;
+      _error = null;
     });
-    return;
+
+    _notificationSubscription = FirebaseFirestore.instance
+        .collection('notifications')
+        .where('userId', isEqualTo: _uid)
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .listen(
+      (snapshot) {
+        if (mounted) {
+          setState(() {
+            _notifications = snapshot.docs;
+            _loading = false;
+            _error = null;
+          });
+        }
+      },
+      onError: (error) {
+        if (mounted) {
+          setState(() {
+            _error = "Failed to load notifications. Please try again.";
+            _loading = false;
+          });
+        }
+      },
+    );
   }
-
-  setState(() {
-    _loading = true;
-    _error = null;
-  });
-
-  _notificationSubscription = FirebaseFirestore.instance
-      .collection('notifications')
-      .where('userId', isEqualTo: _uid)
-      .orderBy('createdAt', descending: true)  // Remove the isRead filter
-      .snapshots()
-      .listen(
-    (snapshot) {
-      if (mounted) {
-        setState(() {
-          _notifications = snapshot.docs;
-          _loading = false;
-          _error = null;
-        });
-      }
-    },
-    onError: (error) {
-      if (mounted) {
-        setState(() {
-          _error = "Failed to load notifications. Please try again.";
-          _loading = false;
-        });
-      }
-    },
-  );
-}
 
   Future<void> _refreshNotifications() async {
     _startListeningToNotifications();
   }
 
   Future<void> _handleNotificationTap(DocumentSnapshot notif) async {
-  final data = notif.data() as Map<String, dynamic>;
+    final data = notif.data() as Map<String, dynamic>;
 
-  // Mark as read if unread
-  if (!(data['isRead'] ?? false)) {
-    try {
-      await notif.reference.update({
-        'isRead': true,
-        'readAt': FieldValue.serverTimestamp(),
-      });
-      // The stream will automatically update the UI
-    } catch (e) {
-      // Handle error silently or show a toast
-      debugPrint('Error marking notification as read: $e');
+    // Mark as read if unread
+    if (!(data['isRead'] ?? false)) {
+      try {
+        await notif.reference.update({
+          'isRead': true,
+          'readAt': FieldValue.serverTimestamp(),
+        });
+      } catch (e) {
+        debugPrint('Error marking notification as read: $e');
+      }
     }
-  }
 
-  // Check notification type
-  final notificationType = data['type'] as String?;
+    // Check notification type
+    final notificationType = data['type'] as String?;
 
-  // Handle removal notifications differently - just show a dialog
-  if (notificationType == 'removal') {
-    if (mounted) {
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: Row(
-            children: [
-              Icon(Icons.info_outline, color: Colors.orange.shade700),
-              const SizedBox(width: 12),
-              const Text('Class Removal'),
+    // Handle removal notifications differently
+    if (notificationType == 'removal') {
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(Icons.info_outline, color: Colors.orange.shade700),
+                ),
+                const SizedBox(width: 12),
+                const Text('Class Removal'),
+              ],
+            ),
+            content: Text(
+              data['message'] ?? 'You have been removed from a class.',
+              style: const TextStyle(fontSize: 16),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFF2563EB),
+                ),
+                child: const Text('OK', style: TextStyle(fontSize: 16)),
+              ),
             ],
           ),
-          content: Text(
-            data['message'] ?? 'You have been removed from a class.',
-            style: const TextStyle(fontSize: 16),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text(
-                'OK',
-                style: TextStyle(fontSize: 16),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-    return; // Don't try to navigate
-  }
-
-  // Handle navigation based on link pattern (only if link exists)
-  if (data['link'] != null && data['link'] is String) {
-    final link = data['link'] as String;
-
-    try {
-      // Handle assessment submission review links
-      if (link.contains('/student/submission/') && link.contains('review')) {
-        // Extract submissionId from URL path
-        String submissionId = '';
-        if (link.contains('/student/submission/')) {
-          List<String> parts = link.split('/student/submission/');
-          if (parts.length > 1) {
-            submissionId = parts[1].split('/review').first;
-          }
-        }
-
-        // Extract assessmentId from query parameters
-        String? assessmentId;
-        if (link.contains('assessmentId=')) {
-          assessmentId = link.split('assessmentId=')[1];
-          if (assessmentId.contains('&')) {
-            assessmentId = assessmentId.split('&').first;
-          }
-        }
-
-        if (assessmentId != null && submissionId.isNotEmpty) {
-          debugPrint('Navigating to assessment review with ID: $assessmentId, submission: $submissionId');
-
-          // Navigate to the assessment review page directly
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => AssessmentReviewPage(
-                assessmentId: assessmentId!,
-                submissionId: submissionId,
-              ),
-            ),
-          );
-          return;
-        }
+        );
       }
+      return;
+    }
 
-      // Handle class content links
-      else if (link.contains('/student/class/')) {
-        // Extract classId from the link
-        String classId = '';
-        List<String> parts = link.split('/student/class/');
-        if (parts.length > 1) {
-          classId = parts[1];
+    // Handle navigation based on link pattern
+    if (data['link'] != null && data['link'] is String) {
+      final link = data['link'] as String;
 
-          // Remove any content part or hash fragments
-          if (classId.contains('/content')) {
-            classId = classId.split('/content')[0];
+      try {
+        // Handle assessment submission review links
+        if (link.contains('/student/submission/') && link.contains('review')) {
+          String submissionId = '';
+          if (link.contains('/student/submission/')) {
+            List<String> parts = link.split('/student/submission/');
+            if (parts.length > 1) {
+              submissionId = parts[1].split('/review').first;
+            }
           }
 
-          if (classId.contains('#')) {
-            classId = classId.split('#')[0];
+          String? assessmentId;
+          if (link.contains('assessmentId=')) {
+            assessmentId = link.split('assessmentId=')[1];
+            if (assessmentId.contains('&')) {
+              assessmentId = assessmentId.split('&').first;
+            }
           }
 
-          classId = classId.trim();
+          if (assessmentId != null && submissionId.isNotEmpty) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => AssessmentReviewPage(
+                  assessmentId: assessmentId!,
+                  submissionId: submissionId,
+                ),
+              ),
+            );
+            return;
+          }
         }
 
-        if (classId.isNotEmpty) {
-          debugPrint('Navigating to class content: $classId');
-          // Get class details from Firestore
-          try {
-            final classDoc = await FirebaseFirestore.instance
-                .collection('trainerClass')
-                .doc(classId)
-                .get();
+        // Handle class content links
+        else if (link.contains('/student/class/')) {
+          String classId = '';
+          List<String> parts = link.split('/student/class/');
+          if (parts.length > 1) {
+            classId = parts[1];
 
-            if (classDoc.exists) {
-              final classData = classDoc.data() ?? {};
-              final className = classData['className'] ?? 'Class';
+            if (classId.contains('/content')) {
+              classId = classId.split('/content')[0];
+            }
 
-              // Navigate to the class content page
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => ClassContentPage(
-                    classId: classId,
-                    className: className,
-                    classData: classData,
+            if (classId.contains('#')) {
+              classId = classId.split('#')[0];
+            }
+
+            classId = classId.trim();
+          }
+
+          if (classId.isNotEmpty) {
+            try {
+              final classDoc = await FirebaseFirestore.instance
+                  .collection('trainerClass')
+                  .doc(classId)
+                  .get();
+
+              if (classDoc.exists) {
+                final classData = classDoc.data() ?? {};
+                final className = classData['className'] ?? 'Class';
+
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ClassContentPage(
+                      classId: classId,
+                      className: className,
+                      classData: classData,
+                    ),
                   ),
+                );
+                return;
+              } else {
+                throw Exception('Class not found');
+              }
+            } catch (e) {
+              debugPrint('Error fetching class data: $e');
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Text('Could not find the class. It may have been deleted.'),
+                  backgroundColor: Colors.red.shade600,
+                  behavior: SnackBarBehavior.floating,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
               );
-              return;
-            } else {
-              throw Exception('Class not found');
             }
+          }
+        }
+
+        // Fallback navigation
+        else {
+          try {
+            Navigator.pushNamed(context, link);
           } catch (e) {
-            debugPrint('Error fetching class data: $e');
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Could not find the class. It may have been deleted.'),
-                backgroundColor: Colors.red,
-              ),
-            );
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Text('This notification has no associated page'),
+                  backgroundColor: Colors.grey.shade600,
+                  behavior: SnackBarBehavior.floating,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              );
+            }
           }
         }
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Could not open this notification content'),
+            backgroundColor: Colors.red.shade600,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
       }
-
-      // Fallback to standard route navigation if specific patterns don't match
-      else {
-        // Try to navigate using named route
-        try {
-          Navigator.pushNamed(context, link);
-        } catch (e) {
-          debugPrint('Navigation error: $e');
-          // If navigation fails, just show a message
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('This notification has no associated page'),
-                backgroundColor: Colors.grey,
-              ),
-            );
-          }
-        }
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(data['message'] ?? 'Notification'),
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
       }
-
-    } catch (e) {
-      debugPrint('Error navigating from notification: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not open this notification content'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  } else {
-    // No link provided - just show a message
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(data['message'] ?? 'Notification'),
-          duration: const Duration(seconds: 3),
-        ),
-      );
     }
   }
-}
+
   Future<void> _deleteNotification(DocumentSnapshot notif) async {
     try {
       await notif.reference.delete();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Notification deleted'),
-            duration: Duration(seconds: 2),
+          SnackBar(
+            content: const Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white, size: 20),
+                SizedBox(width: 8),
+                Text('Notification deleted'),
+              ],
+            ),
+            duration: const Duration(seconds: 2),
+            backgroundColor: Colors.green.shade600,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to delete notification'),
-            backgroundColor: Colors.red,
+          SnackBar(
+            content: const Text('Failed to delete notification'),
+            backgroundColor: Colors.red.shade600,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
         );
       }
@@ -316,15 +325,28 @@ void _startListeningToNotifications() {
       await batch.commit();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('All notifications marked as read')),
+          SnackBar(
+            content: const Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white, size: 20),
+                SizedBox(width: 8),
+                Text('All notifications marked as read'),
+              ],
+            ),
+            backgroundColor: Colors.green.shade600,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to mark notifications as read'),
-            backgroundColor: Colors.red,
+          SnackBar(
+            content: const Text('Failed to mark notifications as read'),
+            backgroundColor: Colors.red.shade600,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
         );
       }
@@ -361,15 +383,46 @@ void _startListeningToNotifications() {
     }
   }
 
+  IconData _getNotificationIcon(String? type) {
+    switch (type) {
+      case 'material':
+        return Icons.folder_outlined;
+      case 'assessment':
+        return Icons.assignment_outlined;
+      case 'enrollment':
+        return Icons.person_add_outlined;
+      case 'removal':
+        return Icons.person_remove_outlined;
+      default:
+        return Icons.notifications_outlined;
+    }
+  }
+
+  Color _getNotificationColor(String? type) {
+    switch (type) {
+      case 'material':
+        return const Color(0xFF14B8A6); // Teal
+      case 'assessment':
+        return const Color(0xFF8B5CF6); // Purple
+      case 'enrollment':
+        return const Color(0xFF10B981); // Green
+      case 'removal':
+        return const Color(0xFFF59E0B); // Orange
+      default:
+        return const Color(0xFF2563EB); // Blue
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFFF8FAFC),
       appBar: _buildAppBar(),
       body: RefreshIndicator(
         onRefresh: _refreshNotifications,
+        color: const Color(0xFF2563EB),
         child: LayoutBuilder(
           builder: (context, constraints) {
-            // Responsive design
             final isTablet = constraints.maxWidth > 600;
             final horizontalPadding = isTablet ? 32.0 : 16.0;
             final maxWidth = isTablet ? 800.0 : double.infinity;
@@ -391,27 +444,81 @@ void _startListeningToNotifications() {
 
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
-      title: const Text('All Notifications'),
+      elevation: 0,
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.white,
+      title: const Text(
+        'Notifications',
+        style: TextStyle(
+          color: Color(0xFF1E293B),
+          fontWeight: FontWeight.bold,
+          fontSize: 20,
+        ),
+      ),
       leading: IconButton(
-        icon: const Icon(Icons.arrow_back),
+        icon: const Icon(Icons.arrow_back, color: Color(0xFF1E293B)),
         onPressed: () => Navigator.pop(context),
       ),
       actions: [
         if (_unreadCount > 0)
-          TextButton(
-            onPressed: _markAllAsRead,
-            child: Text(
-              'Mark All Read',
-              style: TextStyle(color: Theme.of(context).primaryColor),
+          Container(
+            margin: const EdgeInsets.only(right: 8),
+            child: IconButton(
+              icon: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2563EB).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.done_all,
+                  color: Color(0xFF2563EB),
+                  size: 20,
+                ),
+              ),
+              onPressed: _markAllAsRead,
+              tooltip: 'Mark all as read',
             ),
           ),
       ],
+      bottom: PreferredSize(
+        preferredSize: const Size.fromHeight(1),
+        child: Container(
+          height: 1,
+          color: const Color(0xFFE2E8F0),
+        ),
+      ),
     );
   }
 
   Widget _buildContent(bool isTablet) {
     if (_loading && _notifications.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2563EB).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const CircularProgressIndicator(
+                strokeWidth: 3,
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF2563EB)),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Loading notifications...',
+              style: TextStyle(
+                color: Color(0xFF64748B),
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
+      );
     }
 
     if (_error != null) {
@@ -429,34 +536,50 @@ void _startListeningToNotifications() {
     return Center(
       child: Container(
         margin: EdgeInsets.all(isTablet ? 32 : 16),
-        padding: EdgeInsets.all(isTablet ? 24 : 16),
+        padding: EdgeInsets.all(isTablet ? 24 : 20),
         decoration: BoxDecoration(
-          color: Colors.red[50],
-          border: Border(left: BorderSide(color: Colors.red, width: 4)),
-          borderRadius: BorderRadius.circular(12),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.red.shade200, width: 1),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.red.withOpacity(0.1),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.error, color: Colors.red, size: isTablet ? 32 : 24),
-            SizedBox(width: isTablet ? 16 : 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Error',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: isTablet ? 18 : 16,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    error,
-                    style: TextStyle(fontSize: isTablet ? 16 : 14),
-                  ),
-                ],
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                Icons.error_outline,
+                color: Colors.red.shade600,
+                size: isTablet ? 48 : 40,
+              ),
+            ),
+            SizedBox(height: isTablet ? 16 : 12),
+            Text(
+              'Error',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: isTablet ? 20 : 18,
+                color: const Color(0xFF1E293B),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              error,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: isTablet ? 16 : 14,
+                color: const Color(0xFF64748B),
               ),
             ),
           ],
@@ -470,25 +593,33 @@ void _startListeningToNotifications() {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.mark_email_read_outlined,
-            size: isTablet ? 80 : 60,
-            color: Colors.grey,
+          Container(
+            padding: EdgeInsets.all(isTablet ? 32 : 24),
+            decoration: BoxDecoration(
+              color: const Color(0xFF2563EB).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(100),
+            ),
+            child: Icon(
+              Icons.notifications_none_outlined,
+              size: isTablet ? 80 : 64,
+              color: const Color(0xFF2563EB),
+            ),
           ),
-          SizedBox(height: isTablet ? 24 : 16),
+          SizedBox(height: isTablet ? 24 : 20),
           Text(
-            'No Notifications Yet',
+            'No Notifications',
             style: TextStyle(
-              fontSize: isTablet ? 28 : 22,
+              fontSize: isTablet ? 28 : 24,
               fontWeight: FontWeight.bold,
+              color: const Color(0xFF1E293B),
             ),
           ),
           SizedBox(height: isTablet ? 12 : 8),
           Text(
-            'You currently have no notifications.',
+            'You\'re all caught up!',
             style: TextStyle(
               fontSize: isTablet ? 18 : 16,
-              color: Colors.grey,
+              color: const Color(0xFF64748B),
             ),
           ),
         ],
@@ -500,7 +631,7 @@ void _startListeningToNotifications() {
     return ListView.separated(
       padding: EdgeInsets.symmetric(vertical: isTablet ? 24 : 16),
       itemCount: _notifications.length,
-      separatorBuilder: (_, __) => SizedBox(height: isTablet ? 16 : 12),
+      separatorBuilder: (_, __) => SizedBox(height: isTablet ? 12 : 10),
       itemBuilder: (context, index) {
         final notification = _notifications[index];
         return _buildNotificationCard(notification, isTablet);
@@ -515,6 +646,9 @@ void _startListeningToNotifications() {
     final className = data['className'];
     final createdAt = data['createdAt'] as Timestamp?;
     final dateStr = _formatDate(createdAt);
+    final type = data['type'] as String?;
+    final icon = _getNotificationIcon(type);
+    final iconColor = _getNotificationColor(type);
 
     return Dismissible(
       key: Key(notification.id),
@@ -522,101 +656,136 @@ void _startListeningToNotifications() {
       onDismissed: (_) => _deleteNotification(notification),
       background: Container(
         alignment: Alignment.centerRight,
-        padding: EdgeInsets.only(right: isTablet ? 24 : 16),
+        padding: EdgeInsets.only(right: isTablet ? 24 : 20),
         decoration: BoxDecoration(
-          color: Colors.red,
-          borderRadius: BorderRadius.circular(12),
+          gradient: LinearGradient(
+            colors: [Colors.red.shade400, Colors.red.shade600],
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+          ),
+          borderRadius: BorderRadius.circular(16),
         ),
         child: Icon(
-          Icons.delete,
+          Icons.delete_outline,
           color: Colors.white,
-          size: isTablet ? 32 : 24,
+          size: isTablet ? 32 : 28,
         ),
       ),
       child: GestureDetector(
         onTap: () => _handleNotificationTap(notification),
         child: Container(
-          padding: EdgeInsets.all(isTablet ? 20 : 16),
           decoration: BoxDecoration(
-            color: isRead ? Colors.white : Colors.blue[50],
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: isRead ? Colors.grey[200]! : Colors.blue[200]!,
-              width: 1.5,
+              color: isRead ? const Color(0xFFE2E8F0) : const Color(0xFF2563EB).withOpacity(0.3),
+              width: isRead ? 1 : 2,
             ),
-            borderRadius: BorderRadius.circular(12),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.03),
-                blurRadius: 6,
-                offset: const Offset(0, 3),
+                color: isRead
+                    ? Colors.black.withOpacity(0.03)
+                    : const Color(0xFF2563EB).withOpacity(0.08),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
               ),
             ],
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      message,
-                      style: TextStyle(
-                        fontSize: isTablet ? 18 : 16,
-                        color: isRead ? Colors.black87 : Colors.blue[900],
-                        fontWeight: isRead ? FontWeight.normal : FontWeight.bold,
-                        height: 1.4,
-                      ),
-                    ),
+              // Icon section
+              Container(
+                width: isTablet ? 80 : 72,
+                padding: EdgeInsets.all(isTablet ? 20 : 16),
+                decoration: BoxDecoration(
+                  color: iconColor.withOpacity(0.1),
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(16),
+                    bottomLeft: Radius.circular(16),
                   ),
-                  if (!isRead) ...[
-                    SizedBox(width: isTablet ? 12 : 8),
-                    Container(
-                      width: isTablet ? 12 : 10,
-                      height: isTablet ? 12 : 10,
-                      decoration: const BoxDecoration(
-                        color: Colors.blue,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ],
-                ],
+                ),
+                child: Icon(
+                  icon,
+                  color: iconColor,
+                  size: isTablet ? 32 : 28,
+                ),
               ),
-              SizedBox(height: isTablet ? 12 : 10),
-              Row(
-                children: [
-                  Icon(
-                    Icons.calendar_today,
-                    size: isTablet ? 18 : 16,
-                    color: Colors.grey,
-                  ),
-                  SizedBox(width: isTablet ? 8 : 6),
-                  Text(
-                    dateStr,
-                    style: TextStyle(
-                      fontSize: isTablet ? 15 : 13,
-                      color: Colors.grey,
-                    ),
-                  ),
-                  if (className != null) ...[
-                    SizedBox(width: isTablet ? 16 : 12),
-                    Container(
-                      height: isTablet ? 20 : 18,
-                      width: 1,
-                      color: Colors.grey[300],
-                    ),
-                    SizedBox(width: isTablet ? 12 : 8),
-                    Flexible(
-                      child: Text(
-                        'Class: $className',
-                        style: TextStyle(
-                          fontSize: isTablet ? 15 : 13,
-                          color: Colors.grey,
-                        ),
-                        overflow: TextOverflow.ellipsis,
+              // Content section
+              Expanded(
+                child: Padding(
+                  padding: EdgeInsets.all(isTablet ? 20 : 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              message,
+                              style: TextStyle(
+                                fontSize: isTablet ? 16 : 15,
+                                color: const Color(0xFF1E293B),
+                                fontWeight: isRead ? FontWeight.w500 : FontWeight.w600,
+                                height: 1.4,
+                              ),
+                            ),
+                          ),
+                          if (!isRead) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF2563EB),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
-                    ),
-                  ],
-                ],
+                      SizedBox(height: isTablet ? 10 : 8),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.access_time,
+                            size: isTablet ? 16 : 14,
+                            color: const Color(0xFF94A3B8),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            dateStr,
+                            style: TextStyle(
+                              fontSize: isTablet ? 13 : 12,
+                              color: const Color(0xFF94A3B8),
+                            ),
+                          ),
+                          if (className != null) ...[
+                            const SizedBox(width: 12),
+                            Container(
+                              width: 4,
+                              height: 4,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF94A3B8),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                className,
+                                style: TextStyle(
+                                  fontSize: isTablet ? 13 : 12,
+                                  color: const Color(0xFF94A3B8),
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ],
           ),

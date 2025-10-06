@@ -840,37 +840,68 @@ void _loadClonedData() {
     });
 
     try {
-      final data = _buildAssessmentPayload();
-      final docRef = await FirebaseFirestore.instance
-          .collection('trainerAssessments')
-          .add(data);
+  final data = _buildAssessmentPayload();
+  final docRef = await FirebaseFirestore.instance
+      .collection('trainerAssessments')
+      .add(data);
 
-      // Get class name for notification
-      final classId = _selectedClassId ?? widget.classId!;
-      String? className;
-      if (_trainerClasses.isNotEmpty) {
-        final selectedClass = _trainerClasses.firstWhere(
-          (c) => c['id'] == classId,
-          orElse: () => {'name': 'your class'},
-        );
-        className = selectedClass['name'] as String?;
+  // Get trainer's name from Firestore
+  String trainerName = 'Your trainer';
+  try {
+    final trainerDoc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(currentUser!.uid)
+        .get();
+
+    if (trainerDoc.exists) {
+      final trainerData = trainerDoc.data()!;
+      trainerName = '${trainerData['firstName'] ?? ''} ${trainerData['lastName'] ?? ''}'.trim();
+      if (trainerName.isEmpty) {
+        trainerName = trainerData['displayName'] ?? 'Your trainer';
       }
-
-      // Create notifications for students
-      await NotificationService.createNotificationsForStudents(
-        classId: classId,
-        message: 'New assessment: ${_titleController.text.trim()}',
-        className: className,
-        link: '/student/class/$classId',
-      );
-
-      if (!mounted) return;
-      _showSuccessDialog(docRef.id);
-    } catch (e) {
-      if (mounted) setState(() => _error = 'Failed to save assessment: $e');
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
     }
+  } catch (e) {
+    debugPrint('Could not fetch trainer name: $e');
+  }
+
+  // Get class name for notification
+  final classId = _selectedClassId ?? widget.classId!;
+  String? className;
+  if (_trainerClasses.isNotEmpty) {
+    final selectedClass = _trainerClasses.firstWhere(
+      (c) => c['id'] == classId,
+      orElse: () => {'name': 'your class'},
+    );
+    className = selectedClass['name'] as String?;
+  }
+
+  // Create notifications for students
+await NotificationService.createNotificationsForStudents(
+  classId: classId,
+  message: '$trainerName posted a new assessment: ${_titleController.text.trim()}',
+  className: className,
+  link: '/student/class/$classId',
+  type: 'assessment',
+);
+
+// Schedule deadline reminder if deadline is set
+if (_deadline != null) {
+  await NotificationService.scheduleDeadlineReminder(
+    assessmentId: docRef.id,
+    classId: classId,
+    assessmentTitle: _titleController.text.trim(),
+    deadline: _deadline!,
+    className: className,
+  );
+}
+
+  if (!mounted) return;
+  _showSuccessDialog(docRef.id);
+} catch (e) {
+  if (mounted) setState(() => _error = 'Failed to save assessment: $e');
+} finally {
+  if (mounted) setState(() => _isLoading = false);
+}
   }
 
   void _showSuccessDialog(String assessmentId) {

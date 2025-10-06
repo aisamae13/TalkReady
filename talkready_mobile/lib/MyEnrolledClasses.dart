@@ -407,14 +407,19 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
     }
 
     // Create enrollment document
-    await _firestore.collection('enrollments').add({
-      'classId': classId,
-      'studentId': studentId,
-      'studentName': studentName,
-      'studentEmail': studentEmail,
-      'trainerId': trainerId,
-      'enrolledAt': FieldValue.serverTimestamp(),
-    });
+await _firestore.collection('enrollments').add({
+  'classId': classId,
+  'studentId': studentId,
+  'studentName': studentName,
+  'studentEmail': studentEmail,
+  'trainerId': trainerId,
+  'enrolledAt': FieldValue.serverTimestamp(),
+});
+
+// Only update student array
+await _firestore.collection('trainerClass').doc(classId).update({
+  'student': FieldValue.arrayUnion([studentId]),
+});
 
     // Notify the trainer about new student enrollment
     await NotificationService.notifyUser(

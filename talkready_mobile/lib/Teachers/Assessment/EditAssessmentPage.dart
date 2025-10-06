@@ -376,34 +376,57 @@ class _EditAssessmentPageState extends State<EditAssessmentPage> {
     };
 
     // 4. Update Firestore
-    await FirebaseFirestore.instance
-        .collection('trainerAssessments')
-        .doc(widget.assessmentId)
-        .update(assessmentDataToUpdate);
+await FirebaseFirestore.instance
+    .collection('trainerAssessments')
+    .doc(widget.assessmentId)
+    .update(assessmentDataToUpdate);
 
-    // 5. Get class name for notification
-    String? className;
-    try {
-      if (_selectedClassId != null) {
-        final classDoc = await FirebaseFirestore.instance
-            .collection('trainerClass')
-            .doc(_selectedClassId)
-            .get();
-        className = classDoc.data()?['className'] as String?;
+// 5. Get trainer's name from Firestore
+String trainerName = 'Your trainer';
+try {
+  final user = FirebaseAuth.instance.currentUser;
+  if (user != null) {
+    final trainerDoc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .get();
+
+    if (trainerDoc.exists) {
+      final trainerData = trainerDoc.data()!;
+      trainerName = '${trainerData['firstName'] ?? ''} ${trainerData['lastName'] ?? ''}'.trim();
+      if (trainerName.isEmpty) {
+        trainerName = trainerData['displayName'] ?? 'Your trainer';
       }
-    } catch (e) {
-      debugPrint('Could not fetch class name: $e');
     }
+  }
+} catch (e) {
+  debugPrint('Could not fetch trainer name: $e');
+}
 
-    // 6. Create notifications for students
-    if (_selectedClassId != null) {
-      await NotificationService.createNotificationsForStudents(
-        classId: _selectedClassId!,
-        message: 'Assessment updated: ${_titleController.text.trim()}',
-        className: className,
-        link: '/student/class/$_selectedClassId',
-      );
-    }
+// 6. Get class name for notification
+String? className;
+try {
+  if (_selectedClassId != null) {
+    final classDoc = await FirebaseFirestore.instance
+        .collection('trainerClass')
+        .doc(_selectedClassId)
+        .get();
+    className = classDoc.data()?['className'] as String?;
+  }
+} catch (e) {
+  debugPrint('Could not fetch class name: $e');
+}
+
+// 7. Create notifications for students
+if (_selectedClassId != null) {
+  await NotificationService.createNotificationsForStudents(
+  classId: _selectedClassId!,
+  message: '$trainerName updated an assessment: ${_titleController.text.trim()}',
+  className: className,
+  link: '/student/class/$_selectedClassId',
+  type: 'assessment',  // ADD THIS
+);
+}
 
     setState(() {
       _successMessage = 'Assessment "${_titleController.text}" updated successfully!';

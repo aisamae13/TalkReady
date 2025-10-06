@@ -58,77 +58,87 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
   }
 
   void _setupRealtimeDashboardListener() {
-    if (currentUser == null) return;
+  if (currentUser == null) return;
 
-    // Cancel existing subscription if any
-    _dashboardSubscription?.cancel();
+  _dashboardSubscription?.cancel();
 
-    // NEW: Store the subscription
-    _dashboardSubscription = FirebaseFirestore.instance
-        .collection('trainerClass')
-        .where('trainerId', isEqualTo: currentUser!.uid)
-        .orderBy('createdAt', descending: true)
-        .snapshots()
-        .listen(
-          (snapshot) async {
-            if (!mounted) return;
+  _dashboardSubscription = FirebaseFirestore.instance
+      .collection('trainerClass')
+      .where('trainerId', isEqualTo: currentUser!.uid)
+      .orderBy('createdAt', descending: true)
+      .snapshots()
+      .listen(
+        (snapshot) async {
+          if (!mounted) return;
 
-            int classCount = snapshot.docs.length;
-            int studentSum = 0;
-            Map<String, dynamic>? recentClass;
+          int classCount = snapshot.docs.length;
+          int studentSum = 0;
+          Map<String, dynamic>? recentClass;
 
-            for (var doc in snapshot.docs) {
-              final data = doc.data();
-              studentSum += (data['studentCount'] as int? ?? 0);
-            }
+          // Calculate actual student count from enrollments
+          for (var doc in snapshot.docs) {
+            final classId = doc.id;
+            final enrollmentCount = await FirebaseFirestore.instance
+                .collection('enrollments')
+                .where('classId', isEqualTo: classId)
+                .get();
+            studentSum += enrollmentCount.docs.length;
+          }
 
-            if (snapshot.docs.isNotEmpty) {
-              final doc = snapshot.docs.first;
-              recentClass = {'id': doc.id, ...doc.data()};
-            }
+          if (snapshot.docs.isNotEmpty) {
+            final doc = snapshot.docs.first;
+            final classId = doc.id;
 
-            // Calculate pending submissions
-            int pendingSum = 0;
-            try {
-              final submissionsQuery = await FirebaseFirestore.instance
-                  .collection('studentSubmissions')
-                  .where('trainerId', isEqualTo: currentUser!.uid)
-                  .where('assessmentType', isEqualTo: 'speaking_assessment')
-                  .where('isReviewed', isEqualTo: false)
-                  .get();
+            // Get actual student count for recent class
+            final enrollmentCount = await FirebaseFirestore.instance
+                .collection('enrollments')
+                .where('classId', isEqualTo: classId)
+                .get();
 
-              pendingSum = submissionsQuery.docs.length;
-            } catch (e) {
-              print('Error fetching pending submissions: $e');
-              if (e.toString().contains('index')) {
-                print('⚠️ FIRESTORE INDEX REQUIRED! Create an index for:');
-                print('   Collection: studentSubmissions');
-                print('   Fields: trainerId (Ascending), assessmentType (Ascending), isReviewed (Ascending)');
-              }
-            }
+            recentClass = {
+              'id': doc.id,
+              ...doc.data(),
+              'studentCount': enrollmentCount.docs.length, // Override with actual count
+            };
+          }
 
-            setState(() {
-              activeClassesCount = classCount;
-              totalStudents = studentSum < 0 ? 0 : studentSum;
-              pendingSubmissions = pendingSum;
-              mostRecentClass = recentClass;
-              loading = false;
-              error = null;
-            });
-          },
-          onError: (e) {
-            if (!mounted) return;
+          // Calculate pending submissions
+          int pendingSum = 0;
+          try {
+            final submissionsQuery = await FirebaseFirestore.instance
+                .collection('studentSubmissions')
+                .where('trainerId', isEqualTo: currentUser!.uid)
+                .where('assessmentType', isEqualTo: 'speaking_assessment')
+                .where('isReviewed', isEqualTo: false)
+                .get();
 
-            setState(() {
-              error = "Could not load dashboard data. ${e.toString()}";
-              activeClassesCount = 0;
-              totalStudents = 0;
-              pendingSubmissions = 0;
-              loading = false;
-            });
-          },
-        );
-  }
+            pendingSum = submissionsQuery.docs.length;
+          } catch (e) {
+            print('Error fetching pending submissions: $e');
+          }
+
+          setState(() {
+            activeClassesCount = classCount;
+            totalStudents = studentSum;
+            pendingSubmissions = pendingSum;
+            mostRecentClass = recentClass;
+            loading = false;
+            error = null;
+          });
+        },
+        onError: (e) {
+          if (!mounted) return;
+
+          setState(() {
+            error = "Could not load dashboard data. ${e.toString()}";
+            activeClassesCount = 0;
+            totalStudents = 0;
+            pendingSubmissions = 0;
+            loading = false;
+          });
+        },
+      );
+}
 
   void _setupNotificationListener() {
     if (currentUser == null) {

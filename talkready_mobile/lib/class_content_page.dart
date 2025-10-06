@@ -485,6 +485,11 @@ Future<void> _handleLeaveClass() async {
       final enrollmentDoc = enrollmentQuery.docs.first;
       await enrollmentDoc.reference.delete();
 
+// Only update student array
+await _firestore.collection('trainerClass').doc(widget.classId).update({
+  'student': FieldValue.arrayRemove([user.uid]),
+});
+
       // Notify the trainer
       final trainerId = classDetails?['trainerId'];
       if (trainerId != null) {
@@ -497,8 +502,7 @@ Future<void> _handleLeaveClass() async {
       }
 
       // Close loading dialog
-      // Navigate back to My Classes with result
-        Navigator.of(context).pop('left_class');
+      Navigator.of(context).pop();
 
       // Show success message
       if (mounted) {
@@ -517,7 +521,7 @@ Future<void> _handleLeaveClass() async {
         );
 
         // Navigate back to My Classes
-        Navigator.of(context).pop();
+        Navigator.of(context).pop('left_class');
       }
     } else {
       // No enrollment found
@@ -1041,13 +1045,21 @@ Widget _buildAssessmentsSection() {
                               : const Color(0xFF0077B3),
                         ),
                       ),
-                      if (assessment['description'] != null) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          assessment['description'],
-                          style: const TextStyle(fontSize: 14),
+                       const SizedBox(height: 8),
+                      Text(
+                        assessment['description']?.toString().trim().isNotEmpty == true
+                            ? assessment['description']
+                            : 'No description added by trainer',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: assessment['description']?.toString().trim().isNotEmpty == true
+                              ? Colors.black
+                              : Colors.grey[600],
+                          fontStyle: assessment['description']?.toString().trim().isNotEmpty == true
+                              ? FontStyle.normal
+                              : FontStyle.italic,
                         ),
-                      ],
+                      ),
                       const SizedBox(height: 8),
                       Text(
                         '${(assessment['questions'] as List?)?.length ?? 0} Question(s)',
