@@ -352,93 +352,111 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
   }
 
   Future<Map<String, dynamic>> joinClassWithCode(
-  String studentId,
-  String classCode,
-) async {
-  try {
-    // Find class by code
-    final QuerySnapshot classQuery = await _firestore
-        .collection('trainerClass')
-        .where('classCode', isEqualTo: classCode.toUpperCase())
-        .limit(1)
-        .get();
+    String studentId,
+    String classCode,
+  ) async {
+    try {
+      _logger.i("Attempting to join class with code: $classCode");
 
-    if (classQuery.docs.isEmpty) {
-      throw Exception("Invalid class code. Please check and try again.");
-    }
+      // Find class by code (case-insensitive)
+      final QuerySnapshot classQuery = await _firestore
+          .collection('trainerClass')
+          .where('classCode', isEqualTo: classCode.trim().toUpperCase())
+          .limit(1)
+          .get();
 
-    final DocumentSnapshot classDoc = classQuery.docs.first;
-    final Map<String, dynamic> classData =
-        classDoc.data() as Map<String, dynamic>;
-    final String classId = classDoc.id;
-    final String trainerId = classData['trainerId'] ?? '';
+      if (classQuery.docs.isEmpty) {
+        _logger.w("No class found with code: $classCode");
+        throw Exception("Invalid class code. Please check and try again.");
+      }
 
-    // Check if student is already enrolled
-    final QuerySnapshot existingEnrollment = await _firestore
-        .collection('enrollments')
-        .where('studentId', isEqualTo: studentId)
-        .where('classId', isEqualTo: classId)
-        .get();
+      final DocumentSnapshot classDoc = classQuery.docs.first;
+      final Map<String, dynamic> classData =
+          classDoc.data() as Map<String, dynamic>;
+      final String classId = classDoc.id;
+      final String trainerId = classData['trainerId'] ?? '';
 
-    if (existingEnrollment.docs.isNotEmpty) {
-      throw Exception(
-        'You are already enrolled in "${classData['className']}".',
+      _logger.i("Found class: ${classData['className']} (ID: $classId)");
+
+      // Check if student is already enrolled
+      final QuerySnapshot existingEnrollment = await _firestore
+          .collection('enrollments')
+          .where('studentId', isEqualTo: studentId)
+          .where('classId', isEqualTo: classId)
+          .get();
+
+      if (existingEnrollment.docs.isNotEmpty) {
+        _logger.w("Student already enrolled in class: ${classData['className']}");
+        throw Exception(
+          'You are already enrolled in "${classData['className']}".',
+        );
+      }
+
+      // Get student's details
+      DocumentSnapshot studentDoc = await _firestore
+          .collection('users')
+          .doc(studentId)
+          .get();
+
+      String studentName = "Student";
+      String studentEmail = "N/A";
+
+      if (studentDoc.exists) {
+        Map<String, dynamic> studentData =
+            studentDoc.data() as Map<String, dynamic>;
+        studentName =
+            studentData['displayName'] ??
+            '${studentData['firstName'] ?? ''} ${studentData['lastName'] ?? ''}'
+                .trim();
+        if (studentName.isEmpty) studentName = "Student";
+        studentEmail = studentData['email'] ?? "N/A";
+      }
+
+      _logger.i("Creating enrollment for student: $studentName");
+
+      // Use a batch write to ensure atomicity
+      final batch = _firestore.batch();
+
+      // Create enrollment document
+      final enrollmentRef = _firestore.collection('enrollments').doc();
+      batch.set(enrollmentRef, {
+        'classId': classId,
+        'studentId': studentId,
+        'studentName': studentName,
+        'studentEmail': studentEmail,
+        'trainerId': trainerId,
+        'enrolledAt': FieldValue.serverTimestamp(),
+      });
+
+      // Update student array in class
+      final classRef = _firestore.collection('trainerClass').doc(classId);
+      batch.update(classRef, {
+        'student': FieldValue.arrayUnion([studentId]),
+      });
+
+      // Commit the batch
+      await batch.commit();
+
+      _logger.i("Successfully enrolled student in class");
+
+      // Notify the trainer about new student enrollment
+      await NotificationService.notifyUser(
+        userId: trainerId,
+        message: '$studentName joined your class',
+        className: classData['className'],
+        link: '/trainer/classes/$classId/students',
       );
+
+      return {
+        'message': 'Successfully joined "${classData['className']}"!',
+        'className': classData['className'] ?? 'Unnamed Class',
+        'classId': classId,
+      };
+    } catch (e) {
+      _logger.e("Error in joinClassWithCode: $e");
+      rethrow;
     }
-
-    // Get student's details
-    DocumentSnapshot studentDoc = await _firestore
-        .collection('users')
-        .doc(studentId)
-        .get();
-
-    String studentName = "Student";
-    String studentEmail = "N/A";
-
-    if (studentDoc.exists) {
-      Map<String, dynamic> studentData =
-          studentDoc.data() as Map<String, dynamic>;
-      studentName =
-          studentData['displayName'] ??
-          '${studentData['firstName'] ?? ''} ${studentData['lastName'] ?? ''}'
-              .trim();
-      if (studentName.isEmpty) studentName = "Student";
-      studentEmail = studentData['email'] ?? "N/A";
-    }
-
-    // Create enrollment document
-await _firestore.collection('enrollments').add({
-  'classId': classId,
-  'studentId': studentId,
-  'studentName': studentName,
-  'studentEmail': studentEmail,
-  'trainerId': trainerId,
-  'enrolledAt': FieldValue.serverTimestamp(),
-});
-
-// Only update student array
-await _firestore.collection('trainerClass').doc(classId).update({
-  'student': FieldValue.arrayUnion([studentId]),
-});
-
-    // Notify the trainer about new student enrollment
-    await NotificationService.notifyUser(
-      userId: trainerId,
-      message: '$studentName joined your class',
-      className: classData['className'],
-      link: '/trainer/classes/$classId/students',
-    );
-
-    return {
-      'message': 'Successfully joined "${classData['className']}"!',
-      'className': classData['className'] ?? 'Unnamed Class',
-      'classId': classId,
-    };
-  } catch (e) {
-    _logger.e("Error in joinClassWithCode: $e");
-    rethrow;
   }
-}
 
   @override
   Widget build(BuildContext context) {
