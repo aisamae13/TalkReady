@@ -85,75 +85,92 @@ class _TrainerReportsPageState extends State<TrainerReportsPage> with TickerProv
   }
 
   void _setupClassesListener() {
-    if (_currentUser == null || _currentUser!.uid.isEmpty) {
+  if (_currentUser == null || _currentUser!.uid.isEmpty) {
+    if (mounted) {
+      setState(() {
+        _error = "Authentication details are missing. Please log in.";
+        _loadingClasses = false;
+      });
+    }
+    return;
+  }
+
+  if (mounted) setState(() => _loadingClasses = true);
+  _error = null;
+
+  try {
+    _classesSubscription = FirebaseFirestore.instance
+        .collection('trainerClass')
+        .where('trainerId', isEqualTo: _currentUser!.uid)
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .listen((snapshot) async {
       if (mounted) {
+        List<Map<String, dynamic>> classes = [];
+
+        // Fetch actual student count for each class
+        for (var doc in snapshot.docs) {
+          final classId = doc.id;
+
+          // Get actual enrollment count from enrollments collection
+          final enrollmentSnapshot = await FirebaseFirestore.instance
+              .collection('enrollments')
+              .where('classId', isEqualTo: classId)
+              .get();
+
+          final actualStudentCount = enrollmentSnapshot.docs.length;
+
+          classes.add({
+            'id': doc.id,
+            ...doc.data(),
+            'studentCount': actualStudentCount, // Override with actual count
+          });
+        }
+
+        // Sort alphabetically by class name
+        classes.sort((a, b) {
+          String nameA = a['className']?.toString().toLowerCase() ?? '';
+          String nameB = b['className']?.toString().toLowerCase() ?? '';
+          return nameA.compareTo(nameB);
+        });
+
         setState(() {
-          _error = "Authentication details are missing. Please log in.";
+          _trainerClasses = classes;
           _loadingClasses = false;
+
+          if (classes.isEmpty) {
+            _error = "You haven't created any classes yet. No reports to display.";
+          } else {
+            _error = null;
+          }
+
+          _fadeController.forward();
+          _slideController.forward();
         });
       }
-      return;
-    }
-
-    if (mounted) setState(() => _loadingClasses = true);
-    _error = null;
-
-    try {
-      _classesSubscription = FirebaseFirestore.instance
-          .collection('trainerClass')
-          .where('trainerId', isEqualTo: _currentUser!.uid)
-          .orderBy('createdAt', descending: true)
-          .snapshots()
-          .listen((snapshot) {
-        if (mounted) {
-          setState(() {
-            List<Map<String, dynamic>> classes = snapshot.docs.map((doc) => {
-              'id': doc.id,
-              ...doc.data()
-            }).toList();
-
-            classes.sort((a, b) {
-              String nameA = a['className']?.toString().toLowerCase() ?? '';
-              String nameB = b['className']?.toString().toLowerCase() ?? '';
-              return nameA.compareTo(nameB);
-            });
-
-            _trainerClasses = classes;
-            _loadingClasses = false;
-
-            if (classes.isEmpty) {
-              _error = "You haven't created any classes yet. No reports to display.";
-            } else {
-              _error = null;
-            }
-
-            _fadeController.forward();
-            _slideController.forward();
-          });
-        }
-      }, onError: (error) {
-        print("Error listening to trainer classes: $error");
-        if (mounted) {
-          setState(() {
-            _error = "Failed to load your classes. ${error.toString()}";
-            _loadingClasses = false;
-            _fadeController.forward();
-            _slideController.forward();
-          });
-        }
-      });
-    } catch (e) {
-      print("Error setting up classes listener: $e");
+    }, onError: (error) {
+      print("Error listening to trainer classes: $error");
       if (mounted) {
         setState(() {
-          _error = "Failed to load your classes. ${e.toString()}";
+          _error = "Failed to load your classes. ${error.toString()}";
           _loadingClasses = false;
           _fadeController.forward();
           _slideController.forward();
         });
       }
+    });
+  } catch (e) {
+    print("Error setting up classes listener: $e");
+    if (mounted) {
+      setState(() {
+        _error = "Failed to load your classes. ${e.toString()}";
+        _loadingClasses = false;
+        _fadeController.forward();
+        _slideController.forward();
+      });
     }
   }
+}
 
   void _setupAssessmentsListener(String classId) {
     _assessmentsSubscription?.cancel();
