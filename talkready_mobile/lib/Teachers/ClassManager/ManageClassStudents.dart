@@ -31,6 +31,7 @@ class EnrolledStudent {
   final String studentName;
   final String studentEmail;
   final Timestamp enrolledAt;
+  final String? profilePicUrl; // ✅ Added profile picture
 
   EnrolledStudent({
     required this.id,
@@ -38,7 +39,22 @@ class EnrolledStudent {
     required this.studentName,
     required this.studentEmail,
     required this.enrolledAt,
+    this.profilePicUrl, // ✅ Added to constructor
   });
+
+  // Get initials from student name
+  String get initials {
+    List<String> nameParts = studentName.trim().split(' ');
+    if (nameParts.isEmpty) return '?';
+
+    String first = nameParts.first.isNotEmpty ? nameParts.first[0] : '';
+    String last = nameParts.length > 1 && nameParts.last.isNotEmpty
+        ? nameParts.last[0]
+        : '';
+
+    String result = '$first$last'.toUpperCase().trim();
+    return result.isNotEmpty ? result : '?';
+  }
 
   factory EnrolledStudent.fromFirestore(DocumentSnapshot doc) {
     Map data = doc.data() as Map<String, dynamic>;
@@ -48,23 +64,54 @@ class EnrolledStudent {
       studentName: data['studentName'] ?? 'N/A',
       studentEmail: data['studentEmail'] ?? 'N/A',
       enrolledAt: data['enrolledAt'] ?? Timestamp.now(),
+      profilePicUrl: data['profilePicUrl']?.toString().trim(), // ✅ Get profile pic from enrollment
     );
   }
 }
 
 class UserSearchResult {
   final String uid;
+  final String firstName;
+  final String lastName;
   final String? displayName;
   final String? email;
+  final String? profilePicUrl; // ✅ Added profile picture
 
-  UserSearchResult({required this.uid, this.displayName, this.email});
+  UserSearchResult({
+    required this.uid,
+    required this.firstName,
+    required this.lastName,
+    this.displayName,
+    this.email,
+    this.profilePicUrl,
+  });
+
+  // Get properly formatted name (firstName + lastName first, then displayName)
+  String get formattedName {
+    String name = '$firstName $lastName'.trim();
+    if (name.isEmpty) {
+      return displayName ?? 'Unnamed User';
+    }
+    return name;
+  }
+
+  // Get initials for avatar fallback
+  String get initials {
+    String first = firstName.isNotEmpty ? firstName[0] : '';
+    String last = lastName.isNotEmpty ? lastName[0] : '';
+    String result = '$first$last'.toUpperCase();
+    return result.isNotEmpty ? result : '?';
+  }
 
   factory UserSearchResult.fromFirestore(DocumentSnapshot doc) {
     Map data = doc.data() as Map<String, dynamic>;
     return UserSearchResult(
       uid: doc.id,
-      displayName: data['displayName'] ?? data['firstName'] ?? 'Unnamed User',
-      email: data['email'] ?? '',
+      firstName: data['firstName']?.toString().trim() ?? '',
+      lastName: data['lastName']?.toString().trim() ?? '',
+      displayName: data['displayName']?.toString().trim(),
+      email: data['email']?.toString().trim() ?? '',
+      profilePicUrl: data['profilePicUrl']?.toString().trim(),
     );
   }
 }
@@ -81,32 +128,133 @@ Future<List<EnrolledStudent>> fetchEnrolledStudentsFromService(String classId) a
       .collection('enrollments')
       .where('classId', isEqualTo: classId)
       .get();
-  return snapshot.docs.map((doc) => EnrolledStudent.fromFirestore(doc)).toList();
+
+  List<EnrolledStudent> students = [];
+
+  for (var doc in snapshot.docs) {
+    Map<String, dynamic> enrollmentData = doc.data();
+    String studentId = enrollmentData['studentId'] ?? '';
+
+    // Try to get profile picture from user document if not in enrollment
+    String? profilePicUrl = enrollmentData['profilePicUrl'];
+
+    if ((profilePicUrl == null || profilePicUrl.isEmpty) && studentId.isNotEmpty) {
+      try {
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(studentId)
+            .get();
+
+        if (userDoc.exists) {
+          profilePicUrl = userDoc.data()?['profilePicUrl']?.toString().trim();
+        }
+      } catch (e) {
+        debugPrint('Could not fetch profile pic for student $studentId: $e');
+      }
+    }
+
+    students.add(EnrolledStudent(
+      id: doc.id,
+      studentId: studentId,
+      studentName: enrollmentData['studentName'] ?? 'N/A',
+      studentEmail: enrollmentData['studentEmail'] ?? 'N/A',
+      enrolledAt: enrollmentData['enrolledAt'] ?? Timestamp.now(),
+      profilePicUrl: profilePicUrl,
+    ));
+  }
+
+  return students;
 }
 
+
 Future<List<UserSearchResult>> searchUsersByEmailFromService(String email) async {
+  final trimmedEmail = email.trim().toLowerCase();
+
+  if (trimmedEmail.isEmpty) {
+    throw Exception("Please enter an email address.");
+  }
+
+  // Basic email validation
+  if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(trimmedEmail)) {
+    throw Exception("Please enter a valid email address.");
+  }
+
   final snapshot = await FirebaseFirestore.instance
       .collection('users')
-      .where('email', isEqualTo: email.trim())
+      .where('email', isEqualTo: trimmedEmail)
       .where('userType', isEqualTo: 'student')
+      .limit(5) // Limit results for performance
       .get();
+
+  if (snapshot.docs.isEmpty) {
+    // Return empty list instead of throwing - we'll handle this in UI
+    return [];
+  }
+
   return snapshot.docs.map((doc) => UserSearchResult.fromFirestore(doc)).toList();
 }
 
-Future<DocumentReference> enrollStudentInClassService(String classId, String studentId, String studentName, String studentEmail, String trainerId) async {
-  final enrollmentRef = await FirebaseFirestore.instance.collection('enrollments').add({
-    'classId': classId,
-    'studentId': studentId,
-    'studentName': studentName,
-    'studentEmail': studentEmail,
-    'trainerId': trainerId,
-    'enrolledAt': FieldValue.serverTimestamp(),
-  });
+Future<DocumentReference> enrollStudentInClassService(
+  String classId,
+  String studentId,
+  String studentFirstName,
+  String studentLastName,
+  String studentEmail,
+  String trainerId,
+) async {
+  // Format student name properly
+  String studentName = '$studentFirstName $studentLastName'.trim();
+  String? profilePicUrl;
+
+  if (studentName.isEmpty || studentId.isEmpty) {
+    // Fallback: try to get data from user document
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(studentId)
+          .get();
+      if (userDoc.exists) {
+        final userData = userDoc.data()!;
+        studentName = userData['displayName']?.toString().trim() ?? 'Student';
+        profilePicUrl = userData['profilePicUrl']?.toString().trim();
+      }
+    } catch (e) {
+      studentName = 'Student';
+    }
+  } else {
+    // Get profile picture from user document
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(studentId)
+          .get();
+      if (userDoc.exists) {
+        profilePicUrl = userDoc.data()?['profilePicUrl']?.toString().trim();
+      }
+    } catch (e) {
+      debugPrint('Could not fetch profile pic for student: $e');
+    }
+  }
+
+  final enrollmentRef = await FirebaseFirestore.instance
+      .collection('enrollments')
+      .add({
+        'classId': classId,
+        'studentId': studentId,
+        'studentName': studentName,
+        'studentEmail': studentEmail,
+        'trainerId': trainerId,
+        'enrolledAt': FieldValue.serverTimestamp(),
+        'profilePicUrl': profilePicUrl,
+      });
 
   // Only update the student array - don't touch studentCount
-  await FirebaseFirestore.instance.collection('trainerClass').doc(classId).update({
-    'student': FieldValue.arrayUnion([studentId]),
-  });
+  await FirebaseFirestore.instance
+      .collection('trainerClass')
+      .doc(classId)
+      .update({
+        'student': FieldValue.arrayUnion([studentId]),
+      });
 
   return enrollmentRef;
 }
@@ -213,42 +361,51 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> with 
     }
   }
 
-  Future<void> _handleSearchStudents() async {
-    final searchTerm = _searchController.text.trim();
-    if (searchTerm.isEmpty) {
-      setState(() {
-        _searchResults = [];
-        _actionError = "Please enter an email to search.";
-      });
-      return;
-    }
-    setState(() {
-      _isSearching = true;
-      _actionError = null;
-      _searchResults = [];
-    });
-    try {
-      final users = await searchUsersByEmailFromService(searchTerm);
-      final enrolledStudentUids = _enrolledStudents.map((s) => s.studentId).toSet();
-      final filteredResults = users.where((user) => !enrolledStudentUids.contains(user.uid)).toList();
+Future<void> _handleSearchStudents() async {
+  final searchTerm = _searchController.text.trim();
 
-      setState(() {
-        _searchResults = filteredResults;
-        if (filteredResults.isEmpty) {
-          _actionError = 'No new students found for "$searchTerm". Ensure email is correct and user is registered as a student.';
-        }
-      });
-    } catch (e) {
-      setState(() {
-        _actionError = "Search failed: ${e.toString()}";
-        _searchResults = [];
-      });
-    } finally {
-      if (mounted) setState(() => _isSearching = false);
-    }
+  if (searchTerm.isEmpty) {
+    setState(() {
+      _searchResults = [];
+      _actionError = "Please enter an email to search.";
+    });
+    return;
   }
 
-  Future<void> _handleEnrollStudent(UserSearchResult studentToEnroll) async {
+  setState(() {
+    _isSearching = true;
+    _actionError = null;
+    _searchResults = [];
+  });
+
+  try {
+    final users = await searchUsersByEmailFromService(searchTerm);
+    final enrolledStudentUids = _enrolledStudents.map((s) => s.studentId).toSet();
+    final filteredResults = users.where((user) => !enrolledStudentUids.contains(user.uid)).toList();
+
+    setState(() {
+      _searchResults = filteredResults;
+      if (users.isEmpty) {
+        _actionError = 'No student found with email "$searchTerm".\n\nMake sure:\n• The email is correct\n• The user is registered as a student\n• The user has an account';
+      } else if (filteredResults.isEmpty) {
+        _actionError = 'The student with email "$searchTerm" is already enrolled in this class.';
+      }
+    });
+  } catch (e) {
+    setState(() {
+      if (e.toString().contains('valid email')) {
+        _actionError = e.toString().replaceFirst('Exception: ', '');
+      } else {
+        _actionError = "Search failed: ${e.toString()}";
+      }
+      _searchResults = [];
+    });
+  } finally {
+    if (mounted) setState(() => _isSearching = false);
+  }
+}
+
+Future<void> _handleEnrollStudent(UserSearchResult studentToEnroll) async {
   if (_classDetails == null || _currentUser == null) {
     setState(() => _actionError = "Cannot enroll: Class/trainer info missing.");
     return;
@@ -259,11 +416,12 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> with 
   _actionError = null;
 
   try {
-    // Enroll the student
+    // ✅ Pass firstName and lastName separately
     await enrollStudentInClassService(
       widget.classId,
       studentToEnroll.uid,
-      studentToEnroll.displayName ?? "Student",
+      studentToEnroll.firstName,
+      studentToEnroll.lastName,
       studentToEnroll.email ?? "",
       _currentUser.uid,
     );
@@ -295,18 +453,18 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> with 
       trainerName: trainerName,
     );
 
-    debugPrint('📧 Enrollment notification sent to: ${studentToEnroll.displayName}');
+    debugPrint('📧 Enrollment notification sent to: ${studentToEnroll.formattedName}');
 
     await _fetchClassAndStudentData(showLoading: false);
     setState(() {
-       _searchResults.removeWhere((s) => s.uid == studentToEnroll.uid);
-       _searchController.clear();
+      _searchResults.removeWhere((s) => s.uid == studentToEnroll.uid);
+      _searchController.clear();
     });
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('${studentToEnroll.displayName} enrolled successfully!'),
+          content: Text('${studentToEnroll.formattedName} enrolled successfully!'),
           backgroundColor: const Color(0xFF10B981),
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -319,6 +477,7 @@ class _ManageClassStudentsPageState extends State<ManageClassStudentsPage> with 
     if (mounted) setState(() => _enrollingStudentId = null);
   }
 }
+
 Future<void> _handleRemoveStudent(EnrolledStudent enrollment) async {
   bool confirm = await _showModernConfirmDialog(
     title: 'Remove Student',
@@ -960,303 +1119,384 @@ Future<void> _handleRemoveStudent(EnrolledStudent enrollment) async {
     );
   }
 
-  Widget _buildSearchResultsList() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 20),
-        const Text(
-          "Search Results:",
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF1E293B),
-          ),
+Widget _buildSearchResultsList() {
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      const SizedBox(height: 20),
+      const Text(
+        "Search Results:",
+        style: TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.bold,
+          color: Color(0xFF1E293B),
         ),
-        const SizedBox(height: 12),
-        ListView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: _searchResults.length,
-          itemBuilder: (context, index) {
-            final user = _searchResults[index];
-            final bool isCurrentlyEnrolling = _enrollingStudentId == user.uid;
+      ),
+      const SizedBox(height: 12),
+      ListView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: _searchResults.length,
+        itemBuilder: (context, index) {
+          final user = _searchResults[index];
+          final bool isCurrentlyEnrolling = _enrollingStudentId == user.uid;
 
-            return Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: const Color(0xFFE2E8F0),
-                  width: 1,
+          return Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: const Color(0xFFE2E8F0),
+                width: 1,
+              ),
+            ),
+            child: ListTile(
+              contentPadding: const EdgeInsets.all(16),
+              leading: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF8B5CF6).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  FontAwesomeIcons.userGraduate,
+                  color: Color(0xFF8B5CF6),
+                  size: 20,
                 ),
               ),
-              child: ListTile(
-                contentPadding: const EdgeInsets.all(16),
-                leading: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF8B5CF6).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
+              title: Text(
+                user.formattedName, // ✅ Use formatted name
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1E293B),
+                ),
+              ),
+              subtitle: Text(
+                user.email ?? "N/A",
+                style: const TextStyle(
+                  color: Color(0xFF64748B),
+                ),
+              ),
+              trailing: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF10B981), Color(0xFF059669)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
-                  child: const Icon(
-                    FontAwesomeIcons.userGraduate,
-                    color: Color(0xFF8B5CF6),
-                    size: 20,
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF10B981).withOpacity(0.3),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: ElevatedButton.icon(
+                  icon: isCurrentlyEnrolling
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(FontAwesomeIcons.userPlus, size: 14),
+                  label: const Text(
+                    "Enroll",
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                  ),
+                  onPressed: isCurrentlyEnrolling ? null : () => _handleEnrollStudent(user),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.transparent,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                 ),
-                title: Text(
-                  user.displayName ?? "N/A",
+              ),
+            ),
+          );
+        },
+      ),
+    ],
+  );
+}
+
+Widget _buildEnrolledStudentsSection() {
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF8B5CF6), Color(0xFF6366F1)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              FontAwesomeIcons.users,
+              color: Colors.white,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "Enrolled Students (${_enrolledStudents.length})",
                   style: const TextStyle(
-                    fontWeight: FontWeight.w600,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
                     color: Color(0xFF1E293B),
                   ),
                 ),
-                subtitle: Text(
-                  user.email ?? "N/A",
-                  style: const TextStyle(
+                const SizedBox(height: 4),
+                const Text(
+                  "Manage your current students",
+                  style: TextStyle(
+                    fontSize: 14,
                     color: Color(0xFF64748B),
                   ),
                 ),
-                trailing: Container(
+              ],
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 20),
+      if (_actionError != null && _actionError!.toLowerCase().contains("removal failed"))
+        Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFF6B6B).withOpacity(0.1),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: const Color(0xFFFF6B6B).withOpacity(0.3),
+              width: 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              const Icon(
+                FontAwesomeIcons.circleExclamation,
+                color: Color(0xFFFF6B6B),
+                size: 16,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  _actionError!,
+                  style: const TextStyle(
+                    color: Color(0xFFFF6B6B),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      _enrolledStudents.isEmpty
+          ? _buildEmptyStudentsWidget()
+          : ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _enrolledStudents.length,
+              itemBuilder: (context, index) {
+                final student = _enrolledStudents[index];
+                final bool isCurrentlyRemoving = _removingEnrollmentId == student.id;
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 12),
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF10B981), Color(0xFF059669)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFF10B981).withOpacity(0.3),
-                        blurRadius: 10,
+                        color: Colors.black.withOpacity(0.06),
+                        blurRadius: 15,
                         offset: const Offset(0, 4),
                       ),
                     ],
                   ),
-                  child: ElevatedButton.icon(
-                    icon: isCurrentlyEnrolling
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(FontAwesomeIcons.userPlus, size: 14),
-                    label: const Text(
-                      "Enroll",
-                      style: TextStyle(
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.all(16),
+                    // ✅ Display profile picture or initials
+                    leading: _buildEnrolledStudentAvatar(student),
+                    title: Text(
+                      student.studentName,
+                      style: const TextStyle(
                         fontWeight: FontWeight.w600,
-                        fontSize: 14,
+                        color: Color(0xFF1E293B),
+                        fontSize: 16,
                       ),
                     ),
-                    onPressed: isCurrentlyEnrolling ? null : () => _handleEnrollStudent(user),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.transparent,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                      shape: RoundedRectangleBorder(
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 4),
+                        Text(
+                          student.studentEmail,
+                          style: const TextStyle(
+                            color: Color(0xFF64748B),
+                            fontSize: 14,
+                          ),
+                          softWrap: true,
+                          overflow: TextOverflow.visible,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          "Enrolled: ${_formatTimestamp(student.enrolledAt)}",
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF94A3B8),
+                          ),
+                        ),
+                      ],
+                    ),
+                    trailing: Container(
+                      decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: const Color(0xFFEF4444).withOpacity(0.3),
+                          width: 1,
+                        ),
+                      ),
+                      child: IconButton(
+                        icon: isCurrentlyRemoving
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Color(0xFFEF4444),
+                                ),
+                              )
+                            : const Icon(
+                                FontAwesomeIcons.userMinus,
+                                color: Color(0xFFEF4444),
+                                size: 18,
+                              ),
+                        onPressed: isCurrentlyRemoving ? null : () => _handleRemoveStudent(student),
+                        tooltip: "Remove Student",
                       ),
                     ),
+                  ),
+                );
+              },
+            ),
+    ],
+  );
+}
+
+Widget _buildEnrolledStudentAvatar(EnrolledStudent student) {
+  if (student.profilePicUrl != null && student.profilePicUrl!.isNotEmpty) {
+    // Show profile picture
+    return Container(
+      width: 50,
+      height: 50,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF8B5CF6).withOpacity(0.2),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Image.network(
+          student.profilePicUrl!,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            // Fallback to initials if image fails to load
+            return _buildEnrolledStudentInitials(student);
+          },
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return Container(
+              color: const Color(0xFF8B5CF6).withOpacity(0.1),
+              child: Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: const Color(0xFF8B5CF6),
+                    value: loadingProgress.expectedTotalBytes != null
+                        ? loadingProgress.cumulativeBytesLoaded /
+                            loadingProgress.expectedTotalBytes!
+                        : null,
                   ),
                 ),
               ),
             );
           },
         ),
-      ],
+      ),
     );
+  } else {
+    // Show initials
+    return _buildEnrolledStudentInitials(student);
   }
+}
 
-  Widget _buildEnrolledStudentsSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF8B5CF6), Color(0xFF6366F1)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                FontAwesomeIcons.users,
-                color: Colors.white,
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    "Enrolled Students (${_enrolledStudents.length})", // Use actual list length
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF1E293B),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    "Manage your current students",
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Color(0xFF64748B),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+// ✅ NEW: Build enrolled student initials avatar
+Widget _buildEnrolledStudentInitials(EnrolledStudent student) {
+  return Container(
+    width: 50,
+    height: 50,
+    decoration: BoxDecoration(
+      gradient: LinearGradient(
+        colors: [
+          const Color(0xFF8B5CF6).withOpacity(0.8),
+          const Color(0xFF6366F1).withOpacity(0.9),
+        ],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ),
+      borderRadius: BorderRadius.circular(12),
+      boxShadow: [
+        BoxShadow(
+          color: const Color(0xFF8B5CF6).withOpacity(0.2),
+          blurRadius: 8,
+          offset: const Offset(0, 2),
         ),
-        const SizedBox(height: 20),
-        if (_actionError != null && _actionError!.toLowerCase().contains("removal failed"))
-          Container(
-            margin: const EdgeInsets.only(bottom: 16),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFF6B6B).withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: const Color(0xFFFF6B6B).withOpacity(0.3),
-                width: 1,
-              ),
-            ),
-            child: Row(
-              children: [
-                const Icon(
-                  FontAwesomeIcons.circleExclamation,
-                  color: Color(0xFFFF6B6B),
-                  size: 16,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    _actionError!,
-                    style: const TextStyle(
-                      color: Color(0xFFFF6B6B),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        _enrolledStudents.isEmpty
-            ? _buildEmptyStudentsWidget()
-            : ListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: _enrolledStudents.length,
-                itemBuilder: (context, index) {
-                  final student = _enrolledStudents[index];
-                  final bool isCurrentlyRemoving = _removingEnrollmentId == student.id;
-
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.06),
-                          blurRadius: 15,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: ListTile(
-                      contentPadding: const EdgeInsets.all(16),
-                      leading: CircleAvatar(
-                        radius: 24,
-                        backgroundColor: const Color(0xFF8B5CF6).withOpacity(0.1),
-                        child: Text(
-                          student.studentName.isNotEmpty ? student.studentName[0].toUpperCase() : "?",
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF8B5CF6),
-                            fontSize: 18,
-                          ),
-                        ),
-                      ),
-                      title: Text(
-                        student.studentName,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1E293B),
-                          fontSize: 16,
-                        ),
-                      ),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const SizedBox(height: 4),
-                          Text(
-                            student.studentEmail,
-                            style: const TextStyle(
-                              color: Color(0xFF64748B),
-                              fontSize: 14,
-                            ),
-                            softWrap: true,
-                            overflow: TextOverflow.visible, // <-- allow wrapping
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            "Enrolled: ${_formatTimestamp(student.enrolledAt)}",
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Color(0xFF94A3B8),
-                            ),
-                          ),
-                        ],
-                      ),
-                      trailing: Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: const Color(0xFFEF4444).withOpacity(0.3),
-                            width: 1,
-                          ),
-                        ),
-                        child: IconButton(
-                          icon: isCurrentlyRemoving
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Color(0xFFEF4444),
-                                  ),
-                                )
-                              : const Icon(
-                                  FontAwesomeIcons.userMinus,
-                                  color: Color(0xFFEF4444),
-                                  size: 18,
-                                ),
-                          onPressed: isCurrentlyRemoving ? null : () => _handleRemoveStudent(student),
-                          tooltip: "Remove Student",
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
       ],
-    );
-  }
+    ),
+    child: Center(
+      child: Text(
+        student.initials,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 18,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 0.5,
+        ),
+      ),
+    ),
+  );
+}
 
   Widget _buildEmptyStudentsWidget() {
     return Container(

@@ -12,29 +12,15 @@ import 'package:talkready_mobile/custom_animated_bottom_bar.dart';
 import 'homepage.dart';
 import 'courses_page.dart';
 import 'journal/journal_page.dart';
-import 'progress_page.dart';
 import 'package:talkready_mobile/settings/about_us.dart';
 import 'package:talkready_mobile/settings/comm_guide.dart';
 import 'package:talkready_mobile/settings/faq_support.dart';
 import 'package:talkready_mobile/settings/terms_of_service.dart';
 import 'package:animations/animations.dart';
+import 'MyEnrolledClasses.dart';
+import 'progress_page.dart';
 
 // Helper function for creating a slide page route for bottom navigation
-Route _createSlidingPageRoute({
-required Widget page,
-required int newIndex,
-required int oldIndex,
-required Duration duration, // duration will be ignored
-}) {
-return PageRouteBuilder(
-pageBuilder: (context, animation, secondaryAnimation) => page,
-transitionsBuilder: (context, animation, secondaryAnimation, child) {
-  return child; // Return child directly for no animation
-},
-transitionDuration: Duration.zero, // Instant transition
-reverseTransitionDuration: Duration.zero, // Instant reverse transition
-);
-}
 
 class ProfilePage extends StatefulWidget {
 const ProfilePage({super.key});
@@ -65,7 +51,7 @@ String? _province;
 String? _municipality;
 String? _barangay;
 
-int _selectedIndex = 4; // Profile is index 4
+int _selectedIndex = 5;
 
 @override
 void initState() {
@@ -651,45 +637,46 @@ super.dispose();
 }
 
 void _onItemTapped(int index) {
-if (_selectedIndex == index) return;
+  if (_selectedIndex == index) return;
 
-final int oldNavIndex = _selectedIndex;
-setState(() {
-  _selectedIndex = index;
-});
+  setState(() {
+    _selectedIndex = index;
+  });
 
-Widget nextPage;
-switch (index) {
-  case 0:
-    nextPage = const HomePage();
-    break;
-  case 1:
-    nextPage = const CoursesPage();
-    break;
-  case 2:
-    nextPage = const JournalPage();
-    break;
-  case 3:
-    nextPage = const ProgressTrackerPage();
-    break;
-  case 4:
-    // Already on ProfilePage
-    return;
-  default:
-    return;
+  Widget nextPage;
+  switch (index) {
+    case 0:
+      nextPage = const HomePage();
+      break;
+    case 1:
+      nextPage = const CoursesPage();
+      break;
+    case 2:
+      nextPage = const MyEnrolledClasses();
+      break;
+    case 3:
+      nextPage = const JournalPage();
+      break;
+    case 4:
+      nextPage = const ProgressTrackerPage();
+      break;
+    case 5:
+      return;
+    default:
+      return;
+  }
+
+  Navigator.pushReplacement(
+    context,
+    PageRouteBuilder(
+      pageBuilder: (context, animation, secondaryAnimation) => nextPage,
+      transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+          child,
+      transitionDuration: Duration.zero,
+      reverseTransitionDuration: Duration.zero,
+    ),
+  );
 }
-
-Navigator.pushReplacement(
-  context,
-  _createSlidingPageRoute(
-    page: nextPage,
-    newIndex: index,
-    oldIndex: oldNavIndex,
-    duration: const Duration(milliseconds: 300), // This duration is now ignored
-  ),
-);
-}
-
 Widget _buildInfoTile(String label, String? value) {
   return Padding(
     padding: const EdgeInsets.only(bottom: 10.0),
@@ -1181,13 +1168,14 @@ return Scaffold(
   bottomNavigationBar: AnimatedBottomNavBar(
     currentIndex: _selectedIndex,
     onTap: _onItemTapped,
-    items: [
-      CustomBottomNavItem(icon: Icons.home, label: 'Home'),
-      CustomBottomNavItem(icon: Icons.book, label: 'Courses'),
-      CustomBottomNavItem(icon: Icons.library_books, label: 'Journal'),
-      CustomBottomNavItem(icon: Icons.trending_up, label: 'Progress'),
-      CustomBottomNavItem(icon: Icons.person, label: 'Profile'),
-    ],
+   items: [
+  CustomBottomNavItem(icon: Icons.home, label: 'Home'),
+  CustomBottomNavItem(icon: Icons.book, label: 'Courses'),
+  CustomBottomNavItem(icon: Icons.school, label: 'My Classes'),
+  CustomBottomNavItem(icon: Icons.library_books, label: 'Journal'),
+  CustomBottomNavItem(icon: Icons.trending_up, label: 'Progress'),
+  CustomBottomNavItem(icon: Icons.person, label: 'Profile'),
+],
     activeColor: Colors.white,
     inactiveColor: Colors.grey[600]!,
     notchColor: Colors.blue,

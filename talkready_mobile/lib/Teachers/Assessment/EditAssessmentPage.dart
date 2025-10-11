@@ -457,73 +457,292 @@ if (_selectedClassId != null) {
   }
 }
 
-  Future<void> _deleteAssessment() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Delete Assessment'),
-        content: Text('Are you sure you want to permanently delete "${_titleController.text}"? This action cannot be undone.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text('Cancel'),
+ Future<void> _deleteAssessment() async {
+  // 1. Check how many submissions exist first
+  int submissionCount = 0;
+  try {
+    final submissionsSnapshot = await FirebaseFirestore.instance
+        .collection('studentSubmissions')
+        .where('assessmentId', isEqualTo: widget.assessmentId)
+        .get();
+    submissionCount = submissionsSnapshot.docs.length;
+  } catch (e) {
+    debugPrint('Error checking submissions: $e');
+  }
+
+  // 2. Show enhanced confirmation dialog
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.red.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.warning_amber_rounded,
+              color: Colors.red,
+              size: 24,
+            ),
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: Text('Delete', style: TextStyle(color: Colors.white)),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Text(
+              'Delete Assessment',
+              style: TextStyle(fontSize: 18),
+            ),
           ),
         ],
       ),
-    );
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Are you sure you want to permanently delete "${_titleController.text}"?',
+            style: const TextStyle(
+              height: 1.5,
+              fontSize: 15,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 16),
 
-    if (confirmed != true) return;
+          // Warning for submissions
+          if (submissionCount > 0)
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.orange.shade300, width: 1.5),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.people_outline,
+                        size: 18,
+                        color: Colors.orange.shade700,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Warning',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.orange.shade900,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'This assessment has $submissionCount student submission${submissionCount == 1 ? '' : 's'}.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.orange.shade900,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'All submissions will be permanently deleted along with this assessment.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.orange.shade800,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.blue.shade200, width: 1.5),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.info_outline,
+                    size: 16,
+                    color: Colors.blue.shade700,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'No student submissions yet for this assessment.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.blue.shade900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          const SizedBox(height: 12),
+
+          // Cannot be undone warning
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.red.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.red.shade200, width: 1.5),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.block,
+                  size: 16,
+                  color: Colors.red.shade700,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'This action cannot be undone.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.red.shade900,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          ),
+          child: Text(
+            'Cancel',
+            style: TextStyle(
+              color: Colors.grey.shade700,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            gradient: const LinearGradient(
+              colors: [Colors.red, Color(0xFFDC2626)],
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.red.withOpacity(0.3),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.delete_forever, size: 16),
+                const SizedBox(width: 8),
+                Text(
+                  submissionCount > 0 ? 'Delete All' : 'Delete',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  if (confirmed != true) return;
+
+  setState(() {
+    _isUpdating = true;
+    _errorMessage = null;
+    _imageOperationMessage = 'Deleting assessment and all related data...';
+  });
+
+  try {
+    // 1. Delete all student submissions first
+    final submissionsSnapshot = await FirebaseFirestore.instance
+        .collection('studentSubmissions')
+        .where('assessmentId', isEqualTo: widget.assessmentId)
+        .get();
+
+    // Batch delete submissions
+    final batch = FirebaseFirestore.instance.batch();
+    for (var doc in submissionsSnapshot.docs) {
+      batch.delete(doc.reference);
+    }
+    await batch.commit();
+
+    // 2. Delete all question images
+    for (var question in _questions) {
+      if (question.questionImagePath != null) {
+        await _deleteImageFromStorage(question.questionImagePath);
+      }
+    }
+
+    // 3. Delete header image
+    if (_assessmentHeaderImagePath != null) {
+      await _deleteImageFromStorage(_assessmentHeaderImagePath);
+    }
+
+    // 4. Delete assessment document
+    await FirebaseFirestore.instance
+        .collection('trainerAssessments')
+        .doc(widget.assessmentId)
+        .delete();
 
     setState(() {
-      _isUpdating = true;
-      _errorMessage = null;
-      _imageOperationMessage = 'Deleting assessment...';
+      _successMessage = submissionCount > 0
+          ? 'Assessment and $submissionCount submission${submissionCount == 1 ? '' : 's'} deleted successfully!'
+          : 'Assessment deleted successfully!';
     });
 
-    try {
-      // Delete all question images
-      for (var question in _questions) {
-        if (question.questionImagePath != null) {
-          await _deleteImageFromStorage(question.questionImagePath);
-        }
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) {
+        Navigator.pop(context, true);
       }
-
-      // Delete header image
-      if (_assessmentHeaderImagePath != null) {
-        await _deleteImageFromStorage(_assessmentHeaderImagePath);
-      }
-
-      // Delete assessment document
-      await FirebaseFirestore.instance
-          .collection('trainerAssessments')
-          .doc(widget.assessmentId)
-          .delete();
-
-      setState(() {
-        _successMessage = 'Assessment deleted successfully!';
-      });
-
-      Future.delayed(Duration(seconds: 2), () {
-        if (mounted) {
-          Navigator.pop(context, true);
-        }
-      });
-    } catch (e) {
-      setState(() {
-        _errorMessage = 'Failed to delete assessment: $e';
-      });
-    } finally {
-      setState(() {
-        _isUpdating = false;
-        _imageOperationMessage = null;
-      });
-    }
+    });
+  } catch (e) {
+    setState(() {
+      _errorMessage = 'Failed to delete assessment: $e';
+    });
+  } finally {
+    setState(() {
+      _isUpdating = false;
+      _imageOperationMessage = null;
+    });
   }
+}
 
 
 void _cloneAssessment() {

@@ -53,126 +53,193 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
     });
   }
 
-  Future<void> _loadTags() async {
-    setState(() => _isLoadingTags = true);
+ Future<void> _loadTags() async {
+  setState(() => _isLoadingTags = true);
 
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) {
-        setState(() => _isLoadingTags = false);
-        return;
+  try {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      setState(() => _isLoadingTags = false);
+      return;
+    }
+
+    List<Map<String, dynamic>> defaultTags = [
+      {'id': 'default_personal', 'name': 'Personal', 'icon': Icons.person_outline, 'isDefault': true},
+      {'id': 'default_work', 'name': 'Work', 'icon': Icons.work_outline, 'isDefault': true},
+      {'id': 'default_travel', 'name': 'Travel', 'icon': Icons.flight_takeoff, 'isDefault': true},
+      {'id': 'default_study', 'name': 'Study', 'icon': Icons.school_outlined, 'isDefault': true},
+      {'id': 'default_food', 'name': 'Food', 'icon': Icons.restaurant_outlined, 'isDefault': true},
+      {'id': 'default_plant', 'name': 'Plant', 'icon': Icons.eco_outlined, 'isDefault': true},
+    ];
+
+    final snapshot = await FirebaseFirestore.instance
+        .collection('tags')
+        .where('userId', isEqualTo: user.uid)
+        .get();
+
+    final customTags = snapshot.docs.map((doc) {
+      final data = doc.data();
+      int codePoint;
+      try {
+        codePoint = int.parse(data['iconCodePoint'] as String);
+      } catch (e) {
+        codePoint = Icons.label_outline.codePoint;
       }
 
-      List<Map<String, dynamic>> defaultTags = [
-        {'id': 'default_personal', 'name': 'Personal', 'icon': Icons.person_outline, 'isDefault': true},
-        {'id': 'default_work', 'name': 'Work', 'icon': Icons.work_outline, 'isDefault': true},
-        {'id': 'default_travel', 'name': 'Travel', 'icon': Icons.flight_takeoff, 'isDefault': true},
-        {'id': 'default_study', 'name': 'Study', 'icon': Icons.school_outlined, 'isDefault': true},
-        {'id': 'default_food', 'name': 'Food', 'icon': Icons.restaurant_outlined, 'isDefault': true},
-        {'id': 'default_plant', 'name': 'Plant', 'icon': Icons.eco_outlined, 'isDefault': true},
-      ];
+      //  Convert codePoint to actual IconData constant
+      IconData icon = _getIconFromCodePoint(codePoint);
 
-      final snapshot = await FirebaseFirestore.instance
-          .collection('tags')
-          .where('userId', isEqualTo: user.uid)
-          .get();
+      return {
+        'id': doc.id,
+        'name': data['name'] as String,
+        'icon': icon,
+        'isDefault': false,
+      };
+    }).toList();
 
-      final customTags = snapshot.docs.map((doc) {
-        final data = doc.data();
-        int? codePoint;
-        try {
-          codePoint = int.parse(data['iconCodePoint'] as String);
-        } catch (e) {
-          codePoint = Icons.label_outline.codePoint;
-        }
-        return {
-          'id': doc.id,
-          'name': data['name'] as String,
-          'icon': IconData(codePoint, fontFamily: 'MaterialIcons'),
-          'isDefault': false,
-        };
-      }).toList();
+    if (mounted) {
+      setState(() {
+        tags = [...defaultTags, ...customTags];
+        _isLoadingTags = false;
+      });
+    }
+  } catch (e) {
+    logger.e('Error loading tags: $e');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.error_outline, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(child: Text('Failed to load tags: ${e.toString()}')),
+            ],
+          ),
+          backgroundColor: const Color(0xFFE74856),
+          duration: const Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+}
 
-      if (mounted) {
-        setState(() {
-          tags = [...defaultTags, ...customTags];
-          _isLoadingTags = false;
-        });
-      }
-    } catch (e) {
-      logger.e('Error loading tags: $e');
+// new helper method
+IconData _getIconFromCodePoint(int codePoint) {
+  // Map of common icon codePoints to their IconData constants
+  final iconMap = {
+    0xe87c: Icons.favorite_outline,
+    0xe83a: Icons.star_outline,
+    0xe9c5: Icons.wb_sunny_outlined,
+    0xe9c3: Icons.nightlight_outlined,
+    0xe532: Icons.fitness_center,
+    0xe40a: Icons.palette_outlined,
+    0xe405: Icons.music_note_outlined,
+    0xe3b0: Icons.camera_alt_outlined,
+    0xe892: Icons.label_outline,
+  };
+
+  // Return the matching icon or default to label_outline
+  return iconMap[codePoint] ?? Icons.label_outline;
+}
+
+ Future<void> _addCustomTag(String name, IconData icon) async {
+  try {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      logger.e('No user logged in');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
             content: Row(
               children: [
-                const Icon(Icons.error_outline, color: Colors.white),
-                const SizedBox(width: 12),
-                Expanded(child: Text('Failed to load tags: ${e.toString()}')),
+                Icon(Icons.error_outline, color: Colors.white),
+                SizedBox(width: 12),
+                Expanded(child: Text('Please log in to create tags')),
               ],
             ),
-            backgroundColor: const Color(0xFFE74856),
-            duration: const Duration(seconds: 3),
+            backgroundColor: Color(0xFFE74856),
+            duration: Duration(seconds: 3),
             behavior: SnackBarBehavior.floating,
           ),
         );
       }
+      return;
     }
-  }
 
-  Future<void> _addCustomTag(String name, IconData icon) async {
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
+    logger.i('Creating tag for user: ${user.uid}');
+    logger.i('Tag name: $name, icon codePoint: ${icon.codePoint}');
 
-      final docRef = await FirebaseFirestore.instance.collection('tags').add({
-        'name': name,
-        'iconCodePoint': icon.codePoint.toString(),
-        'userId': user.uid,
+    // Verify user is authenticated
+    await user.reload();
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      throw Exception('User session expired. Please log in again.');
+    }
+
+    final tagData = {
+      'name': name,
+      'iconCodePoint': icon.codePoint.toString(),
+      'userId': user.uid,
+    };
+
+    logger.i('Attempting to create tag with data: $tagData');
+
+    final docRef = await FirebaseFirestore.instance.collection('tags').add(tagData);
+
+    logger.i('Tag created successfully with ID: ${docRef.id}');
+
+    if (mounted) {
+      setState(() {
+        tags.add({'id': docRef.id, 'name': name, 'icon': icon, 'isDefault': false});
+        selectedTag = name;
       });
 
-      if (mounted) {
-        setState(() {
-          tags.add({'id': docRef.id, 'name': name, 'icon': icon, 'isDefault': false});
-          selectedTag = name;
-        });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle_outline, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(child: Text('Tag "$name" created successfully')),
+            ],
+          ),
+          backgroundColor: const Color(0xFF10893E),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  } catch (e) {
+    logger.e('Error adding custom tag: $e');
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.check_circle_outline, color: Colors.white),
-                const SizedBox(width: 12),
-                Expanded(child: Text('Tag "$name" created successfully')),
-              ],
-            ),
-            backgroundColor: const Color(0xFF10893E),
-            duration: const Duration(seconds: 2),
-            behavior: SnackBarBehavior.floating,
+    String errorMessage = 'Failed to create tag';
+    if (e.toString().contains('permission-denied')) {
+      errorMessage = 'Permission denied. Please check your account settings or contact support.';
+    } else if (e.toString().contains('network')) {
+      errorMessage = 'Network error. Please check your internet connection.';
+    } else {
+      errorMessage = 'Failed to create tag: ${e.toString()}';
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.error_outline, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(child: Text(errorMessage)),
+            ],
           ),
-        );
-      }
-    } catch (e) {
-      logger.e('Error adding custom tag: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.error_outline, color: Colors.white),
-                const SizedBox(width: 12),
-                Expanded(child: Text('Failed to create tag: ${e.toString()}')),
-              ],
-            ),
-            backgroundColor: const Color(0xFFE74856),
-            duration: const Duration(seconds: 3),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
+          backgroundColor: const Color(0xFFE74856),
+          duration: const Duration(seconds: 4),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
-
+}
   Future<void> _editCustomTag(String tagId, String oldName, String newName, IconData newIcon) async {
     try {
       final user = FirebaseAuth.instance.currentUser;

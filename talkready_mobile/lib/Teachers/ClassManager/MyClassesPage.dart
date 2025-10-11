@@ -11,7 +11,7 @@ import 'CreateClassForm.dart';
 import 'ManageClassContent.dart';
 import '../TrainerClassDashboardPage.dart';
 
-// Keep your existing Firebase service functions unchanged as fallback
+
 Future<List<Map<String, dynamic>>> getTrainerClassesFromService(
   String trainerId,
 ) async {
@@ -20,30 +20,25 @@ Future<List<Map<String, dynamic>>> getTrainerClassesFromService(
       .where('trainerId', isEqualTo: trainerId)
       .orderBy('createdAt', descending: true)
       .get();
-  final list = snapshot.docs
-      .map((doc) => {'id': doc.id, ...doc.data()})
-      .toList();
-  // Ensure we have a robust client-side sort fallback in case createdAt is missing or not comparable
-  list.sort((a, b) {
-    DateTime dateA = DateTime.fromMillisecondsSinceEpoch(0);
-    DateTime dateB = DateTime.fromMillisecondsSinceEpoch(0);
-    final ca = a['createdAt'];
-    final cb = b['createdAt'];
-    try {
-      if (ca is Timestamp)
-        dateA = ca.toDate();
-      else if (ca is DateTime)
-        dateA = ca;
-    } catch (_) {}
-    try {
-      if (cb is Timestamp)
-        dateB = cb.toDate();
-      else if (cb is DateTime)
-        dateB = cb;
-    } catch (_) {}
-    // newest first
-    return dateB.compareTo(dateA);
-  });
+
+  final list = <Map<String, dynamic>>[];
+
+  for (var doc in snapshot.docs) {
+    final classId = doc.id;
+
+    // ✅ Get ACTUAL student count every time
+    final enrollmentCount = await FirebaseFirestore.instance
+        .collection('enrollments')
+        .where('classId', isEqualTo: classId)
+        .get();
+
+    list.add({
+      'id': doc.id,
+      ...doc.data(),
+      'studentCount': enrollmentCount.docs.length, // Real-time count
+    });
+  }
+
   return list;
 }
 

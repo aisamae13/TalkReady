@@ -123,14 +123,16 @@ class _JournalWritingPageState extends State<JournalWritingPage> {
     }
   }
 
-  void _startAutoSave() {
-    _autoSaveTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
-      if (_hasUnsavedChanges &&
-          (_textController.text.isNotEmpty || _titleController.text.isNotEmpty)) {
-        _saveAsDraft();
-      }
-    });
-  }
+ void _startAutoSave() {
+  _autoSaveTimer = Timer.periodic(const Duration(seconds: 20), (timer) {
+    // Only auto-save if there are unsaved changes and content exists
+    if (_hasUnsavedChanges &&
+        (_textController.text.trim().isNotEmpty ||
+         _titleController.text.trim().isNotEmpty)) {
+      _saveAsDraft();
+    }
+  });
+}
 Future<void> _saveToFirestore(JournalEntry entry, {bool isDraft = false}) async {
   try {
     final user = FirebaseAuth.instance.currentUser;
@@ -145,39 +147,35 @@ Future<void> _saveToFirestore(JournalEntry entry, {bool isDraft = false}) async 
       'tagName': entry.tagName,
       'title': entry.title,
       'content': entry.content,
-      'timestamp': entry.timestamp,
+      'timestamp': Timestamp.fromDate(entry.timestamp),
       'isFavorite': entry.isFavorite,
       'isDraft': isDraft,
-      'lastModified': entry.lastModified,
+      'lastModified': entry.lastModified != null
+          ? Timestamp.fromDate(entry.lastModified!)
+          : Timestamp.fromDate(DateTime.now()),
       'templateId': entry.templateId,
     };
 
-    if (widget.initialEntry != null) {
-      // Update existing entry
-      final querySnapshot = await FirebaseFirestore.instance
-          .collection('journal_entries')
-          .where('userId', isEqualTo: user.uid)
-          .where('timestamp', isEqualTo: widget.initialEntry!.timestamp)
-          .limit(1)
-          .get();
-
-      if (querySnapshot.docs.isNotEmpty) {
-        await querySnapshot.docs.first.reference.update(docData);
-        logger.i('Updated entry in Firestore');
-      } else {
-        await FirebaseFirestore.instance.collection('journal_entries').add(docData);
-        logger.i('Created new entry in Firestore (original not found)');
-      }
+    if (widget.initialEntry?.id != null) {
+      // Update existing entry by ID
+      await FirebaseFirestore.instance
+          .collection('journals')
+          .doc(widget.initialEntry!.id)
+          .update(docData);
+      logger.i('Updated entry in Firestore with ID: ${widget.initialEntry!.id}');
     } else {
       // Create new entry
-      await FirebaseFirestore.instance.collection('journal_entries').add(docData);
-      logger.i('Saved new entry to Firestore');
+      final docRef = await FirebaseFirestore.instance
+          .collection('journals')
+          .add(docData);
+      logger.i('Created new entry in Firestore with ID: ${docRef.id}');
     }
   } catch (e) {
     logger.e('Error saving to Firestore: $e');
     rethrow;
   }
 }
+
   @override
   void dispose() {
     _autoSaveTimer?.cancel();
@@ -261,7 +259,7 @@ Future<void> _saveToFirestore(JournalEntry entry, {bool isDraft = false}) async 
     );
   }
 
-  Future<void> _saveAsDraft() async {
+Future<void> _saveAsDraft() async {
   final contentText = _textController.text.trim();
   if (contentText.isEmpty && _titleController.text.trim().isEmpty) {
     return;
@@ -270,7 +268,9 @@ Future<void> _saveToFirestore(JournalEntry entry, {bool isDraft = false}) async 
   setState(() => _isSaving = true);
 
   try {
+    final now = DateTime.now();
     final draftEntry = JournalEntry(
+      id: widget.initialEntry?.id, // Keep existing ID if updating
       mood: widget.mood ?? 'Not specified',
       tagId: widget.tagId,
       tagName: widget.tagName ?? 'Not specified',
@@ -283,30 +283,34 @@ Future<void> _saveToFirestore(JournalEntry entry, {bool isDraft = false}) async 
         'alignment': _alignment,
         'templateResponses': _templateResponses,
       }),
-      timestamp: DateTime.now(),
+      timestamp: widget.initialEntry?.timestamp ?? now,
       isFavorite: widget.initialEntry?.isFavorite ?? false,
       isDraft: true,
-      lastModified: DateTime.now(),
+      lastModified: now,
       templateId: _selectedTemplate?.id,
     );
 
     // Save to Firestore
     await _saveToFirestore(draftEntry, isDraft: true);
 
-    if (widget.initialEntry != null && widget.initialEntry!.isDraft) {
-      final index = widget.entries.indexWhere((e) => e == widget.initialEntry);
+    // Update local state
+    if (widget.initialEntry != null) {
+      final index = widget.entries.indexWhere((e) => e.id == widget.initialEntry!.id);
       if (index != -1) {
         widget.updateEntry(index, draftEntry);
       }
     } else {
-      widget.addEntry(draftEntry);
+      // If it's a new draft, we need to add it
+      // Note: We won't have the ID yet, so this is a limitation
+      // The entry will appear after refresh
     }
 
     setState(() {
       _hasUnsavedChanges = false;
-      _lastAutoSave = DateTime.now();
+      _lastAutoSave = now;
     });
 
+    _showSuccessSnackBar('Draft saved successfully');
     logger.i('Draft saved successfully to Firestore');
   } catch (e) {
     logger.e('Error saving draft: $e');
@@ -315,8 +319,21 @@ Future<void> _saveToFirestore(JournalEntry entry, {bool isDraft = false}) async 
     setState(() => _isSaving = false);
   }
 }
+String _getTimeAgo(DateTime dateTime) {
+  final now = DateTime.now();
+  final difference = now.difference(dateTime);
 
- Future<void> _saveEntry({bool isDraft = false}) async {
+  if (difference.inSeconds < 60) {
+    return 'just now';
+  } else if (difference.inMinutes < 60) {
+    return '${difference.inMinutes}m ago';
+  } else if (difference.inHours < 24) {
+    return '${difference.inHours}h ago';
+  } else {
+    return '${difference.inDays}d ago';
+  }
+}
+Future<void> _saveEntry({bool isDraft = false}) async {
   final contentText = _textController.text.trim();
   if (contentText.isEmpty) {
     _showErrorSnackBar('Content is required');
@@ -326,7 +343,9 @@ Future<void> _saveToFirestore(JournalEntry entry, {bool isDraft = false}) async 
   setState(() => _isSaving = true);
 
   try {
+    final now = DateTime.now();
     final newEntry = JournalEntry(
+      id: widget.initialEntry?.id, // Keep existing ID if updating
       mood: widget.mood ?? 'Not specified',
       tagId: widget.tagId,
       tagName: widget.tagName ?? 'Not specified',
@@ -339,49 +358,44 @@ Future<void> _saveToFirestore(JournalEntry entry, {bool isDraft = false}) async 
         'alignment': _alignment,
         'templateResponses': _templateResponses,
       }),
-      timestamp: DateTime.now(),
+      timestamp: widget.initialEntry?.timestamp ?? now,
       isFavorite: widget.initialEntry?.isFavorite ?? false,
       isDraft: isDraft,
-      lastModified: DateTime.now(),
+      lastModified: now,
       templateId: _selectedTemplate?.id,
     );
 
     // Save to Firestore
     await _saveToFirestore(newEntry, isDraft: isDraft);
 
+    // Update local state
     if (widget.initialEntry != null) {
-      final index = widget.entries.indexWhere((e) => e == widget.initialEntry);
+      final index = widget.entries.indexWhere((e) => e.id == widget.initialEntry!.id);
       if (index != -1) {
         widget.updateEntry(index, newEntry);
         logger.i('Updated journal entry at index: $index');
-      } else {
-        widget.addEntry(newEntry);
-        logger.i('Added new entry as initial entry not found');
       }
     } else {
-      widget.addEntry(newEntry);
+      // For new entries, we'd need to reload or add with the returned ID
+      // This is a limitation of the current architecture
       logger.i('Added new journal entry');
     }
 
     setState(() {
-      _titleController.clear();
-      _textController.clear();
-      _isBold = false;
-      _isItalic = false;
-      _isUnderline = false;
-      _alignment = 'left';
       _hasUnsavedChanges = false;
-      _selectedTemplate = null;
-      _templateResponses.clear();
     });
 
-    _showSuccessSnackBar(isDraft ? 'Draft saved to Firestore' : 'Entry saved to Firestore');
+    _showSuccessSnackBar(isDraft ? 'Draft saved' : 'Entry saved successfully');
 
-    // Small delay before navigation
+    // Navigate after a brief delay
     await Future.delayed(const Duration(milliseconds: 500));
 
     if (mounted) {
-      Navigator.pushNamed(context, '/journal-entries');
+      // Navigate to entries page
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        '/journal-entries',
+        (route) => route.settings.name == '/mood-selection',
+      );
     }
   } catch (e) {
     logger.e('Error saving entry: $e');
@@ -688,7 +702,10 @@ Widget build(BuildContext context) {
     onPopInvoked: (didPop) async {
       if (didPop) return;
 
-      if (_hasUnsavedChanges) {
+      // Only show dialog if there are actual unsaved changes
+      if (_hasUnsavedChanges &&
+          (_textController.text.trim().isNotEmpty ||
+           _titleController.text.trim().isNotEmpty)) {
         final shouldSave = await showDialog<String>(
           context: context,
           builder: (context) => AlertDialog(
@@ -712,17 +729,26 @@ Widget build(BuildContext context) {
           ),
         );
 
-        if (shouldSave == 'save') {
+        if (shouldSave == 'cancel') {
+          return; // Stay on page
+        } else if (shouldSave == 'save') {
           await _saveAsDraft();
-        } else if (shouldSave != 'discard') {
-          return;
         }
       }
 
-      if (widget.initialEntry != null) {
-        Navigator.pushNamed(context, '/journal-entries');
-      } else {
-        Navigator.pushNamed(context, '/mood-selection');
+      // Navigate back
+      if (mounted) {
+        if (widget.initialEntry != null) {
+          Navigator.of(context).pushNamedAndRemoveUntil(
+            '/journal-entries',
+            (route) => route.settings.name == '/mood-selection',
+          );
+        } else {
+          Navigator.of(context).pushNamedAndRemoveUntil(
+            '/mood-selection',
+            (route) => false,
+          );
+        }
       }
     },
     child: Scaffold(
@@ -1014,98 +1040,166 @@ Widget build(BuildContext context) {
 
             // Bottom Action Buttons (Fixed - no overlap)
             Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, -2),
+  padding: const EdgeInsets.all(16),
+  decoration: BoxDecoration(
+    color: Colors.white,
+    boxShadow: [
+      BoxShadow(
+        color: Colors.black.withOpacity(0.05),
+        blurRadius: 10,
+        offset: const Offset(0, -2),
+      ),
+    ],
+  ),
+  child: SafeArea(
+    top: false,
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Auto-save status indicator
+        if (_lastAutoSave != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.cloud_done, size: 14, color: Color(0xFF10893E)),
+                const SizedBox(width: 6),
+                Text(
+                  'Last saved: ${_getTimeAgo(_lastAutoSave!)}',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF10893E),
                   ),
-                ],
-              ),
-              child: SafeArea(
-                top: false,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: _navigateToEntries,
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          side: const BorderSide(color: Color(0xFF0078D4)),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                        child: const Text(
-                          'View Entries',
-                          style: TextStyle(
-                            color: Color(0xFF0078D4),
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: _isSaving ? null : () => _saveEntry(isDraft: true),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          side: const BorderSide(color: Color(0xFFFFC83D)),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                        child: const Text(
-                          'Save Draft',
-                          style: TextStyle(
-                            color: Color(0xFFFFC83D),
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: _isSaving ? null : () => _saveEntry(isDraft: false),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF0078D4),
-                          disabledBackgroundColor: const Color(0xFF8A8886),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          elevation: 0,
-                        ),
-                        child: _isSaving
-                            ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                ),
-                              )
-                            : Text(
-                                widget.initialEntry != null ? 'Update' : 'Save',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                      ),
-                    ),
-                  ],
+                ),
+              ],
+            ),
+          )
+        else if (_hasUnsavedChanges)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 6,
+                  height: 6,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFFFC83D),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                const Text(
+                  'Unsaved changes',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFFFFC83D),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+        // Buttons
+        Row(
+          children: [
+            // View Entries Button
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _isSaving ? null : _navigateToEntries,
+                icon: const Icon(Icons.library_books, size: 16),
+                label: const Text('Entries'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  side: const BorderSide(color: Color(0xFF8A8886)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  foregroundColor: const Color(0xFF605E5C),
                 ),
               ),
             ),
+            const SizedBox(width: 8),
+
+            // Save as Draft Button
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _isSaving ? null : _saveAsDraft,
+                icon: const Icon(Icons.save_outlined, size: 16),
+                label: const Text('Draft'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  side: const BorderSide(color: Color(0xFFFFC83D)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  foregroundColor: const Color(0xFFFFC83D),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+
+            // Save/Publish Button
+            Expanded(
+              flex: widget.initialEntry?.isDraft == true ? 1 : 1,
+              child: ElevatedButton.icon(
+                onPressed: _isSaving ? null : () => _saveEntry(isDraft: false),
+                icon: _isSaving
+                    ? const SizedBox(
+                        height: 16,
+                        width: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      )
+                    : Icon(
+                        widget.initialEntry?.isDraft == true
+                            ? Icons.publish
+                            : Icons.check,
+                        size: 16,
+                      ),
+                label: Text(
+                  widget.initialEntry?.isDraft == true
+                      ? 'Publish'
+                      : (widget.initialEntry != null ? 'Update' : 'Save'),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0078D4),
+                  disabledBackgroundColor: const Color(0xFF8A8886),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  elevation: 0,
+                ),
+              ),
+            ),
+          ],
+        ),
+
+        // Helper text
+        if (!_isSaving)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              widget.initialEntry?.isDraft == true
+                  ? 'Tip: "Publish" will make this entry visible in your journal'
+                  : 'Tip: "Draft" saves without publishing',
+              style: const TextStyle(
+                fontSize: 10,
+                color: Color(0xFF8A8886),
+                fontStyle: FontStyle.italic,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+      ],
+    ),
+  ),
+)
           ],
         ),
       ),

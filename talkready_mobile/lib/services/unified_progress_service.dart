@@ -34,9 +34,9 @@ class UnifiedProgressService {
   };
 
   // Add near top of class (configurable):
-  static const String _fallbackLocalBase = 'http://192.168.254.103:5000'; // old
+  static const String _fallbackLocalBase = 'http://192.168.18.11:5000'; // old
   // For emulator convenience:
-  static const String _emulatorBase = 'http://192.168.254.103:5000';
+  static const String _emulatorBase = 'http://192.168.18.11:5000';
 
   Duration get _networkTimeout => const Duration(seconds: 60);
 
@@ -586,7 +586,7 @@ class UnifiedProgressService {
     Map<String, String> answers, [
     Map<String, dynamic>? scripts, // Make scripts an optional parameter
   ]) async {
-    final url = Uri.parse('http://192.168.254.103:5000/evaluate-scenario');
+    final url = Uri.parse('http://192.168.18.11:5000/evaluate-scenario');
     final headers = {'Content-Type': 'application/json'};
 
     // The body will now include the scripts if they are provided
@@ -622,7 +622,7 @@ class UnifiedProgressService {
     }
 
     // NOTE: Ensure your server is running and accessible at this IP address.
-    final url = Uri.parse('http://192.168.254.103:5000/synthesize-speech');
+    final url = Uri.parse('http://192.168.18.11:5000/synthesize-speech');
     final headers = {'Content-Type': 'application/json'};
     final body = jsonEncode({'text': text});
 
@@ -653,7 +653,7 @@ class UnifiedProgressService {
     }
 
     // NOTE: This IP must be correct for your local network.
-    final url = Uri.parse('http://192.168.254.103:5000/synthesize-speech');
+    final url = Uri.parse('http://192.168.18.11:5000/synthesize-speech');
     final headers = {'Content-Type': 'application/json'};
 
     // The server expects the key "parts", not "turns". This is the key fix.
@@ -849,7 +849,7 @@ class UnifiedProgressService {
   ) async {
     try {
       final response = await http.post(
-        Uri.parse('http://192.168.254.103:5000/evaluate-clarification'),
+        Uri.parse('http://192.168.18.11:5000/evaluate-clarification'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'answers': answers, 'lesson': lesson}),
       );
@@ -874,7 +874,7 @@ class UnifiedProgressService {
   ) async {
     try {
       final response = await http.post(
-        Uri.parse('http://192.168.254.103:5000/evaluate-solutions'),
+        Uri.parse('http://192.168.18.11:5000/evaluate-solutions'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'solutions': solutions,
@@ -904,7 +904,7 @@ class UnifiedProgressService {
   Future<void> _testBackendConnection() async {
     try {
       final response = await http.get(
-        Uri.parse('http://192.168.254.103:5000/health'),
+        Uri.parse('http://192.168.18.11:5000/health'),
       );
       _logger.i('Backend health check: ${response.statusCode}');
     } catch (e) {
@@ -915,7 +915,7 @@ class UnifiedProgressService {
   Future<Uint8List?> synthesizeSpeechFromParts(List<dynamic> parts) async {
     try {
       final response = await http.post(
-        Uri.parse('http://192.168.254.103:5000/synthesize-speech'),
+        Uri.parse('http://192.168.18.11:5000/synthesize-speech'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({'parts': parts}),
       );
@@ -936,7 +936,7 @@ class UnifiedProgressService {
   }) async {
     try {
       final url = Uri.parse(
-        'http://192.168.254.103:5000/evaluate-preassessment-typing',
+        'http://192.168.18.11:5000/evaluate-preassessment-typing',
       );
       final headers = {'Content-Type': 'application/json'};
       final body = jsonEncode({
