@@ -65,11 +65,11 @@ class _AIBotScreenState extends State<AIBotScreen> {
   ImageProvider? _userProfileImage;
 
   // Practice mode
-Prompt? _currentLearningPrompt;
-PromptCategory? _currentPracticeMode;
-String? _currentPracticePhrase;
-int? _rolePlayDurationMinutes;
-DateTime? _rolePlayStartTime;
+  Prompt? _currentLearningPrompt;
+  PromptCategory? _currentPracticeMode;
+  String? _currentPracticePhrase;
+  int? _rolePlayDurationMinutes;
+  DateTime? _rolePlayStartTime;
 
   // Controllers and keys
   final TextEditingController _textController = TextEditingController();
@@ -110,7 +110,8 @@ DateTime? _rolePlayStartTime;
           greetingMessage = _generateRandomGreeting();
         } catch (e) {
           logger.e('Error generating greeting: $e');
-          greetingMessage = "Hello${_userName != null && _userName!.isNotEmpty ? ", $_userName" : ""}! How can I help you practice today?";
+          greetingMessage =
+              "Hello${_userName != null && _userName!.isNotEmpty ? ", $_userName" : ""}! How can I help you practice today?";
           _showSnackBar('Could not display a personalized greeting.');
         }
 
@@ -139,8 +140,8 @@ DateTime? _rolePlayStartTime;
     String timePrefix = now.hour < 12
         ? "Good morning"
         : now.hour < 17
-            ? "Good afternoon"
-            : "Good evening";
+        ? "Good afternoon"
+        : "Good evening";
 
     if (_userName == null || _userName!.isEmpty) {
       logger.e('userName is null or empty');
@@ -184,9 +185,11 @@ DateTime? _rolePlayStartTime;
 
         if (_userName == null || _userName!.isEmpty) {
           if (userData.containsKey('onboarding')) {
-            final onboardingMap = userData['onboarding'] as Map<String, dynamic>?;
-            _userName = onboardingMap?['firstName']?.toString() ??
-                       onboardingMap?['userName']?.toString();
+            final onboardingMap =
+                userData['onboarding'] as Map<String, dynamic>?;
+            _userName =
+                onboardingMap?['firstName']?.toString() ??
+                onboardingMap?['userName']?.toString();
           }
         }
 
@@ -225,7 +228,9 @@ DateTime? _rolePlayStartTime;
       }
     } catch (e) {
       logger.e('Error fetching user data: $e');
-      _userName = FirebaseAuth.instance.currentUser?.displayName?.split(' ').first ?? 'User';
+      _userName =
+          FirebaseAuth.instance.currentUser?.displayName?.split(' ').first ??
+          'User';
       _userProfileImage = null;
       _hasSeenTutorial = false;
     } finally {
@@ -259,226 +264,238 @@ DateTime? _rolePlayStartTime;
   }
 
   Future<void> _stopListening() async {
-  if (_isListening) {
-    try {
-      String? path = await _audioService.stopRecording();
-      setState(() => _isListening = false);
-      _showSnackBar('Recording stopped.');
+    if (_isListening) {
+      try {
+        String? path = await _audioService.stopRecording();
+        setState(() => _isListening = false);
+        _showSnackBar('Recording stopped.');
 
-      if (path != null) {
-        await _processAudioRecording(path);
-      } else {
-        _showSnackBar('Could not find the recorded audio file.');
+        if (path != null) {
+          await _processAudioRecording(path);
+        } else {
+          _showSnackBar('Could not find the recorded audio file.');
+        }
+      } catch (e) {
+        logger.e('Error stopping recording: $e');
+        _showSnackBar('Error stopping recording: $e');
+        setState(() => _isListening = false);
       }
-    } catch (e) {
-      logger.e('Error stopping recording: $e');
-      _showSnackBar('Error stopping recording: $e');
-      setState(() => _isListening = false);
     }
   }
-}
-Future<void> _startRolePlaySession(int durationMinutes) async {
-  final rolePlayPrompt = englishLearningPrompts.firstWhere(
-    (p) => p.category == PromptCategory.rolePlay,
-    orElse: () => englishLearningPrompts.first,
-  );
 
-  setState(() {
-    _currentLearningPrompt = rolePlayPrompt;
-    _currentPracticeMode = PromptCategory.rolePlay;
-    _rolePlayDurationMinutes = durationMinutes;
-    _rolePlayStartTime = DateTime.now();
-    _showSuggestions = false;
-  });
+  Future<void> _startRolePlaySession(int durationMinutes) async {
+    final rolePlayPrompt = englishLearningPrompts.firstWhere(
+      (p) => p.category == PromptCategory.rolePlay,
+      orElse: () => englishLearningPrompts.first,
+    );
 
-  _addBotMessage(
-    "Awesome! We'll practice for $durationMinutes minutes. Let's start your role-play session. Would you like to be the customer or the agent?"
-  );
-
-  // Start timer that updates the UI every second
-  _rolePlayTimer = Timer.periodic(Duration(seconds: 1), (timer) {
-    if (!mounted) {
-      timer.cancel();
-      return;
-    }
-
-    final elapsed = DateTime.now().difference(_rolePlayStartTime!);
-    final remaining = Duration(minutes: _rolePlayDurationMinutes!) - elapsed;
-
-    if (remaining.isNegative) {
-      timer.cancel();
-      _endRolePlaySession();
-    } else {
-      setState(() {}); // Trigger rebuild to update timer display
-    }
-  });
-}
-void _endRolePlaySession() {
-  if (!mounted) return;
-
-  _rolePlayTimer?.cancel();
-  _rolePlayTimer = null;
-
-  _addBotMessage(
-    "Great job! That's our $_rolePlayDurationMinutes-minute session done. You did well practicing those scenarios. Want to continue or try something else?"
-  );
-
-  setState(() {
-    _rolePlayDurationMinutes = null;
-    _rolePlayStartTime = null;
-    _currentLearningPrompt = null;
-    _currentPracticeMode = null;
-    _showSuggestions = true;
-  });
-}
-
-
-void _endRolePlaySessionEarly() {
-  if (!mounted) return;
-
-  // Cancel the timer
-  _rolePlayTimer?.cancel();
-  _rolePlayTimer = null;
-
-  // Calculate how long they practiced
-  if (_rolePlayStartTime != null) {
-    final elapsed = DateTime.now().difference(_rolePlayStartTime!);
-    final minutes = elapsed.inMinutes;
+    setState(() {
+      _currentLearningPrompt = rolePlayPrompt;
+      _currentPracticeMode = PromptCategory.rolePlay;
+      _rolePlayDurationMinutes = durationMinutes;
+      _rolePlayStartTime = DateTime.now();
+      _showSuggestions = false;
+    });
 
     _addBotMessage(
-      "No problem! You practiced for $minutes minute${minutes != 1 ? 's' : ''}. Nice work! Want to continue chatting or try something else?"
+      "Awesome! We'll practice for $durationMinutes minutes. Let's start your role-play session. Would you like to be the customer or the agent?",
     );
+
+    // Start timer that updates the UI every second
+    _rolePlayTimer = Timer.periodic(Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+
+      final elapsed = DateTime.now().difference(_rolePlayStartTime!);
+      final remaining = Duration(minutes: _rolePlayDurationMinutes!) - elapsed;
+
+      if (remaining.isNegative) {
+        timer.cancel();
+        _endRolePlaySession();
+      } else {
+        setState(() {}); // Trigger rebuild to update timer display
+      }
+    });
   }
 
-  // Reset role-play state
-  setState(() {
-    _rolePlayDurationMinutes = null;
-    _rolePlayStartTime = null;
-    _currentLearningPrompt = null;
-    _currentPracticeMode = null;
-    _showSuggestions = true;
-  });
-}
+  void _endRolePlaySession() {
+    if (!mounted) return;
 
-Future<void> _processAudioRecording(String audioPath) async {
-  try {
-    _showSnackBar('Processing...');
+    _rolePlayTimer?.cancel();
+    _rolePlayTimer = null;
 
-    final audioFile = File(audioPath);
-    if (!await audioFile.exists()) {
-      logger.e('Audio file does not exist at path: $audioPath');
-      _showSnackBar('Recording file not found. Please try again.');
-      return;
+    _addBotMessage(
+      "Great job! That's our $_rolePlayDurationMinutes-minute session done. You did well practicing those scenarios. Want to continue or try something else?",
+    );
+
+    setState(() {
+      _rolePlayDurationMinutes = null;
+      _rolePlayStartTime = null;
+      _currentLearningPrompt = null;
+      _currentPracticeMode = null;
+      _showSuggestions = true;
+    });
+  }
+
+  void _endRolePlaySessionEarly() {
+    if (!mounted) return;
+
+    // Cancel the timer
+    _rolePlayTimer?.cancel();
+    _rolePlayTimer = null;
+
+    // Calculate how long they practiced
+    if (_rolePlayStartTime != null) {
+      final elapsed = DateTime.now().difference(_rolePlayStartTime!);
+      final minutes = elapsed.inMinutes;
+
+      _addBotMessage(
+        "No problem! You practiced for $minutes minute${minutes != 1 ? 's' : ''}. Nice work! Want to continue chatting or try something else?",
+      );
     }
 
-    final audioUrl = await _transcriptionService.uploadToCloudinary(audioPath);
+    // Reset role-play state
+    setState(() {
+      _rolePlayDurationMinutes = null;
+      _rolePlayStartTime = null;
+      _currentLearningPrompt = null;
+      _currentPracticeMode = null;
+      _showSuggestions = true;
+    });
+  }
 
-    // CHECK: Pronunciation or Fluency assessment
-    if (_isAwaitingPronunciationPractice &&
-        (_currentPracticeMode == PromptCategory.pronunciation ||
-         _currentPracticeMode == PromptCategory.fluency)) {
+  Future<void> _processAudioRecording(String audioPath) async {
+    try {
+      _showSnackBar('Processing...');
 
-      setState(() => _isAwaitingPronunciationPractice = false);
+      final audioFile = File(audioPath);
+      if (!await audioFile.exists()) {
+        logger.e('Audio file does not exist at path: $audioPath');
+        _showSnackBar('Recording file not found. Please try again.');
+        return;
+      }
 
-      final transcript = await _transcriptionService.transcribeWithAzure(audioUrl);
+      final audioUrl = await _transcriptionService.uploadToCloudinary(
+        audioPath,
+      );
 
-      if (transcript != null) {
-        final userMessage = Message(
-          id: 'user-${DateTime.now().millisecondsSinceEpoch}',
-          text: transcript,
-          isUser: true,
-          timestamp: DateTime.now().toIso8601String(),
-          audioPath: audioPath,
-        );
+      // CHECK: Pronunciation or Fluency assessment
+      if (_isAwaitingPronunciationPractice &&
+          (_currentPracticeMode == PromptCategory.pronunciation ||
+              _currentPracticeMode == PromptCategory.fluency)) {
+        setState(() => _isAwaitingPronunciationPractice = false);
 
-        setState(() {
-          _messages.add(userMessage);
-          _pruneMessages();
-        });
-
-        await _firebaseChatService.addMessageToSession(userMessage, audioUrl: audioUrl);
-        _scrollToBottom();
-
-        // Generate feedback using Azure
-        final feedback = await _transcriptionService.generatePronunciationFeedback(
+        final transcript = await _transcriptionService.transcribeWithAzure(
           audioUrl,
-          transcript,
-          _currentPracticePhrase,
         );
 
-        // Determine which feedback display to use
-        final isFluencyMode = _currentPracticeMode == PromptCategory.fluency;
+        if (transcript != null) {
+          final userMessage = Message(
+            id: 'user-${DateTime.now().millisecondsSinceEpoch}',
+            text: transcript,
+            isUser: true,
+            timestamp: DateTime.now().toIso8601String(),
+            audioPath: audioPath,
+          );
 
-        if (isFluencyMode) {
-          _addAzureFluencyMessage(feedback);
+          setState(() {
+            _messages.add(userMessage);
+            _pruneMessages();
+          });
+
+          await _firebaseChatService.addMessageToSession(
+            userMessage,
+            audioUrl: audioUrl,
+          );
+          _scrollToBottom();
+
+          // Generate feedback using Azure
+          final feedback = await _transcriptionService
+              .generatePronunciationFeedback(
+                audioUrl,
+                transcript,
+                _currentPracticePhrase,
+              );
+
+          // Determine which feedback display to use
+          final isFluencyMode = _currentPracticeMode == PromptCategory.fluency;
+
+          if (isFluencyMode) {
+            _addAzureFluencyMessage(feedback);
+          } else {
+            _addAzureFeedbackMessage(feedback);
+          }
+
+          // Generate AI response with context
+          await _generateAIResponse(
+            transcript,
+            context: {
+              'azureScoresSummary':
+                  'Accuracy: ${feedback['accuracyScore']?.toStringAsFixed(0)}%, Fluency: ${feedback['fluencyScore']?.toStringAsFixed(0)}',
+              'accuracyScore': feedback['accuracyScore'],
+              'fluencyScore': feedback['fluencyScore'],
+              'recognizedText': transcript,
+              'isFluencyMode': isFluencyMode,
+            },
+          );
         } else {
-          _addAzureFeedbackMessage(feedback);
+          _showSnackBar('Could not transcribe your speech.');
         }
-
-        // Generate AI response with context
-        await _generateAIResponse(
-          transcript,
-          context: {
-            'azureScoresSummary': 'Accuracy: ${feedback['accuracyScore']?.toStringAsFixed(0)}%, Fluency: ${feedback['fluencyScore']?.toStringAsFixed(0)}',
-            'accuracyScore': feedback['accuracyScore'],
-            'fluencyScore': feedback['fluencyScore'],
-            'recognizedText': transcript,
-            'isFluencyMode': isFluencyMode,
-          },
-        );
       } else {
-        _showSnackBar('Could not transcribe your speech.');
-      }
-    } else {
-      // General conversation - use AssemblyAI
-      final transcript = await _transcriptionService.transcribeWithAssemblyAI(audioUrl);
-
-      if (transcript != null) {
-        final userMessage = Message(
-          id: 'user-${DateTime.now().millisecondsSinceEpoch}',
-          text: transcript,
-          isUser: true,
-          timestamp: DateTime.now().toIso8601String(),
-          audioPath: audioPath,
+        // General conversation - use AssemblyAI
+        final transcript = await _transcriptionService.transcribeWithAssemblyAI(
+          audioUrl,
         );
 
-        setState(() {
-          _messages.add(userMessage);
-          _pruneMessages();
-        });
+        if (transcript != null) {
+          final userMessage = Message(
+            id: 'user-${DateTime.now().millisecondsSinceEpoch}',
+            text: transcript,
+            isUser: true,
+            timestamp: DateTime.now().toIso8601String(),
+            audioPath: audioPath,
+          );
 
-        await _firebaseChatService.addMessageToSession(userMessage, audioUrl: audioUrl);
-        _scrollToBottom();
-        await _generateAIResponse(transcript);
-      } else {
-        _showSnackBar('Transcription failed.');
+          setState(() {
+            _messages.add(userMessage);
+            _pruneMessages();
+          });
+
+          await _firebaseChatService.addMessageToSession(
+            userMessage,
+            audioUrl: audioUrl,
+          );
+          _scrollToBottom();
+          await _generateAIResponse(transcript);
+        } else {
+          _showSnackBar('Transcription failed.');
+        }
       }
+    } catch (e) {
+      logger.e('Error processing audio: $e');
+      _addBotMessage("Error processing audio: ${e.toString()}");
     }
-  } catch (e) {
-    logger.e('Error processing audio: $e');
-    _addBotMessage("Error processing audio: ${e.toString()}");
   }
-}
 
-void _addAzureFluencyMessage(Map<String, dynamic> feedback) {
-  final azureMessage = Message(
-    id: 'azure-fluency-${DateTime.now().millisecondsSinceEpoch}',
-    text: feedback['feedback'] ?? '',
-    isUser: false,
-    timestamp: DateTime.now().toIso8601String(),
-    type: MessageType.azureFluency, // NEW type
-    metadata: {
-      ...feedback,
-      'originalText': _currentPracticePhrase,
-    },
-  );
+  void _addAzureFluencyMessage(Map<String, dynamic> feedback) {
+    final azureMessage = Message(
+      id: 'azure-fluency-${DateTime.now().millisecondsSinceEpoch}',
+      text: feedback['feedback'] ?? '',
+      isUser: false,
+      timestamp: DateTime.now().toIso8601String(),
+      type: MessageType.azureFluency, // NEW type
+      metadata: {...feedback, 'originalText': _currentPracticePhrase},
+    );
 
-  setState(() {
-    _messages.add(azureMessage);
-    _pruneMessages();
-  });
-  _scrollToBottom();
-}
+    setState(() {
+      _messages.add(azureMessage);
+      _pruneMessages();
+    });
+    _scrollToBottom();
+  }
+
   void _addAzureFeedbackMessage(Map<String, dynamic> feedback) {
     final azureMessage = Message(
       id: 'azure-${DateTime.now().millisecondsSinceEpoch}',
@@ -486,10 +503,7 @@ void _addAzureFluencyMessage(Map<String, dynamic> feedback) {
       isUser: false,
       timestamp: DateTime.now().toIso8601String(),
       type: MessageType.azureFeedback,
-      metadata: {
-        ...feedback,
-        'originalText': _currentPracticePhrase,
-      },
+      metadata: {...feedback, 'originalText': _currentPracticePhrase},
     );
 
     setState(() {
@@ -500,54 +514,54 @@ void _addAzureFluencyMessage(Map<String, dynamic> feedback) {
   }
 
   Future<void> _playUserAudio(String? audioPath) async {
-  if (audioPath == null || audioPath.isEmpty) {
-    _showSnackBar('No recording available.');
-    return;
+    if (audioPath == null || audioPath.isEmpty) {
+      _showSnackBar('No recording available.');
+      return;
+    }
+
+    // Verify file exists before attempting to play
+    final audioFile = File(audioPath);
+    if (!await audioFile.exists()) {
+      logger.e('Audio file not found at path: $audioPath');
+      _showSnackBar('Recording file not found. It may have been deleted.');
+      return;
+    }
+
+    // Check file size
+    final fileSize = await audioFile.length();
+    if (fileSize == 0) {
+      logger.e('Audio file is empty: $audioPath');
+      _showSnackBar('Recording file is empty.');
+      return;
+    }
+
+    try {
+      setState(() => _isPlayingUserAudio = true);
+      logger.i('Playing user audio from: $audioPath (size: $fileSize bytes)');
+
+      await _audioService.playUserAudio(audioPath);
+
+      // Listen to audio completion
+      _audioService.audioPlayer.onPlayerComplete.listen((_) {
+        if (mounted) {
+          setState(() => _isPlayingUserAudio = false);
+          logger.i('Audio playback completed');
+        }
+      });
+
+      // Fallback timeout (adjust based on expected audio length)
+      Future.delayed(Duration(seconds: 30), () {
+        if (mounted && _isPlayingUserAudio) {
+          logger.w('Audio playback timeout - forcing stop');
+          setState(() => _isPlayingUserAudio = false);
+        }
+      });
+    } catch (e) {
+      logger.e('Error playing user audio: $e');
+      _showSnackBar('Error playing recording: ${e.toString()}');
+      setState(() => _isPlayingUserAudio = false);
+    }
   }
-
-  // Verify file exists before attempting to play
-  final audioFile = File(audioPath);
-  if (!await audioFile.exists()) {
-    logger.e('Audio file not found at path: $audioPath');
-    _showSnackBar('Recording file not found. It may have been deleted.');
-    return;
-  }
-
-  // Check file size
-  final fileSize = await audioFile.length();
-  if (fileSize == 0) {
-    logger.e('Audio file is empty: $audioPath');
-    _showSnackBar('Recording file is empty.');
-    return;
-  }
-
-  try {
-    setState(() => _isPlayingUserAudio = true);
-    logger.i('Playing user audio from: $audioPath (size: $fileSize bytes)');
-
-    await _audioService.playUserAudio(audioPath);
-
-    // Listen to audio completion
-    _audioService.audioPlayer.onPlayerComplete.listen((_) {
-      if (mounted) {
-        setState(() => _isPlayingUserAudio = false);
-        logger.i('Audio playback completed');
-      }
-    });
-
-    // Fallback timeout (adjust based on expected audio length)
-    Future.delayed(Duration(seconds: 30), () {
-      if (mounted && _isPlayingUserAudio) {
-        logger.w('Audio playback timeout - forcing stop');
-        setState(() => _isPlayingUserAudio = false);
-      }
-    });
-  } catch (e) {
-    logger.e('Error playing user audio: $e');
-    _showSnackBar('Error playing recording: ${e.toString()}');
-    setState(() => _isPlayingUserAudio = false);
-  }
-}
 
   void _toggleTyping() {
     if (!_isListening) {
@@ -589,180 +603,203 @@ void _addAzureFluencyMessage(Map<String, dynamic> feedback) {
       _textController.clear();
     }
   }
-Future<void> _generateAIResponse(String userInput, {Map<String, dynamic>? context}) async {
-  if (!mounted) return;
 
-  setState(() => _isProcessingTTS = true);
+  Future<void> _generateAIResponse(
+    String userInput, {
+    Map<String, dynamic>? context,
+  }) async {
+    if (!mounted) return;
 
-  final typingMessage = Message(
-    id: 'typing-${DateTime.now().millisecondsSinceEpoch}',
-    text: 'TalkReady Bot is typing...',
-    isUser: false,
-    timestamp: DateTime.now().toIso8601String(),
-    typing: true,
-  );
+    setState(() => _isProcessingTTS = true);
 
-  setState(() {
-    _messages.add(typingMessage);
-  });
-
-  try {
-    // LAYER 1: Hardcoded keyword detection (fast fallback)
-    final exitKeywords = [
-      'stop', 'enough', 'done', 'finished', 'quit', 'exit',
-      'change topic', 'something else', 'different', 'switch',
-      'no more', 'that\'s enough', 'i\'m done', 'let\'s stop'
-    ];
-
-    final userInputLower = userInput.toLowerCase();
-    final hardcodedExit = exitKeywords.any((keyword) => userInputLower.contains(keyword));
-
-    if (hardcodedExit && _currentPracticeMode != null) {
-      logger.i('Layer 1: Hardcoded keyword detected exit - $userInput');
-    }
-
-    if (_rolePlayDurationMinutes != null && _rolePlayStartTime != null) {
-      context = context ?? {};
-      context['rolePlayDuration'] = _rolePlayDurationMinutes;
-      final elapsed = DateTime.now().difference(_rolePlayStartTime!).inMinutes;
-      context['rolePlayElapsed'] = elapsed;
-    }
-
-    final systemPrompt = _openAIService.buildSystemPrompt(
-      currentPrompt: _currentLearningPrompt,
-      userName: _userName,
-      practiceMode: _currentPracticeMode,
-      context: context,
-      practiceTargetText: _currentPracticePhrase,
-    );
-
-    // LAYER 2 & 3: OpenAI function calling + response detection
-    // Enable functions for ALL practice modes
-    final enableFunctions = _currentPracticeMode != null;
-
-    final aiResult = await _openAIService.getOpenAIResponseWithFunctions(
-      systemPrompt,
-      _messages,
-      userInput: userInput,
-      enablePracticeFunctions: enableFunctions,
-    );
-
-    setState(() {
-      _messages.removeWhere((msg) => msg.id == typingMessage.id);
-    });
-
-    // Check if AI called exit_practice_mode function
-    bool aiDetectedExit = false;
-    String aiResponse = '';
-
-    if (aiResult['type'] == 'function_call' &&
-        aiResult['function_name'] == 'exit_practice_mode') {
-
-      logger.i('Layer 2: AI function calling detected exit - ${aiResult['arguments']}');
-      aiDetectedExit = true;
-
-      // Generate a response acknowledging the exit
-      aiResponse = "Sure thing! What would you like to do now?";
-
-    } else if (aiResult['type'] == 'message') {
-      aiResponse = aiResult['message'] as String;
-    }
-
-    final botMessage = Message(
-      id: 'bot-${DateTime.now().millisecondsSinceEpoch}',
-      text: aiResponse,
+    final typingMessage = Message(
+      id: 'typing-${DateTime.now().millisecondsSinceEpoch}',
+      text: 'TalkReady Bot is typing...',
       isUser: false,
       timestamp: DateTime.now().toIso8601String(),
+      typing: true,
     );
 
     setState(() {
-      _messages.add(botMessage);
-      _pruneMessages();
+      _messages.add(typingMessage);
     });
 
-    await _firebaseChatService.addMessageToSession(botMessage);
-    _scrollToBottom();
+    try {
+      // LAYER 1: Hardcoded keyword detection (fast fallback)
+      final exitKeywords = [
+        'stop',
+        'enough',
+        'done',
+        'finished',
+        'quit',
+        'exit',
+        'change topic',
+        'something else',
+        'different',
+        'switch',
+        'no more',
+        'that\'s enough',
+        'i\'m done',
+        'let\'s stop',
+      ];
 
-    // Decide whether to exit practice mode
-    bool shouldExit = hardcodedExit || aiDetectedExit;
+      final userInputLower = userInput.toLowerCase();
+      final hardcodedExit = exitKeywords.any(
+        (keyword) => userInputLower.contains(keyword),
+      );
 
-    if (shouldExit) {
-      // Exit ANY practice mode (not just pronunciation/fluency)
+      if (hardcodedExit && _currentPracticeMode != null) {
+        logger.i('Layer 1: Hardcoded keyword detected exit - $userInput');
+      }
+
+      if (_rolePlayDurationMinutes != null && _rolePlayStartTime != null) {
+        context = context ?? {};
+        context['rolePlayDuration'] = _rolePlayDurationMinutes;
+        final elapsed = DateTime.now()
+            .difference(_rolePlayStartTime!)
+            .inMinutes;
+        context['rolePlayElapsed'] = elapsed;
+      }
+
+      final systemPrompt = _openAIService.buildSystemPrompt(
+        currentPrompt: _currentLearningPrompt,
+        userName: _userName,
+        practiceMode: _currentPracticeMode,
+        context: context,
+        practiceTargetText: _currentPracticePhrase,
+      );
+
+      // LAYER 2 & 3: OpenAI function calling + response detection
+      // Enable functions for ALL practice modes
+      final enableFunctions = _currentPracticeMode != null;
+
+      final aiResult = await _openAIService.getOpenAIResponseWithFunctions(
+        systemPrompt,
+        _messages,
+        userInput: userInput,
+        enablePracticeFunctions: enableFunctions,
+      );
+
       setState(() {
-        _currentPracticeMode = null;
-        _currentLearningPrompt = null;
-        _currentPracticePhrase = null;
-        _isAwaitingPronunciationPractice = false;
-        _showSuggestions = true;
+        _messages.removeWhere((msg) => msg.id == typingMessage.id);
       });
-      logger.i('Exited practice mode');
-    } else {
-      // Continue practice mode - extract phrase and manage flags (for pronunciation/fluency)
-      if (_currentPracticeMode == PromptCategory.pronunciation ||
-          _currentPracticeMode == PromptCategory.fluency) {
 
-        final extractedPhrase = _openAIService.extractPracticePhrase(
-          aiResponse,
-          _currentPracticeMode,
+      // Check if AI called exit_practice_mode function
+      bool aiDetectedExit = false;
+      String aiResponse = '';
+
+      if (aiResult['type'] == 'function_call' &&
+          aiResult['function_name'] == 'exit_practice_mode') {
+        logger.i(
+          'Layer 2: AI function calling detected exit - ${aiResult['arguments']}',
         );
+        aiDetectedExit = true;
 
-        if (extractedPhrase != null) {
-          // New phrase found
-          setState(() {
-            _currentPracticePhrase = extractedPhrase;
-            _isAwaitingPronunciationPractice = true;
-          });
-          logger.i('New practice phrase extracted: $extractedPhrase');
-        } else if (_currentPracticePhrase != null) {
-          // LAYER 3: No new phrase extracted - check if AI is asking something
-          final askingPatterns = [
-            'what would you like',
-            'would you like to',
-            'want to try',
-            'prefer to',
-            'which one',
-            'what else'
-          ];
+        // Generate a response acknowledging the exit
+        aiResponse = "Sure thing! What would you like to do now?";
+      } else if (aiResult['type'] == 'message') {
+        aiResponse = aiResult['message'] as String;
+      }
 
-          final isAsking = askingPatterns.any((pattern) =>
-            aiResponse.toLowerCase().contains(pattern)
+      final botMessage = Message(
+        id: 'bot-${DateTime.now().millisecondsSinceEpoch}',
+        text: aiResponse,
+        isUser: false,
+        timestamp: DateTime.now().toIso8601String(),
+      );
+
+      setState(() {
+        _messages.add(botMessage);
+        _pruneMessages();
+      });
+
+      await _firebaseChatService.addMessageToSession(botMessage);
+      _scrollToBottom();
+
+      // Decide whether to exit practice mode
+      bool shouldExit = hardcodedExit || aiDetectedExit;
+
+      if (shouldExit) {
+        // Exit ANY practice mode (not just pronunciation/fluency)
+        setState(() {
+          _currentPracticeMode = null;
+          _currentLearningPrompt = null;
+          _currentPracticePhrase = null;
+          _isAwaitingPronunciationPractice = false;
+          _showSuggestions = true;
+        });
+        logger.i('Exited practice mode');
+      } else {
+        // Continue practice mode - extract phrase and manage flags (for pronunciation/fluency)
+        if (_currentPracticeMode == PromptCategory.pronunciation ||
+            _currentPracticeMode == PromptCategory.fluency) {
+          final extractedPhrase = _openAIService.extractPracticePhrase(
+            aiResponse,
+            _currentPracticeMode,
           );
 
-          if (isAsking) {
-            logger.i('Layer 3: AI asking question, likely wants to change - no new phrase');
+          if (extractedPhrase != null) {
+            // New phrase found
+            setState(() {
+              _currentPracticePhrase = extractedPhrase;
+              _isAwaitingPronunciationPractice = true;
+            });
+            logger.i('New practice phrase extracted: $extractedPhrase');
+          } else if (_currentPracticePhrase != null) {
+            // LAYER 3: No new phrase extracted - check if AI is asking something
+            final askingPatterns = [
+              'what would you like',
+              'would you like to',
+              'want to try',
+              'prefer to',
+              'which one',
+              'what else',
+            ];
+
+            final isAsking = askingPatterns.any(
+              (pattern) => aiResponse.toLowerCase().contains(pattern),
+            );
+
+            if (isAsking) {
+              logger.i(
+                'Layer 3: AI asking question, likely wants to change - no new phrase',
+              );
+              setState(() {
+                _isAwaitingPronunciationPractice = false;
+              });
+            } else {
+              // Continue with existing phrase
+              setState(() {
+                _isAwaitingPronunciationPractice = true;
+              });
+              logger.i(
+                'Continuing with existing phrase: $_currentPracticePhrase',
+              );
+            }
+          } else {
+            // No phrase at all
             setState(() {
               _isAwaitingPronunciationPractice = false;
             });
-          } else {
-            // Continue with existing phrase
-            setState(() {
-              _isAwaitingPronunciationPractice = true;
-            });
-            logger.i('Continuing with existing phrase: $_currentPracticePhrase');
+            logger.w('No practice phrase available');
           }
-        } else {
-          // No phrase at all
-          setState(() {
-            _isAwaitingPronunciationPractice = false;
-          });
-          logger.w('No practice phrase available');
         }
+        // For other practice modes (grammar, vocabulary, roleplay), just continue normally
+        // They don't need special phrase extraction logic
       }
-      // For other practice modes (grammar, vocabulary, roleplay), just continue normally
-      // They don't need special phrase extraction logic
-    }
 
-    _speakText(aiResponse);
-  } catch (e) {
-    logger.e('Error generating AI response: $e');
-    setState(() {
-      _messages.removeWhere((msg) => msg.id == typingMessage.id);
-    });
-    _addBotMessage("Sorry, I'm having trouble connecting. Please try again.");
-  } finally {
-    setState(() => _isProcessingTTS = false);
+      _speakText(aiResponse);
+    } catch (e) {
+      logger.e('Error generating AI response: $e');
+      setState(() {
+        _messages.removeWhere((msg) => msg.id == typingMessage.id);
+      });
+      _addBotMessage("Sorry, I'm having trouble connecting. Please try again.");
+    } finally {
+      setState(() => _isProcessingTTS = false);
+    }
   }
-}
+
   void _addBotMessage(String text, {bool skipTTS = false}) {
     final botMessage = Message(
       id: 'bot-${DateTime.now().millisecondsSinceEpoch}',
@@ -784,14 +821,34 @@ Future<void> _generateAIResponse(String userInput, {Map<String, dynamic>? contex
   Future<void> _speakText(String text, {bool skipTTS = false}) async {
     if (!mounted || text.trim().isEmpty || skipTTS) return;
 
+    logger.i(
+      '🔊 Starting TTS for text: "${text.substring(0, text.length > 50 ? 50 : text.length)}..."',
+    );
+
     try {
       final cleanText = TextProcessing.cleanTextForTTS(text);
       if (cleanText.isNotEmpty) {
+        logger.i('🎯 Calling TTS service with clean text: "$cleanText"');
         await _ttsService.speakText(cleanText);
+        logger.i('✅ TTS completed successfully');
       }
     } catch (e) {
-      logger.e('TTS error: $e');
-      _showSnackBar('Error playing response audio');
+      logger.e('❌ TTS error details: ${e.toString()}');
+      logger.e('❌ TTS error type: ${e.runtimeType}');
+
+      // Show specific error based on the actual error message
+      String userMessage = 'Error playing response audio';
+      if (e.toString().contains('timeout')) {
+        userMessage = 'Audio timeout - continuing without sound';
+      } else if (e.toString().contains('authentication') ||
+          e.toString().contains('401')) {
+        userMessage = 'Audio service authentication issue';
+      } else if (e.toString().contains('network') ||
+          e.toString().contains('connection')) {
+        userMessage = 'Network issue - audio unavailable';
+      }
+
+      _showSnackBar(userMessage);
     }
   }
 
@@ -816,285 +873,387 @@ Future<void> _generateAIResponse(String userInput, {Map<String, dynamic>? contex
       }
     });
   }
- Future<void> _showLearningFocusDialog() async {
-  // Cancel role-play timer if active
-  if (_rolePlayDurationMinutes != null) {
-    _rolePlayTimer?.cancel();
-    _rolePlayTimer = null;
-  }
 
-  setState(() {
-    _showSuggestions = false;
-    _rolePlayDurationMinutes = null;
-    _rolePlayStartTime = null;
-  });
+  Future<void> _showLearningFocusDialog() async {
+    // Cancel role-play timer if active
+    if (_rolePlayDurationMinutes != null) {
+      _rolePlayTimer?.cancel();
+      _rolePlayTimer = null;
+    }
 
-  var result = await showDialog(
-    context: context,
-    builder: (BuildContext context) => Dialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Container(
-        padding: EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Title with blue styling
-            Row(
-              children: [
-                Icon(
-                  Icons.lightbulb_outline,
-                  color: Colors.blue.shade700,
-                  size: 28,
-                ),
-                SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Choose a Learning Focus',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.blue.shade900,
-                    ),
+    setState(() {
+      _showSuggestions = false;
+      _rolePlayDurationMinutes = null;
+      _rolePlayStartTime = null;
+    });
+
+    var result = await showDialog(
+      context: context,
+      builder: (BuildContext context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Container(
+          padding: EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Title with blue styling
+              Row(
+                children: [
+                  Icon(
+                    Icons.lightbulb_outline,
+                    color: Colors.blue.shade700,
+                    size: 28,
                   ),
-                ),
-              ],
-            ),
-            SizedBox(height: 20),
-
-            // General Dialog option with blue styling
-            _buildFocusOption(
-              context: context,
-              title: "General Dialog Conversation",
-              icon: Icons.chat_bubble_outline,
-              onTap: () => Navigator.pop(context, 'General'),
-            ),
-
-            SizedBox(height: 12),
-            Divider(color: Colors.blue.shade100),
-            SizedBox(height: 12),
-
-            // Category options with blue styling
-            ...PromptCategory.values.map((category) {
-              IconData icon;
-              switch (category) {
-                case PromptCategory.vocabulary:
-                  icon = Icons.book_outlined;
-                  break;
-                case PromptCategory.pronunciation:
-                  icon = Icons.mic_outlined;
-                  break;
-                case PromptCategory.grammar:
-                  icon = Icons.spellcheck;
-                  break;
-                case PromptCategory.fluency:
-                  icon = Icons.speed;
-                  break;
-                case PromptCategory.rolePlay:
-                  icon = Icons.people_outline;
-                  break;
-              }
-
-              return Padding(
-                padding: EdgeInsets.only(bottom: 8),
-                child: _buildFocusOption(
-                  context: context,
-                  title: Prompt.categoryToString(category),
-                  icon: icon,
-                  onTap: () => Navigator.pop(context, category),
-                ),
-              );
-            }),
-          ],
-        ),
-      ),
-    ),
-  );
-
-  if (result is PromptCategory) {
-    _showPromptsForCategoryDialog(result);
-  } else if (result == "General") {
-    // Add user message for General selection
-    final userMessage = Message(
-      id: 'user-${DateTime.now().millisecondsSinceEpoch}',
-      text: "Let's have a general conversation.",
-      isUser: true,
-      timestamp: DateTime.now().toIso8601String(),
-    );
-
-    setState(() {
-      _messages.add(userMessage);
-      _pruneMessages();
-      _currentLearningPrompt = null;
-      _currentPracticeMode = null;
-      _currentPracticePhrase = null;
-      _showSuggestions = true;
-    });
-
-    await _firebaseChatService.addMessageToSession(userMessage);
-    _scrollToBottom();
-
-    _addBotMessage("Okay, let's have a general chat. How can I help you today?");
-  } else if (result == null) {
-    // User cancelled dialog
-    setState(() {
-      _currentLearningPrompt = null;
-      _currentPracticeMode = null;
-      _currentPracticePhrase = null;
-      _showSuggestions = true;
-    });
-  }
-}
-
-Widget _buildFocusOption({
-  required BuildContext context,
-  required String title,
-  required IconData icon,
-  required VoidCallback onTap,
-}) {
-  return InkWell(
-    onTap: onTap,
-    borderRadius: BorderRadius.circular(12),
-    child: Container(
-      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: Colors.blue.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Colors.blue.shade200,
-          width: 1,
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.blue.shade100,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(
-              icon,
-              color: Colors.blue.shade700,
-              size: 22,
-            ),
-          ),
-          SizedBox(width: 14),
-          Expanded(
-            child: Text(
-              title,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                color: Colors.blue.shade900,
-              ),
-            ),
-          ),
-          Icon(
-            Icons.arrow_forward_ios,
-            size: 16,
-            color: Colors.blue.shade400,
-          ),
-        ],
-      ),
-    ),
-  );
-}
-Future<void> _showPromptsForCategoryDialog(PromptCategory category) async {
-  if (category == PromptCategory.rolePlay) {
-    final userMessage = Message(
-      id: 'user-${DateTime.now().millisecondsSinceEpoch}',
-      text: "Let's do a customer service role-play.",
-      isUser: true,
-      timestamp: DateTime.now().toIso8601String(),
-    );
-
-    setState(() {
-      _messages.add(userMessage);
-      _pruneMessages();
-    });
-
-    await _firebaseChatService.addMessageToSession(userMessage);
-    _scrollToBottom();
-
-    await _showRolePlaySetupDialog();
-    return;
-  }
-
-  final categoryPrompts = englishLearningPrompts.where((p) => p.category == category).toList();
-
-  if (categoryPrompts.isEmpty) {
-    _addBotMessage("Sorry, no exercises for ${Prompt.categoryToString(category)}.");
-    setState(() {
-      _currentLearningPrompt = null;
-      _currentPracticeMode = null;
-      _showSuggestions = true;
-    });
-    return;
-  }
-
-  Prompt? selectedPrompt = await showDialog<Prompt>(
-    context: context,
-    builder: (BuildContext context) => Dialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Container(
-        padding: EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Choose a ${Prompt.categoryToString(category)} Prompt',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.blue.shade900,
-              ),
-            ),
-            SizedBox(height: 16),
-            ...categoryPrompts.map((prompt) {
-              return Padding(
-                padding: EdgeInsets.only(bottom: 8),
-                child: InkWell(
-                  onTap: () => Navigator.pop(context, prompt),
-                  borderRadius: BorderRadius.circular(12),
-                  child: Container(
-                    width: double.infinity,
-                    padding: EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.shade50,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: Colors.blue.shade200,
-                        width: 1,
-                      ),
-                    ),
+                  SizedBox(width: 12),
+                  Expanded(
                     child: Text(
-                      prompt.title,
+                      'Choose a Learning Focus',
                       style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w500,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
                         color: Colors.blue.shade900,
                       ),
                     ),
                   ),
+                ],
+              ),
+              SizedBox(height: 20),
+
+              // General Dialog option with blue styling
+              _buildFocusOption(
+                context: context,
+                title: "General Dialog Conversation",
+                icon: Icons.chat_bubble_outline,
+                onTap: () => Navigator.pop(context, 'General'),
+              ),
+
+              SizedBox(height: 12),
+              Divider(color: Colors.blue.shade100),
+              SizedBox(height: 12),
+
+              // Category options with blue styling
+              ...PromptCategory.values.map((category) {
+                IconData icon;
+                switch (category) {
+                  case PromptCategory.vocabulary:
+                    icon = Icons.book_outlined;
+                    break;
+                  case PromptCategory.pronunciation:
+                    icon = Icons.mic_outlined;
+                    break;
+                  case PromptCategory.grammar:
+                    icon = Icons.spellcheck;
+                    break;
+                  case PromptCategory.fluency:
+                    icon = Icons.speed;
+                    break;
+                  case PromptCategory.rolePlay:
+                    icon = Icons.people_outline;
+                    break;
+                }
+
+                return Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: _buildFocusOption(
+                    context: context,
+                    title: Prompt.categoryToString(category),
+                    icon: icon,
+                    onTap: () => Navigator.pop(context, category),
+                  ),
+                );
+              }),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (result is PromptCategory) {
+      _showPromptsForCategoryDialog(result);
+    } else if (result == "General") {
+      // Add user message for General selection
+      final userMessage = Message(
+        id: 'user-${DateTime.now().millisecondsSinceEpoch}',
+        text: "Let's have a general conversation.",
+        isUser: true,
+        timestamp: DateTime.now().toIso8601String(),
+      );
+
+      setState(() {
+        _messages.add(userMessage);
+        _pruneMessages();
+        _currentLearningPrompt = null;
+        _currentPracticeMode = null;
+        _currentPracticePhrase = null;
+        _showSuggestions = true;
+      });
+
+      await _firebaseChatService.addMessageToSession(userMessage);
+      _scrollToBottom();
+
+      _addBotMessage(
+        "Okay, let's have a general chat. How can I help you today?",
+      );
+    } else if (result == null) {
+      // User cancelled dialog
+      setState(() {
+        _currentLearningPrompt = null;
+        _currentPracticeMode = null;
+        _currentPracticePhrase = null;
+        _showSuggestions = true;
+      });
+    }
+  }
+
+  Widget _buildFocusOption({
+    required BuildContext context,
+    required String title,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.blue.shade50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.blue.shade200, width: 1),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade100,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, color: Colors.blue.shade700, size: 22),
+            ),
+            SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                title,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.blue.shade900,
                 ),
-              );
-            }).toList(),
+              ),
+            ),
+            Icon(
+              Icons.arrow_forward_ios,
+              size: 16,
+              color: Colors.blue.shade400,
+            ),
           ],
         ),
       ),
-    ),
-  );
+    );
+  }
 
-  if (!mounted) return;
+  Future<void> _showPromptsForCategoryDialog(PromptCategory category) async {
+    if (category == PromptCategory.rolePlay) {
+      final userMessage = Message(
+        id: 'user-${DateTime.now().millisecondsSinceEpoch}',
+        text: "Let's do a customer service role-play.",
+        isUser: true,
+        timestamp: DateTime.now().toIso8601String(),
+      );
 
-  if (selectedPrompt != null) {
+      setState(() {
+        _messages.add(userMessage);
+        _pruneMessages();
+      });
+
+      await _firebaseChatService.addMessageToSession(userMessage);
+      _scrollToBottom();
+
+      await _showRolePlaySetupDialog();
+      return;
+    }
+
+    final categoryPrompts = englishLearningPrompts
+        .where((p) => p.category == category)
+        .toList();
+
+    if (categoryPrompts.isEmpty) {
+      _addBotMessage(
+        "Sorry, no exercises for ${Prompt.categoryToString(category)}.",
+      );
+      setState(() {
+        _currentLearningPrompt = null;
+        _currentPracticeMode = null;
+        _showSuggestions = true;
+      });
+      return;
+    }
+
+    Prompt? selectedPrompt = await showDialog<Prompt>(
+      context: context,
+      builder: (BuildContext context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Container(
+          padding: EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Choose a ${Prompt.categoryToString(category)} Prompt',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue.shade900,
+                ),
+              ),
+              SizedBox(height: 16),
+              ...categoryPrompts.map((prompt) {
+                return Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: InkWell(
+                    onTap: () => Navigator.pop(context, prompt),
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      width: double.infinity,
+                      padding: EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.blue.shade200,
+                          width: 1,
+                        ),
+                      ),
+                      child: Text(
+                        prompt.title,
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.blue.shade900,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (!mounted) return;
+
+    if (selectedPrompt != null) {
+      final userMessage = Message(
+        id: 'user-${DateTime.now().millisecondsSinceEpoch}',
+        text: selectedPrompt.title,
+        isUser: true,
+        timestamp: DateTime.now().toIso8601String(),
+      );
+
+      setState(() {
+        _messages.add(userMessage);
+        _pruneMessages();
+      });
+
+      await _firebaseChatService.addMessageToSession(userMessage);
+      _scrollToBottom();
+    }
+
+    setState(() {
+      _currentLearningPrompt = selectedPrompt;
+      _currentPracticeMode = category;
+      _showSuggestions = false;
+    });
+
+    if (selectedPrompt != null) {
+      if (selectedPrompt.category == PromptCategory.pronunciation) {
+        _addBotMessage(
+          "Let's practice your pronunciation! First, I'll suggest a phrase...",
+        );
+        final phrase = await _openAIService.generateCallCenterPhrase();
+        setState(() => _currentPracticePhrase = phrase);
+        _addBotMessage("Try saying: '$phrase'");
+        setState(() => _isAwaitingPronunciationPractice = true);
+      } else if (selectedPrompt.category == PromptCategory.fluency) {
+        _addBotMessage(
+          "Let's work on reading fluency! I'll give you a passage...",
+        );
+        final passage = await _openAIService.generateFluencyPassage();
+        setState(() => _currentPracticePhrase = passage);
+        _addBotMessage("Read this smoothly: '$passage'");
+        setState(() => _isAwaitingPronunciationPractice = true);
+      } else if (selectedPrompt.initialBotMessage != null) {
+        _addBotMessage(selectedPrompt.initialBotMessage!);
+      }
+    }
+  }
+
+  Future<void> _showRolePlaySetupDialog() async {
+    int? selectedDuration = await showDialog<int>(
+      context: context,
+      builder: (BuildContext context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Container(
+          padding: EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.access_time,
+                    color: Colors.blue.shade700,
+                    size: 28,
+                  ),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Role-Play Session',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue.shade900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: 12),
+              Text(
+                'How long would you like to practice?',
+                style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+              ),
+              SizedBox(height: 20),
+              _buildDurationOption(context, '5 minutes', 5),
+              SizedBox(height: 10),
+              _buildDurationOption(context, '10 minutes', 10),
+              SizedBox(height: 10),
+              _buildDurationOption(context, '15 minutes', 15),
+              SizedBox(height: 10),
+              _buildDurationOption(context, '20 minutes', 20),
+              SizedBox(height: 10),
+              _buildDurationOption(context, '30 minutes', 30),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (selectedDuration != null && mounted) {
+      await _startRolePlaySession(selectedDuration);
+    } else {
+      setState(() => _showSuggestions = true);
+    }
+  }
+
+  void _handleSuggestionClick(SuggestionChip suggestion) async {
+    // Add user message to chat showing what they clicked
     final userMessage = Message(
       id: 'user-${DateTime.now().millisecondsSinceEpoch}',
-      text: selectedPrompt.title,
+      text: suggestion.prompt,
       isUser: true,
       timestamp: DateTime.now().toIso8601String(),
     );
@@ -1106,140 +1265,41 @@ Future<void> _showPromptsForCategoryDialog(PromptCategory category) async {
 
     await _firebaseChatService.addMessageToSession(userMessage);
     _scrollToBottom();
+
+    // Special handling for Role-Play suggestions
+    if (suggestion.mode == PromptCategory.rolePlay) {
+      await _showRolePlaySetupDialog();
+      return;
+    }
+
+    // Original logic for other suggestions
+    setState(() {
+      _currentPracticeMode = suggestion.mode;
+      _currentPracticePhrase = null;
+      _showSuggestions = false;
+    });
+
+    // Find matching prompt
+    final matchingPrompt = englishLearningPrompts.firstWhere(
+      (p) => p.category == suggestion.mode,
+      orElse: () => englishLearningPrompts.first,
+    );
+
+    setState(() => _currentLearningPrompt = matchingPrompt);
+
+    // Generate AI response for the suggestion
+    _generateAIResponse(
+      suggestion.prompt,
+      context: {'practiceModeChange': suggestion.mode},
+    );
   }
-
-  setState(() {
-    _currentLearningPrompt = selectedPrompt;
-    _currentPracticeMode = category;
-    _showSuggestions = false;
-  });
-
-  if (selectedPrompt != null) {
-  if (selectedPrompt.category == PromptCategory.pronunciation) {
-    _addBotMessage("Let's practice your pronunciation! First, I'll suggest a phrase...");
-    final phrase = await _openAIService.generateCallCenterPhrase();
-    setState(() => _currentPracticePhrase = phrase);
-    _addBotMessage("Try saying: '$phrase'");
-    setState(() => _isAwaitingPronunciationPractice = true);
-  } else if (selectedPrompt.category == PromptCategory.fluency) {
-    _addBotMessage("Let's work on reading fluency! I'll give you a passage...");
-    final passage = await _openAIService.generateFluencyPassage();
-    setState(() => _currentPracticePhrase = passage);
-    _addBotMessage("Read this smoothly: '$passage'");
-    setState(() => _isAwaitingPronunciationPractice = true);
-  } else if (selectedPrompt.initialBotMessage != null) {
-    _addBotMessage(selectedPrompt.initialBotMessage!);
-  }
-}
-}
-Future<void> _showRolePlaySetupDialog() async {
-  int? selectedDuration = await showDialog<int>(
-    context: context,
-    builder: (BuildContext context) => Dialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Container(
-        padding: EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.access_time,
-                  color: Colors.blue.shade700,
-                  size: 28,
-                ),
-                SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Role-Play Session',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.blue.shade900,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            SizedBox(height: 12),
-            Text(
-              'How long would you like to practice?',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey.shade600,
-              ),
-            ),
-            SizedBox(height: 20),
-            _buildDurationOption(context, '5 minutes', 5),
-            SizedBox(height: 10),
-            _buildDurationOption(context, '10 minutes', 10),
-            SizedBox(height: 10),
-            _buildDurationOption(context, '15 minutes', 15),
-            SizedBox(height: 10),
-            _buildDurationOption(context, '20 minutes', 20),
-            SizedBox(height: 10),
-            _buildDurationOption(context, '30 minutes', 30),
-          ],
-        ),
-      ),
-    ),
-  );
-
-  if (selectedDuration != null && mounted) {
-    await _startRolePlaySession(selectedDuration);
-  } else {
-    setState(() => _showSuggestions = true);
-  }
-}
- void _handleSuggestionClick(SuggestionChip suggestion) async {
-  // Add user message to chat showing what they clicked
-  final userMessage = Message(
-    id: 'user-${DateTime.now().millisecondsSinceEpoch}',
-    text: suggestion.prompt,
-    isUser: true,
-    timestamp: DateTime.now().toIso8601String(),
-  );
-
-  setState(() {
-    _messages.add(userMessage);
-    _pruneMessages();
-  });
-
-  await _firebaseChatService.addMessageToSession(userMessage);
-  _scrollToBottom();
-
-  // Special handling for Role-Play suggestions
-  if (suggestion.mode == PromptCategory.rolePlay) {
-    await _showRolePlaySetupDialog();
-    return;
-  }
-
-  // Original logic for other suggestions
-  setState(() {
-    _currentPracticeMode = suggestion.mode;
-    _currentPracticePhrase = null;
-    _showSuggestions = false;
-  });
-
-  // Find matching prompt
-  final matchingPrompt = englishLearningPrompts.firstWhere(
-    (p) => p.category == suggestion.mode,
-    orElse: () => englishLearningPrompts.first,
-  );
-
-  setState(() => _currentLearningPrompt = matchingPrompt);
-
-  // Generate AI response for the suggestion
-  _generateAIResponse(suggestion.prompt, context: {'practiceModeChange': suggestion.mode});
-}
 
   Future<void> _triggerTutorial(BuildContext context) async {
     if (!mounted) return;
 
-    bool shouldShow = await TutorialService.shouldShowTutorial(Future.value(_hasSeenTutorial));
+    bool shouldShow = await TutorialService.shouldShowTutorial(
+      Future.value(_hasSeenTutorial),
+    );
     if (!shouldShow || _hasTriggeredTutorial) return;
 
     setState(() => _hasTriggeredTutorial = true);
@@ -1255,7 +1315,8 @@ Future<void> _showRolePlaySetupDialog() async {
         }
       },
       title: 'Welcome to TalkReady Bot!',
-      content: 'Get ready to explore the app with a quick tour! Would you like to start?',
+      content:
+          'Get ready to explore the app with a quick tour! Would you like to start?',
       confirmText: 'Start Tour',
       showDontAskAgain: false,
     );
@@ -1265,7 +1326,12 @@ Future<void> _showRolePlaySetupDialog() async {
     if (startTour == true) {
       await Future.delayed(const Duration(milliseconds: 600));
       if (mounted && context.mounted) {
-        TutorialService.startShowCase(context, [_chatAreaKey, _micKey, _keyboardKey, _promptIconKey]);
+        TutorialService.startShowCase(context, [
+          _chatAreaKey,
+          _micKey,
+          _keyboardKey,
+          _promptIconKey,
+        ]);
       }
     } else {
       if (mounted) {
@@ -1275,19 +1341,21 @@ Future<void> _showRolePlaySetupDialog() async {
     }
   }
 
-void _stopAudio() async {
-  try {
-    await _audioService.stopAllAudio();
-    if (mounted) {  // Add this check
-      setState(() {
-        _isProcessingTTS = false;
-        _isPlayingUserAudio = false;
-      });
+  void _stopAudio() async {
+    try {
+      await _audioService.stopAllAudio();
+      if (mounted) {
+        // Add this check
+        setState(() {
+          _isProcessingTTS = false;
+          _isPlayingUserAudio = false;
+        });
+      }
+    } catch (e) {
+      logger.e('Error stopping audio: $e');
     }
-  } catch (e) {
-    logger.e('Error stopping audio: $e');
   }
-}
+
   void _showSnackBar(String message) {
     if (mounted && ScaffoldMessenger.maybeOf(context) != null) {
       ScaffoldMessenger.of(context).removeCurrentSnackBar();
@@ -1296,7 +1364,8 @@ void _stopAudio() async {
       );
     }
   }
-Widget _buildRolePlayTimer() {
+
+  Widget _buildRolePlayTimer() {
     if (_rolePlayStartTime == null || _rolePlayDurationMinutes == null) {
       return SizedBox.shrink();
     }
@@ -1347,10 +1416,7 @@ Widget _buildRolePlayTimer() {
         decoration: BoxDecoration(
           color: Colors.blue.shade50,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: Colors.blue.shade200,
-            width: 1,
-          ),
+          border: Border.all(color: Colors.blue.shade200, width: 1),
         ),
         child: Row(
           children: [
@@ -1387,10 +1453,11 @@ Widget _buildRolePlayTimer() {
       ),
     );
   }
+
   @override
   void dispose() {
     _stopAudio();
-     _rolePlayTimer?.cancel(); // Add this line
+    _rolePlayTimer?.cancel(); // Add this line
     _audioService.dispose();
     _textController.dispose();
     _scrollController.dispose();
@@ -1439,7 +1506,8 @@ Widget _buildRolePlayTimer() {
                   context: showcaseContext,
                   key: _promptIconKey,
                   title: 'Learning Focus',
-                  description: 'Choose a focus like vocabulary or pronunciation.',
+                  description:
+                      'Choose a focus like vocabulary or pronunciation.',
                   targetShapeBorder: CircleBorder(),
                   child: IconButton(
                     icon: Icon(Icons.lightbulb_outline),
@@ -1450,13 +1518,18 @@ Widget _buildRolePlayTimer() {
                 ),
                 if (_isProcessingTTS)
                   Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: 16.0,
+                      vertical: 8.0,
+                    ),
                     child: SizedBox(
                       width: 24,
                       height: 24,
                       child: CircularProgressIndicator(
                         strokeWidth: 2.5,
-                        valueColor: AlwaysStoppedAnimation<Color>(Color.fromARGB(255, 41, 115, 178)),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          Color.fromARGB(255, 41, 115, 178),
+                        ),
                       ),
                     ),
                   ),
@@ -1479,52 +1552,60 @@ Widget _buildRolePlayTimer() {
                   ),
                 ),
                 _buildRolePlayTimer(),
-                 if (_rolePlayDurationMinutes != null && _rolePlayStartTime != null)
-      Container(
-        margin: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        child: TextButton.icon(
-          onPressed: _endRolePlaySessionEarly,
-          icon: Icon(Icons.exit_to_app, size: 18),
-          label: Text('End Role-Play Session'),
-          style: TextButton.styleFrom(
-            foregroundColor: Colors.red.shade700,
-            backgroundColor: Colors.red.shade50,
-            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-              side: BorderSide(color: Colors.red.shade200),
-            ),
-          ),
-        ),
-      ),
+                if (_rolePlayDurationMinutes != null &&
+                    _rolePlayStartTime != null)
+                  Container(
+                    margin: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    child: TextButton.icon(
+                      onPressed: _endRolePlaySessionEarly,
+                      icon: Icon(Icons.exit_to_app, size: 18),
+                      label: Text('End Role-Play Session'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.red.shade700,
+                        backgroundColor: Colors.red.shade50,
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                          side: BorderSide(color: Colors.red.shade200),
+                        ),
+                      ),
+                    ),
+                  ),
                 Expanded(
                   child: TutorialService.buildShowcase(
                     context: showcaseContext,
                     key: _chatAreaKey,
                     title: 'Chat Area',
-                    description: 'Your conversation with TalkReady Bot happens here.',
+                    description:
+                        'Your conversation with TalkReady Bot happens here.',
                     child: Container(
                       padding: EdgeInsets.all(16),
                       color: Colors.grey[50],
                       child: ListView.builder(
-                      controller: _scrollController,
-                      itemCount: _messages.length,
-                      itemBuilder: (context, index) {
-                        final message = _messages[index];
-                        return ChatMessage(
-                          message: message,
-                          userProfileImage: _userProfileImage,
-                          onPlayAudio: message.audioPath != null
-                              ? () => _playUserAudio(message.audioPath)
-                              : null,
-                          isPlaying: _isPlayingUserAudio,
-                        );
-                      },
-                    )
+                        controller: _scrollController,
+                        itemCount: _messages.length,
+                        itemBuilder: (context, index) {
+                          final message = _messages[index];
+                          return ChatMessage(
+                            message: message,
+                            userProfileImage: _userProfileImage,
+                            onPlayAudio: message.audioPath != null
+                                ? () => _playUserAudio(message.audioPath)
+                                : null,
+                            isPlaying: _isPlayingUserAudio,
+                          );
+                        },
+                      ),
                     ),
                   ),
                 ),
-                if (_showSuggestions && !_isTyping && _messages.length >= 1 && _currentPracticeMode == null)
+                if (_showSuggestions &&
+                    !_isTyping &&
+                    _messages.length >= 1 &&
+                    _currentPracticeMode == null)
                   SuggestionChipsDisplay(onChipClick: _handleSuggestionClick),
                 if (_isListening)
                   Padding(
@@ -1537,7 +1618,9 @@ Widget _buildRolePlayTimer() {
                           height: 16,
                           child: CircularProgressIndicator(
                             strokeWidth: 2.0,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.blue,
+                            ),
                           ),
                         ),
                         SizedBox(width: 8),
@@ -1554,7 +1637,10 @@ Widget _buildRolePlayTimer() {
                   ),
                 if (_isTyping)
                   Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: 16.0,
+                      vertical: 8.0,
+                    ),
                     child: Row(
                       children: [
                         Expanded(
@@ -1564,13 +1650,21 @@ Widget _buildRolePlayTimer() {
                               hintText: 'Type your message...',
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(25),
-                                borderSide: BorderSide(color: Colors.grey.shade400),
+                                borderSide: BorderSide(
+                                  color: Colors.grey.shade400,
+                                ),
                               ),
                               focusedBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(25),
-                                borderSide: BorderSide(color: Theme.of(context).primaryColor, width: 2),
+                                borderSide: BorderSide(
+                                  color: Theme.of(context).primaryColor,
+                                  width: 2,
+                                ),
                               ),
-                              contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
                             ),
                             onSubmitted: (_) => _submitTypedText(),
                             textInputAction: TextInputAction.send,
@@ -1578,7 +1672,10 @@ Widget _buildRolePlayTimer() {
                         ),
                         SizedBox(width: 8),
                         IconButton(
-                          icon: Icon(Icons.send, color: Theme.of(context).primaryColor),
+                          icon: Icon(
+                            Icons.send,
+                            color: Theme.of(context).primaryColor,
+                          ),
                           onPressed: _submitTypedText,
                           tooltip: 'Send Message',
                         ),
@@ -1593,7 +1690,8 @@ Widget _buildRolePlayTimer() {
                     right: 20,
                   ),
                   child: IconRow(
-                    onMicTap: () => _isListening ? _stopListening() : _startListening(),
+                    onMicTap: () =>
+                        _isListening ? _stopListening() : _startListening(),
                     onKeyboardTap: _toggleTyping,
                     isListening: _isListening,
                     isTyping: _isTyping,

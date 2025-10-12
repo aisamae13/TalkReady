@@ -211,9 +211,13 @@ class _Lesson4_1ActivityPageState extends State<Lesson4_1ActivityPage> {
 
     try {
       // ✅ FIXED: Use the same endpoint as web (/evaluate-clarification)
+      final baseUrl = await _progressService.getApiBaseUrl();
       final response = await http.post(
-        Uri.parse('http://192.168.254.103:5000/evaluate-clarification'),
-        headers: {'Content-Type': 'application/json'},
+        Uri.parse('$baseUrl/evaluate-clarification'),
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'TalkReady-Mobile/1.0',
+        },
         body: jsonEncode({
           'answers': {
             scenarioId: userAnswer,

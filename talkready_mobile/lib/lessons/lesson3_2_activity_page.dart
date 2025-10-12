@@ -1691,42 +1691,6 @@ class _Lesson3_2ActivityPageState extends State<Lesson3_2ActivityPage>
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Enhanced Analysis Header
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Colors.purple.shade50, Colors.indigo.shade50],
-              ),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.purple.shade200),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.translate, color: Colors.purple.shade600, size: 24),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Enhanced Analysis for Filipino Speakers',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.purple,
-                        ),
-                      ),
-                      Text(
-                        'Specialized feedback for English pronunciation',
-                        style: TextStyle(fontSize: 12, color: Colors.grey),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
           const SizedBox(height: 20),
 
           // Overall Accent Score

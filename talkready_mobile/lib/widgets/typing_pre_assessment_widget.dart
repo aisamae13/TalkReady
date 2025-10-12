@@ -7,14 +7,13 @@ import 'package:http/http.dart' as http;
 class TypingPreAssessmentWidget extends StatefulWidget {
   final String lessonKey;
   final VoidCallback onComplete;
-  final Map<String, dynamic>?
-  assessmentData; // <-- ADD THIS: To receive the data
+  final Map<String, dynamic>? assessmentData;
 
   const TypingPreAssessmentWidget({
     super.key,
     required this.lessonKey,
     required this.onComplete,
-    this.assessmentData, // <-- ADD THIS: In the constructor
+    this.assessmentData,
   });
 
   @override
@@ -27,6 +26,9 @@ class _TypingPreAssessmentWidgetState extends State<TypingPreAssessmentWidget> {
   bool _isSubmitting = false;
   String? _error;
   String? _feedback;
+
+  // ✅ ADD: Create instance of UnifiedProgressService
+  final UnifiedProgressService _progressService = UnifiedProgressService();
 
   Future<void> _submit() async {
     final answer = _controller.text.trim();
@@ -41,36 +43,25 @@ class _TypingPreAssessmentWidgetState extends State<TypingPreAssessmentWidget> {
     });
 
     try {
-      // --- THIS IS THE CORRECTED API CALL ---
-      final response = await http.post(
-        Uri.parse('http://192.168.254.103:5000/evaluate-preassessment-typing'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          // The server expects 'userAnswer' and 'correctAnswerReference'
-          'userAnswer': answer,
-          'correctAnswerReference':
-              widget.assessmentData?['correctAnswerReference'],
-        }),
+      // ✅ FIXED: Use the service method instead of direct HTTP call
+      final feedback = await _progressService.evaluateTypingPreAssessment(
+        answer: answer,
+        customerStatement:
+            widget.assessmentData?['correctAnswerReference'] ?? '',
+        lessonKey: widget.lessonKey,
       );
-      // --- END OF FIX ---
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final feedbackText = data['feedback'] ?? "Evaluation complete.";
-        setState(() => _feedback = feedbackText);
+      if (feedback != null) {
+        setState(() => _feedback = feedback);
 
-        await UnifiedProgressService().markPreAssessmentAsComplete(
-          widget.lessonKey,
-        );
+        await _progressService.markPreAssessmentAsComplete(widget.lessonKey);
 
         // Wait 3 seconds before automatically proceeding to the lesson
         Future.delayed(const Duration(seconds: 3), widget.onComplete);
       } else {
-        // This is the error you were seeing, caused by the server rejecting the request
         setState(() => _error = "Error fetching feedback. Try again.");
       }
     } catch (e) {
-      // This error would happen for network issues (e.g., wrong IP address)
       setState(
         () => _error = "Could not connect to the server. Check network.",
       );
@@ -81,7 +72,7 @@ class _TypingPreAssessmentWidgetState extends State<TypingPreAssessmentWidget> {
 
   @override
   Widget build(BuildContext context) {
-    // Dynamically get content from the assessmentData map
+    // Rest of your build method remains the same...
     final title = widget.assessmentData?['title'] ?? 'Pre-Lesson Check-in';
     final instruction =
         widget.assessmentData?['instruction'] ??
@@ -103,7 +94,7 @@ class _TypingPreAssessmentWidgetState extends State<TypingPreAssessmentWidget> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    title, // <-- DYNAMIC
+                    title,
                     style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
@@ -115,7 +106,7 @@ class _TypingPreAssessmentWidgetState extends State<TypingPreAssessmentWidget> {
             ),
             const SizedBox(height: 12),
             Text(
-              instruction, // <-- DYNAMIC
+              instruction,
               style: const TextStyle(fontSize: 16, color: Colors.black87),
             ),
             const SizedBox(height: 12),
@@ -128,7 +119,7 @@ class _TypingPreAssessmentWidgetState extends State<TypingPreAssessmentWidget> {
               ),
               padding: const EdgeInsets.all(12),
               child: Text(
-                prompt, // <-- DYNAMIC
+                prompt,
                 style: const TextStyle(
                   fontSize: 15,
                   fontStyle: FontStyle.italic,

@@ -56,9 +56,16 @@ class _ListenAndServeIdentifyWidgetState
     setState(() => _isLoadingAudio = true);
 
     try {
-      final textToSpeak = widget.assessmentData['textToSpeak'] as String?;
+      // ✅ CHECK MULTIPLE POSSIBLE FIELD NAMES
+      final textToSpeak =
+          widget.assessmentData['textToSpeak'] as String? ??
+          widget.assessmentData['promptText'] as String? ??
+          widget.assessmentData['audioText'] as String?;
+
       if (textToSpeak == null || textToSpeak.isEmpty) {
-        throw Exception("No text to speak provided in lesson data.");
+        throw Exception(
+          "No text to speak provided in lesson data. Available fields: ${widget.assessmentData.keys.toList()}",
+        );
       }
 
       final audioData = await _progressService.synthesizeSpeech(textToSpeak);
@@ -88,7 +95,9 @@ class _ListenAndServeIdentifyWidgetState
 
   void _checkAnswer() {
     final userAnswer = _answerController.text.trim();
-    final correctAnswer = widget.assessmentData['correctAnswer'] as String;
+    final correctAnswer =
+        widget.assessmentData['correctAnswer'] as String? ??
+        'I can certainly help you with that'; // ✅ Handle null
 
     setState(() {
       _showFeedback = true;
@@ -107,6 +116,7 @@ class _ListenAndServeIdentifyWidgetState
 
   @override
   Widget build(BuildContext context) {
+    print('Pre-assessment data: ${widget.assessmentData}');
     return Card(
       elevation: 4,
       child: Padding(
@@ -114,7 +124,8 @@ class _ListenAndServeIdentifyWidgetState
         child: Column(
           children: [
             Text(
-              widget.assessmentData['title'],
+              widget.assessmentData['title'] ??
+                  'Pre-Assessment', // ✅ Handle null
               style: const TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.bold,
@@ -124,13 +135,15 @@ class _ListenAndServeIdentifyWidgetState
             ),
             const SizedBox(height: 8),
             Text(
-              widget.assessmentData['instruction'],
+              widget.assessmentData['instruction'] ??
+                  'Complete the assessment below.', // ✅ Handle null
               style: const TextStyle(fontSize: 16),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
             Text(
-              widget.assessmentData['question'],
+              widget.assessmentData['question'] ??
+                  'What do you hear?', // ✅ Handle null
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
             ),
             const SizedBox(height: 16),
@@ -163,9 +176,6 @@ class _ListenAndServeIdentifyWidgetState
             const SizedBox(height: 24),
             if (!_showFeedback)
               ElevatedButton(
-                // **FIX #2:** The onPressed property is now conditional.
-                // It's 'null' (disabled) if the text is empty, and
-                // points to the _checkAnswer function otherwise.
                 onPressed: _answerController.text.trim().isEmpty
                     ? null
                     : _checkAnswer,

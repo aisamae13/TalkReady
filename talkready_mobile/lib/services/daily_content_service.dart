@@ -1,11 +1,13 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:logger/logger.dart';
+import '../config/api_config.dart';
 
 class DailyContentService {
-  static const String baseUrl =
-      'http://192.168.254.103:5000'; // Update this to your server URL
   static final Logger _logger = Logger();
+  static Future<String> _getApiBaseUrl() async {
+    return await ApiConfig.getApiBaseUrl();
+  }
 
   static Future<Map<String, dynamic>?> fetchLearningTip({
     Map<String, dynamic>? userProgress,
@@ -14,9 +16,13 @@ class DailyContentService {
     double? averageScore,
   }) async {
     try {
+      final baseUrl = await _getApiBaseUrl();
       final response = await http.post(
         Uri.parse('$baseUrl/generate-learning-tip'),
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'TalkReady-Mobile/1.0',
+        },
         body: jsonEncode({
           'userProgress': userProgress,
           'currentStreak': currentStreak,
@@ -45,9 +51,13 @@ class DailyContentService {
     double? averageScore,
   }) async {
     try {
+      final baseUrl = await _getApiBaseUrl();
       final response = await http.post(
         Uri.parse('$baseUrl/generate-daily-motivation'),
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'TalkReady-Mobile/1.0',
+        },
         body: jsonEncode({
           'currentStreak': currentStreak,
           'averageScore': averageScore ?? 0,

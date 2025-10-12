@@ -2578,9 +2578,13 @@ class _Lesson6SimulationPageState extends State<Lesson6SimulationPage> {
       final audioUrl = await _uploadAudioFile(_currentRecordingPath!);
 
       // Get transcription from Azure
+      final baseUrl = await _progressService.getApiBaseUrl();
       final transcriptionResponse = await http.post(
-        Uri.parse('http://192.168.254.103:5000/transcribe-audio-azure'),
-        headers: {'Content-Type': 'application/json'},
+        Uri.parse('$baseUrl/transcribe-audio-azure'),
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'TalkReady-Mobile/1.0',
+        },
         body: jsonEncode({'audioUrl': audioUrl}),
       );
 
@@ -2641,9 +2645,10 @@ class _Lesson6SimulationPageState extends State<Lesson6SimulationPage> {
 
   Future<String> _uploadAudioFile(String filePath) async {
     final file = File(filePath);
+    final baseUrl = await _progressService.getApiBaseUrl();
     final request = http.MultipartRequest(
       'POST',
-      Uri.parse('http://192.168.254.103:5000/upload-audio-temp'),
+      Uri.parse('$baseUrl/upload-audio-temp'),
     );
 
     request.files.add(await http.MultipartFile.fromPath('audio', filePath));
@@ -2661,9 +2666,13 @@ class _Lesson6SimulationPageState extends State<Lesson6SimulationPage> {
 
   Future<void> _getAiResponse() async {
     try {
+      final baseUrl = await _progressService.getApiBaseUrl();
       final response = await http.post(
-        Uri.parse('http://192.168.254.103:5000/ai-call-turn'),
-        headers: {'Content-Type': 'application/json'},
+        Uri.parse('$baseUrl/ai-call-turn'),
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'TalkReady-Mobile/1.0',
+        },
         body: jsonEncode({
           'transcript': _transcript,
           'system_prompt': _selectedScenario!['system_prompt'],
@@ -2701,9 +2710,13 @@ class _Lesson6SimulationPageState extends State<Lesson6SimulationPage> {
     });
 
     try {
+      final baseUrl = await _progressService.getApiBaseUrl();
       final response = await http.post(
-        Uri.parse('http://192.168.254.103:5000/synthesize-speech'),
-        headers: {'Content-Type': 'application/json'},
+        Uri.parse('$baseUrl/synthesize-speech'),
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'TalkReady-Mobile/1.0',
+        },
         body: jsonEncode({'text': text, 'voice': _aiVoice}),
       );
 
@@ -2824,9 +2837,13 @@ class _Lesson6SimulationPageState extends State<Lesson6SimulationPage> {
       };
 
       // Get enhanced feedback from server
+      final baseUrl = await _progressService.getApiBaseUrl();
       final response = await http.post(
-        Uri.parse('http://192.168.254.103:5000/ai-call-feedback-enhanced'),
-        headers: {'Content-Type': 'application/json'},
+        Uri.parse('$baseUrl/ai-call-feedback-enhanced'),
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'TalkReady-Mobile/1.0',
+        },
         body: jsonEncode({
           'transcript': _transcript,
           'scenario': cleanScenario, // ✅ Use the clean scenario object

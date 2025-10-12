@@ -29,12 +29,73 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
   bool _isLoadingTags = true;
   bool _showTooltip = true;
 
+  // --- ADD THIS STATIC CONST LIST HERE ---
+  static const List<Map<String, dynamic>> _defaultTags = [
+    {
+      'id': 'default_personal',
+      'name': 'Personal',
+      'icon': Icons.person_outline,
+      'isDefault': true,
+    },
+    {
+      'id': 'default_work',
+      'name': 'Work',
+      'icon': Icons.work_outline,
+      'isDefault': true,
+    },
+    {
+      'id': 'default_travel',
+      'name': 'Travel',
+      'icon': Icons.flight_takeoff,
+      'isDefault': true,
+    },
+    {
+      'id': 'default_study',
+      'name': 'Study',
+      'icon': Icons.school_outlined,
+      'isDefault': true,
+    },
+    {
+      'id': 'default_food',
+      'name': 'Food',
+      'icon': Icons.restaurant_outlined,
+      'isDefault': true,
+    },
+    {
+      'id': 'default_plant',
+      'name': 'Plant',
+      'icon': Icons.eco_outlined,
+      'isDefault': true,
+    },
+  ];
+  // ---------------------------------------
+
   final List<Map<String, dynamic>> moods = [
-    {'name': 'Rad', 'emoji': '😎', 'gradient': [Color(0xFF0078D4), Color(0xFF005A9E)]},
-    {'name': 'Happy', 'emoji': '😄', 'gradient': [Color(0xFF50E6FF), Color(0xFF0099BC)]},
-    {'name': 'Meh', 'emoji': '😐', 'gradient': [Color(0xFF8A8886), Color(0xFF605E5C)]},
-    {'name': 'Sad', 'emoji': '😢', 'gradient': [Color(0xFF4F6BED), Color(0xFF3B5998)]},
-    {'name': 'Angry', 'emoji': '😠', 'gradient': [Color(0xFFE74856), Color(0xFFC4314B)]},
+    {
+      'name': 'Rad',
+      'emoji': '😎',
+      'gradient': [Color(0xFF0078D4), Color(0xFF005A9E)],
+    },
+    {
+      'name': 'Happy',
+      'emoji': '😄',
+      'gradient': [Color(0xFF50E6FF), Color(0xFF0099BC)],
+    },
+    {
+      'name': 'Meh',
+      'emoji': '😐',
+      'gradient': [Color(0xFF8A8886), Color(0xFF605E5C)],
+    },
+    {
+      'name': 'Sad',
+      'emoji': '😢',
+      'gradient': [Color(0xFF4F6BED), Color(0xFF3B5998)],
+    },
+    {
+      'name': 'Angry',
+      'emoji': '😠',
+      'gradient': [Color(0xFFE74856), Color(0xFFC4314B)],
+    },
   ];
 
   late Future<String> _userNameFuture;
@@ -63,14 +124,7 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
         return;
       }
 
-      List<Map<String, dynamic>> defaultTags = [
-        {'id': 'default_personal', 'name': 'Personal', 'icon': Icons.person_outline, 'isDefault': true},
-        {'id': 'default_work', 'name': 'Work', 'icon': Icons.work_outline, 'isDefault': true},
-        {'id': 'default_travel', 'name': 'Travel', 'icon': Icons.flight_takeoff, 'isDefault': true},
-        {'id': 'default_study', 'name': 'Study', 'icon': Icons.school_outlined, 'isDefault': true},
-        {'id': 'default_food', 'name': 'Food', 'icon': Icons.restaurant_outlined, 'isDefault': true},
-        {'id': 'default_plant', 'name': 'Plant', 'icon': Icons.eco_outlined, 'isDefault': true},
-      ];
+      final List<Map<String, dynamic>> defaultTags = _defaultTags;
 
       final snapshot = await FirebaseFirestore.instance
           .collection('tags')
@@ -133,7 +187,12 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
 
       if (mounted) {
         setState(() {
-          tags.add({'id': docRef.id, 'name': name, 'icon': icon, 'isDefault': false});
+          tags.add({
+            'id': docRef.id,
+            'name': name,
+            'icon': icon,
+            'isDefault': false,
+          });
           selectedTag = name;
         });
 
@@ -173,7 +232,12 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
     }
   }
 
-  Future<void> _editCustomTag(String tagId, String oldName, String newName, IconData newIcon) async {
+  Future<void> _editCustomTag(
+    String tagId,
+    String oldName,
+    String newName,
+    IconData newIcon,
+  ) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
@@ -244,16 +308,27 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
         context: context,
         builder: (context) => AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          title: const Text('Delete Tag', style: TextStyle(fontWeight: FontWeight.w600)),
-          content: Text('Are you sure you want to delete "$tagName"? Journal entries using this tag will be updated.'),
+          title: const Text(
+            'Delete Tag',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
+          content: Text(
+            'Are you sure you want to delete "$tagName"? Journal entries using this tag will be updated.',
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel', style: TextStyle(color: Color(0xFF605E5C))),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(color: Color(0xFF605E5C)),
+              ),
             ),
             TextButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('Delete', style: TextStyle(color: Color(0xFFE74856))),
+              child: const Text(
+                'Delete',
+                style: TextStyle(color: Color(0xFFE74856)),
+              ),
             ),
           ],
         ),
@@ -495,7 +570,11 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
     );
   }
 
-  void _showEditTagDialog(String tagId, String currentName, IconData currentIcon) {
+  void _showEditTagDialog(
+    String tagId,
+    String currentName,
+    IconData currentIcon,
+  ) {
     String? newTagName = currentName;
     IconData selectedIcon = currentIcon;
 
@@ -625,7 +704,12 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
                       ElevatedButton(
                         onPressed: () {
                           if (newTagName?.isNotEmpty == true) {
-                            _editCustomTag(tagId, currentName, newTagName!, selectedIcon);
+                            _editCustomTag(
+                              tagId,
+                              currentName,
+                              newTagName!,
+                              selectedIcon,
+                            );
                             Navigator.pop(context);
                           }
                         },
@@ -697,7 +781,7 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
     );
   }
 
- @override
+  @override
   Widget build(BuildContext context) {
     if (_isLoadingTags) {
       return const Scaffold(
@@ -754,14 +838,17 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     itemCount: moods.length,
-                    separatorBuilder: (context, index) => const SizedBox(height: 12),
+                    separatorBuilder: (context, index) =>
+                        const SizedBox(height: 12),
                     itemBuilder: (context, index) {
                       final mood = moods[index];
                       final isSelected = selectedMood == mood['name'];
                       return InkWell(
                         onTap: () {
                           setState(() {
-                            selectedMood = isSelected ? null : mood['name'] as String;
+                            selectedMood = isSelected
+                                ? null
+                                : mood['name'] as String;
                           });
                         },
                         borderRadius: BorderRadius.circular(8),
@@ -842,17 +929,28 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.info_outline, size: 16, color: Color(0xFF0078D4)),
+                          const Icon(
+                            Icons.info_outline,
+                            size: 16,
+                            color: Color(0xFF0078D4),
+                          ),
                           const SizedBox(width: 8),
                           const Expanded(
                             child: Text(
                               'Long press custom tags to edit or delete',
-                              style: TextStyle(fontSize: 12, color: Color(0xFF0078D4)),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF0078D4),
+                              ),
                             ),
                           ),
                           InkWell(
                             onTap: () => setState(() => _showTooltip = false),
-                            child: const Icon(Icons.close, size: 16, color: Color(0xFF0078D4)),
+                            child: const Icon(
+                              Icons.close,
+                              size: 16,
+                              color: Color(0xFF0078D4),
+                            ),
                           ),
                         ],
                       ),
@@ -871,7 +969,9 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
                           behavior: HitTestBehavior.opaque,
                           onTap: () {
                             setState(() {
-                              selectedTag = isSelected ? null : tag['name'] as String;
+                              selectedTag = isSelected
+                                  ? null
+                                  : tag['name'] as String;
                             });
                           },
                           onLongPress: !isDefault
@@ -880,15 +980,22 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
                                   showModalBottomSheet(
                                     context: context,
                                     shape: const RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                                      borderRadius: BorderRadius.vertical(
+                                        top: Radius.circular(20),
+                                      ),
                                     ),
                                     builder: (context) => Container(
-                                      padding: const EdgeInsets.symmetric(vertical: 20),
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 20,
+                                      ),
                                       child: Column(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
                                           ListTile(
-                                            leading: const Icon(Icons.edit, color: Color(0xFF0078D4)),
+                                            leading: const Icon(
+                                              Icons.edit,
+                                              color: Color(0xFF0078D4),
+                                            ),
                                             title: const Text('Edit Tag'),
                                             onTap: () {
                                               Navigator.pop(context);
@@ -900,7 +1007,10 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
                                             },
                                           ),
                                           ListTile(
-                                            leading: const Icon(Icons.delete, color: Color(0xFFE74856)),
+                                            leading: const Icon(
+                                              Icons.delete,
+                                              color: Color(0xFFE74856),
+                                            ),
                                             title: const Text('Delete Tag'),
                                             onTap: () {
                                               Navigator.pop(context);
@@ -1009,10 +1119,7 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
             decoration: BoxDecoration(
               color: Colors.white,
               border: Border(
-                top: BorderSide(
-                  color: const Color(0xFFEDEBE9),
-                  width: 1,
-                ),
+                top: BorderSide(color: const Color(0xFFEDEBE9), width: 1),
               ),
             ),
             child: SizedBox(
@@ -1047,10 +1154,7 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
                 ),
                 child: const Text(
                   'Continue',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                 ),
               ),
             ),

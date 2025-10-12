@@ -5,8 +5,6 @@ import 'package:logger/logger.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'dart:typed_data';
-import '../config/api_config.dart';
-import '../config/environment.dart';
 
 class UnifiedProgressService {
   final Logger _logger = Logger();
@@ -22,7 +20,7 @@ class UnifiedProgressService {
     'module3': ['Lesson 3.1', 'Lesson 3.2'],
     'module4': ['Lesson 4.1', 'Lesson 4.2'],
     'module5': ['Lesson 5.1', 'Lesson 5.2'],
-    'module6': ['Lesson-6-1'],
+    'module6': ['Lesson-6-1'], // Add this line
   };
 
   // Module assessment IDs (matching web structure)
@@ -32,26 +30,56 @@ class UnifiedProgressService {
     'module3': 'module_3_final',
     'module4': 'module_4_final',
     'module5': 'module_5_final',
-    'module6': 'module_6_final',
+    'module6': 'module_6_final', // Add this line
   };
 
-  // ✅ FIXED: Private method to get API base URL
-  Future<String> _getApiBaseUrl() async {
-    return await ApiConfig.getApiBaseUrl();
+  // Add near top of class (configurable):
+  static const String _fallbackLocalBase = 'http://192.168.254.103:5000'; // old
+  // For emulator convenience:
+  static const String _emulatorBase = 'http://192.168.254.103:5000';
+
+  Duration get _networkTimeout => const Duration(seconds: 60);
+
+  String get _apiBase {
+    // If running on Android emulator you can detect via Platform/environment.
+    // (Simplified here: choose emulator base if 192.* unreachable)
+    return _cachedBase ?? _fallbackLocalBase;
   }
 
-  // ✅ NEW: Public method for external access
-  Future<String> getApiBaseUrl() async {
-    return await _getApiBaseUrl();
-  }
+  String? _cachedBase;
 
-  Duration get _networkTimeout => EnvironmentConfig.networkTimeout;
+  // Simple reachability cache
+  Future<void> _ensureReachableBase() async {
+    if (_cachedBase != null) return;
+    final candidates = <String>[
+      // Add environment override if you load it (dotenv.env['API_BASE'] etc.)
+      _fallbackLocalBase,
+      _emulatorBase,
+    ];
+    for (final c in candidates) {
+      try {
+        final r = await http
+            .get(Uri.parse('$c/health'))
+            .timeout(const Duration(seconds: 2));
+        if (r.statusCode == 200) {
+          _cachedBase = c;
+          _logger.i('API base selected: $c');
+          return;
+        }
+      } catch (_) {
+        continue;
+      }
+    }
+    _logger.w('No API base reachable; will default to $_fallbackLocalBase');
+    _cachedBase = _fallbackLocalBase;
+  }
 
   /// Get user progress in the same format as the web app
-  Future<Map<String, dynamic>> getUserProgress() async {
+   Future<Map<String, dynamic>> getUserProgress() async {
     final uId = userId;
     if (uId == null) {
       _logger.w('User not authenticated');
+      // Return a map with the expected structure but empty content
       return {
         'lessonAttempts': <String, dynamic>{},
         'moduleAssessmentAttempts': <String, dynamic>{},
@@ -74,6 +102,8 @@ class UnifiedProgressService {
 
       final data = docSnap.data() as Map<String, dynamic>;
 
+      // ✅ FIX: Safely access and convert nested maps to prevent runtime cast errors.
+      // This is crucial for new users or when fields are empty maps {}.
       final lessonAttempts = data['lessonAttempts'];
       final moduleAssessmentAttempts = data['moduleAssessmentAttempts'];
       final preAssessmentsCompleted = data['preAssessmentsCompleted'];
@@ -91,6 +121,7 @@ class UnifiedProgressService {
       };
     } catch (e) {
       _logger.e('Error getting user progress: $e');
+      // Return a default, safe structure on error to prevent crashes downstream.
       return {
         'lessonAttempts': <String, dynamic>{},
         'moduleAssessmentAttempts': <String, dynamic>{},
@@ -136,6 +167,8 @@ class UnifiedProgressService {
     }
   }
 
+  // Paste this inside the UnifiedProgressService class as well
+
   Future<void> markPreAssessmentAsComplete(String lessonId) async {
     final uId = userId;
     if (uId == null) {
@@ -150,6 +183,7 @@ class UnifiedProgressService {
     try {
       final userProgressDocRef = _firestore.collection('userProgress').doc(uId);
 
+      // Using set with merge: true will safely create or update the nested map
       await userProgressDocRef.set({
         'preAssessmentsCompleted': {lessonId: true},
         'lastActivityTimestamp': FieldValue.serverTimestamp(),
@@ -186,16 +220,19 @@ class UnifiedProgressService {
       if (userProgressDoc.exists) {
         final data = userProgressDoc.data();
         if (data != null && data['moduleAssessmentAttempts'] is Map) {
-          final allModuleAttempts = Map<String, dynamic>.from(
-            data['moduleAssessmentAttempts'],
-          );
+
+          // ✅ FIX: Safely convert the map instead of just casting it.
+          final allModuleAttempts =
+              Map<String, dynamic>.from(data['moduleAssessmentAttempts']);
 
           if (allModuleAttempts[assessmentId] is List) {
+            // Ensure correct typing from List<dynamic> to List<Map<String, dynamic>>
             final attemptsList = List<dynamic>.from(
               allModuleAttempts[assessmentId],
             );
             return attemptsList.map((attempt) {
               final attemptMap = Map<String, dynamic>.from(attempt as Map);
+              // Convert Firestore Timestamp to Dart DateTime
               if (attemptMap['attemptTimestamp'] is Timestamp) {
                 attemptMap['attemptTimestamp'] =
                     (attemptMap['attemptTimestamp'] as Timestamp).toDate();
@@ -205,7 +242,7 @@ class UnifiedProgressService {
           }
         }
       }
-      return [];
+      return []; // Return empty list if no attempts or document found
     } catch (e) {
       _logger.e(
         'Error getting module assessment attempts for "$assessmentId": $e',
@@ -230,12 +267,13 @@ class UnifiedProgressService {
     }
   }
 
+  // lib/services/unified_progress_service.dart - Enhanced method
   Future<void> saveModuleAssessmentAttempt({
     required String assessmentId,
     required int score,
     required int maxScore,
     Map<String, dynamic>? detailedResults,
-    List<Map<String, dynamic>>? scenarioDetails,
+    List<Map<String, dynamic>>? scenarioDetails, // ✅ NEW: Add this parameter
   }) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
@@ -245,6 +283,7 @@ class UnifiedProgressService {
           .collection('userProgress')
           .doc(user.uid);
 
+      // ✅ ENHANCED: Build more comprehensive attempt data
       final attemptData = {
         'assessmentId': assessmentId,
         'score': score,
@@ -254,6 +293,7 @@ class UnifiedProgressService {
         'detailedResults': detailedResults,
       };
 
+      // ✅ NEW: Add detailed scenario breakdown if provided
       if (scenarioDetails != null && scenarioDetails.isNotEmpty) {
         attemptData['scenarioBreakdown'] = scenarioDetails
             .map(
@@ -284,6 +324,7 @@ class UnifiedProgressService {
             )
             .toList();
 
+        // ✅ NEW: Add summary statistics
         final totalScenarios = scenarioDetails.length;
         final averageScore =
             scenarioDetails
@@ -302,6 +343,7 @@ class UnifiedProgressService {
         };
       }
 
+      // Use transaction for better data consistency
       await FirebaseFirestore.instance.runTransaction((transaction) async {
         final doc = await transaction.get(docRef);
 
@@ -338,7 +380,9 @@ class UnifiedProgressService {
     }
   }
 
+  // ✅ NEW: Helper methods for analytics
   List<String> _identifyStrongestAreas(List<Map<String, dynamic>> scenarios) {
+    // Analyze criteria performance across scenarios
     final Map<String, List<bool>> criteriaPerformance = {};
 
     for (var scenario in scenarios) {
@@ -389,12 +433,13 @@ class UnifiedProgressService {
         .toList();
   }
 
-  // ✅ FIXED: Updated evaluateUnscriptedSimulation
+  // Add to unified_progress_service.dart
   Future<Map<String, dynamic>?> evaluateUnscriptedSimulation({
     required String audioUrl,
     required Map<String, dynamic> scoringCriteria,
   }) async {
-    final baseUrl = await _getApiBaseUrl();
+    await _ensureReachableBase();
+    final base = _apiBase;
 
     try {
       final requestBody = {
@@ -402,21 +447,18 @@ class UnifiedProgressService {
         'scoringCriteria': scoringCriteria,
       };
 
-      _logger.i(
-        'Sending unscripted evaluation request to: $baseUrl/evaluate-unscripted-simulation',
-      );
+      _logger.i('Sending unscripted evaluation request: $requestBody');
 
       final response = await http
           .post(
-            Uri.parse('$baseUrl/evaluate-unscripted-simulation'),
+            Uri.parse('$base/evaluate-unscripted-simulation'),
             headers: {
               'Content-Type': 'application/json',
               'Connection': 'close',
-              'User-Agent': 'TalkReady-Mobile/1.0',
             },
             body: jsonEncode(requestBody),
           )
-          .timeout(_networkTimeout);
+          .timeout(const Duration(seconds: 60));
 
       if (response.statusCode == 200) {
         final result = jsonDecode(response.body);
@@ -425,10 +467,14 @@ class UnifiedProgressService {
         if (result['success'] == true) {
           return result;
         } else {
-          _logger.e('API returned success=false: ${result['error']}');
+          _logger.e(
+            'Unscripted API returned success=false: ${result['error']}',
+          );
         }
       } else {
-        _logger.e('API HTTP error ${response.statusCode}: ${response.body}');
+        _logger.e(
+          'Unscripted API HTTP error ${response.statusCode}: ${response.body}',
+        );
       }
       return null;
     } catch (e) {
@@ -437,6 +483,7 @@ class UnifiedProgressService {
     }
   }
 
+  // Add this method inside the UnifiedProgressService class
   Future<void> saveLessonAttempt({
     required String lessonId,
     required int score,
@@ -453,19 +500,21 @@ class UnifiedProgressService {
     final userProgressRef = _firestore.collection('userProgress').doc(uId);
 
     try {
+      // Get current attempts to determine the new attempt number
       final existingAttempts = await getLessonAttempts(lessonId);
       final newAttemptNumber = existingAttempts.length + 1;
 
       final newAttemptData = {
         'score': score,
-        'totalPossiblePoints': maxScore,
+        'totalPossiblePoints': maxScore, // Aligning with web naming
         'attemptNumber': newAttemptNumber,
         'lessonId': lessonId,
         'timeSpent': timeSpent,
-        'attemptTimestamp': Timestamp.now(),
+        'attemptTimestamp': Timestamp.now(), // Use Firestore Server Timestamp
         'detailedResponses': detailedResponses,
       };
 
+      // Use set with merge: true to safely update the nested map
       await userProgressRef.set({
         'lessonAttempts': {
           lessonId: FieldValue.arrayUnion([newAttemptData]),
@@ -482,6 +531,7 @@ class UnifiedProgressService {
     }
   }
 
+  /// Get module progress summary (web-compatible)
   Future<Map<String, dynamic>> getModuleProgress(String moduleId) async {
     final progress = await getUserProgress();
     final lessonAttempts =
@@ -492,6 +542,7 @@ class UnifiedProgressService {
     final moduleLessons = webLessonStructure[moduleId] ?? [];
     final assessmentId = moduleAssessments[moduleId];
 
+    // Check lesson completion
     Map<String, bool> lessonCompletion = {};
     int totalCompleted = 0;
 
@@ -502,12 +553,14 @@ class UnifiedProgressService {
       if (isCompleted) totalCompleted++;
     }
 
+    // Check assessment completion
     bool assessmentTaken = false;
     if (assessmentId != null) {
       final attempts = assessmentAttempts[assessmentId] as List<dynamic>? ?? [];
       assessmentTaken = attempts.isNotEmpty;
     }
 
+    // Module is completed if all lessons done AND assessment taken (or no assessment required)
     bool allLessonsComplete = totalCompleted == moduleLessons.length;
     bool isModuleCompleted =
         allLessonsComplete && (assessmentTaken || assessmentId == null);
@@ -531,28 +584,20 @@ class UnifiedProgressService {
   Future<Map<String, dynamic>> getScenarioFeedback(
     String lessonId,
     Map<String, String> answers, [
-    Map<String, dynamic>? scripts,
+    Map<String, dynamic>? scripts, // Make scripts an optional parameter
   ]) async {
-    final baseUrl = await _getApiBaseUrl();
+    final url = Uri.parse('http://192.168.254.103:5000/evaluate-scenario');
+    final headers = {'Content-Type': 'application/json'};
 
+    // The body will now include the scripts if they are provided
     final body = jsonEncode({
       'lesson': lessonId,
       'answers': answers,
-      'scripts': scripts ?? {},
+      'scripts': scripts ?? {}, // Use provided scripts or an empty map
     });
 
     try {
-      final response = await http
-          .post(
-            Uri.parse('$baseUrl/evaluate-scenario'),
-            headers: {
-              'Content-Type': 'application/json',
-              'User-Agent': 'TalkReady-Mobile/1.0',
-            },
-            body: body,
-          )
-          .timeout(_networkTimeout);
-
+      final response = await http.post(url, headers: headers, body: body);
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         _logger.i('Received AI feedback successfully for lesson $lessonId.');
@@ -570,25 +615,27 @@ class UnifiedProgressService {
   }
 
   Future<Uint8List?> synthesizeSpeech(String text) async {
-    final baseUrl = await _getApiBaseUrl();
+    final uId = userId;
+    if (uId == null) {
+      _logger.w('User not authenticated for speech synthesis.');
+      return null;
+    }
+
+    // NOTE: Ensure your server is running and accessible at this IP address.
+    final url = Uri.parse('http://192.168.254.103:5000/synthesize-speech');
+    final headers = {'Content-Type': 'application/json'};
+    final body = jsonEncode({'text': text});
 
     try {
-      final response = await http
-          .post(
-            Uri.parse('$baseUrl/synthesize-speech'),
-            headers: {
-              'Content-Type': 'application/json',
-              'User-Agent': 'TalkReady-Mobile/1.0',
-            },
-            body: jsonEncode({'text': text}),
-          )
-          .timeout(_networkTimeout);
+      final response = await http.post(url, headers: headers, body: body);
 
       if (response.statusCode == 200) {
         _logger.i('Successfully fetched synthesized audio.');
         return response.bodyBytes;
       } else {
-        _logger.e('TTS error: ${response.statusCode} ${response.body}');
+        _logger.e(
+          'Backend server returned an error for speech synthesis: ${response.statusCode} ${response.body}',
+        );
         return null;
       }
     } catch (e) {
@@ -597,26 +644,31 @@ class UnifiedProgressService {
     }
   }
 
+  /// Fetches synthesized audio from the backend for a multi-turn script.
   Future<Uint8List?> synthesizeSpeechFromTurns(List<dynamic> turns) async {
-    final baseUrl = await _getApiBaseUrl();
+    final uId = userId;
+    if (uId == null) {
+      _logger.w('User not authenticated for speech synthesis.');
+      return null;
+    }
+
+    // NOTE: This IP must be correct for your local network.
+    final url = Uri.parse('http://192.168.254.103:5000/synthesize-speech');
+    final headers = {'Content-Type': 'application/json'};
+
+    // The server expects the key "parts", not "turns". This is the key fix.
+    final body = jsonEncode({'parts': turns});
 
     try {
-      final response = await http
-          .post(
-            Uri.parse('$baseUrl/synthesize-speech'),
-            headers: {
-              'Content-Type': 'application/json',
-              'User-Agent': 'TalkReady-Mobile/1.0',
-            },
-            body: jsonEncode({'parts': turns}),
-          )
-          .timeout(_networkTimeout);
+      final response = await http.post(url, headers: headers, body: body);
 
       if (response.statusCode == 200) {
         _logger.i('Successfully fetched synthesized audio for script.');
         return response.bodyBytes;
       } else {
-        _logger.e('TTS error: ${response.statusCode} ${response.body}');
+        _logger.e(
+          'Backend server returned an error for script synthesis: ${response.statusCode} ${response.body}',
+        );
         return null;
       }
     } catch (e) {
@@ -625,13 +677,57 @@ class UnifiedProgressService {
     }
   }
 
-  // ✅ FIXED: Updated evaluateUnscriptedSimulationEnhanced
+  // In lib/services/unified_progress_service.dart
+
+  // Add this method to UnifiedProgressService class:
+  Future<Map<String, dynamic>?> _retryNetworkCall<T>(
+    Future<T> Function() networkCall,
+    String operationName, {
+    int maxRetries = 3,
+  }) async {
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        final result = await networkCall();
+        return result as Map<String, dynamic>?;
+      } catch (e) {
+        _logger.w('$operationName attempt $attempt failed: $e');
+
+        if (attempt == maxRetries) {
+          _logger.e('$operationName failed after $maxRetries attempts');
+          return null;
+        }
+
+        // Wait before retry (exponential backoff)
+        await Future.delayed(Duration(seconds: attempt * 2));
+      }
+    }
+    return null;
+  }
+
+  Future<void> testBackendConnection() async {
+    try {
+      await _ensureReachableBase();
+      final response = await http
+          .get(
+            Uri.parse('$_apiBase/health'),
+            headers: {'Connection': 'keep-alive'},
+          )
+          .timeout(const Duration(seconds: 10));
+
+      _logger.i('Backend health check: ${response.statusCode}');
+      _logger.i('Backend response: ${response.body}');
+    } catch (e) {
+      _logger.e('Backend connection test failed: $e');
+    }
+  }
+
   Future<Map<String, dynamic>?> evaluateUnscriptedSimulationEnhanced({
     required String audioUrl,
     required Map<String, dynamic> scoringCriteria,
     Map<String, dynamic>? scenarioData,
   }) async {
-    final baseUrl = await _getApiBaseUrl();
+    await _ensureReachableBase();
+    final base = _apiBase;
 
     try {
       final requestBody = {
@@ -639,8 +735,8 @@ class UnifiedProgressService {
         'scoringCriteria': scoringCriteria,
         'evaluationType': 'enhanced_roleplay',
         'assessmentType': 'module_final',
-        'platform': 'mobile',
-        'requestDetailedBreakdown': true,
+        'platform': 'mobile', // ✅ ADD: Indicate this is from mobile
+        'requestDetailedBreakdown': true, // ✅ ADD: Request detailed breakdown
       };
 
       if (scenarioData != null) {
@@ -648,17 +744,16 @@ class UnifiedProgressService {
       }
 
       _logger.i(
-        'Sending enhanced roleplay evaluation request to: $baseUrl/evaluate-unscripted-simulation',
+        'Sending enhanced roleplay evaluation request to: $base/evaluate-unscripted-simulation',
       );
 
       final response = await http
           .post(
-            Uri.parse('$baseUrl/evaluate-unscripted-simulation'),
+            Uri.parse('$base/evaluate-unscripted-simulation'),
             headers: {
               'Content-Type': 'application/json',
               'Connection': 'keep-alive',
               'Accept': 'application/json',
-              'User-Agent': 'TalkReady-Mobile/1.0',
             },
             body: jsonEncode(requestBody),
           )
@@ -699,7 +794,8 @@ class UnifiedProgressService {
     String audioUrl,
     String originalText,
   ) async {
-    final baseUrl = await _getApiBaseUrl();
+    await _ensureReachableBase();
+    final base = _apiBase;
 
     try {
       final requestBody = {
@@ -709,19 +805,26 @@ class UnifiedProgressService {
         'assessmentType': 'script_reading',
       };
 
+      _logger.i('Sending request to Azure API with body: $requestBody');
+
       final response = await http
           .post(
-            Uri.parse('$baseUrl/evaluate-speech-with-azure'),
+            Uri.parse('$base/evaluate-speech-with-azure'),
             headers: {
               'Content-Type': 'application/json',
-              'User-Agent': 'TalkReady-Mobile/1.0',
+              'Connection': 'keep-alive',
             },
             body: jsonEncode(requestBody),
           )
-          .timeout(_networkTimeout);
+          .timeout(const Duration(seconds: 60));
+
+      _logger.i('Azure API response status: ${response.statusCode}');
+      _logger.i('Azure API response body: ${response.body}');
 
       if (response.statusCode == 200) {
         final result = jsonDecode(response.body);
+        _logger.i('Parsed Azure result: $result');
+
         if (result['success'] == true) {
           return result;
         } else {
@@ -739,20 +842,15 @@ class UnifiedProgressService {
     }
   }
 
-  // ✅ FIXED: Updated evaluateClarificationScenario
+  // Add this to your UnifiedProgressService class
   Future<Map<String, dynamic>> evaluateClarificationScenario(
     Map<String, String> answers,
     String lesson,
   ) async {
-    final baseUrl = await _getApiBaseUrl();
-
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/evaluate-clarification'),
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': 'TalkReady-Mobile/1.0',
-        },
+        Uri.parse('http://192.168.254.103:5000/evaluate-clarification'),
+        headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'answers': answers, 'lesson': lesson}),
       );
 
@@ -769,21 +867,19 @@ class UnifiedProgressService {
     }
   }
 
-  // ✅ FIXED: Updated evaluateSolutions
+  // Add to unified_progress_service.dart
   Future<Map<String, dynamic>> evaluateSolutions(
     Map<String, String> solutions,
     String lessonId,
   ) async {
-    final baseUrl = await _getApiBaseUrl();
-
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/evaluate-solutions'),
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': 'TalkReady-Mobile/1.0',
-        },
-        body: json.encode({'solutions': solutions, 'lesson': lessonId}),
+        Uri.parse('http://192.168.254.103:5000/evaluate-solutions'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'solutions': solutions,
+          'lesson': lessonId, // Make sure this matches what the backend expects
+        }),
       );
 
       _logger.i('Backend response status: ${response.statusCode}');
@@ -805,38 +901,22 @@ class UnifiedProgressService {
     }
   }
 
-  // ✅ FIXED: Updated testBackendConnection
-  Future<void> testBackendConnection() async {
+  Future<void> _testBackendConnection() async {
     try {
-      final baseUrl = await _getApiBaseUrl();
-      final response = await http
-          .get(
-            Uri.parse('$baseUrl/health'),
-            headers: {
-              'Connection': 'keep-alive',
-              'User-Agent': 'TalkReady-Mobile/1.0',
-            },
-          )
-          .timeout(const Duration(seconds: 10));
-
+      final response = await http.get(
+        Uri.parse('http://192.168.254.103:5000/health'),
+      );
       _logger.i('Backend health check: ${response.statusCode}');
-      _logger.i('Backend response: ${response.body}');
     } catch (e) {
-      _logger.e('Backend connection test failed: $e');
+      _logger.e('Backend connection failed: $e');
     }
   }
 
-  // ✅ FIXED: Updated synthesizeSpeechFromParts
   Future<Uint8List?> synthesizeSpeechFromParts(List<dynamic> parts) async {
-    final baseUrl = await _getApiBaseUrl();
-
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/synthesize-speech'),
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': 'TalkReady-Mobile/1.0',
-        },
+        Uri.parse('http://192.168.254.103:5000/synthesize-speech'),
+        headers: {'Content-Type': 'application/json'},
         body: json.encode({'parts': parts}),
       );
 
@@ -849,28 +929,23 @@ class UnifiedProgressService {
     }
   }
 
-  // ✅ FIXED: Updated evaluateTypingPreAssessment
   Future<String?> evaluateTypingPreAssessment({
     required String answer,
     required String customerStatement,
     required String lessonKey,
   }) async {
-    final baseUrl = await _getApiBaseUrl();
-
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/evaluate-preassessment-typing'),
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': 'TalkReady-Mobile/1.0',
-        },
-        body: jsonEncode({
-          'answer': answer,
-          'customerStatement': customerStatement,
-          'lessonKey': lessonKey,
-        }),
+      final url = Uri.parse(
+        'http://192.168.254.103:5000/evaluate-preassessment-typing',
       );
+      final headers = {'Content-Type': 'application/json'};
+      final body = jsonEncode({
+        'answer': answer,
+        'customerStatement': customerStatement,
+        'lessonKey': lessonKey,
+      });
 
+      final response = await http.post(url, headers: headers, body: body);
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         return data['feedback'] as String?;
@@ -886,21 +961,20 @@ class UnifiedProgressService {
     }
   }
 
-  // ✅ FIXED: Updated getOpenAICoachExplanation
   Future<Map<String, dynamic>?> getOpenAICoachExplanation(
     Map<String, dynamic> azureFeedback,
     String originalText,
   ) async {
-    final baseUrl = await _getApiBaseUrl();
+    await _ensureReachableBase();
+    final base = _apiBase;
 
     try {
       final response = await http
           .post(
-            Uri.parse('$baseUrl/explain-azure-feedback-with-openai'),
+            Uri.parse('$base/explain-azure-feedback-with-openai'),
             headers: {
               'Content-Type': 'application/json',
-              'Connection': 'close',
-              'User-Agent': 'TalkReady-Mobile/1.0',
+              'Connection': 'close', // Close connection after use
             },
             body: jsonEncode({
               'azureFeedback': azureFeedback,
@@ -930,6 +1004,7 @@ class UnifiedProgressService {
     }
   }
 
+  // Add this to your UnifiedProgressService class
   Future<void> saveLessonActivity(
     String lessonId,
     Map<String, dynamic> attemptData,
@@ -940,9 +1015,11 @@ class UnifiedProgressService {
 
       final db = FirebaseFirestore.instance;
 
+      // Add user ID to attempt data
       attemptData['userId'] = user.uid;
       attemptData['timestamp'] = FieldValue.serverTimestamp();
 
+      // Save to lessonAttempts collection
       await db
           .collection('users')
           .doc(user.uid)
@@ -958,30 +1035,32 @@ class UnifiedProgressService {
     }
   }
 
-  // ✅ FIXED: Updated synthesizeSpeechEnhanced
+  /// Enhanced TTS with voice selection (matches web version)
   Future<Uint8List?> synthesizeSpeechEnhanced({
     required String text,
-    String voice = 'female',
-    List<Map<String, dynamic>>? parts,
+    String voice = 'female', // 'male' or 'female'
+    List<Map<String, dynamic>>? parts, // For advanced TTS with effects
   }) async {
-    final baseUrl = await _getApiBaseUrl();
+    await _ensureReachableBase();
+    final base = _apiBase;
 
     try {
       Map<String, dynamic> requestBody;
 
       if (parts != null && parts.isNotEmpty) {
+        // Advanced TTS with parts and effects
         requestBody = {'parts': parts, 'voice': voice};
       } else {
+        // Simple TTS
         requestBody = {'text': text, 'voice': voice};
       }
 
       final response = await http
           .post(
-            Uri.parse('$baseUrl/synthesize-speech'),
+            Uri.parse('$base/synthesize-speech'),
             headers: {
               'Content-Type': 'application/json',
               'Connection': 'close',
-              'User-Agent': 'TalkReady-Mobile/1.0',
             },
             body: jsonEncode(requestBody),
           )
@@ -1000,22 +1079,17 @@ class UnifiedProgressService {
     }
   }
 
-  // ✅ FIXED: Updated getAiCallFeedback
   Future<Map<String, dynamic>?> getAiCallFeedback({
     required List<Map<String, String>> transcript,
     required Map<String, dynamic> scenario,
   }) async {
-    final baseUrl = await _getApiBaseUrl();
+    await _ensureReachableBase();
+    final url = Uri.parse('$_apiBase/ai-call-feedback');
+    final headers = {'Content-Type': 'application/json'};
+    final body = jsonEncode({'transcript': transcript, 'scenario': scenario});
 
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/ai-call-feedback'),
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': 'TalkReady-Mobile/1.0',
-        },
-        body: jsonEncode({'transcript': transcript, 'scenario': scenario}),
-      );
+      final response = await http.post(url, headers: headers, body: body);
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -1033,7 +1107,7 @@ class UnifiedProgressService {
     }
   }
 
-  // ✅ FIXED: Updated evaluateAzureSpeechEnhanced
+  /// Enhanced Azure speech evaluation (exact match to web)
   Future<Map<String, dynamic>?> evaluateAzureSpeechEnhanced({
     required String audioUrl,
     required String originalText,
@@ -1041,7 +1115,8 @@ class UnifiedProgressService {
     String assessmentType = 'script_reading',
     Map<String, dynamic>? metadata,
   }) async {
-    final baseUrl = await _getApiBaseUrl();
+    await _ensureReachableBase();
+    final base = _apiBase;
 
     try {
       final requestBody = {
@@ -1056,11 +1131,10 @@ class UnifiedProgressService {
 
       final response = await http
           .post(
-            Uri.parse('$baseUrl/evaluate-speech-with-azure'),
+            Uri.parse('$base/evaluate-speech-with-azure'),
             headers: {
               'Content-Type': 'application/json',
               'Connection': 'close',
-              'User-Agent': 'TalkReady-Mobile/1.0',
             },
             body: jsonEncode(requestBody),
           )
@@ -1087,22 +1161,27 @@ class UnifiedProgressService {
     }
   }
 
+  /// Check if a module should be unlocked based on prerequisites
   bool _isModuleUnlocked(
     String moduleId,
     Map<String, dynamic> lessonAttempts,
     Map<String, dynamic> assessmentAttempts,
   ) {
+    // Module 1 is always unlocked
     if (moduleId == 'module1') return true;
 
+    // Get previous module
     int moduleNum = int.tryParse(moduleId.replaceAll('module', '')) ?? 1;
     String prevModuleId = 'module${moduleNum - 1}';
 
+    // Previous module must be completed
     final prevModuleLessons = webLessonStructure[prevModuleId] ?? [];
     bool prevLessonsComplete = prevModuleLessons.every((lessonId) {
       final attempts = lessonAttempts[lessonId] as List<dynamic>? ?? [];
       return attempts.isNotEmpty;
     });
 
+    // Previous module assessment must be taken (if exists)
     bool prevAssessmentTaken = true;
     final prevAssessmentId = moduleAssessments[prevModuleId];
     if (prevAssessmentId != null) {
@@ -1114,6 +1193,7 @@ class UnifiedProgressService {
     return prevLessonsComplete && prevAssessmentTaken;
   }
 
+  /// Get lesson attempts for a specific lesson (web-compatible)
   Future<List<Map<String, dynamic>>> getLessonAttempts(String lessonId) async {
     final progress = await getUserProgress();
     final lessonAttempts =
@@ -1123,6 +1203,7 @@ class UnifiedProgressService {
 
     return attempts.map((attempt) {
       if (attempt is Map<String, dynamic>) {
+        // Convert Timestamp to DateTime if needed
         final result = Map<String, dynamic>.from(attempt);
         if (result['attemptTimestamp'] is Timestamp) {
           result['attemptTimestamp'] = (result['attemptTimestamp'] as Timestamp)
@@ -1134,6 +1215,7 @@ class UnifiedProgressService {
     }).toList();
   }
 
+  /// Check if pre-assessment is completed
   Future<bool> isPreAssessmentCompleted(String lessonId) async {
     final progress = await getUserProgress();
     final preAssessments =
@@ -1141,24 +1223,7 @@ class UnifiedProgressService {
     return preAssessments[lessonId] == true;
   }
 
-  Future<bool> testConnection() async {
-    try {
-      final baseUrl = await _getApiBaseUrl();
-      final response = await http
-          .get(
-            Uri.parse('$baseUrl/health'),
-            headers: {'User-Agent': 'TalkReady-Mobile/1.0'},
-          )
-          .timeout(const Duration(seconds: 30));
-
-      _logger.i('Connection test: ${response.statusCode}');
-      return response.statusCode == 200;
-    } catch (e) {
-      _logger.e('Connection test failed: $e');
-      return false;
-    }
-  }
-
+  /// Get overall course progress
   Future<Map<String, dynamic>> getCourseProgress() async {
     Map<String, dynamic> courseProgress = {};
 

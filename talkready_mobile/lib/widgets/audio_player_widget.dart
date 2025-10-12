@@ -1,14 +1,13 @@
 // lib/widgets/audio_player_widget.dart
 import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 import 'dart:typed_data';
 import 'package:logger/logger.dart';
+import '../services/unified_progress_service.dart'; // ✅ ADD: Import the service
 
 class AudioPlayerWidget extends StatefulWidget {
-  final String? text; // For simple text TTS
-  final List<Map<String, dynamic>>? turns; // For script TTS with multiple turns
+  final String? text;
+  final List<Map<String, dynamic>>? turns;
   final String buttonText;
   final IconData buttonIcon;
   final Color? buttonColor;
@@ -41,14 +40,14 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   final Logger _logger = Logger();
   final AudioPlayer _audioPlayer = AudioPlayer();
 
+  // ✅ ADD: Create instance of UnifiedProgressService
+  final UnifiedProgressService _progressService = UnifiedProgressService();
+
   bool _isLoading = false;
   bool _isPlaying = false;
   bool _isPaused = false;
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
-
-  // Replace with your actual server URL
-  static const String _serverUrl = 'http://192.168.254.103:5000';
 
   @override
   void initState() {
@@ -63,7 +62,6 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   }
 
   void _setupAudioPlayer() {
-    // Listen to player state changes
     _audioPlayer.onPlayerStateChanged.listen((PlayerState state) {
       if (mounted) {
         setState(() {
@@ -78,21 +76,18 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
       }
     });
 
-    // Listen to duration changes
     _audioPlayer.onDurationChanged.listen((Duration duration) {
       if (mounted) {
         setState(() => _duration = duration);
       }
     });
 
-    // Listen to position changes
     _audioPlayer.onPositionChanged.listen((Duration position) {
       if (mounted) {
         setState(() => _position = position);
       }
     });
 
-    // Listen to errors
     _audioPlayer.onPlayerComplete.listen((_) {
       widget.onPlayComplete?.call();
       _resetPlayer();
@@ -106,11 +101,10 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
       setState(() => _isLoading = true);
       widget.onPlayStart?.call();
 
-      // Get audio data from server
+      // ✅ FIXED: Use the service method instead of direct HTTP call
       final audioData = await _fetchAudioFromServer();
 
       if (audioData != null) {
-        // Play audio from bytes
         await _audioPlayer.play(BytesSource(audioData));
       } else {
         throw Exception('Failed to get audio data from server');
@@ -118,12 +112,14 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
     } catch (e) {
       _logger.e('Error playing audio: $e');
       widget.onPlayError?.call();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error playing audio: ${e.toString()}'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error playing audio: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -131,37 +127,17 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
     }
   }
 
+  // ✅ FIXED: Updated to use UnifiedProgressService
   Future<Uint8List?> _fetchAudioFromServer() async {
     try {
-      final url = Uri.parse('$_serverUrl/synthesize-speech');
-      final headers = {'Content-Type': 'application/json'};
-
-      Map<String, dynamic> requestBody;
-
       if (widget.turns != null) {
         // For script playback with multiple turns
-        requestBody = {'turns': widget.turns};
-      } else {
+        return await _progressService.synthesizeSpeechFromTurns(widget.turns!);
+      } else if (widget.text != null) {
         // For simple text playback
-        requestBody = {'text': widget.text};
+        return await _progressService.synthesizeSpeech(widget.text!);
       }
-
-      _logger.i('Requesting TTS from server: ${jsonEncode(requestBody)}');
-
-      final response = await http.post(
-        url,
-        headers: headers,
-        body: jsonEncode(requestBody),
-      );
-
-      if (response.statusCode == 200) {
-        _logger.i(
-          'Successfully received audio data from server (${response.bodyBytes.length} bytes)',
-        );
-        return response.bodyBytes;
-      } else {
-        throw Exception('Server responded with status: ${response.statusCode}');
-      }
+      return null;
     } catch (e) {
       _logger.e('Error fetching audio from server: $e');
       rethrow;

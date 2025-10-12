@@ -7,6 +7,7 @@ import 'package:logger/logger.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../../notification_service.dart';
+import '../../services/unified_progress_service.dart';
 
 class ReviewSpeakingSubmissionPage extends StatefulWidget {
   final String submissionId;
@@ -27,6 +28,7 @@ class _ReviewSpeakingSubmissionPageState
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final Logger _logger = Logger();
+  final UnifiedProgressService _progressService = UnifiedProgressService();
 
   bool _loading = true;
   String _error = '';
@@ -49,7 +51,6 @@ class _ReviewSpeakingSubmissionPageState
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
 
-
   @override
   void initState() {
     super.initState();
@@ -57,21 +58,21 @@ class _ReviewSpeakingSubmissionPageState
     _setupAudioPlayerListeners();
   }
 
-Color _getScoreColor(double score) {
-  if (score >= 90) return Colors.green;
-  if (score >= 75) return Colors.blue;
-  if (score >= 60) return Colors.orange;
-  return Colors.red;
-}
+  Color _getScoreColor(double score) {
+    if (score >= 90) return Colors.green;
+    if (score >= 75) return Colors.blue;
+    if (score >= 60) return Colors.orange;
+    return Colors.red;
+  }
 
-String _getPerformanceLabel(double score) {
-  if (score >= 95) return 'Excellent';
-  if (score >= 85) return 'Very Good';
-  if (score >= 75) return 'Good';
-  if (score >= 65) return 'Fair';
-  if (score >= 50) return 'Needs Work';
-  return 'Poor';
-}
+  String _getPerformanceLabel(double score) {
+    if (score >= 95) return 'Excellent';
+    if (score >= 85) return 'Very Good';
+    if (score >= 75) return 'Good';
+    if (score >= 65) return 'Fair';
+    if (score >= 50) return 'Needs Work';
+    return 'Poor';
+  }
 
   void _setupAudioPlayerListeners() {
     _audioPlayer.onPlayerStateChanged.listen((state) {
@@ -139,7 +140,7 @@ String _getPerformanceLabel(double score) {
           _aiFeedback = submissionData['aiFeedback'];
           _trainerFeedbackController.text =
               submissionData['trainerFeedback'] ?? '';
-           _currentScore = (submissionData['score'] as num?)?.toDouble();
+          _currentScore = (submissionData['score'] as num?)?.toDouble();
           _loading = false;
         });
       }
@@ -154,181 +155,189 @@ String _getPerformanceLabel(double score) {
     }
   }
 
- Future<void> _getAiEvaluation() async {
-  if (_submission?['audioUrl'] == null || _assessment?['questions'] == null) {
-    _showErrorSnackBar('Missing audio URL or assessment questions');
-    return;
+  Future<void> _getAiEvaluation() async {
+    if (_submission?['audioUrl'] == null || _assessment?['questions'] == null) {
+      _showErrorSnackBar('Missing audio URL or assessment questions');
+      return;
+    }
+
+    final questions = _assessment!['questions'] as List;
+    if (questions.isEmpty) {
+      _showErrorSnackBar('No questions found in assessment');
+      return;
+    }
+
+    final firstQuestion = questions.first;
+    final promptText =
+        firstQuestion['promptText'] ?? firstQuestion['text'] ?? '';
+
+    if (promptText.isEmpty) {
+      _showErrorSnackBar('No prompt text found for evaluation');
+      return;
+    }
+
+    setState(() {
+      _isLoadingAiFeedback = true;
+      _error = '';
+    });
+
+    try {
+      _logger.i('Starting AI evaluation for submission ${widget.submissionId}');
+
+      final baseUrl = await _progressService.getApiBaseUrl();
+      final response = await http.post(
+        Uri.parse('$baseUrl/evaluate-speaking-contextual'),
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'TalkReady-Mobile/1.0',
+        },
+        body: json.encode({
+          'audioUrl': _submission!['audioUrl'],
+          'promptText': promptText,
+          'evaluationContext':
+              firstQuestion['title'] ?? 'Customer service scenario',
+        }),
+      );
+
+      _logger.i('AI evaluation response status: ${response.statusCode}');
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        final feedbackResult = json.decode(response.body);
+
+        // Save to Firestore immediately so students can see it
+        await _firestore
+            .collection('studentSubmissions')
+            .doc(widget.submissionId)
+            .update({
+              'aiFeedback': feedbackResult,
+              'aiFeedbackGeneratedAt': FieldValue.serverTimestamp(),
+              'hasAiFeedback':
+                  true, // Flag to easily check if AI feedback exists
+            });
+
+        setState(() {
+          _aiFeedback = feedbackResult;
+          _isLoadingAiFeedback = false;
+        });
+
+        _logger.i('AI evaluation completed and saved to database');
+
+        _showSuccessSnackBar('AI evaluation completed and saved!');
+      } else {
+        final errorData = json.decode(response.body);
+        throw Exception(errorData['error'] ?? 'AI evaluation failed');
+      }
+    } catch (e) {
+      _logger.e('AI evaluation error: $e');
+      if (mounted) {
+        setState(() {
+          _error = 'AI Evaluation Error: ${e.toString()}';
+          _isLoadingAiFeedback = false;
+        });
+        _showErrorSnackBar('AI evaluation failed: ${e.toString()}');
+      }
+    }
   }
 
-  final questions = _assessment!['questions'] as List;
-  if (questions.isEmpty) {
-    _showErrorSnackBar('No questions found in assessment');
-    return;
-  }
+  Future<void> _publishFeedback() async {
+    if (_assessment == null) return;
 
-  final firstQuestion = questions.first;
-  final promptText =
-      firstQuestion['promptText'] ?? firstQuestion['text'] ?? '';
+    // NEW: Validate that score has been set
+    if (_currentScore == null) {
+      _showErrorSnackBar("Please set a score before publishing feedback.");
+      return;
+    }
 
-  if (promptText.isEmpty) {
-    _showErrorSnackBar('No prompt text found for evaluation');
-    return;
-  }
+    final score = _currentScore!;
 
-  setState(() {
-    _isLoadingAiFeedback = true;
-    _error = '';
-  });
+    // Validate score is within 0-100 range
+    if (score > 100 || score < 0) {
+      _showErrorSnackBar("Score must be between 0 and 100.");
+      return;
+    }
 
-  try {
-    _logger.i('Starting AI evaluation for submission ${widget.submissionId}');
+    setState(() => _isSaving = true);
 
-    final response = await http.post(
-      Uri.parse('http://10.180.155.232:5000/evaluate-speaking-contextual'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({
-        'audioUrl': _submission!['audioUrl'],
-        'promptText': promptText,
-        'evaluationContext':
-            firstQuestion['title'] ?? 'Customer service scenario',
-      }),
-    );
+    try {
+      final feedbackData = {
+        'aiFeedback': _aiFeedback,
+        'trainerFeedback': _trainerFeedbackController.text,
+        'score': score,
+        'totalPossiblePoints': 100, // Fixed to 100 for percentage-based scoring
+        'isReviewed': true,
+        'reviewedAt': FieldValue.serverTimestamp(),
+      };
 
-    _logger.i('AI evaluation response status: ${response.statusCode}');
-
-    if (!mounted) return;
-
-    if (response.statusCode == 200) {
-      final feedbackResult = json.decode(response.body);
-
-      // Save to Firestore immediately so students can see it
       await _firestore
           .collection('studentSubmissions')
           .doc(widget.submissionId)
-          .update({
-        'aiFeedback': feedbackResult,
-        'aiFeedbackGeneratedAt': FieldValue.serverTimestamp(),
-        'hasAiFeedback': true, // Flag to easily check if AI feedback exists
-      });
+          .update(feedbackData);
 
-      setState(() {
-        _aiFeedback = feedbackResult;
-        _isLoadingAiFeedback = false;
-      });
-
-      _logger.i('AI evaluation completed and saved to database');
-
-      _showSuccessSnackBar('AI evaluation completed and saved!');
-    } else {
-      final errorData = json.decode(response.body);
-      throw Exception(errorData['error'] ?? 'AI evaluation failed');
-    }
-  } catch (e) {
-    _logger.e('AI evaluation error: $e');
-    if (mounted) {
-      setState(() {
-        _error = 'AI Evaluation Error: ${e.toString()}';
-        _isLoadingAiFeedback = false;
-      });
-      _showErrorSnackBar('AI evaluation failed: ${e.toString()}');
-    }
-  }
-}
-
-Future<void> _publishFeedback() async {
-  if (_assessment == null) return;
-
-  // NEW: Validate that score has been set
-  if (_currentScore == null) {
-    _showErrorSnackBar("Please set a score before publishing feedback.");
-    return;
-  }
-
-  final score = _currentScore!;
-
-  // Validate score is within 0-100 range
-  if (score > 100 || score < 0) {
-    _showErrorSnackBar("Score must be between 0 and 100.");
-    return;
-  }
-
-  setState(() => _isSaving = true);
-
-  try {
-    final feedbackData = {
-      'aiFeedback': _aiFeedback,
-      'trainerFeedback': _trainerFeedbackController.text,
-      'score': score,
-      'totalPossiblePoints': 100, // Fixed to 100 for percentage-based scoring
-      'isReviewed': true,
-      'reviewedAt': FieldValue.serverTimestamp(),
-    };
-
-    await _firestore
-        .collection('studentSubmissions')
-        .doc(widget.submissionId)
-        .update(feedbackData);
-
-    // Get trainer's name from Firestore
-    String trainerName = 'Your trainer';
-    try {
-      final trainerDoc = await _firestore
-          .collection('users')
-          .doc(_auth.currentUser!.uid)
-          .get();
-
-      if (trainerDoc.exists) {
-        final trainerData = trainerDoc.data()!;
-        trainerName = '${trainerData['firstName'] ?? ''} ${trainerData['lastName'] ?? ''}'.trim();
-        if (trainerName.isEmpty) {
-          trainerName = trainerData['displayName'] ?? 'Your trainer';
-        }
-      }
-    } catch (e) {
-      _logger.e('Could not fetch trainer name: $e');
-    }
-
-    // Get class name for notification
-    String? className;
-    try {
-      if (_assessment!['classId'] != null) {
-        final classDoc = await _firestore
-            .collection('trainerClass')
-            .doc(_assessment!['classId'])
+      // Get trainer's name from Firestore
+      String trainerName = 'Your trainer';
+      try {
+        final trainerDoc = await _firestore
+            .collection('users')
+            .doc(_auth.currentUser!.uid)
             .get();
-        className = classDoc.data()?['className'] as String?;
+
+        if (trainerDoc.exists) {
+          final trainerData = trainerDoc.data()!;
+          trainerName =
+              '${trainerData['firstName'] ?? ''} ${trainerData['lastName'] ?? ''}'
+                  .trim();
+          if (trainerName.isEmpty) {
+            trainerName = trainerData['displayName'] ?? 'Your trainer';
+          }
+        }
+      } catch (e) {
+        _logger.e('Could not fetch trainer name: $e');
+      }
+
+      // Get class name for notification
+      String? className;
+      try {
+        if (_assessment!['classId'] != null) {
+          final classDoc = await _firestore
+              .collection('trainerClass')
+              .doc(_assessment!['classId'])
+              .get();
+          className = classDoc.data()?['className'] as String?;
+        }
+      } catch (e) {
+        _logger.e('Could not fetch class name: $e');
+      }
+
+      // Notify the student about the feedback
+      try {
+        final studentId = _submission!['studentId'];
+        await NotificationService.notifyUser(
+          userId: studentId,
+          message:
+              '$trainerName reviewed your speaking assessment: ${_assessment!['title']}',
+          className: className,
+          link: '/student/class/${_assessment!['classId']}',
+        );
+      } catch (e) {
+        _logger.e('Failed to send notification to student: $e');
+        // Don't throw - notification failure shouldn't stop feedback publishing
+      }
+
+      if (mounted) {
+        _showSuccessSnackBar('Feedback published and student notified!');
+        Navigator.pop(context);
       }
     } catch (e) {
-      _logger.e('Could not fetch class name: $e');
-    }
-
-    // Notify the student about the feedback
-    try {
-      final studentId = _submission!['studentId'];
-      await NotificationService.notifyUser(
-        userId: studentId,
-        message: '$trainerName reviewed your speaking assessment: ${_assessment!['title']}',
-        className: className,
-        link: '/student/class/${_assessment!['classId']}',
-      );
-    } catch (e) {
-      _logger.e('Failed to send notification to student: $e');
-      // Don't throw - notification failure shouldn't stop feedback publishing
-    }
-
-    if (mounted) {
-      _showSuccessSnackBar('Feedback published and student notified!');
-      Navigator.pop(context);
-    }
-  } catch (e) {
-    _logger.e("Failed to publish feedback: $e");
-    _showErrorSnackBar('Failed to publish feedback: ${e.toString()}');
-  } finally {
-    if (mounted) {
-      setState(() => _isSaving = false);
+      _logger.e("Failed to publish feedback: $e");
+      _showErrorSnackBar('Failed to publish feedback: ${e.toString()}');
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
     }
   }
-}
 
   void _showErrorSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -364,58 +373,57 @@ Future<void> _publishFeedback() async {
     return "$minutes:$seconds";
   }
 
- Widget _buildQuickScoreButton(String label, double score) {
-  final isSelected = _currentScore != null && (_currentScore! - score).abs() < 1;
-  return Expanded(
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: OutlinedButton(
-        onPressed: () {
-          setState(() {
-            _currentScore = score;
-          });
-        },
-        style: OutlinedButton.styleFrom(
-          backgroundColor: isSelected
-              ? _getScoreColor(score).withOpacity(0.1)
-              : Colors.white,
-          side: BorderSide(
-            color: isSelected
-                ? _getScoreColor(score)
-                : Colors.grey[300]!,
-            width: isSelected ? 2 : 1,
-          ),
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: isSelected ? _getScoreColor(score) : Colors.grey[600],
-              ),
+  Widget _buildQuickScoreButton(String label, double score) {
+    final isSelected =
+        _currentScore != null && (_currentScore! - score).abs() < 1;
+    return Expanded(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: OutlinedButton(
+          onPressed: () {
+            setState(() {
+              _currentScore = score;
+            });
+          },
+          style: OutlinedButton.styleFrom(
+            backgroundColor: isSelected
+                ? _getScoreColor(score).withOpacity(0.1)
+                : Colors.white,
+            side: BorderSide(
+              color: isSelected ? _getScoreColor(score) : Colors.grey[300]!,
+              width: isSelected ? 2 : 1,
             ),
-            const SizedBox(height: 2),
-            Text(
-              '${score.round()}',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: isSelected ? _getScoreColor(score) : Colors.grey[800],
-              ),
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
             ),
-          ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: isSelected ? _getScoreColor(score) : Colors.grey[600],
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                '${score.round()}',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: isSelected ? _getScoreColor(score) : Colors.grey[800],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   Widget _buildAiFeedbackDisplay() {
     if (_aiFeedback == null) return const SizedBox.shrink();
@@ -1094,180 +1102,181 @@ Future<void> _publishFeedback() async {
     );
   }
 
- Widget _buildSubmissionCard(Map<String, dynamic>? prompt) {
-  return Container(
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(20),
-      boxShadow: [
-        BoxShadow(
-          color: const Color(0xFF14B8A6).withOpacity(0.08),
-          blurRadius: 20,
-          offset: const Offset(0, 8),
-          spreadRadius: 0,
-        ),
-      ],
-    ),
-    child: ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(20),
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFF14B8A6), Color(0xFF0D9488)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(
-                    Icons.assignment,
-                    color: Colors.white,
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                const Text(
-                  "Student's Submission",
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(20.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // FIRST: Speaking Prompt Title and Description (the actual scenario/question)
-                Row(
-                  children: [
-                    Icon(
-                      Icons.quiz_outlined,
-                      color: const Color(0xFF0F766E),
-                      size: 20,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      prompt?['title'] ?? 'Speaking Prompt',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: Color(0xFF0F766E),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                if (prompt?['promptText'] != null || prompt?['text'] != null) ...[
-                  Text(
-                    prompt!['promptText'] ?? prompt['text'] ?? '',
-                    style: const TextStyle(
-                      color: Color(0xFF374151),
-                      fontSize: 15,
-                      height: 1.5,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                ],
-
-                // SECOND: Reference Text (what student should say)
-                if (prompt?['referenceText'] != null &&
-                    prompt!['referenceText'].toString().isNotEmpty) ...[
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.purple.withOpacity(0.1),
-                          Colors.purple.withOpacity(0.05),
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: Colors.purple.withOpacity(0.3),
-                        width: 1,
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.chat_bubble_outline,
-                              color: Colors.purple.shade700,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 8),
-                            const Text(
-                              "What the student should say:",
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                                color: Colors.purple,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          prompt['referenceText'],
-                          style: const TextStyle(
-                            color: Color(0xFF374151),
-                            fontSize: 15,
-                            height: 1.5,
-                            fontStyle: FontStyle.italic,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                ],
-
-                // Student's Recording
-                Row(
-                  children: [
-                    Icon(Icons.mic, color: const Color(0xFF0F766E), size: 20),
-                    const SizedBox(width: 8),
-                    const Text(
-                      "Student's Recording:",
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: Color(0xFF0F766E),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                _buildAudioPlayer(),
-              ],
-            ),
+  Widget _buildSubmissionCard(Map<String, dynamic>? prompt) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF14B8A6).withOpacity(0.08),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+            spreadRadius: 0,
           ),
         ],
       ),
-    ),
-  );
-}
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFF14B8A6), Color(0xFF0D9488)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(
+                      Icons.assignment,
+                      color: Colors.white,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Text(
+                    "Student's Submission",
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(20.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // FIRST: Speaking Prompt Title and Description (the actual scenario/question)
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.quiz_outlined,
+                        color: const Color(0xFF0F766E),
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        prompt?['title'] ?? 'Speaking Prompt',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: Color(0xFF0F766E),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  if (prompt?['promptText'] != null ||
+                      prompt?['text'] != null) ...[
+                    Text(
+                      prompt!['promptText'] ?? prompt['text'] ?? '',
+                      style: const TextStyle(
+                        color: Color(0xFF374151),
+                        fontSize: 15,
+                        height: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
+
+                  // SECOND: Reference Text (what student should say)
+                  if (prompt?['referenceText'] != null &&
+                      prompt!['referenceText'].toString().isNotEmpty) ...[
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.purple.withOpacity(0.1),
+                            Colors.purple.withOpacity(0.05),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.purple.withOpacity(0.3),
+                          width: 1,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.chat_bubble_outline,
+                                color: Colors.purple.shade700,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              const Text(
+                                "What the student should say:",
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                  color: Colors.purple,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            prompt['referenceText'],
+                            style: const TextStyle(
+                              color: Color(0xFF374151),
+                              fontSize: 15,
+                              height: 1.5,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
+
+                  // Student's Recording
+                  Row(
+                    children: [
+                      Icon(Icons.mic, color: const Color(0xFF0F766E), size: 20),
+                      const SizedBox(width: 8),
+                      const Text(
+                        "Student's Recording:",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: Color(0xFF0F766E),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  _buildAudioPlayer(),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _buildAudioPlayer() {
     final audioUrl = _submission?['audioUrl'];
@@ -1614,136 +1623,146 @@ Future<void> _publishFeedback() async {
                           ),
                         ),
                         const SizedBox(height: 20),
-                     Column(
-  crossAxisAlignment: CrossAxisAlignment.start,
-  children: [
-    Row(
-      children: [
-        Icon(
-          Icons.star_outline,
-          color: const Color(0xFF0F766E),
-          size: 20,
-        ),
-        const SizedBox(width: 8),
-        const Text(
-          'Overall Score',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-            color: Color(0xFF0F766E),
-          ),
-        ),
-      ],
-    ),
-    const SizedBox(height: 20),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.star_outline,
+                                  color: const Color(0xFF0F766E),
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'Overall Score',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                    color: Color(0xFF0F766E),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 20),
 
-    // Score Display
-    Center(
-  child: Container(
-    padding: const EdgeInsets.all(20),
-    decoration: BoxDecoration(
-      color: _currentScore == null
-          ? Colors.grey.shade200
-          : _getScoreColor(_currentScore!).withOpacity(0.1),
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(
-        color: _currentScore == null
-            ? Colors.grey.shade400
-            : _getScoreColor(_currentScore!),
-        width: 2,
-      ),
-    ),
-    child: Column(
-      children: [
-        Text(
-          _currentScore == null ? '--' : '${_currentScore!.round()}',
-          style: TextStyle(
-            fontSize: 48,
-            fontWeight: FontWeight.bold,
-            color: _currentScore == null
-                ? Colors.grey.shade600
-                : _getScoreColor(_currentScore!),
-          ),
-        ),
-        Text(
-          'out of 100',
-          style: TextStyle(
-            fontSize: 14,
-            color: Colors.grey[600],
-          ),
-        ),
-        if (_currentScore != null) ...[
-          const SizedBox(height: 4),
-          Text(
-            _getPerformanceLabel(_currentScore!),
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: _getScoreColor(_currentScore!),
-            ),
-          ),
-        ] else ...[
-          const SizedBox(height: 4),
-          Text(
-            'Move slider to set score',
-            style: TextStyle(
-              fontSize: 12,
-              fontStyle: FontStyle.italic,
-              color: Colors.orange.shade700,
-            ),
-          ),
-        ],
-      ],
-    ),
-  ),
-),
+                            // Score Display
+                            Center(
+                              child: Container(
+                                padding: const EdgeInsets.all(20),
+                                decoration: BoxDecoration(
+                                  color: _currentScore == null
+                                      ? Colors.grey.shade200
+                                      : _getScoreColor(
+                                          _currentScore!,
+                                        ).withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: _currentScore == null
+                                        ? Colors.grey.shade400
+                                        : _getScoreColor(_currentScore!),
+                                    width: 2,
+                                  ),
+                                ),
+                                child: Column(
+                                  children: [
+                                    Text(
+                                      _currentScore == null
+                                          ? '--'
+                                          : '${_currentScore!.round()}',
+                                      style: TextStyle(
+                                        fontSize: 48,
+                                        fontWeight: FontWeight.bold,
+                                        color: _currentScore == null
+                                            ? Colors.grey.shade600
+                                            : _getScoreColor(_currentScore!),
+                                      ),
+                                    ),
+                                    Text(
+                                      'out of 100',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                    if (_currentScore != null) ...[
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        _getPerformanceLabel(_currentScore!),
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: _getScoreColor(_currentScore!),
+                                        ),
+                                      ),
+                                    ] else ...[
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Move slider to set score',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontStyle: FontStyle.italic,
+                                          color: Colors.orange.shade700,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ),
 
-    const SizedBox(height: 20),
+                            const SizedBox(height: 20),
 
-   // Slider
-SliderTheme(
-  data: SliderTheme.of(context).copyWith(
-    activeTrackColor: _currentScore == null
-        ? const Color(0xFF14B8A6)
-        : _getScoreColor(_currentScore!),
-    inactiveTrackColor: Colors.grey[300],
-    thumbColor: _currentScore == null
-        ? const Color(0xFF14B8A6)
-        : _getScoreColor(_currentScore!),
-    overlayColor: (_currentScore == null
-        ? const Color(0xFF14B8A6)
-        : _getScoreColor(_currentScore!)).withOpacity(0.2),
-    trackHeight: 8,
-    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 12),
-  ),
-  child: Slider(
-    value: _currentScore ?? 50.0,
-    min: 0,
-    max: 100,
-    divisions: 100,
-    label: _currentScore == null ? 'Set score' : '${_currentScore!.round()}',
-    onChanged: (value) {
-      setState(() {
-        _currentScore = value;
-      });
-    },
-  ),
-),
+                            // Slider
+                            SliderTheme(
+                              data: SliderTheme.of(context).copyWith(
+                                activeTrackColor: _currentScore == null
+                                    ? const Color(0xFF14B8A6)
+                                    : _getScoreColor(_currentScore!),
+                                inactiveTrackColor: Colors.grey[300],
+                                thumbColor: _currentScore == null
+                                    ? const Color(0xFF14B8A6)
+                                    : _getScoreColor(_currentScore!),
+                                overlayColor:
+                                    (_currentScore == null
+                                            ? const Color(0xFF14B8A6)
+                                            : _getScoreColor(_currentScore!))
+                                        .withOpacity(0.2),
+                                trackHeight: 8,
+                                thumbShape: const RoundSliderThumbShape(
+                                  enabledThumbRadius: 12,
+                                ),
+                              ),
+                              child: Slider(
+                                value: _currentScore ?? 50.0,
+                                min: 0,
+                                max: 100,
+                                divisions: 100,
+                                label: _currentScore == null
+                                    ? 'Set score'
+                                    : '${_currentScore!.round()}',
+                                onChanged: (value) {
+                                  setState(() {
+                                    _currentScore = value;
+                                  });
+                                },
+                              ),
+                            ),
 
-    // Quick Score Buttons
-    const SizedBox(height: 12),
-    Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: [
-        _buildQuickScoreButton('Poor', 50),
-        _buildQuickScoreButton('Fair', 65),
-        _buildQuickScoreButton('Good', 75),
-        _buildQuickScoreButton('Great', 85),
-        _buildQuickScoreButton('Excellent', 95),
-      ],
-    ),
-  ],
-),
+                            // Quick Score Buttons
+                            const SizedBox(height: 12),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                              children: [
+                                _buildQuickScoreButton('Poor', 50),
+                                _buildQuickScoreButton('Fair', 65),
+                                _buildQuickScoreButton('Good', 75),
+                                _buildQuickScoreButton('Great', 85),
+                                _buildQuickScoreButton('Excellent', 95),
+                              ],
+                            ),
+                          ],
+                        ),
                       ],
                     ),
                   ),
