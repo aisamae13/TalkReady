@@ -3,7 +3,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:math' as _logger;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -19,7 +18,6 @@ import 'custom_animated_bottom_bar.dart';
 import 'package:shimmer/shimmer.dart';
 import 'MyEnrolledClasses.dart';
 import '../services/daily_content_service.dart';
-import 'firebase_service.dart';
 import 'notification_badge.dart';
 
 // Helper function for creating a slide page route
@@ -157,7 +155,55 @@ StreamSubscription<QuerySnapshot>? _notificationSubscription;
     _initializeData();
     _setupRealTimeListener();
     _setupNotificationListener(); // Add this line
+
+    _initializeDataOptimized();
   }
+Future<void> _initializeDataOptimized() async {
+  // Show UI immediately with placeholder data
+  _fadeController.forward();
+  _slideController.forward();
+
+  try {
+    logger.i('Starting optimized initialization');
+
+    // Load critical data first (blocking)
+    await _fetchEnhancedProgress();
+
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+        _hasError = false;
+      });
+      logger.i('Core data loaded, UI ready');
+    }
+
+    // Load non-critical data in background (non-blocking)
+    Future.wait([
+      _loadFeaturedCourses(),
+      _fetchDailyContent(),
+    ]).then((_) {
+      logger.i('Background data loading completed');
+    }).catchError((e) {
+      logger.w('Error in background data loading: $e');
+    });
+  } catch (e, stackTrace) {
+    logger.e('Error in optimized initialization: $e\nStackTrace: $stackTrace');
+
+    String errorMessage = 'Failed to load data. Please try again.';
+
+    if (e is SocketException) {
+      errorMessage = 'No internet connection. Please check your network.';
+    }
+
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+        _hasError = true;
+        _errorMessage = errorMessage;
+      });
+    }
+  }
+}
 
   void _setupAnimations() {
     _fadeController = AnimationController(
@@ -263,152 +309,171 @@ Future<bool> _onWillPop() async {
 
   return shouldExit ?? false;
 }
-  Future<void> _fetchEnhancedProgress() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      logger.e('No user logged in');
-      return;
-    }
-
-    try {
-      logger.i('Fetching enhanced progress for user: ${user.uid}');
-      DocumentSnapshot doc = await FirebaseFirestore.instance
-          .collection('userProgress')
-          .doc(user.uid)
-          .get();
-
-      if (doc.exists && doc.data() != null) {
-        final userData = doc.data() as Map<String, dynamic>;
-        final lessonAttempts =
-            userData['lessonAttempts'] as Map<String, dynamic>? ?? {};
-
-        // Calculate enhanced skill analysis
-        _calculateEnhancedSkillAnalysis(lessonAttempts);
-        _calculateModuleProgress(userData);
-
-        logger.i('Enhanced skill analysis calculated: $skillAnalysis');
-      } else {
-        logger.i(
-          'No progress data found for user: ${user.uid}, using defaults',
-        );
-      }
-    } catch (e, stackTrace) {
-      logger.e('Error fetching enhanced progress: $e, stackTrace: $stackTrace');
-      rethrow;
-    }
+ Future<void> _fetchEnhancedProgress() async {
+  final user = FirebaseAuth.instance.currentUser;
+  if (user == null) {
+    logger.e('No user logged in');
+    return;
   }
 
-  void _calculateEnhancedSkillAnalysis(Map<String, dynamic> lessonAttempts) {
-    final skillCategories = {
-      'Foundation Grammar': {
-        'lessons': ['Lesson-1-1', 'Lesson-1-2', 'Lesson-1-3'],
-        'weight': 1.0,
-      },
-      'Conversational Skills': {
-        'lessons': ['Lesson-2-1', 'Lesson-2-2', 'Lesson-2-3'],
-        'weight': 1.2,
-      },
-      'Listening Comprehension': {
-        'lessons': ['Lesson-3-1'],
-        'weight': 1.3,
-      },
-      'Speaking Fluency': {
-        'lessons': ['Lesson-3-2', 'Lesson-5-1', 'Lesson-5-2'],
-        'weight': 1.4,
-      },
-      'Professional Communication': {
-        'lessons': ['Lesson-4-1', 'Lesson-4-2'],
-        'weight': 1.3,
-      },
-      'Call Center Readiness': {
-        'lessons': ['Lesson-5-1', 'Lesson-5-2', 'Lesson-6-1'],
-        'weight': 1.5,
-      },
-    };
+  try {
+    logger.i('Fetching enhanced progress for user: ${user.uid}');
+    DocumentSnapshot doc = await FirebaseFirestore.instance
+        .collection('userProgress')
+        .doc(user.uid)
+        .get();
 
-    skillCategories.forEach((skillName, config) {
-      final lessons = config['lessons'] as List<String>;
-      List<Map<String, dynamic>> allScores = [];
-      int totalAttempts = 0;
+    if (doc.exists && doc.data() != null) {
+      final userData = doc.data() as Map<String, dynamic>;
+      final lessonAttempts =
+          userData['lessonAttempts'] as Map<String, dynamic>? ?? {};
 
-      for (String lessonId in lessons) {
-        final attempts = lessonAttempts[lessonId] as List<dynamic>? ?? [];
-        totalAttempts += attempts.length;
+      // Do all calculations once in setState
+      if (mounted) {
+        setState(() {
+          _calculateEnhancedSkillAnalysisOptimized(lessonAttempts);
+          _calculateModuleProgress(userData);
+          _calculateEnhancedUserStats();
+          _lessonsCompleted = lessonAttempts.keys.length;
+        });
+      }
 
-        for (var attempt in attempts) {
-          if (attempt is Map<String, dynamic>) {
-            double score = _extractScoreForSkill(attempt, skillName);
-            if (score > 0) {
-              allScores.add({
-                'score': math.min(100.0, score),
-                'timestamp': attempt['attemptTimestamp'],
-              });
-            }
+      logger.i('Enhanced progress fetched successfully');
+    } else {
+      logger.i('No progress data found for user: ${user.uid}');
+    }
+  } catch (e, stackTrace) {
+    logger.e(
+        'Error fetching enhanced progress: $e\nStackTrace: $stackTrace');
+    rethrow;
+  }
+}
+
+  Future<void> _calculateEnhancedSkillAnalysisOptimized(
+    Map<String, dynamic> lessonAttempts) async {
+  final skillCategories = {
+    'Foundation Grammar': {
+      'lessons': ['Lesson-1-1', 'Lesson-1-2', 'Lesson-1-3'],
+      'weight': 1.0,
+    },
+    'Conversational Skills': {
+      'lessons': ['Lesson-2-1', 'Lesson-2-2', 'Lesson-2-3'],
+      'weight': 1.2,
+    },
+    'Listening Comprehension': {
+      'lessons': ['Lesson-3-1'],
+      'weight': 1.3,
+    },
+    'Speaking Fluency': {
+      'lessons': ['Lesson-3-2', 'Lesson-5-1', 'Lesson-5-2'],
+      'weight': 1.4,
+    },
+    'Professional Communication': {
+      'lessons': ['Lesson-4-1', 'Lesson-4-2'],
+      'weight': 1.3,
+    },
+    'Call Center Readiness': {
+      'lessons': ['Lesson-5-1', 'Lesson-5-2', 'Lesson-6-1'],
+      'weight': 1.5,
+    },
+  };
+
+  skillCategories.forEach((skillName, config) {
+    final lessons = config['lessons'] as List<String>;
+    List<Map<String, dynamic>> allScores = [];
+    int totalAttempts = 0;
+
+    // Only process lessons that have attempts
+    for (String lessonId in lessons) {
+      final attempts = lessonAttempts[lessonId] as List<dynamic>? ?? [];
+
+      // Skip if no attempts
+      if (attempts.isEmpty) continue;
+
+      totalAttempts += attempts.length;
+
+      for (var attempt in attempts) {
+        if (attempt is Map<String, dynamic>) {
+          double score = _extractScoreForSkill(attempt, skillName);
+          if (score > 0) {
+            allScores.add({
+              'score': math.min(100.0, score),
+              'timestamp': attempt['attemptTimestamp'],
+            });
           }
         }
       }
+    }
 
-      // Sort by timestamp for trend analysis
+    // Skip skill if no scores
+    if (allScores.isEmpty) {
+      skillAnalysis[skillName] = {
+        'score': 0.0,
+        'trend': 0.0,
+        'level': 'Beginner',
+        'attempts': totalAttempts,
+        'lastScore': 0.0,
+        'weight': config['weight'],
+      };
+      return;
+    }
+
+    // Sort only if needed for trend calculation
+    if (allScores.length >= 2) {
       allScores.sort((a, b) {
         DateTime aTime = _parseTimestamp(a['timestamp']);
         DateTime bTime = _parseTimestamp(b['timestamp']);
         return aTime.compareTo(bTime);
       });
+    }
 
-      double averageScore = 0.0;
-      double trend = 0.0;
-      String level = 'Beginner';
-      double lastScore = 0.0;
+    double averageScore =
+        allScores
+            .map((item) => item['score'] as double)
+            .reduce((a, b) => a + b) /
+        allScores.length;
+    double trend = 0.0;
+    String level = 'Beginner';
+    double lastScore = allScores.last['score'] as double;
 
-      if (allScores.isNotEmpty) {
-        averageScore =
-            allScores
-                .map((item) => item['score'] as double)
-                .reduce((a, b) => a + b) /
-            allScores.length;
-        lastScore = allScores.last['score'] as double;
+    // Calculate trend only if there's enough data
+    if (allScores.length >= 5) {
+      int halfLength = (allScores.length / 2).ceil();
+      final firstHalf = allScores.take(halfLength).toList();
+      final secondHalf = allScores.skip(allScores.length - halfLength).toList();
 
-        // Calculate trend
-        if (allScores.length >= 2) {
-          int halfLength = (allScores.length / 2).ceil();
-          final firstHalf = allScores.take(halfLength).toList();
-          final secondHalf = allScores
-              .skip(allScores.length - halfLength)
-              .toList();
+      double firstAvg =
+          firstHalf
+              .map((item) => item['score'] as double)
+              .reduce((a, b) => a + b) /
+          firstHalf.length;
+      double secondAvg =
+          secondHalf
+              .map((item) => item['score'] as double)
+              .reduce((a, b) => a + b) /
+          secondHalf.length;
+      trend = secondAvg - firstAvg;
+    }
 
-          double firstAvg =
-              firstHalf
-                  .map((item) => item['score'] as double)
-                  .reduce((a, b) => a + b) /
-              firstHalf.length;
-          double secondAvg =
-              secondHalf
-                  .map((item) => item['score'] as double)
-                  .reduce((a, b) => a + b) /
-              secondHalf.length;
-          trend = secondAvg - firstAvg;
-        }
+    // Determine level
+    if (averageScore >= 80) {
+      level = 'Advanced';
+    } else if (averageScore >= 60) {
+      level = 'Intermediate';
+    } else {
+      level = 'Beginner';
+    }
 
-        // Determine level
-        if (averageScore >= 80) {
-          level = 'Advanced';
-        } else if (averageScore >= 60) {
-          level = 'Intermediate';
-        } else {
-          level = 'Beginner';
-        }
-      }
-
-      skillAnalysis[skillName] = {
-        'score': averageScore.round().toDouble(),
-        'trend': trend.round().toDouble(),
-        'level': level,
-        'attempts': totalAttempts,
-        'lastScore': lastScore.round().toDouble(),
-        'weight': config['weight'],
-      };
-    });
-  }
+    skillAnalysis[skillName] = {
+      'score': averageScore.round().toDouble(),
+      'trend': trend.round().toDouble(),
+      'level': level,
+      'attempts': totalAttempts,
+      'lastScore': lastScore.round().toDouble(),
+      'weight': config['weight'],
+    };
+  });
+}
 
   double _extractScoreForSkill(Map<String, dynamic> attempt, String skillName) {
     if (skillName == 'Speaking Fluency') {
@@ -734,100 +799,109 @@ Future<bool> _onWillPop() async {
     }
   }
 
-  Future<void> _fetchDailyContent() async {
+Future<void> _fetchDailyContent() async {
   final user = FirebaseAuth.instance.currentUser;
-  if (user == null) return;
-
-  // It's safer to call setState only once at the beginning if needed
-  if (mounted) {
-    setState(() {
-      tipLoading = true;
-    });
+  if (user == null) {
+    logger.w('No user logged in, skipping daily content');
+    return;
   }
 
   try {
-    // --- Your logic for preparing progressSummary ---
+    logger.i('Fetching daily content...');
+
+    // Calculate progress summary from already-computed skillAnalysis
+    // This avoids the expensive getAllUserLessonAttempts() call
     Map<String, dynamic>? progressSummary;
-    final allLessonAttempts = await FirebaseService().getAllUserLessonAttempts();
-    if (allLessonAttempts.isNotEmpty) {
-      final skillScores = skillAnalysis.values
-          .map((skill) => skill['score'] as double)
+
+    if (skillAnalysis.isNotEmpty) {
+      // Filter out skills with 0 score to get meaningful data
+      final validSkills = skillAnalysis.entries
+          .where((entry) => (entry.value['score'] as double) > 0)
           .toList();
-      final averageScore = skillScores.isNotEmpty
-          ? skillScores.reduce((a, b) => a + b) / skillScores.length
-          : 50.0;
 
-      progressSummary = {
-        'totalLessons': allLessonAttempts.keys.length,
-        'averageScore': averageScore,
-        'weakestSkills': skillAnalysis.entries
-            .where((entry) => (entry.value['score'] as double) < 60)
-            .map((entry) => {
-                  'name': entry.key.split(' ').first,
-                  'score': entry.value['score'],
-                })
-            .take(3)
-            .toList(),
-        'strongestSkills': skillAnalysis.entries
-            .where((entry) => (entry.value['score'] as double) >= 70)
-            .map((entry) => {
-                  'name': entry.key.split(' ').first,
-                  'score': entry.value['score'],
-                })
-            .take(2)
-            .toList(),
-        'recentActivity': allLessonAttempts.keys.take(5).toList(),
-      };
+      if (validSkills.isNotEmpty) {
+        final skillScores = validSkills
+            .map((entry) => entry.value['score'] as double)
+            .toList();
+
+        final averageScore = skillScores.reduce((a, b) => a + b) / skillScores.length;
+
+        progressSummary = {
+          'totalLessons': validSkills.length,
+          'averageScore': averageScore,
+          'weakestSkills': skillAnalysis.entries
+              .where((entry) => (entry.value['score'] as double) < 60)
+              .map((entry) => {
+                    'name': entry.key.split(' ').first,
+                    'score': entry.value['score'],
+                  })
+              .take(3)
+              .toList(),
+          'strongestSkills': skillAnalysis.entries
+              .where((entry) => (entry.value['score'] as double) >= 70)
+              .map((entry) => {
+                    'name': entry.key.split(' ').first,
+                    'score': entry.value['score'],
+                  })
+              .take(2)
+              .toList(),
+        };
+      }
     }
-    // --- End of progressSummary logic ---
 
-    final skillScores = skillAnalysis.values
+    // Calculate overall average score once
+    final allSkillScores = skillAnalysis.values
         .map((skill) => skill['score'] as double)
+        .where((score) => score > 0)
         .toList();
-    final averageScore = skillScores.isNotEmpty
-        ? skillScores.reduce((a, b) => a + b) / skillScores.length
+
+    final overallAverageScore = allSkillScores.isNotEmpty
+        ? allSkillScores.reduce((a, b) => a + b) / allSkillScores.length
         : 50.0;
 
-    // Fetch both tip and motivation concurrently
-    final results = await Future.wait([
-      DailyContentService.fetchLearningTip(
-        userProgress: progressSummary,
-        currentStreak: _currentStreak,
-        averageScore: averageScore,
-      ),
-      DailyContentService.fetchDailyMotivation(
-        currentStreak: _currentStreak,
-        averageScore: averageScore,
-      ),
-    ]);
+    // Fetch tip and motivation concurrently with timeout protection
+    final tipFuture = DailyContentService.fetchLearningTip(
+      userProgress: progressSummary,
+      currentStreak: _currentStreak,
+      averageScore: overallAverageScore,
+    ).timeout(
+      const Duration(seconds: 5),
+      onTimeout: () {
+        logger.w('Learning tip fetch timeout');
+        return DailyContentService.getFallbackTip();
+      },
+    );
 
-    // Update the UI with the fetched data
+    final motivationFuture = DailyContentService.fetchDailyMotivation(
+      currentStreak: _currentStreak,
+      averageScore: overallAverageScore,
+    ).timeout(
+      const Duration(seconds: 5),
+      onTimeout: () {
+        logger.w('Daily motivation fetch timeout');
+        return DailyContentService.getFallbackMotivation();
+      },
+    );
+
+    final results = await Future.wait([tipFuture, motivationFuture]);
+
+    // Update UI once with all fetched data
     if (mounted) {
       setState(() {
         dailyTip = results[0] ?? DailyContentService.getFallbackTip();
-        dailyMotivation =
-            results[1] ?? DailyContentService.getFallbackMotivation();
+        dailyMotivation = results[1] ?? DailyContentService.getFallbackMotivation();
       });
+
+      logger.i('Daily content fetched and UI updated successfully');
     }
-
-    logger.i('Daily content fetched successfully from server');
   } catch (e) {
-    _logger.e;
+    logger.e('Error fetching daily content: $e');
 
-    // FIX 1: Fallback logic moved to the 'catch' block.
-    // This now only runs if an error occurs.
+    // Set fallback data on error
     if (mounted) {
       setState(() {
         dailyTip = DailyContentService.getFallbackTip();
         dailyMotivation = DailyContentService.getFallbackMotivation();
-      });
-    }
-  } finally {
-    // FIX 2: Only ONE 'finally' block.
-    // FIX 3: All state updates are inside a single 'mounted' check.
-    if (mounted) {
-      setState(() {
-        tipLoading = false;
       });
     }
   }
@@ -956,34 +1030,53 @@ Future<bool> _onWillPop() async {
     );
   }
 
-  StreamSubscription<DocumentSnapshot>? _userDataSubscription;
+StreamSubscription<DocumentSnapshot>? _userDataSubscription;
+DateTime? _lastUpdate;
+static const int DEBOUNCE_SECONDS = 2;
 
-  void _setupRealTimeListener() {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    _userDataSubscription = FirebaseFirestore.instance
-        .collection('userProgress')
-        .doc(user.uid)
-        .snapshots()
-        .listen(
-          (snapshot) {
-            if (snapshot.exists && mounted) {
-              final userData = snapshot.data();
-              if (userData != null) {
-                final lessonAttempts =
-                    userData['lessonAttempts'] as Map<String, dynamic>? ?? {};
-                _calculateEnhancedSkillAnalysis(lessonAttempts);
-                _calculateEnhancedUserStats();
-                setState(() {});
-              }
-            }
-          },
-          onError: (error) {
-            logger.e('Error listening to user data: $error');
-          },
-        );
+void _setupRealTimeListener() {
+  final user = FirebaseAuth.instance.currentUser;
+  if (user == null) {
+    logger.e('No current user for real-time listener');
+    return;
   }
+
+  _userDataSubscription = FirebaseFirestore.instance
+      .collection('userProgress')
+      .doc(user.uid)
+      .snapshots()
+      .listen(
+    (snapshot) {
+      // Debounce: only update if DEBOUNCE_SECONDS have passed
+      final now = DateTime.now();
+      if (_lastUpdate != null &&
+          now.difference(_lastUpdate!).inSeconds < DEBOUNCE_SECONDS) {
+        logger.d('Debounced real-time update');
+        return;
+      }
+      _lastUpdate = now;
+
+      if (snapshot.exists && mounted) {
+        final userData = snapshot.data();
+        if (userData != null) {
+          final lessonAttempts =
+              userData['lessonAttempts'] as Map<String, dynamic>? ?? {};
+
+          logger.i('Real-time update received, recalculating skills');
+
+          setState(() {
+            _calculateEnhancedSkillAnalysisOptimized(lessonAttempts);
+            _calculateModuleProgress(userData);
+            _lessonsCompleted = lessonAttempts.keys.length;
+          });
+        }
+      }
+    },
+    onError: (error) {
+      logger.e('Error listening to user data: $error');
+    },
+  );
+}
 void _setupNotificationListener() {
   final user = FirebaseAuth.instance.currentUser;
   if (user == null) {
@@ -1000,13 +1093,15 @@ void _setupNotificationListener() {
       .snapshots()
       .listen(
     (snapshot) {
-      debugPrint('📬 Received notification snapshot: ${snapshot.docs.length} unread notifications');
+      debugPrint(
+          '📬 Received notification snapshot: ${snapshot.docs.length} unread notifications');
 
       if (mounted) {
         setState(() {
           _unreadNotificationsCount = snapshot.docs.length;
         });
-        debugPrint('✅ Updated unread count to: $_unreadNotificationsCount');
+        debugPrint(
+            '✅ Updated unread count to: $_unreadNotificationsCount');
       }
     },
     onError: (e) {
@@ -1020,7 +1115,6 @@ void _setupNotificationListener() {
     },
   );
 }
-
   @override
   void dispose() {
     _fadeController.dispose();

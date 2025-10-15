@@ -161,96 +161,284 @@ class _ClassAssessmentsListPageState extends State<ClassAssessmentsListPage>
         );
   }
 
-  Future<void> _handleDeleteAssessment(
-    String assessmentId,
-    String title,
-  ) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => _buildDeleteConfirmDialog(title),
-    );
-
-    if (confirmed != true) return;
-
-    setState(() {
-      _actionError = null;
-      _actionSuccess = null;
-    });
-
-    try {
-      await FirebaseFirestore.instance
-          .collection('trainerAssessments')
-          .doc(assessmentId)
-          .delete();
-
-      setState(() {
-        _actionSuccess = 'Assessment "$title" deleted successfully.';
-      });
-
-      // Clear success message after 3 seconds
-      Future.delayed(const Duration(seconds: 3), () {
-        if (mounted) {
-          setState(() {
-            _actionSuccess = null;
-          });
-        }
-      });
-    } catch (e) {
-      setState(() {
-        _actionError = 'Failed to delete assessment: $e';
-      });
-    }
+ Future<void> _handleDeleteAssessment(
+  String assessmentId,
+  String title,
+) async {
+  // First, check how many submissions exist
+  int submissionCount = 0;
+  try {
+    final submissionsSnapshot = await FirebaseFirestore.instance
+        .collection('studentSubmissions')
+        .where('assessmentId', isEqualTo: assessmentId)
+        .get();
+    submissionCount = submissionsSnapshot.docs.length;
+  } catch (e) {
+    // Handle error silently or show a message
   }
 
-  Widget _buildDeleteConfirmDialog(String title) {
-    return AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      title: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.red.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(
-              FontAwesomeIcons.triangleExclamation,
-              color: Colors.red,
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 12),
-          const Expanded(child: Text('Delete Assessment')),
-        ],
-      ),
-      content: Text(
-        'Are you sure you want to permanently delete "$title"? This action cannot be undone.',
-        style: const TextStyle(height: 1.5),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('Cancel'),
-        ),
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => _buildDeleteConfirmDialog(title, submissionCount),
+  );
+
+  if (confirmed != true) return;
+
+  setState(() {
+    _actionError = null;
+    _actionSuccess = null;
+  });
+
+  try {
+    // 1. Delete the assessment
+    await FirebaseFirestore.instance
+        .collection('trainerAssessments')
+        .doc(assessmentId)
+        .delete();
+
+    // 2. Delete all related submissions
+    final submissionsSnapshot = await FirebaseFirestore.instance
+        .collection('studentSubmissions')
+        .where('assessmentId', isEqualTo: assessmentId)
+        .get();
+
+    // Batch delete all submissions
+    final batch = FirebaseFirestore.instance.batch();
+    for (var doc in submissionsSnapshot.docs) {
+      batch.delete(doc.reference);
+    }
+    await batch.commit();
+
+    setState(() {
+      _actionSuccess = submissionCount > 0
+          ? 'Assessment "$title" and $submissionCount submission${submissionCount == 1 ? '' : 's'} deleted successfully.'
+          : 'Assessment "$title" deleted successfully.';
+    });
+
+    // Clear success message after 3 seconds
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) {
+        setState(() {
+          _actionSuccess = null;
+        });
+      }
+    });
+  } catch (e) {
+    setState(() {
+      _actionError = 'Failed to delete assessment: $e';
+    });
+  }
+}
+
+
+  Widget _buildDeleteConfirmDialog(String title, int submissionCount) {
+  return AlertDialog(
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+    title: Row(
+      children: [
         Container(
+          padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
+            color: Colors.red.withOpacity(0.1),
             borderRadius: BorderRadius.circular(12),
-            gradient: const LinearGradient(
-              colors: [Colors.red, Color(0xFFDC2626)],
-            ),
           ),
-          child: TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-            ),
-            child: const Text('Delete'),
+          child: const Icon(
+            FontAwesomeIcons.triangleExclamation,
+            color: Colors.red,
+            size: 20,
+          ),
+        ),
+        const SizedBox(width: 12),
+        const Expanded(
+          child: Text(
+            'Delete Assessment',
+            style: TextStyle(fontSize: 18),
           ),
         ),
       ],
-    );
-  }
+    ),
+    content: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Are you sure you want to permanently delete "$title"?',
+          style: const TextStyle(
+            height: 1.5,
+            fontSize: 15,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Warning box for submissions
+        if (submissionCount > 0)
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.orange.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.orange.shade300, width: 1.5),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      FontAwesomeIcons.circleExclamation,
+                      size: 18,
+                      color: Colors.orange.shade700,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Warning',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.orange.shade900,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'This assessment has $submissionCount student submission${submissionCount == 1 ? '' : 's'}.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.orange.shade900,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'All submissions will be permanently deleted along with this assessment.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.orange.shade800,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          )
+        else
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.blue.shade200, width: 1.5),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  FontAwesomeIcons.circleInfo,
+                  size: 16,
+                  color: Colors.blue.shade700,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'No student submissions yet for this assessment.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.blue.shade900,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+        const SizedBox(height: 12),
+
+        // Additional warning
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.red.shade50,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.red.shade200, width: 1.5),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                FontAwesomeIcons.ban,
+                size: 16,
+                color: Colors.red.shade700,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'This action cannot be undone.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.red.shade900,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(false),
+        style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        ),
+        child: Text(
+          'Cancel',
+          style: TextStyle(
+            color: Colors.grey.shade700,
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+      Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          gradient: const LinearGradient(
+            colors: [Colors.red, Color(0xFFDC2626)],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.red.withOpacity(0.3),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: TextButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          style: TextButton.styleFrom(
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(FontAwesomeIcons.trashCan, size: 14),
+              const SizedBox(width: 8),
+              Text(
+                submissionCount > 0 ? 'Delete All' : 'Delete',
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ],
+  );
+}
 
   @override
   Widget build(BuildContext context) {

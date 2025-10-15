@@ -99,7 +99,20 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
   ];
 
   late Future<String> _userNameFuture;
-
+IconData _getIconFromCodePoint(int codePoint) {
+  final iconMap = {
+    0xe87c: Icons.favorite_outline,
+    0xe83a: Icons.star_outline,
+    0xe9c5: Icons.wb_sunny_outlined,
+    0xe9c3: Icons.nightlight_outlined,
+    0xe532: Icons.fitness_center,
+    0xe40a: Icons.palette_outlined,
+    0xe405: Icons.music_note_outlined,
+    0xe3b0: Icons.camera_alt_outlined,
+    0xe892: Icons.label_outline,
+  };
+  return iconMap[codePoint] ?? Icons.label_outline;
+}
   @override
   void initState() {
     super.initState();
@@ -115,192 +128,200 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
   }
 
   Future<void> _loadTags() async {
-    setState(() => _isLoadingTags = true);
+  setState(() => _isLoadingTags = true);
 
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) {
-        setState(() => _isLoadingTags = false);
-        return;
+  try {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      setState(() => _isLoadingTags = false);
+      return;
+    }
+
+    final List<Map<String, dynamic>> defaultTags = _defaultTags;
+
+    final snapshot = await FirebaseFirestore.instance
+        .collection('tags')
+        .where('userId', isEqualTo: user.uid)
+        .get();
+
+    final customTags = snapshot.docs.map((doc) {
+      final data = doc.data();
+      int codePoint;
+      try {
+        codePoint = int.parse(data['iconCodePoint'] as String);
+      } catch (e) {
+        codePoint = Icons.label_outline.codePoint;
       }
 
-      final List<Map<String, dynamic>> defaultTags = _defaultTags;
+      // ✅ FIX: Use helper to get constant IconData
+      IconData icon = _getIconFromCodePoint(codePoint);
 
-      final snapshot = await FirebaseFirestore.instance
-          .collection('tags')
-          .where('userId', isEqualTo: user.uid)
-          .get();
+      return {
+        'id': doc.id,
+        'name': data['name'] as String,
+        'icon': icon,
+        'isDefault': false,
+      };
+    }).toList();
 
-      final customTags = snapshot.docs.map((doc) {
-        final data = doc.data();
-        int? codePoint;
-        try {
-          codePoint = int.parse(data['iconCodePoint'] as String);
-        } catch (e) {
-          codePoint = Icons.label_outline.codePoint;
-        }
-        return {
-          'id': doc.id,
-          'name': data['name'] as String,
-          'icon': IconData(codePoint, fontFamily: 'MaterialIcons'),
+    if (mounted) {
+      setState(() {
+        tags = [...defaultTags, ...customTags];
+        _isLoadingTags = false;
+      });
+    }
+  } catch (e) {
+    logger.e('Error loading tags: $e');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.error_outline, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(child: Text('Failed to load tags: ${e.toString()}')),
+            ],
+          ),
+          backgroundColor: const Color(0xFFE74856),
+          duration: const Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+}
+
+Future<void> _addCustomTag(String name, IconData icon) async {
+  try {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final docRef = await FirebaseFirestore.instance.collection('tags').add({
+      'name': name,
+      'iconCodePoint': icon.codePoint.toString(),
+      'userId': user.uid,
+    });
+
+    if (mounted) {
+      setState(() {
+        // ✅ FIX: Convert to constant IconData
+        final constantIcon = _getIconFromCodePoint(icon.codePoint);
+        tags.add({
+          'id': docRef.id,
+          'name': name,
+          'icon': constantIcon,
           'isDefault': false,
-        };
-      }).toList();
-
-      if (mounted) {
-        setState(() {
-          tags = [...defaultTags, ...customTags];
-          _isLoadingTags = false;
         });
-      }
-    } catch (e) {
-      logger.e('Error loading tags: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.error_outline, color: Colors.white),
-                const SizedBox(width: 12),
-                Expanded(child: Text('Failed to load tags: ${e.toString()}')),
-              ],
-            ),
-            backgroundColor: const Color(0xFFE74856),
-            duration: const Duration(seconds: 3),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _addCustomTag(String name, IconData icon) async {
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
-
-      final docRef = await FirebaseFirestore.instance.collection('tags').add({
-        'name': name,
-        'iconCodePoint': icon.codePoint.toString(),
-        'userId': user.uid,
+        selectedTag = name;
       });
 
-      if (mounted) {
-        setState(() {
-          tags.add({
-            'id': docRef.id,
-            'name': name,
-            'icon': icon,
-            'isDefault': false,
-          });
-          selectedTag = name;
-        });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.check_circle_outline, color: Colors.white),
-                const SizedBox(width: 12),
-                Expanded(child: Text('Tag "$name" created successfully')),
-              ],
-            ),
-            backgroundColor: const Color(0xFF10893E),
-            duration: const Duration(seconds: 2),
-            behavior: SnackBarBehavior.floating,
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle_outline, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(child: Text('Tag "$name" created successfully')),
+            ],
           ),
-        );
-      }
-    } catch (e) {
-      logger.e('Error adding custom tag: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.error_outline, color: Colors.white),
-                const SizedBox(width: 12),
-                Expanded(child: Text('Failed to create tag: ${e.toString()}')),
-              ],
-            ),
-            backgroundColor: const Color(0xFFE74856),
-            duration: const Duration(seconds: 3),
-            behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFF10893E),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  } catch (e) {
+    logger.e('Error adding custom tag: $e');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.error_outline, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(child: Text('Failed to create tag: ${e.toString()}')),
+            ],
           ),
-        );
-      }
+          backgroundColor: const Color(0xFFE74856),
+          duration: const Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
+}
 
-  Future<void> _editCustomTag(
-    String tagId,
-    String oldName,
-    String newName,
-    IconData newIcon,
-  ) async {
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
+ Future<void> _editCustomTag(
+  String tagId,
+  String oldName,
+  String newName,
+  IconData newIcon,
+) async {
+  try {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
 
-      await FirebaseFirestore.instance.collection('tags').doc(tagId).update({
-        'name': newName,
-        'iconCodePoint': newIcon.codePoint.toString(),
-      });
+    await FirebaseFirestore.instance.collection('tags').doc(tagId).update({
+      'name': newName,
+      'iconCodePoint': newIcon.codePoint.toString(),
+    });
 
-      if (mounted) {
-        setState(() {
-          final index = tags.indexWhere((t) => t['id'] == tagId);
-          if (index != -1) {
-            tags[index]['name'] = newName;
-            tags[index]['icon'] = newIcon;
-            if (selectedTag == oldName) {
-              selectedTag = newName;
-            }
+    if (mounted) {
+      setState(() {
+        final index = tags.indexWhere((t) => t['id'] == tagId);
+        if (index != -1) {
+          // ✅ FIX: Convert to constant IconData
+          final constantIcon = _getIconFromCodePoint(newIcon.codePoint);
+          tags[index]['name'] = newName;
+          tags[index]['icon'] = constantIcon;
+          if (selectedTag == oldName) {
+            selectedTag = newName;
           }
-        });
-      }
+        }
+      });
+    }
 
-      // Update all journal entries with this tag
-      if (widget.onTagUpdated != null) {
-        await widget.onTagUpdated!(tagId, newName);
-      }
+    // Update all journal entries with this tag
+    if (widget.onTagUpdated != null) {
+      await widget.onTagUpdated!(tagId, newName);
+    }
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.check_circle_outline, color: Colors.white),
-                const SizedBox(width: 12),
-                Expanded(child: Text('Tag updated successfully')),
-              ],
-            ),
-            backgroundColor: const Color(0xFF10893E),
-            duration: const Duration(seconds: 2),
-            behavior: SnackBarBehavior.floating,
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle_outline, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(child: Text('Tag updated successfully')),
+            ],
           ),
-        );
-      }
-    } catch (e) {
-      logger.e('Error editing custom tag: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.error_outline, color: Colors.white),
-                const SizedBox(width: 12),
-                Expanded(child: Text('Failed to update tag: ${e.toString()}')),
-              ],
-            ),
-            backgroundColor: const Color(0xFFE74856),
-            duration: const Duration(seconds: 3),
-            behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFF10893E),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  } catch (e) {
+    logger.e('Error editing custom tag: $e');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.error_outline, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(child: Text('Failed to update tag: ${e.toString()}')),
+            ],
           ),
-        );
-      }
+          backgroundColor: const Color(0xFFE74856),
+          duration: const Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
+}
 
   Future<void> _deleteCustomTag(String tagId, String tagName) async {
     try {
