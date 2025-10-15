@@ -84,10 +84,4 @@ class Message {
   }
 }
 
-enum MessageType {
-  text,
-  audio,
-  azureFeedback,      // For pronunciation feedback
-  azureFluency,       // NEW: For fluency feedback
-  systemIntermediate,
-}
+enum MessageType { text, audio, systemIntermediate }

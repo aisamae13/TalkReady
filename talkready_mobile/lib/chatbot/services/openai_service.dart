@@ -1,10 +1,16 @@
 import 'dart:convert';
+import 'dart:async';
+import 'dart:io';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../../config/api_config.dart';
+import '../../config/environment.dart';
 import 'package:http/http.dart' as http;
 import 'package:logger/logger.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../models/message.dart';
 import '../models/prompt.dart';
 import '../utils/text_processing.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class OpenAIService {
   final Logger logger;
@@ -17,105 +23,207 @@ class OpenAIService {
     String? userInput,
     bool enablePracticeFunctions = false,
   }) async {
-    final apiKey = dotenv.env['OPENAI_API_KEY'] ?? '';
-    if (apiKey.isEmpty) {
-      logger.e('OpenAI API key missing.');
-      throw Exception('OpenAI API key missing');
+    // Get Firebase auth token for authentication
+    final user = FirebaseAuth.instance.currentUser;
+    String? idToken;
+
+    if (user != null) {
+      try {
+        idToken = await user.getIdToken();
+      } catch (e) {
+        logger.w('Could not get Firebase token: $e');
+      }
     }
 
-    try {
-      final messages = [
-        {'role': 'system', 'content': prompt},
-        ...conversationHistory.reversed
-            .take(5)
-            .where((msg) => !msg.typing)
-            .map((msg) => ({
+    // Retry logic
+    int maxRetries = 3;
+    int retryCount = 0;
+    Duration retryDelay = Duration(seconds: 2);
+
+    while (retryCount < maxRetries) {
+      try {
+        // Get API base URL using your config
+        final baseUrl = await ApiConfig.getApiBaseUrl();
+        logger.i('Using API base URL: $baseUrl');
+
+        // Build conversation messages
+        final messages = [
+          {'role': 'system', 'content': prompt},
+          ...conversationHistory.reversed
+              .take(3) // Keep last 3 messages for context
+              .where((msg) => !msg.typing)
+              .map(
+                (msg) => ({
                   'role': msg.isUser ? 'user' : 'assistant',
                   'content': msg.text,
-                }))
-            .toList()
-            .reversed,
-      ];
+                }),
+              )
+              .toList()
+              .reversed,
+        ];
 
-      if (userInput != null) {
-        messages.add({'role': 'user', 'content': userInput});
-      }
+        if (userInput != null) {
+          messages.add({'role': 'user', 'content': userInput});
+        }
 
-      final functions = enablePracticeFunctions ? [
-        {
-          'name': 'exit_practice_mode',
-          'description': 'Call this function when the user wants to stop the current practice session and do something else. Use this for ANY practice mode (pronunciation, fluency, vocabulary, grammar) when they say things like "stop", "enough", "done", "let\'s try something different", "change topic", "I want to practice something else", etc.',
-          'parameters': {
-            'type': 'object',
-            'properties': {
-              'reason': {
-                'type': 'string',
-                'description': 'Brief reason why the user wants to exit (e.g., "user requested stop", "wants different activity", "switching to vocabulary practice")'
-              }
-            },
-            'required': ['reason']
+        final requestBody = {
+          'messages': messages,
+          'maxTokens': 200,
+          'temperature': 0.8,
+          'enablePracticeFunctions': enablePracticeFunctions,
+        };
+
+        logger.i(
+          'Sending chat request to backend (attempt ${retryCount + 1}/$maxRetries)...',
+        );
+
+        // Check if backend might be cold starting
+        if (ApiConfig.mightBeColdStarting && retryCount == 0) {
+          logger.i('⏳ Backend might be waking up from cold start...');
+        }
+
+        // Call your backend /chat endpoint
+        final response = await http
+            .post(
+              Uri.parse('$baseUrl/chat'),
+              headers: {
+                'Content-Type': 'application/json',
+                'User-Agent': 'TalkReady-Mobile/1.0',
+                if (idToken != null) 'Authorization': 'Bearer $idToken',
+              },
+              body: jsonEncode(requestBody),
+            )
+            .timeout(
+              EnvironmentConfig.networkTimeout, // Use your config timeout
+              onTimeout: () {
+                throw TimeoutException(
+                  'Backend request timed out after ${EnvironmentConfig.networkTimeout.inSeconds} seconds',
+                );
+              },
+            );
+
+        logger.i('Backend response status: ${response.statusCode}');
+
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+
+          // Check if backend returned a function call
+          if (data['type'] == 'function_call') {
+            logger.i(
+              'AI called function: ${data['function_name']} with args: ${data['arguments']}',
+            );
+            return {
+              'type': 'function_call',
+              'function_name': data['function_name'],
+              'arguments': data['arguments'],
+              'message': null,
+            };
+          }
+
+          // Regular message response
+          final aiResponse =
+              data['message'] ?? data['response'] ?? 'How can I help you?';
+          logger.i('Backend AI response: $aiResponse');
+
+          final cleanedResponse = cleanAIResponse(aiResponse);
+          return {
+            'type': 'message',
+            'message': TextProcessing.cleanText(cleanedResponse),
+            'function_name': null,
+            'arguments': null,
+          };
+        } else if (response.statusCode == 429) {
+          // Rate limit
+          logger.w('Backend rate limit hit, waiting before retry...');
+          await Future.delayed(Duration(seconds: 5));
+          retryCount++;
+          continue;
+        } else if (response.statusCode == 503 || response.statusCode == 502) {
+          // Service unavailable or Bad Gateway (Render cold start)
+          logger.w(
+            'Backend unavailable (${response.statusCode}) - likely cold start, retrying...',
+          );
+
+          // Reset API cache to force health check on next attempt
+          ApiConfig.resetCache();
+
+          await Future.delayed(Duration(seconds: 10));
+          retryCount++;
+          continue;
+        } else if (response.statusCode >= 500) {
+          // Server error
+          logger.w(
+            'Backend server error (${response.statusCode}), retrying...',
+          );
+          retryCount++;
+          await Future.delayed(retryDelay);
+          retryDelay *= 2;
+          continue;
+        } else {
+          final errorBody = response.body;
+          logger.e(
+            'Backend request failed: ${response.statusCode}, Body: $errorBody',
+          );
+
+          // Try to parse error message
+          try {
+            final errorData = jsonDecode(errorBody);
+            final errorMessage =
+                errorData['error'] ?? errorData['message'] ?? 'Unknown error';
+            throw Exception('Backend error: $errorMessage');
+          } catch (_) {
+            throw Exception('Backend request failed: ${response.statusCode}');
           }
         }
-      ] : null;
+      } on TimeoutException catch (e) {
+        retryCount++;
+        logger.w(
+          'Backend timeout (attempt $retryCount/$maxRetries): ${e.message}',
+        );
 
-      final requestBody = {
-        'model': 'gpt-4o-mini',
-        'messages': messages,
-        'max_tokens': 200,
-        'temperature': 0.8,
-      };
-
-      if (functions != null) {
-        requestBody['functions'] = functions;
-        requestBody['function_call'] = 'auto';
-      }
-
-      final response = await http.post(
-        Uri.parse('https://api.openai.com/v1/chat/completions'),
-        headers: {
-          'Authorization': 'Bearer $apiKey',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode(requestBody),
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final choice = data['choices'][0];
-        final message = choice['message'];
-
-        if (message['function_call'] != null) {
-          final functionName = message['function_call']['name'];
-          final functionArgs = jsonDecode(message['function_call']['arguments']);
-
-          logger.i('AI called function: $functionName with args: $functionArgs');
-
-          return {
-            'type': 'function_call',
-            'function_name': functionName,
-            'arguments': functionArgs,
-            'message': null,
-          };
+        if (retryCount >= maxRetries) {
+          if (ApiConfig.mightBeColdStarting) {
+            throw Exception(
+              'Backend is starting up. Please wait 15-30 seconds and try again.',
+            );
+          }
+          throw Exception(
+            'Backend request timed out after $maxRetries attempts. Please check your internet connection.',
+          );
         }
 
-        final aiResponse = message['content'] ?? 'How can I help you?';
-        logger.i('OpenAI response: $aiResponse');
+        // Reset cache for next attempt
+        ApiConfig.resetCache();
+        await Future.delayed(retryDelay);
+        retryDelay *= 2;
+      } on SocketException catch (e) {
+        retryCount++;
+        logger.w('Network error (attempt $retryCount/$maxRetries): $e');
 
-        final cleanedResponse = cleanAIResponse(aiResponse);
-        return {
-          'type': 'message',
-          'message': TextProcessing.cleanText(cleanedResponse),
-          'function_name': null,
-          'arguments': null,
-        };
-      } else {
-        logger.e('OpenAI failed: ${response.statusCode}, ${response.body}');
-        throw Exception('OpenAI request failed: ${response.statusCode}');
+        if (retryCount >= maxRetries) {
+          throw Exception(
+            'Network connection failed. Please check your internet connection.',
+          );
+        }
+
+        await Future.delayed(retryDelay);
+        retryDelay *= 2;
+      } catch (e) {
+        retryCount++;
+        logger.e('Backend error (attempt $retryCount/$maxRetries): $e');
+
+        if (retryCount >= maxRetries) {
+          throw Exception(
+            'Failed to get AI response: ${e.toString().replaceAll('Exception: ', '')}',
+          );
+        }
+
+        await Future.delayed(retryDelay);
+        retryDelay *= 2;
       }
-    } catch (e) {
-      logger.e('Error: $e');
-      rethrow;
     }
+
+    throw Exception('Failed to get AI response after $maxRetries attempts');
   }
 
   Future<String> getOpenAIResponse(
@@ -135,109 +243,75 @@ class OpenAIService {
   String cleanAIResponse(String response) {
     response = response.replaceAll(RegExp(r'\*\*([^*]+)\*\*'), r'$1');
     response = response.replaceAll(RegExp(r'\*([^*]+)\*'), r'$1');
-    response = response.replaceAll(RegExp(r'^\s*[-•*]\s+', multiLine: true), '');
-    response = response.replaceAll(RegExp(r'^\s*\d+\.\s+', multiLine: true), '');
+    response = response.replaceAll(
+      RegExp(r'^\s*[-•*]\s+', multiLine: true),
+      '',
+    );
+    response = response.replaceAll(
+      RegExp(r'^\s*\d+\.\s+', multiLine: true),
+      '',
+    );
     response = response.replaceAll(RegExp(r'^#+\s+', multiLine: true), '');
     return response.trim();
   }
 
   Future<String> generateCallCenterPhrase() async {
-    final apiKey = dotenv.env['OPENAI_API_KEY'] ?? '';
-    if (apiKey.isEmpty) throw Exception('OpenAI key missing');
-
     try {
-      final response = await http.post(
-        Uri.parse('https://api.openai.com/v1/chat/completions'),
-        headers: {
-          'Authorization': 'Bearer $apiKey',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'model': 'gpt-4',
-          'messages': [
-            {
-              'role': 'system',
-              'content': '''
-              Generate ONE concise call-center practice phrase (8-12 words) for English learners.
-              Examples:
-              - "How may I assist you today?"
-              - "Could you hold for a moment please?"
-              - "Let me transfer you to the right department."
-              Return ONLY the phrase. No quotes or numbering.
-            '''
-            }
-          ],
-          'temperature': 0.7,
-          'max_tokens': 30,
-        }),
-      );
+      final baseUrl = await ApiConfig.getApiBaseUrl();
+
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/generate-phrase'),
+            headers: {
+              'Content-Type': 'application/json',
+              'User-Agent': 'TalkReady-Mobile/1.0',
+            },
+          )
+          .timeout(EnvironmentConfig.networkTimeout);
 
       if (response.statusCode == 200) {
-        final phrase = jsonDecode(response.body)['choices'][0]['message']['content']
-            .trim()
-            .replaceAll('"', '');
+        final data = jsonDecode(response.body);
+        final phrase = data['phrase'] ?? "Could you please repeat that?";
         logger.i('Generated phrase: $phrase');
         return phrase;
       } else {
-        throw Exception('OpenAI error: ${response.statusCode}');
+        throw Exception('Failed to generate phrase: ${response.statusCode}');
       }
     } catch (e) {
       logger.e('Phrase generation failed: $e');
-      return "Could you please repeat that?";
+      // Fallback phrase
+      return "How may I assist you today?";
     }
   }
 
-  // NEW: Generate fluency reading passage
   Future<String> generateFluencyPassage() async {
-    final apiKey = dotenv.env['OPENAI_API_KEY'] ?? '';
-    if (apiKey.isEmpty) throw Exception('OpenAI key missing');
-
     try {
-      final response = await http.post(
-        Uri.parse('https://api.openai.com/v1/chat/completions'),
-        headers: {
-          'Authorization': 'Bearer $apiKey',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'model': 'gpt-4',
-          'messages': [
-            {
-              'role': 'system',
-              'content': '''
-              Generate a customer service reading passage (2-3 sentences, 20-35 words total) for English fluency practice.
+      final baseUrl = await ApiConfig.getApiBaseUrl();
 
-              Requirements:
-              - Professional customer service context
-              - Natural flow and rhythm
-              - Mix of statement and question
-              - Use common customer service vocabulary
-
-              Examples:
-              - "Thank you for contacting our support team. I understand you're having trouble with your account. Let me help you resolve this issue right away."
-              - "We appreciate your patience while we review your request. Your satisfaction is important to us. Is there anything else I can assist you with today?"
-
-              Return ONLY the passage. No quotes, numbering, or extra text.
-            '''
-            }
-          ],
-          'temperature': 0.8,
-          'max_tokens': 60,
-        }),
-      );
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/generate-passage'),
+            headers: {
+              'Content-Type': 'application/json',
+              'User-Agent': 'TalkReady-Mobile/1.0',
+            },
+          )
+          .timeout(EnvironmentConfig.networkTimeout);
 
       if (response.statusCode == 200) {
-        final passage = jsonDecode(response.body)['choices'][0]['message']['content']
-            .trim()
-            .replaceAll('"', '');
+        final data = jsonDecode(response.body);
+        final passage =
+            data['passage'] ??
+            "Welcome to our customer service. How may I help you today?";
         logger.i('Generated fluency passage: $passage');
         return passage;
       } else {
-        throw Exception('OpenAI error: ${response.statusCode}');
+        throw Exception('Failed to generate passage: ${response.statusCode}');
       }
     } catch (e) {
       logger.e('Fluency passage generation failed: $e');
-      return "Welcome to our customer service. How may I help you today? I'm here to assist with any questions you may have.";
+      // Fallback passage
+      return "Thank you for contacting our support team. I understand you need assistance. Let me help you resolve this right away.";
     }
   }
 
@@ -278,18 +352,21 @@ WHAT TO AVOID:
 ''';
 
     if (userName != null && userName.isNotEmpty) {
-      basePersonality += '\n\nUser\'s name: $userName (use it naturally, don\'t overuse it)';
+      basePersonality +=
+          '\n\nUser\'s name: $userName (use it naturally, don\'t overuse it)';
     }
 
     if (currentPrompt != null) {
-      basePersonality += '\n\nCURRENT LEARNING FOCUS:\n${currentPrompt.promptText}';
+      basePersonality +=
+          '\n\nCURRENT LEARNING FOCUS:\n${currentPrompt.promptText}';
       logger.i("Using prompt: ${currentPrompt.title}");
     } else {
       logger.i("Using general conversation prompt.");
     }
 
     if (practiceMode != null) {
-      basePersonality += '\n\nPractice Mode: ${Prompt.categoryToString(practiceMode)}';
+      basePersonality +=
+          '\n\nPractice Mode: ${Prompt.categoryToString(practiceMode)}';
 
       if (practiceMode == PromptCategory.pronunciation) {
         basePersonality += '''
@@ -371,7 +448,8 @@ If the user wants to exit the role-play, call the exit_practice_mode function.
       final elapsed = context['rolePlayElapsed'] ?? 0;
       final remaining = duration - elapsed;
 
-      basePersonality += '''
+      basePersonality +=
+          '''
 
 ROLE-PLAY SESSION INFO:
 - Total session: $duration minutes
@@ -389,7 +467,8 @@ ROLE-PLAY SESSION INFO:
       final isFluentMode = context['isFluencyMode'] == true;
 
       if (isFluentMode) {
-        basePersonality += '''
+        basePersonality +=
+            '''
 
 The user just practiced reading fluency. They got Fluency: $fluency%, Accuracy: $accuracy%.
 Their recognized text was "$recognizedText" and the target passage was "$practiceTargetText".
@@ -397,7 +476,8 @@ Their recognized text was "$recognizedText" and the target passage was "$practic
 Give brief, friendly feedback (1-2 sentences) about their reading fluency and flow. Don't repeat the scores since they see a detailed display. Then IMMEDIATELY provide a new passage to practice in double quotes. Example: "Nice rhythm! Now read: "[new passage]""
 ''';
       } else {
-        basePersonality += '''
+        basePersonality +=
+            '''
 
 The user just practiced pronunciation. They got Accuracy: $accuracy%, Fluency: $fluency%.
 Their recognized text was "$recognizedText" and the target was "$practiceTargetText".
@@ -411,11 +491,14 @@ Give brief, friendly feedback (1-2 sentences) about their pronunciation. Don't r
   }
 
   String? extractPracticePhrase(String botMessage, PromptCategory? mode) {
-    if (mode != PromptCategory.pronunciation && mode != PromptCategory.fluency) {
+    if (mode != PromptCategory.pronunciation &&
+        mode != PromptCategory.fluency) {
       return null;
     }
 
-    logger.i("Attempting to extract target text for mode: $mode from bot message: $botMessage");
+    logger.i(
+      "Attempting to extract target text for mode: $mode from bot message: $botMessage",
+    );
 
     // Try to extract text from quotes first
     final quoteMatch = RegExp(r'[""]([^""]+)[""]').firstMatch(botMessage);
@@ -427,21 +510,36 @@ Give brief, friendly feedback (1-2 sentences) about their pronunciation. Don't r
 
     // Try common prefaces
     final prefaces = [
-      "try saying:", "please say:", "try this:",
-      "practice saying:", "say this:", "read this:",
-      "here's the sentence:", "the sentence is:",
-      "practice this:", "read aloud:", "let's try:",
-      "practice:", "read smoothly:", "now try:",
-      "now read:"
+      "try saying:",
+      "please say:",
+      "try this:",
+      "practice saying:",
+      "say this:",
+      "read this:",
+      "here's the sentence:",
+      "the sentence is:",
+      "practice this:",
+      "read aloud:",
+      "let's try:",
+      "practice:",
+      "read smoothly:",
+      "now try:",
+      "now read:",
     ];
 
     for (final preface in prefaces) {
-      final prefaceIndex = botMessage.toLowerCase().indexOf(preface.toLowerCase());
+      final prefaceIndex = botMessage.toLowerCase().indexOf(
+        preface.toLowerCase(),
+      );
       if (prefaceIndex != -1) {
-        String textAfterPreface = botMessage.substring(prefaceIndex + preface.length).trim();
+        String textAfterPreface = botMessage
+            .substring(prefaceIndex + preface.length)
+            .trim();
 
         // Try quotes after preface
-        final innerQuoteMatch = RegExp(r'^[""]([^""]+)[""]').firstMatch(textAfterPreface);
+        final innerQuoteMatch = RegExp(
+          r'^[""]([^""]+)[""]',
+        ).firstMatch(textAfterPreface);
         if (innerQuoteMatch != null && innerQuoteMatch.group(1) != null) {
           final extracted = innerQuoteMatch.group(1)!.trim();
           logger.i('Extracted text after preface ("$preface"): $extracted');
@@ -449,7 +547,9 @@ Give brief, friendly feedback (1-2 sentences) about their pronunciation. Don't r
         }
 
         // Try sentence ending
-        final sentenceEndMatch = RegExp(r'^([^.!?\n]+[.!?]?)').firstMatch(textAfterPreface);
+        final sentenceEndMatch = RegExp(
+          r'^([^.!?\n]+[.!?]?)',
+        ).firstMatch(textAfterPreface);
         if (sentenceEndMatch != null && sentenceEndMatch.group(1) != null) {
           String extracted = sentenceEndMatch.group(1)!.trim();
           extracted = extracted.replaceAll(RegExp(r'^["""]|["""]$'), '').trim();
@@ -462,7 +562,9 @@ Give brief, friendly feedback (1-2 sentences) about their pronunciation. Don't r
       }
     }
 
-    logger.i("No new phrase extracted from this response (may be feedback or question)");
+    logger.i(
+      "No new phrase extracted from this response (may be feedback or question)",
+    );
     return null;
   }
 }

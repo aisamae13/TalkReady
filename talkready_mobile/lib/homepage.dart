@@ -19,6 +19,9 @@ import 'package:shimmer/shimmer.dart';
 import 'MyEnrolledClasses.dart';
 import '../services/daily_content_service.dart';
 import 'notification_badge.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'practice_center/practice_center_page.dart';
 
 // Helper function for creating a slide page route
 Route _createSlidingPageRoute({
@@ -57,8 +60,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   bool _isLoading = true;
   bool _hasError = false;
   String? _errorMessage;
-int _unreadNotificationsCount = 0;
-StreamSubscription<QuerySnapshot>? _notificationSubscription;
+  int _unreadNotificationsCount = 0;
+
+  // Practice Center stats - NEW
+  int _totalPracticeSessions = 0;
+  int _activePracticeTypes = 0;
+  int _totalPracticeMinutes = 0;
+  bool _practiceStatsLoading = true;
+
+  StreamSubscription<QuerySnapshot>? _notificationSubscription;
   // Enhanced user stats
   Duration _totalSpeakingTime = Duration.zero;
   int _currentStreak = 0;
@@ -158,52 +168,54 @@ StreamSubscription<QuerySnapshot>? _notificationSubscription;
 
     _initializeDataOptimized();
   }
-Future<void> _initializeDataOptimized() async {
-  // Show UI immediately with placeholder data
-  _fadeController.forward();
-  _slideController.forward();
 
-  try {
-    logger.i('Starting optimized initialization');
+  Future<void> _initializeDataOptimized() async {
+    // Show UI immediately with placeholder data
+    _fadeController.forward();
+    _slideController.forward();
 
-    // Load critical data first (blocking)
-    await _fetchEnhancedProgress();
+    try {
+      logger.i('Starting optimized initialization');
 
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-        _hasError = false;
-      });
-      logger.i('Core data loaded, UI ready');
-    }
+      // Load critical data first (blocking)
+      await _fetchEnhancedProgress();
 
-    // Load non-critical data in background (non-blocking)
-    Future.wait([
-      _loadFeaturedCourses(),
-      _fetchDailyContent(),
-    ]).then((_) {
-      logger.i('Background data loading completed');
-    }).catchError((e) {
-      logger.w('Error in background data loading: $e');
-    });
-  } catch (e, stackTrace) {
-    logger.e('Error in optimized initialization: $e\nStackTrace: $stackTrace');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _hasError = false;
+        });
+        logger.i('Core data loaded, UI ready');
+      }
 
-    String errorMessage = 'Failed to load data. Please try again.';
+      // Load non-critical data in background (non-blocking)
+      Future.wait([_loadFeaturedCourses(), _fetchDailyContent()])
+          .then((_) {
+            logger.i('Background data loading completed');
+          })
+          .catchError((e) {
+            logger.w('Error in background data loading: $e');
+          });
+    } catch (e, stackTrace) {
+      logger.e(
+        'Error in optimized initialization: $e\nStackTrace: $stackTrace',
+      );
 
-    if (e is SocketException) {
-      errorMessage = 'No internet connection. Please check your network.';
-    }
+      String errorMessage = 'Failed to load data. Please try again.';
 
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-        _hasError = true;
-        _errorMessage = errorMessage;
-      });
+      if (e is SocketException) {
+        errorMessage = 'No internet connection. Please check your network.';
+      }
+
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _hasError = true;
+          _errorMessage = errorMessage;
+        });
+      }
     }
   }
-}
 
   void _setupAnimations() {
     _fadeController = AnimationController(
@@ -231,6 +243,7 @@ Future<void> _initializeDataOptimized() async {
         _calculateEnhancedUserStats(),
         _loadFeaturedCourses(),
         _fetchDailyContent(),
+        _fetchPracticeStats(), // NEW LINE - Add this
       ]);
 
       if (mounted) {
@@ -242,238 +255,238 @@ Future<void> _initializeDataOptimized() async {
         _slideController.forward();
       }
     } catch (e, stackTrace) {
-  logger.e('Error initializing homepage data: $e, stackTrace: $stackTrace');
-  String errorMessage = 'Failed to load data. Please try again.'; // Default message
+      logger.e('Error initializing homepage data: $e, stackTrace: $stackTrace');
+      String errorMessage =
+          'Failed to load data. Please try again.'; // Default message
 
-  if (e is SocketException) {
-    errorMessage = 'No internet connection. Please check your network.';
-  }
-  // You could add more 'else if' checks for other specific error types
+      if (e is SocketException) {
+        errorMessage = 'No internet connection. Please check your network.';
+      }
+      // You could add more 'else if' checks for other specific error types
 
-  if (mounted) {
-    setState(() {
-      _isLoading = false;
-      _hasError = true;
-      _errorMessage = errorMessage; // Use the specific message
-    });
-  }
-    }
-  }
-Future<bool> _onWillPop() async {
-  // Show exit confirmation dialog
-  final shouldExit = await showDialog<bool>(
-    context: context,
-    builder: (context) => AlertDialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
-      title: Row(
-        children: [
-          Icon(Icons.exit_to_app, color: Colors.blue.shade700),
-          const SizedBox(width: 12),
-          const Text('Exit TalkReady?'),
-        ],
-      ),
-      content: const Text(
-        'Are you sure you want to exit the app?',
-        style: TextStyle(fontSize: 16),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
-          child: Text(
-            'Cancel',
-            style: TextStyle(
-              color: Colors.grey[600],
-              fontSize: 16,
-            ),
-          ),
-        ),
-        ElevatedButton(
-          onPressed: () => Navigator.of(context).pop(true),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.blue,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-          child: const Text(
-            'Exit',
-            style: TextStyle(fontSize: 16, color: Colors.white),
-          ),
-        ),
-      ],
-    ),
-  );
-
-  return shouldExit ?? false;
-}
- Future<void> _fetchEnhancedProgress() async {
-  final user = FirebaseAuth.instance.currentUser;
-  if (user == null) {
-    logger.e('No user logged in');
-    return;
-  }
-
-  try {
-    logger.i('Fetching enhanced progress for user: ${user.uid}');
-    DocumentSnapshot doc = await FirebaseFirestore.instance
-        .collection('userProgress')
-        .doc(user.uid)
-        .get();
-
-    if (doc.exists && doc.data() != null) {
-      final userData = doc.data() as Map<String, dynamic>;
-      final lessonAttempts =
-          userData['lessonAttempts'] as Map<String, dynamic>? ?? {};
-
-      // Do all calculations once in setState
       if (mounted) {
         setState(() {
-          _calculateEnhancedSkillAnalysisOptimized(lessonAttempts);
-          _calculateModuleProgress(userData);
-          _calculateEnhancedUserStats();
-          _lessonsCompleted = lessonAttempts.keys.length;
+          _isLoading = false;
+          _hasError = true;
+          _errorMessage = errorMessage; // Use the specific message
         });
       }
-
-      logger.i('Enhanced progress fetched successfully');
-    } else {
-      logger.i('No progress data found for user: ${user.uid}');
     }
-  } catch (e, stackTrace) {
-    logger.e(
-        'Error fetching enhanced progress: $e\nStackTrace: $stackTrace');
-    rethrow;
   }
-}
 
-  Future<void> _calculateEnhancedSkillAnalysisOptimized(
-    Map<String, dynamic> lessonAttempts) async {
-  final skillCategories = {
-    'Foundation Grammar': {
-      'lessons': ['Lesson-1-1', 'Lesson-1-2', 'Lesson-1-3'],
-      'weight': 1.0,
-    },
-    'Conversational Skills': {
-      'lessons': ['Lesson-2-1', 'Lesson-2-2', 'Lesson-2-3'],
-      'weight': 1.2,
-    },
-    'Listening Comprehension': {
-      'lessons': ['Lesson-3-1'],
-      'weight': 1.3,
-    },
-    'Speaking Fluency': {
-      'lessons': ['Lesson-3-2', 'Lesson-5-1', 'Lesson-5-2'],
-      'weight': 1.4,
-    },
-    'Professional Communication': {
-      'lessons': ['Lesson-4-1', 'Lesson-4-2'],
-      'weight': 1.3,
-    },
-    'Call Center Readiness': {
-      'lessons': ['Lesson-5-1', 'Lesson-5-2', 'Lesson-6-1'],
-      'weight': 1.5,
-    },
-  };
+  Future<bool> _onWillPop() async {
+    // Show exit confirmation dialog
+    final shouldExit = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.exit_to_app, color: Colors.blue.shade700),
+            const SizedBox(width: 12),
+            const Text('Exit TalkReady?'),
+          ],
+        ),
+        content: const Text(
+          'Are you sure you want to exit the app?',
+          style: TextStyle(fontSize: 16),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: Colors.grey[600], fontSize: 16),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text(
+              'Exit',
+              style: TextStyle(fontSize: 16, color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
 
-  skillCategories.forEach((skillName, config) {
-    final lessons = config['lessons'] as List<String>;
-    List<Map<String, dynamic>> allScores = [];
-    int totalAttempts = 0;
+    return shouldExit ?? false;
+  }
 
-    // Only process lessons that have attempts
-    for (String lessonId in lessons) {
-      final attempts = lessonAttempts[lessonId] as List<dynamic>? ?? [];
-
-      // Skip if no attempts
-      if (attempts.isEmpty) continue;
-
-      totalAttempts += attempts.length;
-
-      for (var attempt in attempts) {
-        if (attempt is Map<String, dynamic>) {
-          double score = _extractScoreForSkill(attempt, skillName);
-          if (score > 0) {
-            allScores.add({
-              'score': math.min(100.0, score),
-              'timestamp': attempt['attemptTimestamp'],
-            });
-          }
-        }
-      }
-    }
-
-    // Skip skill if no scores
-    if (allScores.isEmpty) {
-      skillAnalysis[skillName] = {
-        'score': 0.0,
-        'trend': 0.0,
-        'level': 'Beginner',
-        'attempts': totalAttempts,
-        'lastScore': 0.0,
-        'weight': config['weight'],
-      };
+  Future<void> _fetchEnhancedProgress() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      logger.e('No user logged in');
       return;
     }
 
-    // Sort only if needed for trend calculation
-    if (allScores.length >= 2) {
-      allScores.sort((a, b) {
-        DateTime aTime = _parseTimestamp(a['timestamp']);
-        DateTime bTime = _parseTimestamp(b['timestamp']);
-        return aTime.compareTo(bTime);
-      });
+    try {
+      logger.i('Fetching enhanced progress for user: ${user.uid}');
+      DocumentSnapshot doc = await FirebaseFirestore.instance
+          .collection('userProgress')
+          .doc(user.uid)
+          .get();
+
+      if (doc.exists && doc.data() != null) {
+        final userData = doc.data() as Map<String, dynamic>;
+        final lessonAttempts =
+            userData['lessonAttempts'] as Map<String, dynamic>? ?? {};
+
+        // Do all calculations once in setState
+        if (mounted) {
+          setState(() {
+            _calculateEnhancedSkillAnalysisOptimized(lessonAttempts);
+            _calculateModuleProgress(userData);
+            _calculateEnhancedUserStats();
+            _lessonsCompleted = lessonAttempts.keys.length;
+          });
+        }
+
+        logger.i('Enhanced progress fetched successfully');
+      } else {
+        logger.i('No progress data found for user: ${user.uid}');
+      }
+    } catch (e, stackTrace) {
+      logger.e('Error fetching enhanced progress: $e\nStackTrace: $stackTrace');
+      rethrow;
     }
+  }
 
-    double averageScore =
-        allScores
-            .map((item) => item['score'] as double)
-            .reduce((a, b) => a + b) /
-        allScores.length;
-    double trend = 0.0;
-    String level = 'Beginner';
-    double lastScore = allScores.last['score'] as double;
-
-    // Calculate trend only if there's enough data
-    if (allScores.length >= 5) {
-      int halfLength = (allScores.length / 2).ceil();
-      final firstHalf = allScores.take(halfLength).toList();
-      final secondHalf = allScores.skip(allScores.length - halfLength).toList();
-
-      double firstAvg =
-          firstHalf
-              .map((item) => item['score'] as double)
-              .reduce((a, b) => a + b) /
-          firstHalf.length;
-      double secondAvg =
-          secondHalf
-              .map((item) => item['score'] as double)
-              .reduce((a, b) => a + b) /
-          secondHalf.length;
-      trend = secondAvg - firstAvg;
-    }
-
-    // Determine level
-    if (averageScore >= 80) {
-      level = 'Advanced';
-    } else if (averageScore >= 60) {
-      level = 'Intermediate';
-    } else {
-      level = 'Beginner';
-    }
-
-    skillAnalysis[skillName] = {
-      'score': averageScore.round().toDouble(),
-      'trend': trend.round().toDouble(),
-      'level': level,
-      'attempts': totalAttempts,
-      'lastScore': lastScore.round().toDouble(),
-      'weight': config['weight'],
+  Future<void> _calculateEnhancedSkillAnalysisOptimized(
+    Map<String, dynamic> lessonAttempts,
+  ) async {
+    final skillCategories = {
+      'Foundation Grammar': {
+        'lessons': ['Lesson-1-1', 'Lesson-1-2', 'Lesson-1-3'],
+        'weight': 1.0,
+      },
+      'Conversational Skills': {
+        'lessons': ['Lesson-2-1', 'Lesson-2-2', 'Lesson-2-3'],
+        'weight': 1.2,
+      },
+      'Listening Comprehension': {
+        'lessons': ['Lesson-3-1'],
+        'weight': 1.3,
+      },
+      'Speaking Fluency': {
+        'lessons': ['Lesson-3-2', 'Lesson-5-1', 'Lesson-5-2'],
+        'weight': 1.4,
+      },
+      'Professional Communication': {
+        'lessons': ['Lesson-4-1', 'Lesson-4-2'],
+        'weight': 1.3,
+      },
+      'Call Center Readiness': {
+        'lessons': ['Lesson-5-1', 'Lesson-5-2', 'Lesson-6-1'],
+        'weight': 1.5,
+      },
     };
-  });
-}
+
+    skillCategories.forEach((skillName, config) {
+      final lessons = config['lessons'] as List<String>;
+      List<Map<String, dynamic>> allScores = [];
+      int totalAttempts = 0;
+
+      // Only process lessons that have attempts
+      for (String lessonId in lessons) {
+        final attempts = lessonAttempts[lessonId] as List<dynamic>? ?? [];
+
+        // Skip if no attempts
+        if (attempts.isEmpty) continue;
+
+        totalAttempts += attempts.length;
+
+        for (var attempt in attempts) {
+          if (attempt is Map<String, dynamic>) {
+            double score = _extractScoreForSkill(attempt, skillName);
+            if (score > 0) {
+              allScores.add({
+                'score': math.min(100.0, score),
+                'timestamp': attempt['attemptTimestamp'],
+              });
+            }
+          }
+        }
+      }
+
+      // Skip skill if no scores
+      if (allScores.isEmpty) {
+        skillAnalysis[skillName] = {
+          'score': 0.0,
+          'trend': 0.0,
+          'level': 'Beginner',
+          'attempts': totalAttempts,
+          'lastScore': 0.0,
+          'weight': config['weight'],
+        };
+        return;
+      }
+
+      // Sort only if needed for trend calculation
+      if (allScores.length >= 2) {
+        allScores.sort((a, b) {
+          DateTime aTime = _parseTimestamp(a['timestamp']);
+          DateTime bTime = _parseTimestamp(b['timestamp']);
+          return aTime.compareTo(bTime);
+        });
+      }
+
+      double averageScore =
+          allScores
+              .map((item) => item['score'] as double)
+              .reduce((a, b) => a + b) /
+          allScores.length;
+      double trend = 0.0;
+      String level = 'Beginner';
+      double lastScore = allScores.last['score'] as double;
+
+      // Calculate trend only if there's enough data
+      if (allScores.length >= 5) {
+        int halfLength = (allScores.length / 2).ceil();
+        final firstHalf = allScores.take(halfLength).toList();
+        final secondHalf = allScores
+            .skip(allScores.length - halfLength)
+            .toList();
+
+        double firstAvg =
+            firstHalf
+                .map((item) => item['score'] as double)
+                .reduce((a, b) => a + b) /
+            firstHalf.length;
+        double secondAvg =
+            secondHalf
+                .map((item) => item['score'] as double)
+                .reduce((a, b) => a + b) /
+            secondHalf.length;
+        trend = secondAvg - firstAvg;
+      }
+
+      // Determine level
+      if (averageScore >= 80) {
+        level = 'Advanced';
+      } else if (averageScore >= 60) {
+        level = 'Intermediate';
+      } else {
+        level = 'Beginner';
+      }
+
+      skillAnalysis[skillName] = {
+        'score': averageScore.round().toDouble(),
+        'trend': trend.round().toDouble(),
+        'level': level,
+        'attempts': totalAttempts,
+        'lastScore': lastScore.round().toDouble(),
+        'weight': config['weight'],
+      };
+    });
+  }
 
   double _extractScoreForSkill(Map<String, dynamic> attempt, String skillName) {
     if (skillName == 'Speaking Fluency') {
@@ -632,7 +645,6 @@ Future<bool> _onWillPop() async {
     }
   }
 
-
   Future<void> _calculateEnhancedUserStats() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -779,6 +791,102 @@ Future<bool> _onWillPop() async {
     }
   }
 
+  Future<void> _fetchPracticeStats() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      logger.w('No user logged in for practice stats');
+      if (mounted) {
+        setState(() {
+          _practiceStatsLoading = false;
+        });
+      }
+      return;
+    }
+
+    try {
+      logger.i('Fetching practice stats for user: ${user.uid}');
+
+      final response = await http
+          .post(
+            Uri.parse(
+              'https://talkready-backend.onrender.com/get-unified-practice-stats',
+            ),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({'userId': user.uid}),
+          )
+          .timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+
+        if (data['success'] == true && data['stats'] != null) {
+          final stats = data['stats'];
+
+          int totalSessions = 0;
+          int activeTypes = 0;
+
+          // Count pronunciation sessions
+          if (stats['pronunciation'] != null &&
+              (stats['pronunciation']['totalSessions'] ?? 0) > 0) {
+            totalSessions +=
+                (stats['pronunciation']['totalSessions'] ?? 0) as int;
+            activeTypes++;
+          }
+
+          // Count fluency sessions
+          if (stats['fluency'] != null &&
+              (stats['fluency']['totalSessions'] ?? 0) > 0) {
+            totalSessions += (stats['fluency']['totalSessions'] ?? 0) as int;
+            activeTypes++;
+          }
+
+          // Count grammar sessions
+          if (stats['grammar'] != null &&
+              (stats['grammar']['totalSessions'] ?? 0) > 0) {
+            totalSessions += (stats['grammar']['totalSessions'] ?? 0) as int;
+            activeTypes++;
+          }
+
+          // Count vocabulary words studied
+          if (stats['vocabulary'] != null &&
+              (stats['vocabulary']['totalWordsStudied'] ?? 0) > 0) {
+            activeTypes++;
+          }
+
+          // Count roleplay sessions
+          if (stats['roleplay'] != null &&
+              (stats['roleplay']['totalSessions'] ?? 0) > 0) {
+            totalSessions += (stats['roleplay']['totalSessions'] ?? 0) as int;
+            activeTypes++;
+          }
+
+          // Estimate practice time (rough: 3 min per session)
+          int estimatedMinutes = totalSessions * 3;
+
+          if (mounted) {
+            setState(() {
+              _totalPracticeSessions = totalSessions;
+              _activePracticeTypes = activeTypes;
+              _totalPracticeMinutes = estimatedMinutes;
+              _practiceStatsLoading = false;
+            });
+          }
+
+          logger.i(
+            'Practice stats loaded: $totalSessions sessions, $activeTypes types',
+          );
+        }
+      }
+    } catch (e) {
+      logger.e('Error fetching practice stats: $e');
+      if (mounted) {
+        setState(() {
+          _practiceStatsLoading = false;
+        });
+      }
+    }
+  }
+
   void _calculateAverageScore(Map<String, dynamic> lessonAttempts) {
     List<double> allScores = [];
 
@@ -799,113 +907,121 @@ Future<bool> _onWillPop() async {
     }
   }
 
-Future<void> _fetchDailyContent() async {
-  final user = FirebaseAuth.instance.currentUser;
-  if (user == null) {
-    logger.w('No user logged in, skipping daily content');
-    return;
-  }
+  Future<void> _fetchDailyContent() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      logger.w('No user logged in, skipping daily content');
+      return;
+    }
 
-  try {
-    logger.i('Fetching daily content...');
+    try {
+      logger.i('Fetching daily content...');
 
-    // Calculate progress summary from already-computed skillAnalysis
-    // This avoids the expensive getAllUserLessonAttempts() call
-    Map<String, dynamic>? progressSummary;
+      // Calculate progress summary from already-computed skillAnalysis
+      // This avoids the expensive getAllUserLessonAttempts() call
+      Map<String, dynamic>? progressSummary;
 
-    if (skillAnalysis.isNotEmpty) {
-      // Filter out skills with 0 score to get meaningful data
-      final validSkills = skillAnalysis.entries
-          .where((entry) => (entry.value['score'] as double) > 0)
-          .toList();
-
-      if (validSkills.isNotEmpty) {
-        final skillScores = validSkills
-            .map((entry) => entry.value['score'] as double)
+      if (skillAnalysis.isNotEmpty) {
+        // Filter out skills with 0 score to get meaningful data
+        final validSkills = skillAnalysis.entries
+            .where((entry) => (entry.value['score'] as double) > 0)
             .toList();
 
-        final averageScore = skillScores.reduce((a, b) => a + b) / skillScores.length;
+        if (validSkills.isNotEmpty) {
+          final skillScores = validSkills
+              .map((entry) => entry.value['score'] as double)
+              .toList();
 
-        progressSummary = {
-          'totalLessons': validSkills.length,
-          'averageScore': averageScore,
-          'weakestSkills': skillAnalysis.entries
-              .where((entry) => (entry.value['score'] as double) < 60)
-              .map((entry) => {
+          final averageScore =
+              skillScores.reduce((a, b) => a + b) / skillScores.length;
+
+          progressSummary = {
+            'totalLessons': validSkills.length,
+            'averageScore': averageScore,
+            'weakestSkills': skillAnalysis.entries
+                .where((entry) => (entry.value['score'] as double) < 60)
+                .map(
+                  (entry) => {
                     'name': entry.key.split(' ').first,
                     'score': entry.value['score'],
-                  })
-              .take(3)
-              .toList(),
-          'strongestSkills': skillAnalysis.entries
-              .where((entry) => (entry.value['score'] as double) >= 70)
-              .map((entry) => {
+                  },
+                )
+                .take(3)
+                .toList(),
+            'strongestSkills': skillAnalysis.entries
+                .where((entry) => (entry.value['score'] as double) >= 70)
+                .map(
+                  (entry) => {
                     'name': entry.key.split(' ').first,
                     'score': entry.value['score'],
-                  })
-              .take(2)
-              .toList(),
-        };
+                  },
+                )
+                .take(2)
+                .toList(),
+          };
+        }
+      }
+
+      // Calculate overall average score once
+      final allSkillScores = skillAnalysis.values
+          .map((skill) => skill['score'] as double)
+          .where((score) => score > 0)
+          .toList();
+
+      final overallAverageScore = allSkillScores.isNotEmpty
+          ? allSkillScores.reduce((a, b) => a + b) / allSkillScores.length
+          : 50.0;
+
+      // Fetch tip and motivation concurrently with timeout protection
+      final tipFuture =
+          DailyContentService.fetchLearningTip(
+            userProgress: progressSummary,
+            currentStreak: _currentStreak,
+            averageScore: overallAverageScore,
+          ).timeout(
+            const Duration(seconds: 5),
+            onTimeout: () {
+              logger.w('Learning tip fetch timeout');
+              return DailyContentService.getFallbackTip();
+            },
+          );
+
+      final motivationFuture =
+          DailyContentService.fetchDailyMotivation(
+            currentStreak: _currentStreak,
+            averageScore: overallAverageScore,
+          ).timeout(
+            const Duration(seconds: 5),
+            onTimeout: () {
+              logger.w('Daily motivation fetch timeout');
+              return DailyContentService.getFallbackMotivation();
+            },
+          );
+
+      final results = await Future.wait([tipFuture, motivationFuture]);
+
+      // Update UI once with all fetched data
+      if (mounted) {
+        setState(() {
+          dailyTip = results[0] ?? DailyContentService.getFallbackTip();
+          dailyMotivation =
+              results[1] ?? DailyContentService.getFallbackMotivation();
+        });
+
+        logger.i('Daily content fetched and UI updated successfully');
+      }
+    } catch (e) {
+      logger.e('Error fetching daily content: $e');
+
+      // Set fallback data on error
+      if (mounted) {
+        setState(() {
+          dailyTip = DailyContentService.getFallbackTip();
+          dailyMotivation = DailyContentService.getFallbackMotivation();
+        });
       }
     }
-
-    // Calculate overall average score once
-    final allSkillScores = skillAnalysis.values
-        .map((skill) => skill['score'] as double)
-        .where((score) => score > 0)
-        .toList();
-
-    final overallAverageScore = allSkillScores.isNotEmpty
-        ? allSkillScores.reduce((a, b) => a + b) / allSkillScores.length
-        : 50.0;
-
-    // Fetch tip and motivation concurrently with timeout protection
-    final tipFuture = DailyContentService.fetchLearningTip(
-      userProgress: progressSummary,
-      currentStreak: _currentStreak,
-      averageScore: overallAverageScore,
-    ).timeout(
-      const Duration(seconds: 5),
-      onTimeout: () {
-        logger.w('Learning tip fetch timeout');
-        return DailyContentService.getFallbackTip();
-      },
-    );
-
-    final motivationFuture = DailyContentService.fetchDailyMotivation(
-      currentStreak: _currentStreak,
-      averageScore: overallAverageScore,
-    ).timeout(
-      const Duration(seconds: 5),
-      onTimeout: () {
-        logger.w('Daily motivation fetch timeout');
-        return DailyContentService.getFallbackMotivation();
-      },
-    );
-
-    final results = await Future.wait([tipFuture, motivationFuture]);
-
-    // Update UI once with all fetched data
-    if (mounted) {
-      setState(() {
-        dailyTip = results[0] ?? DailyContentService.getFallbackTip();
-        dailyMotivation = results[1] ?? DailyContentService.getFallbackMotivation();
-      });
-
-      logger.i('Daily content fetched and UI updated successfully');
-    }
-  } catch (e) {
-    logger.e('Error fetching daily content: $e');
-
-    // Set fallback data on error
-    if (mounted) {
-      setState(() {
-        dailyTip = DailyContentService.getFallbackTip();
-        dailyMotivation = DailyContentService.getFallbackMotivation();
-      });
-    }
   }
-}
 
   Future<void> _loadFeaturedCourses() async {
     final staticCourses = [
@@ -1030,91 +1146,95 @@ Future<void> _fetchDailyContent() async {
     );
   }
 
-StreamSubscription<DocumentSnapshot>? _userDataSubscription;
-DateTime? _lastUpdate;
-static const int DEBOUNCE_SECONDS = 2;
+  StreamSubscription<DocumentSnapshot>? _userDataSubscription;
+  DateTime? _lastUpdate;
+  static const int DEBOUNCE_SECONDS = 2;
 
-void _setupRealTimeListener() {
-  final user = FirebaseAuth.instance.currentUser;
-  if (user == null) {
-    logger.e('No current user for real-time listener');
-    return;
+  void _setupRealTimeListener() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      logger.e('No current user for real-time listener');
+      return;
+    }
+
+    _userDataSubscription = FirebaseFirestore.instance
+        .collection('userProgress')
+        .doc(user.uid)
+        .snapshots()
+        .listen(
+          (snapshot) {
+            // Debounce: only update if DEBOUNCE_SECONDS have passed
+            final now = DateTime.now();
+            if (_lastUpdate != null &&
+                now.difference(_lastUpdate!).inSeconds < DEBOUNCE_SECONDS) {
+              logger.d('Debounced real-time update');
+              return;
+            }
+            _lastUpdate = now;
+
+            if (snapshot.exists && mounted) {
+              final userData = snapshot.data();
+              if (userData != null) {
+                final lessonAttempts =
+                    userData['lessonAttempts'] as Map<String, dynamic>? ?? {};
+
+                logger.i('Real-time update received, recalculating skills');
+
+                setState(() {
+                  _calculateEnhancedSkillAnalysisOptimized(lessonAttempts);
+                  _calculateModuleProgress(userData);
+                  _lessonsCompleted = lessonAttempts.keys.length;
+                });
+              }
+            }
+          },
+          onError: (error) {
+            logger.e('Error listening to user data: $error');
+          },
+        );
   }
 
-  _userDataSubscription = FirebaseFirestore.instance
-      .collection('userProgress')
-      .doc(user.uid)
-      .snapshots()
-      .listen(
-    (snapshot) {
-      // Debounce: only update if DEBOUNCE_SECONDS have passed
-      final now = DateTime.now();
-      if (_lastUpdate != null &&
-          now.difference(_lastUpdate!).inSeconds < DEBOUNCE_SECONDS) {
-        logger.d('Debounced real-time update');
-        return;
-      }
-      _lastUpdate = now;
+  void _setupNotificationListener() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      debugPrint('❌ No current user - cannot setup notification listener');
+      return;
+    }
 
-      if (snapshot.exists && mounted) {
-        final userData = snapshot.data();
-        if (userData != null) {
-          final lessonAttempts =
-              userData['lessonAttempts'] as Map<String, dynamic>? ?? {};
+    debugPrint('🔔 Setting up notification listener for user: ${user.uid}');
 
-          logger.i('Real-time update received, recalculating skills');
+    _notificationSubscription = FirebaseFirestore.instance
+        .collection('notifications')
+        .where('userId', isEqualTo: user.uid)
+        .where('isRead', isEqualTo: false)
+        .snapshots()
+        .listen(
+          (snapshot) {
+            debugPrint(
+              '📬 Received notification snapshot: ${snapshot.docs.length} unread notifications',
+            );
 
-          setState(() {
-            _calculateEnhancedSkillAnalysisOptimized(lessonAttempts);
-            _calculateModuleProgress(userData);
-            _lessonsCompleted = lessonAttempts.keys.length;
-          });
-        }
-      }
-    },
-    onError: (error) {
-      logger.e('Error listening to user data: $error');
-    },
-  );
-}
-void _setupNotificationListener() {
-  final user = FirebaseAuth.instance.currentUser;
-  if (user == null) {
-    debugPrint('❌ No current user - cannot setup notification listener');
-    return;
+            if (mounted) {
+              setState(() {
+                _unreadNotificationsCount = snapshot.docs.length;
+              });
+              debugPrint(
+                '✅ Updated unread count to: $_unreadNotificationsCount',
+              );
+            }
+          },
+          onError: (e) {
+            debugPrint('❌ Error fetching notifications: $e');
+
+            if (e.toString().contains('index')) {
+              debugPrint('⚠️ FIRESTORE INDEX REQUIRED! Create an index for:');
+              debugPrint('   Collection: notifications');
+              debugPrint('   Fields: userId (Ascending), isRead (Ascending)');
+            }
+          },
+        );
   }
 
-  debugPrint('🔔 Setting up notification listener for user: ${user.uid}');
-
-  _notificationSubscription = FirebaseFirestore.instance
-      .collection('notifications')
-      .where('userId', isEqualTo: user.uid)
-      .where('isRead', isEqualTo: false)
-      .snapshots()
-      .listen(
-    (snapshot) {
-      debugPrint(
-          '📬 Received notification snapshot: ${snapshot.docs.length} unread notifications');
-
-      if (mounted) {
-        setState(() {
-          _unreadNotificationsCount = snapshot.docs.length;
-        });
-        debugPrint(
-            '✅ Updated unread count to: $_unreadNotificationsCount');
-      }
-    },
-    onError: (e) {
-      debugPrint('❌ Error fetching notifications: $e');
-
-      if (e.toString().contains('index')) {
-        debugPrint('⚠️ FIRESTORE INDEX REQUIRED! Create an index for:');
-        debugPrint('   Collection: notifications');
-        debugPrint('   Fields: userId (Ascending), isRead (Ascending)');
-      }
-    },
-  );
-}
   @override
   void dispose() {
     _fadeController.dispose();
@@ -1124,101 +1244,102 @@ void _setupNotificationListener() {
     super.dispose();
   }
 
- Widget _buildAppBarWithLogo() {
-  return Container(
-    padding: const EdgeInsets.only(top: 40, left: 16, right: 16, bottom: 10),
-    decoration: const BoxDecoration(
-      color: Color(0xFF0077B3),
-      borderRadius: BorderRadius.only(
-        bottomLeft: Radius.circular(20),
-        bottomRight: Radius.circular(20),
-      ),
-    ),
-    child: Row(
-      children: [
-        Image.asset('images/TR Logo.png', height: 40, width: 40),
-        const SizedBox(width: 12),
-        const Text(
-          'TalkReady',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-          ),
+  Widget _buildAppBarWithLogo() {
+    return Container(
+      padding: const EdgeInsets.only(top: 40, left: 16, right: 16, bottom: 10),
+      decoration: const BoxDecoration(
+        color: Color(0xFF0077B3),
+        borderRadius: BorderRadius.only(
+          bottomLeft: Radius.circular(20),
+          bottomRight: Radius.circular(20),
         ),
-        const Spacer(),
-        NotificationBadge(
-  unreadCount: _unreadNotificationsCount,
-  onTap: () {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const AllNotificationsPage(),
+      ),
+      child: Row(
+        children: [
+          Image.asset('images/TR Logo.png', height: 40, width: 40),
+          const SizedBox(width: 12),
+          const Text(
+            'TalkReady',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const Spacer(),
+          NotificationBadge(
+            unreadCount: _unreadNotificationsCount,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const AllNotificationsPage(),
+                ),
+              );
+            },
+          ),
+        ],
       ),
     );
-  },
-),
-      ],
-    ),
-  );
-}
+  }
 
- @override
-Widget build(BuildContext context) {
-  final user = FirebaseAuth.instance.currentUser;
-  final firstName = user?.displayName?.split(' ').first ?? 'User';
+  @override
+  Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+    final firstName = user?.displayName?.split(' ').first ?? 'User';
 
-  return PopScope(
-    canPop: false, // Prevent default back navigation
-    onPopInvoked: (bool didPop) async {
-      if (didPop) return;
+    return PopScope(
+      canPop: false, // Prevent default back navigation
+      onPopInvoked: (bool didPop) async {
+        if (didPop) return;
 
-      // Show exit confirmation
-      final shouldExit = await _onWillPop();
-      if (shouldExit && context.mounted) {
-        // Exit the app using SystemNavigator
-        SystemNavigator.pop();
-      }
-    },
-    child: Scaffold(
-      backgroundColor: Colors.grey[50],
-      body: Column(
-        children: [
-          _buildAppBarWithLogo(),
-          Expanded(
-            child: _isLoading
-                ? _buildLoadingState()
-                : _hasError
-                ? _buildErrorState()
-                : _buildMainContent(firstName),
-          ),
-        ],
+        // Show exit confirmation
+        final shouldExit = await _onWillPop();
+        if (shouldExit && context.mounted) {
+          // Exit the app using SystemNavigator
+          SystemNavigator.pop();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: Colors.grey[50],
+        body: Column(
+          children: [
+            _buildAppBarWithLogo(),
+            Expanded(
+              child: _isLoading
+                  ? _buildLoadingState()
+                  : _hasError
+                  ? _buildErrorState()
+                  : _buildMainContent(firstName),
+            ),
+          ],
+        ),
+        bottomNavigationBar: AnimatedBottomNavBar(
+          currentIndex: _selectedIndex,
+          onTap: _onItemTapped,
+          items: [
+            CustomBottomNavItem(icon: Icons.home, label: 'Home'),
+            CustomBottomNavItem(icon: Icons.book, label: 'Courses'),
+            CustomBottomNavItem(icon: Icons.school, label: 'My Classes'),
+            CustomBottomNavItem(icon: Icons.library_books, label: 'Journal'),
+            CustomBottomNavItem(icon: Icons.trending_up, label: 'Progress'),
+            CustomBottomNavItem(icon: Icons.person, label: 'Profile'),
+          ],
+          activeColor: Colors.white,
+          inactiveColor: Colors.grey[600]!,
+          notchColor: const Color(0xFF0077B3),
+          backgroundColor: Colors.white,
+          selectedIconSize: 28.0,
+          iconSize: 25.0,
+          barHeight: 55,
+          selectedIconPadding: 10,
+          animationDuration: const Duration(milliseconds: 300),
+          customNotchWidthFactor: 1.8,
+        ),
       ),
-      bottomNavigationBar: AnimatedBottomNavBar(
-        currentIndex: _selectedIndex,
-        onTap: _onItemTapped,
-        items: [
-          CustomBottomNavItem(icon: Icons.home, label: 'Home'),
-          CustomBottomNavItem(icon: Icons.book, label: 'Courses'),
-          CustomBottomNavItem(icon: Icons.school, label: 'My Classes'),
-          CustomBottomNavItem(icon: Icons.library_books, label: 'Journal'),
-          CustomBottomNavItem(icon: Icons.trending_up, label: 'Progress'),
-          CustomBottomNavItem(icon: Icons.person, label: 'Profile'),
-        ],
-        activeColor: Colors.white,
-        inactiveColor: Colors.grey[600]!,
-        notchColor: const Color(0xFF0077B3),
-        backgroundColor: Colors.white,
-        selectedIconSize: 28.0,
-        iconSize: 25.0,
-        barHeight: 55,
-        selectedIconPadding: 10,
-        animationDuration: const Duration(milliseconds: 300),
-        customNotchWidthFactor: 1.8,
-      ),
-    ),
-  );
-}
+    );
+  }
+
   Widget _buildLoadingState() {
     return Center(
       child: Column(
@@ -1304,6 +1425,19 @@ Widget build(BuildContext context) {
                   return Opacity(
                     opacity: _fadeAnimation.value,
                     child: _buildEnhancedUserStatsSection(),
+                  );
+                },
+              ),
+
+              const SizedBox(height: 16),
+
+              // Practice Center Section - NEW
+              AnimatedBuilder(
+                animation: _fadeAnimation,
+                builder: (context, child) {
+                  return Opacity(
+                    opacity: _fadeAnimation.value,
+                    child: _buildPracticeCenterCard(),
                   );
                 },
               ),
@@ -2280,6 +2414,225 @@ Widget build(BuildContext context) {
     );
   }
 
+  Widget _buildPracticeCenterCard() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Colors.deepPurple.shade50, Colors.purple.shade50],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.deepPurple.withOpacity(0.3)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.deepPurple.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.deepPurple,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.psychology,
+                  color: Colors.white,
+                  size: 28,
+                ),
+              ),
+              const SizedBox(width: 16),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '🎯 Practice Center',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.deepPurple,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Build your skills with targeted practice',
+                      style: TextStyle(fontSize: 13, color: Colors.black54),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 20),
+
+          // Stats Row
+          if (_practiceStatsLoading)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(20),
+                child: CircularProgressIndicator(),
+              ),
+            )
+          else
+            Row(
+              children: [
+                Expanded(
+                  child: _buildPracticeStatItem(
+                    icon: Icons.fitness_center,
+                    label: 'Sessions',
+                    value: '$_totalPracticeSessions',
+                    color: Colors.blue,
+                  ),
+                ),
+                Container(width: 1, height: 50, color: Colors.grey.shade300),
+                Expanded(
+                  child: _buildPracticeStatItem(
+                    icon: Icons.timer,
+                    label: 'Minutes',
+                    value: '$_totalPracticeMinutes',
+                    color: Colors.orange,
+                  ),
+                ),
+                Container(width: 1, height: 50, color: Colors.grey.shade300),
+                Expanded(
+                  child: _buildPracticeStatItem(
+                    icon: Icons.category,
+                    label: 'Active Types',
+                    value: '$_activePracticeTypes/5',
+                    color: Colors.green,
+                  ),
+                ),
+              ],
+            ),
+
+          const SizedBox(height: 20),
+
+          // Practice Types Preview
+          const Text(
+            'Available Practice Types:',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _buildPracticeTypeChip('🎤 Pronunciation', Colors.blue),
+              _buildPracticeTypeChip('📖 Fluency', Colors.green),
+              _buildPracticeTypeChip('✍️ Grammar', Colors.orange),
+              _buildPracticeTypeChip('📚 Vocabulary', Colors.purple),
+              _buildPracticeTypeChip('🎭 Role-play', Colors.teal),
+            ],
+          ),
+
+          const SizedBox(height: 20),
+
+          // Go to Practice Center Button
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const PracticeCenterPage(),
+                  ),
+                ).then((_) {
+                  // Refresh stats when returning from Practice Center
+                  _fetchPracticeStats();
+                });
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.deepPurple,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                elevation: 2,
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.arrow_forward, size: 20),
+                  SizedBox(width: 8),
+                  Text(
+                    'Go to Practice Center',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPracticeStatItem({
+    required IconData icon,
+    required String label,
+    required String value,
+    required Color color,
+  }) {
+    return Column(
+      children: [
+        Icon(icon, color: color, size: 28),
+        const SizedBox(height: 8),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 11, color: Colors.black54),
+          textAlign: TextAlign.center,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPracticeTypeChip(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+          color: Colors.black87,
+        ),
+      ),
+    );
+  }
+
   Widget _buildStatCard({
     required IconData icon,
     required String title,
@@ -2648,7 +3001,6 @@ Widget build(BuildContext context) {
     );
   }
 
-
   Widget _buildQuickNavigation() {
     final quickNavItems = [
       {'icon': Icons.school, 'label': 'Courses', 'route': const CoursesPage()},
@@ -2664,8 +3016,8 @@ Widget build(BuildContext context) {
         'route': const ProgressTrackerPage(),
       },
       {
-        'icon': Icons.mic,
-        'label': 'Practice Test',
+        'icon': Icons.smart_toy,
+        'label': 'TalkReady AI',
         'route': AIBotScreen(onBackPressed: () => Navigator.pop(context)),
       },
       {'icon': Icons.person, 'label': 'Profile', 'route': const ProfilePage()},

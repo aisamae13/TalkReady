@@ -1,7 +1,7 @@
 // lib/certificates/certificate_claim_page.dart
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../../services/certificate_service.dart';
+import '../services/certificate_service.dart';
 import 'certificate_view_page.dart';
 
 class CertificateClaimPage extends StatefulWidget {
@@ -16,7 +16,6 @@ class _CertificateClaimPageState extends State<CertificateClaimPage> {
   bool _isLoading = true;
   bool _hasCompletedCourse = false;
   Map<String, dynamic>? _existingCertificate;
-  bool _isGenerating = false;
 
   @override
   void initState() {
@@ -27,7 +26,12 @@ class _CertificateClaimPageState extends State<CertificateClaimPage> {
   Future<void> _checkEligibility() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
+      if (user == null) {
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
 
       // Check if user completed all modules
       final hasCompleted = await _certificateService.hasCompletedAllModules(
@@ -48,59 +52,50 @@ class _CertificateClaimPageState extends State<CertificateClaimPage> {
       setState(() {
         _isLoading = false;
       });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error checking eligibility: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error checking eligibility: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
-  Future<void> _claimCertificate() async {
+  Future<void> _openCertificateOnWeb() async {
     try {
-      setState(() {
-        _isGenerating = true;
-      });
+      await _certificateService.claimCertificateOnWeb();
 
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) throw Exception('User not logged in');
-
-      final studentName = user.displayName ?? 'Student';
-      final certificate = await _certificateService.generateCertificate(
-        user.uid,
-        studentName,
-      );
-
-      setState(() {
-        _existingCertificate = certificate;
-        _isGenerating = false;
-      });
-
-      // Show success message
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('🎉 Certificate generated successfully!'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.open_in_browser, color: Colors.white),
+                SizedBox(width: 8),
+                Expanded(child: Text('Opening certificate page in browser...')),
+              ],
+            ),
+            backgroundColor: Color(0xFF10B981),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
     } catch (e) {
-      setState(() {
-        _isGenerating = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error generating certificate: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error opening certificate page: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
-  void _viewCertificate() {
-    if (_existingCertificate != null) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) =>
-              CertificateViewPage(certificateData: _existingCertificate!),
-        ),
-      );
-    }
+  void _viewCertificateOnWeb() {
+    _openCertificateOnWeb();
   }
 
   @override
@@ -115,7 +110,7 @@ class _CertificateClaimPageState extends State<CertificateClaimPage> {
           onPressed: () => Navigator.pop(context),
         ),
         title: const Text(
-          'Certificate',
+          'My Certificate',
           style: TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
@@ -134,7 +129,10 @@ class _CertificateClaimPageState extends State<CertificateClaimPage> {
         children: [
           CircularProgressIndicator(color: Color(0xFF1E40AF)),
           SizedBox(height: 16),
-          Text('Checking your progress...'),
+          Text(
+            'Checking your progress...',
+            style: TextStyle(color: Color(0xFF64748B)),
+          ),
         ],
       ),
     );
@@ -149,7 +147,7 @@ class _CertificateClaimPageState extends State<CertificateClaimPage> {
       return _buildExistingCertificate();
     }
 
-    return _buildClaimCertificate();
+    return _buildReadyToClaim();
   }
 
   Widget _buildNotEligible() {
@@ -167,11 +165,11 @@ class _CertificateClaimPageState extends State<CertificateClaimPage> {
               ),
               child: const Icon(
                 Icons.school_outlined,
-                size: 64,
+                size: 80,
                 color: Colors.orange,
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 32),
             const Text(
               'Certificate Not Available Yet',
               style: TextStyle(
@@ -183,29 +181,56 @@ class _CertificateClaimPageState extends State<CertificateClaimPage> {
             ),
             const SizedBox(height: 16),
             const Text(
-              'Complete all modules (Module 1-6) to earn your TalkReady certificate.',
+              'Complete all lessons (Modules 1-6) to earn your TalkReady certificate.',
               style: TextStyle(
                 fontSize: 16,
                 color: Color(0xFF64748B),
-                height: 1.5,
+                height: 1.6,
               ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 32),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1E40AF),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 32,
-                  vertical: 16,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+            // Progress indicator
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.blue.shade200),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.info_outline, color: Color(0xFF1E40AF)),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Keep learning! Your certificate will be available once you complete all required lessons.',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFF1E293B),
+                        height: 1.5,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 32),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.arrow_back),
+                label: const Text('Continue Learning'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1E40AF),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
-              child: const Text('Continue Learning'),
             ),
           ],
         ),
@@ -220,21 +245,33 @@ class _CertificateClaimPageState extends State<CertificateClaimPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            // Trophy icon with gradient
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.1),
+                gradient: LinearGradient(
+                  colors: [Colors.green.shade400, Colors.green.shade600],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
                 shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.green.withOpacity(0.3),
+                    blurRadius: 20,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
               ),
               child: const Icon(
                 Icons.emoji_events,
-                size: 64,
-                color: Colors.green,
+                size: 80,
+                color: Colors.white,
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 32),
             const Text(
-              'Congratulations! 🎉',
+              '🎉 Congratulations! 🎉',
               style: TextStyle(
                 fontSize: 28,
                 fontWeight: FontWeight.bold,
@@ -244,47 +281,81 @@ class _CertificateClaimPageState extends State<CertificateClaimPage> {
             ),
             const SizedBox(height: 16),
             Text(
-              'You have earned your TalkReady certificate!\nCompleted on ${_existingCertificate!['completionDate']}',
+              'You earned your TalkReady certificate on\n${_existingCertificate!['completionDate'] ?? 'N/A'}',
               style: const TextStyle(
                 fontSize: 16,
                 color: Color(0xFF64748B),
-                height: 1.5,
+                height: 1.6,
               ),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 32),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _viewCertificate,
-                icon: const Icon(Icons.visibility),
-                label: const Text('View Certificate'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF10B981),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.green.shade200),
+              ),
+              child: Text(
+                'Certificate ID: ${_existingCertificate!['certificateId'] ?? 'N/A'}',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.green.shade700,
+                  fontFamily: 'monospace',
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 40),
+
+            // View Certificate Button
             SizedBox(
               width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () {
-                  // TODO: Add share functionality
-                },
-                icon: const Icon(Icons.share),
-                label: const Text('Share Certificate'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF1E40AF),
-                  padding: const EdgeInsets.symmetric(vertical: 16),
+              child: ElevatedButton.icon(
+                onPressed: _viewCertificateOnWeb,
+                icon: const Icon(Icons.open_in_browser, size: 24),
+                label: const Text(
+                  'View Certificate on Web',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF10B981),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 18),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
+                  elevation: 2,
                 ),
+              ),
+            ),
+
+            const SizedBox(height: 24),
+
+            // Info card
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.blue.shade200),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.info_outline, color: Color(0xFF1E40AF), size: 20),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'This will open your certificate in the web browser where you can view, download, and share it.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF1E293B),
+                        height: 1.5,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -293,28 +364,40 @@ class _CertificateClaimPageState extends State<CertificateClaimPage> {
     );
   }
 
-  Widget _buildClaimCertificate() {
+  Widget _buildReadyToClaim() {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            // Trophy icon with animation-ready gradient
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.1),
+                gradient: LinearGradient(
+                  colors: [Colors.amber.shade400, Colors.orange.shade600],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
                 shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.orange.withOpacity(0.3),
+                    blurRadius: 20,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
               ),
               child: const Icon(
                 Icons.emoji_events,
-                size: 64,
-                color: Colors.green,
+                size: 80,
+                color: Colors.white,
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 32),
             const Text(
-              'Congratulations! 🎉',
+              '🎉 Congratulations! 🎉',
               style: TextStyle(
                 fontSize: 28,
                 fontWeight: FontWeight.bold,
@@ -324,42 +407,74 @@ class _CertificateClaimPageState extends State<CertificateClaimPage> {
             ),
             const SizedBox(height: 16),
             const Text(
-              'You have completed all modules in the TalkReady course. You\'ve earned your certificate!',
+              'You\'ve completed all lessons in the TalkReady course!',
               style: TextStyle(
-                fontSize: 16,
+                fontSize: 18,
                 color: Color(0xFF64748B),
-                height: 1.5,
+                height: 1.6,
+                fontWeight: FontWeight.w500,
               ),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 8),
+            const Text(
+              'You\'re ready to claim your certificate.',
+              style: TextStyle(
+                fontSize: 16,
+                color: Color(0xFF64748B),
+                height: 1.6,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 40),
+
+            // Claim Certificate Button
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                onPressed: _isGenerating ? null : _claimCertificate,
-                icon: _isGenerating
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            Colors.white,
-                          ),
-                        ),
-                      )
-                    : const Icon(Icons.card_membership),
-                label: Text(
-                  _isGenerating ? 'Generating...' : 'Claim Your Certificate',
+                onPressed: _openCertificateOnWeb,
+                icon: const Icon(Icons.card_membership, size: 24),
+                label: const Text(
+                  'Claim Your Certificate',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF10B981),
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  padding: const EdgeInsets.symmetric(vertical: 20),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
+                  elevation: 3,
                 ),
+              ),
+            ),
+
+            const SizedBox(height: 24),
+
+            // Info card
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.blue.shade200),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.info_outline, color: Color(0xFF1E40AF), size: 20),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'This will open the certificate page in your web browser where you can view and download your certificate.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF1E293B),
+                        height: 1.5,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],

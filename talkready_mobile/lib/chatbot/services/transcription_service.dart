@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:logger/logger.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:io';
 
 class TranscriptionService {
@@ -9,12 +11,11 @@ class TranscriptionService {
 
   TranscriptionService({required this.logger});
 
-  Future<String> uploadToCloudinary(String filePath) async {
-    final cloudName = dotenv.env['CLOUDINARY_CLOUD_NAME'] ?? '';
-    final uploadPreset = dotenv.env['CLOUDINARY_UPLOAD_PRESET'] ?? '';
-
-    if (cloudName.isEmpty || uploadPreset.isEmpty) {
-      throw Exception('Cloudinary credentials missing');
+  /// Upload audio file to Firebase Storage
+  Future<String> uploadToFirebaseStorage(String filePath) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw Exception('User not authenticated');
     }
 
     final file = File(filePath);
@@ -27,130 +28,37 @@ class TranscriptionService {
 
     if (fileSizeInMB > 10) {
       throw Exception(
-        'Audio file too large: ${fileSizeInMB.toStringAsFixed(2)}MB',
+        'Audio file too large: ${fileSizeInMB.toStringAsFixed(2)}MB. Maximum is 10MB.',
       );
     }
 
     try {
-      final url = 'https://api.cloudinary.com/v1_1/$cloudName/raw/upload';
-      final request = http.MultipartRequest('POST', Uri.parse(url));
+      // Create a unique filename
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final fileName = 'audio_${timestamp}.wav';
+      final storagePath = 'audio/${user.uid}/$fileName';
 
-      request.fields['upload_preset'] = uploadPreset;
-      request.files.add(
-        await http.MultipartFile.fromPath(
-          'file',
-          filePath,
-          filename: 'audio.wav',
-        ),
+      logger.i('Uploading to Firebase Storage: $storagePath');
+
+      // Upload file
+      final storageRef = FirebaseStorage.instance.ref().child(storagePath);
+      final uploadTask = await storageRef.putFile(
+        file,
+        SettableMetadata(contentType: 'audio/wav'),
       );
 
-      logger.i('Uploading to Cloudinary: $filePath');
-      final response = await request.send();
-      final responseBody = await response.stream.bytesToString();
+      // Get download URL
+      final downloadUrl = await uploadTask.ref.getDownloadURL();
+      logger.i('Upload successful: $downloadUrl');
 
-      logger.i('Cloudinary response: ${response.statusCode}, $responseBody');
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = jsonDecode(responseBody);
-        final secureUrl = data['secure_url'] as String?;
-        if (secureUrl == null || secureUrl.isEmpty) {
-          throw Exception('Cloudinary returned invalid URL');
-        }
-        logger.i('Upload successful: $secureUrl');
-        return secureUrl;
-      } else {
-        String errorMessage = 'Status ${response.statusCode}';
-        try {
-          final errorData = jsonDecode(responseBody);
-          errorMessage = errorData['error']?['message'] ?? responseBody;
-        } catch (_) {
-          errorMessage = responseBody;
-        }
-
-        logger.e('Cloudinary upload failed: $errorMessage');
-        throw Exception('Upload failed: $errorMessage');
-      }
+      return downloadUrl;
     } catch (e) {
-      logger.e('Cloudinary error: $e');
-      throw Exception('Cloudinary upload failed: $e');
+      logger.e('Firebase Storage upload error: $e');
+      throw Exception('Failed to upload audio: $e');
     }
   }
 
-  Future<String?> transcribeWithAssemblyAI(String audioUrl) async {
-    final apiKey = dotenv.env['ASSEMBLYAI_API_KEY'] ?? '';
-    if (apiKey.isEmpty) {
-      logger.e('AssemblyAI API key missing.');
-      throw Exception('AssemblyAI API key missing');
-    }
-
-    logger.i('Attempting transcription with AssemblyAI for: $audioUrl');
-
-    try {
-      final submitResponse = await http.post(
-        Uri.parse('https://api.assemblyai.com/v2/transcript'),
-        headers: {
-          'Authorization': 'Bearer $apiKey',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({'audio_url': audioUrl}),
-      );
-
-      logger.i(
-        'AssemblyAI status: ${submitResponse.statusCode}, body: ${submitResponse.body}',
-      );
-
-      if (submitResponse.statusCode != 200) {
-        logger.e('Submission error: ${submitResponse.body}');
-        throw Exception(
-          'Failed to submit transcription: ${submitResponse.statusCode}',
-        );
-      }
-
-      final submitData = jsonDecode(submitResponse.body);
-      String transcriptId = submitData['id'];
-      logger.i('Transcript ID: $transcriptId');
-
-      int attempts = 0;
-      const maxAttempts = 30;
-
-      while (attempts < maxAttempts) {
-        attempts++;
-        await Future.delayed(Duration(seconds: 2));
-
-        final pollResponse = await http.get(
-          Uri.parse('https://api.assemblyai.com/v2/transcript/$transcriptId'),
-          headers: {'Authorization': 'Bearer $apiKey'},
-        );
-
-        if (pollResponse.statusCode != 200) {
-          logger.w('Poll error: ${pollResponse.statusCode}');
-          if (attempts > 5 && pollResponse.statusCode >= 500) {
-            throw Exception('AssemblyAI server error');
-          }
-          continue;
-        }
-
-        final pollData = jsonDecode(pollResponse.body);
-        String status = pollData['status'];
-        logger.i('Status: $status ($attempts/$maxAttempts)');
-
-        if (status == 'completed') {
-          logger.i('Transcription completed.');
-          return pollData['text'] as String? ?? '';
-        } else if (status == 'error') {
-          logger.e('Error: ${pollData['error']}');
-          throw Exception('Transcription error: ${pollData['error']}');
-        }
-      }
-
-      logger.w('Transcription timed out.');
-      throw Exception('Transcription timed out');
-    } catch (e) {
-      logger.e('AssemblyAI error: $e');
-      rethrow;
-    }
-  }
-
+  /// Transcribe audio using Azure Speech-to-Text
   Future<String?> transcribeWithAzure(String audioUrl) async {
     final apiKey = dotenv.env['AZURE_SPEECH_KEY'];
     final region = dotenv.env['AZURE_SPEECH_REGION'];
@@ -162,7 +70,16 @@ class TranscriptionService {
 
     try {
       logger.i('Transcribing with Azure using audio URL: $audioUrl');
-      final audioResponse = await http.get(Uri.parse(audioUrl));
+
+      // Download audio file
+      final audioResponse = await http
+          .get(Uri.parse(audioUrl))
+          .timeout(
+            Duration(seconds: 30),
+            onTimeout: () {
+              throw Exception('Audio download timed out');
+            },
+          );
 
       if (audioResponse.statusCode != 200) {
         logger.e('Failed to download audio: ${audioResponse.statusCode}');
@@ -170,17 +87,32 @@ class TranscriptionService {
       }
 
       final audioBytes = audioResponse.bodyBytes;
+      logger.i('Audio downloaded: ${audioBytes.length} bytes');
+
+      // Prepare Azure Speech-to-Text endpoint
       final endpoint =
           'https://$region.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1';
       final queryParams = {'language': 'en-US', 'format': 'detailed'};
       final uri = Uri.parse(endpoint).replace(queryParameters: queryParams);
+
       final headers = {
         'Ocp-Apim-Subscription-Key': apiKey,
         'Content-Type': 'audio/wav; codecs=audio/pcm; samplerate=16000',
         'Accept': 'application/json',
       };
 
-      final response = await http.post(uri, headers: headers, body: audioBytes);
+      logger.i('Sending transcription request to Azure...');
+
+      // Send transcription request
+      final response = await http
+          .post(uri, headers: headers, body: audioBytes)
+          .timeout(
+            Duration(seconds: 45),
+            onTimeout: () {
+              throw Exception('Transcription request timed out');
+            },
+          );
+
       logger.i(
         'Azure STT response status: ${response.statusCode}, body: ${response.body}',
       );
@@ -208,6 +140,8 @@ class TranscriptionService {
     }
   }
 
+  /// Generate pronunciation feedback using Azure Pronunciation Assessment
+  /// (This is only used in Practice Center, not in chatbot)
   Future<Map<String, dynamic>> generatePronunciationFeedback(
     String audioUrl,
     String recognizedText,
@@ -229,10 +163,13 @@ class TranscriptionService {
       if (targetPhrase == null || targetPhrase.isEmpty) {
         return {
           'feedback':
-              "Oops! I don't have a phrase to check. Try saying 'Thank you for calling, how may I assist you?'",
+              "Oops! I don't have a phrase to check. Please try the practice exercises!",
           'recognizedText': recognizedText,
         };
       }
+
+      logger.i('Downloading audio for pronunciation assessment: $audioUrl');
+      final audioBytes = (await http.get(Uri.parse(audioUrl))).bodyBytes;
 
       final response = await http
           .post(
@@ -253,11 +190,13 @@ class TranscriptionService {
                 ),
               ),
             },
-            body: (await http.get(Uri.parse(audioUrl))).bodyBytes,
+            body: audioBytes,
           )
           .timeout(const Duration(seconds: 30));
 
-      logger.i('Azure response: ${response.statusCode}, ${response.body}');
+      logger.i(
+        'Azure pronunciation response: ${response.statusCode}, ${response.body}',
+      );
 
       if (response.statusCode != 200) {
         return {
@@ -287,18 +226,22 @@ class TranscriptionService {
       }
 
       final assessment = nBest.first;
+      final accuracy = (assessment['AccuracyScore'] as num?)?.toDouble() ?? 0.0;
+      final fluency = (assessment['FluencyScore'] as num?)?.toDouble() ?? 0.0;
+      final completeness =
+          (assessment['CompletenessScore'] as num?)?.toDouble() ?? 0.0;
+      final words = assessment['Words'] as List?;
+
       String feedback = "Here's your pronunciation analysis:\n\n";
       feedback += "🗣 You said: \"$recognizedText\"\n\n";
       feedback += "🎯 Target phrase: \"$targetPhrase\"\n\n";
       feedback += "📊 Scores:\n";
       feedback +=
-          "• Accuracy: ${assessment['AccuracyScore']?.toStringAsFixed(1) ?? 'N/A'}% (sounds correct)\n";
+          "• Accuracy: ${accuracy.toStringAsFixed(1)}% (sounds correct)\n";
+      feedback += "• Fluency: ${fluency.toStringAsFixed(1)}% (smoothness)\n";
       feedback +=
-          "• Fluency: ${assessment['FluencyScore']?.toStringAsFixed(1) ?? 'N/A'}% (smoothness)\n";
-      feedback +=
-          "• Completeness: ${assessment['CompletenessScore']?.toStringAsFixed(1) ?? 'N/A'}% (whole phrase)\n\n";
+          "• Completeness: ${completeness.toStringAsFixed(1)}% (whole phrase)\n\n";
 
-      final words = assessment['Words'] as List?;
       if (words != null && words.isNotEmpty) {
         feedback += "🔍 Detailed feedback:\n";
         for (var word in words.cast<Map>()) {
@@ -321,11 +264,6 @@ class TranscriptionService {
           }
         }
       }
-
-      final accuracy = (assessment['AccuracyScore'] as num?)?.toDouble() ?? 0.0;
-      final fluency = (assessment['FluencyScore'] as num?)?.toDouble() ?? 0.0;
-      final completeness =
-          (assessment['CompletenessScore'] as num?)?.toDouble() ?? 0.0;
 
       if (accuracy < 60 || fluency < 60 || completeness < 60) {
         feedback += "\nKeep practicing! Focus on each sound.\n";

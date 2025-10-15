@@ -1,8 +1,6 @@
 // Updated chat_message.dart to handle both feedback types
 import 'package:flutter/material.dart';
 import '../models/message.dart';
-import 'azure_feedback_display.dart';
-import 'azure_fluency_display.dart'; // NEW import
 
 class ChatMessage extends StatelessWidget {
   final Message message;
@@ -24,59 +22,14 @@ class ChatMessage extends StatelessWidget {
       return _buildTypingIndicator();
     }
 
-    // Handle Azure Pronunciation Feedback
-    if (message.type == MessageType.azureFeedback) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 16.0),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            CircleAvatar(
-              backgroundColor: Colors.blue.shade100,
-              backgroundImage: AssetImage('images/talkready_bot.png'),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: AzureFeedbackDisplay(
-                feedback: message.metadata ?? {},
-                originalText: message.metadata?['originalText'],
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    // Handle Azure Fluency Feedback (NEW)
-    if (message.type == MessageType.azureFluency) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 16.0),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            CircleAvatar(
-              backgroundColor: Colors.blue.shade100,
-              backgroundImage: AssetImage('images/talkready_bot.png'),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: AzureFluencyDisplay(
-                feedback: message.metadata ?? {},
-                originalText: message.metadata?['originalText'],
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
     // Regular message display
     return Padding(
       padding: const EdgeInsets.only(bottom: 16.0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment:
-            message.isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment: message.isUser
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
         children: [
           if (!message.isUser) ...[
             CircleAvatar(
@@ -110,17 +63,26 @@ class ChatMessage extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (message.isUser && message.audioPath != null && onPlayAudio != null) ...[
+                if (message.isUser &&
+                    message.audioPath != null &&
+                    onPlayAudio != null) ...[
                   const SizedBox(height: 8),
                   GestureDetector(
                     onTap: isPlaying ? null : onPlayAudio,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
                       decoration: BoxDecoration(
-                        color: isPlaying ? Colors.grey.shade300 : Colors.blue.shade50,
+                        color: isPlaying
+                            ? Colors.grey.shade300
+                            : Colors.blue.shade50,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: isPlaying ? Colors.grey.shade400 : Colors.blue.shade300,
+                          color: isPlaying
+                              ? Colors.grey.shade400
+                              : Colors.blue.shade300,
                         ),
                       ),
                       child: Row(
@@ -129,14 +91,18 @@ class ChatMessage extends StatelessWidget {
                           Icon(
                             isPlaying ? Icons.volume_up : Icons.play_arrow,
                             size: 16,
-                            color: isPlaying ? Colors.grey.shade600 : Colors.blue.shade700,
+                            color: isPlaying
+                                ? Colors.grey.shade600
+                                : Colors.blue.shade700,
                           ),
                           const SizedBox(width: 6),
                           Text(
                             isPlaying ? 'Playing...' : 'Play recording',
                             style: TextStyle(
                               fontSize: 12,
-                              color: isPlaying ? Colors.grey.shade600 : Colors.blue.shade700,
+                              color: isPlaying
+                                  ? Colors.grey.shade600
+                                  : Colors.blue.shade700,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
