@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -42,14 +44,15 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
   bool isJoining = false;
 
   // Add navigation state
-  int _selectedIndex = 2; // My Classes is index 2
+  int _selectedIndex = 2;
+  StreamSubscription<QuerySnapshot>? _enrollmentListener;
 
-  @override
-  void initState() {
-    super.initState();
-    _initializeAnimations();
-    fetchClasses();
-  }
+ @override
+void initState() {
+  super.initState();
+  _initializeAnimations();
+  _setupRealtimeListener();
+}
 
   void _initializeAnimations() {
     _fadeController = AnimationController(
@@ -72,14 +75,46 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
     _fadeController.forward();
     _slideController.forward();
   }
+// Setup real-time listener for enrollments
+void _setupRealtimeListener() {
+  final User? currentUser = _auth.currentUser;
 
-  @override
-  void dispose() {
-    _fadeController.dispose();
-    _slideController.dispose();
-    _classCodeController.dispose();
-    super.dispose();
+  if (currentUser == null) {
+    setState(() {
+      loading = false;
+      error = "Please log in to see your enrolled classes.";
+      enrolledClasses = [];
+    });
+    return;
   }
+
+  // Listen to changes in enrollments collection
+  _enrollmentListener = _firestore
+      .collection('enrollments')
+      .where('studentId', isEqualTo: currentUser.uid)
+      .snapshots()
+      .listen(
+    (snapshot) {
+      _logger.i("Real-time update: ${snapshot.docs.length} enrollments detected");
+      fetchClasses();
+    },
+    onError: (error) {
+      _logger.e("Error in real-time listener: $error");
+    },
+  );
+}
+@override
+void dispose() {
+  _enrollmentListener?.cancel(); // Cancel the listener
+  _fadeController.dispose();
+  _slideController.dispose();
+  _classCodeController.dispose();
+  super.dispose();
+}
+
+Future<void> _handleRefresh() async {
+  await fetchClasses();
+}
 
   // Update the navigation method
   void _onItemTapped(int index) {
@@ -483,8 +518,12 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
               opacity: _fadeAnimation,
               child: SlideTransition(
                 position: _slideAnimation,
+                child: RefreshIndicator(
+                onRefresh: _handleRefresh,
+                color: const Color(0xFF0077B3),
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.all(16.0),
+                  physics: const AlwaysScrollableScrollPhysics(),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -778,6 +817,7 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
                 ),
               ),
             ),
+          ),
           ),
         ],
       ),

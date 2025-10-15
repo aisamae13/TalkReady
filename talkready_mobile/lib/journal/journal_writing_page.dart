@@ -43,8 +43,11 @@ class _JournalWritingPageState extends State<JournalWritingPage> {
   String? selectedPrompt;
   bool _isSaving = false;
   Timer? _autoSaveTimer;
+  Timer? _debounceTimer;
   DateTime? _lastAutoSave;
   bool _hasUnsavedChanges = false;
+  bool _isAutoSaving = false;
+  String? _currentDraftId;
 
   bool _isBold = false;
   bool _isItalic = false;
@@ -66,27 +69,20 @@ class _JournalWritingPageState extends State<JournalWritingPage> {
     "Five things you would like to do more",
   ];
 
-  @override
+ @override
   void initState() {
     super.initState();
     logger.i('Received mood: ${widget.mood}, tagId: ${widget.tagId}, tagName: ${widget.tagName}');
 
     if (widget.initialEntry != null) {
       _loadEntry(widget.initialEntry!);
+      _currentDraftId = widget.initialEntry!.id;
     }
 
     _updateCounts();
-    _textController.addListener(_updateCounts);
     _textController.addListener(_onContentChanged);
     _titleController.addListener(_onContentChanged);
 
-    _focusNode.addListener(() {
-      if (_focusNode.hasFocus) {
-        logger.i('TextField gained focus');
-      }
-    });
-
-    // Start auto-save timer
     _startAutoSave();
   }
 
@@ -115,72 +111,35 @@ class _JournalWritingPageState extends State<JournalWritingPage> {
     }
   }
 
-  void _onContentChanged() {
-    if (!_hasUnsavedChanges) {
-      setState(() {
-        _hasUnsavedChanges = true;
-      });
-    }
-  }
+void _onContentChanged() {
+    setState(() {
+      _hasUnsavedChanges = true;
+      _updateCounts();
+    });
 
-  void _startAutoSave() {
-    _autoSaveTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
-      if (_hasUnsavedChanges &&
-          (_textController.text.isNotEmpty || _titleController.text.isNotEmpty)) {
-        _saveAsDraft();
+    // Debounce auto-save: Only save after user stops typing for 3 seconds
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(seconds: 3), () {
+      if (_hasUnsavedChanges && !_isSaving && !_isAutoSaving) {
+        _performAutoSave();
       }
     });
   }
-Future<void> _saveToFirestore(JournalEntry entry, {bool isDraft = false}) async {
-  try {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      throw Exception('User not authenticated');
-    }
 
-    final docData = {
-      'userId': user.uid,
-      'mood': entry.mood,
-      'tagId': entry.tagId,
-      'tagName': entry.tagName,
-      'title': entry.title,
-      'content': entry.content,
-      'timestamp': entry.timestamp,
-      'isFavorite': entry.isFavorite,
-      'isDraft': isDraft,
-      'lastModified': entry.lastModified,
-      'templateId': entry.templateId,
-    };
-
-    if (widget.initialEntry != null) {
-      // Update existing entry
-      final querySnapshot = await FirebaseFirestore.instance
-          .collection('journal_entries')
-          .where('userId', isEqualTo: user.uid)
-          .where('timestamp', isEqualTo: widget.initialEntry!.timestamp)
-          .limit(1)
-          .get();
-
-      if (querySnapshot.docs.isNotEmpty) {
-        await querySnapshot.docs.first.reference.update(docData);
-        logger.i('Updated entry in Firestore');
-      } else {
-        await FirebaseFirestore.instance.collection('journal_entries').add(docData);
-        logger.i('Created new entry in Firestore (original not found)');
+void _startAutoSave() {
+    _autoSaveTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      if (_hasUnsavedChanges &&
+          !_isSaving &&
+          !_isAutoSaving &&
+          (_textController.text.isNotEmpty || _titleController.text.isNotEmpty)) {
+        _performAutoSave();
       }
-    } else {
-      // Create new entry
-      await FirebaseFirestore.instance.collection('journal_entries').add(docData);
-      logger.i('Saved new entry to Firestore');
-    }
-  } catch (e) {
-    logger.e('Error saving to Firestore: $e');
-    rethrow;
+    });
   }
-}
-  @override
+@override
   void dispose() {
     _autoSaveTimer?.cancel();
+    _debounceTimer?.cancel();
     _titleController.dispose();
     _textController.dispose();
     _focusNode.dispose();
@@ -195,11 +154,6 @@ Future<void> _saveToFirestore(JournalEntry entry, {bool isDraft = false}) async 
     });
   }
 
-  String _getMonthName(int month) {
-    const months = ['', 'January', 'February', 'March', 'April', 'May', 'June',
-                    'July', 'August', 'September', 'October', 'November', 'December'];
-    return months[month];
-  }
 
   Future<bool> _confirmOverwrite() async {
     if (_textController.text.isEmpty) return true;
@@ -227,8 +181,9 @@ Future<void> _saveToFirestore(JournalEntry entry, {bool isDraft = false}) async 
         false;
   }
 
-  void _showErrorSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
+void _showErrorSnackBar(String message) {
+  if (!mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
           children: [
@@ -261,63 +216,90 @@ Future<void> _saveToFirestore(JournalEntry entry, {bool isDraft = false}) async 
     );
   }
 
-  Future<void> _saveAsDraft() async {
-  final contentText = _textController.text.trim();
-  if (contentText.isEmpty && _titleController.text.trim().isEmpty) {
-    return;
+ Future<void> _performAutoSave() async {
+    if (_isAutoSaving || _isSaving) return;
+
+    final contentText = _textController.text.trim();
+    final titleText = _titleController.text.trim();
+
+    if (contentText.isEmpty && titleText.isEmpty) return;
+
+    setState(() => _isAutoSaving = true);
+
+    try {
+      final draftEntry = _createDraftEntry(isDraft: true);
+
+      if (_currentDraftId != null) {
+        await _updateFirestoreDraft(_currentDraftId!, draftEntry);
+
+        final index = widget.entries.indexWhere((e) => e.id == _currentDraftId);
+        if (index != -1) {
+          widget.updateEntry(index, draftEntry.copyWith(id: _currentDraftId));
+        }
+      } else {
+        final docRef = await _createFirestoreDraft(draftEntry);
+        _currentDraftId = docRef.id;
+        widget.addEntry(draftEntry.copyWith(id: docRef.id));
+      }
+
+      setState(() {
+        _hasUnsavedChanges = false;
+        _lastAutoSave = DateTime.now();
+      });
+
+      logger.i('Auto-save successful at ${_lastAutoSave}');
+    } catch (e) {
+      logger.e('Auto-save failed: $e');
+    } finally {
+      setState(() => _isAutoSaving = false);
+    }
   }
 
-  setState(() => _isSaving = true);
-
-  try {
-    final draftEntry = JournalEntry(
+  JournalEntry _createDraftEntry({required bool isDraft}) {
+    return JournalEntry(
       mood: widget.mood ?? 'Not specified',
       tagId: widget.tagId,
       tagName: widget.tagName ?? 'Not specified',
       title: _titleController.text.trim(),
       content: jsonEncode({
-        'text': contentText,
+        'text': _textController.text.trim(),
         'isBold': _isBold,
         'isItalic': _isItalic,
         'isUnderline': _isUnderline,
         'alignment': _alignment,
         'templateResponses': _templateResponses,
       }),
-      timestamp: DateTime.now(),
+      timestamp: widget.initialEntry?.timestamp ?? DateTime.now(),
       isFavorite: widget.initialEntry?.isFavorite ?? false,
-      isDraft: true,
+      isDraft: isDraft,
       lastModified: DateTime.now(),
       templateId: _selectedTemplate?.id,
     );
-
-    // Save to Firestore
-    await _saveToFirestore(draftEntry, isDraft: true);
-
-    if (widget.initialEntry != null && widget.initialEntry!.isDraft) {
-      final index = widget.entries.indexWhere((e) => e == widget.initialEntry);
-      if (index != -1) {
-        widget.updateEntry(index, draftEntry);
-      }
-    } else {
-      widget.addEntry(draftEntry);
-    }
-
-    setState(() {
-      _hasUnsavedChanges = false;
-      _lastAutoSave = DateTime.now();
-    });
-
-    logger.i('Draft saved successfully to Firestore');
-  } catch (e) {
-    logger.e('Error saving draft: $e');
-    _showErrorSnackBar('Failed to save draft: ${e.toString()}');
-  } finally {
-    setState(() => _isSaving = false);
   }
-}
+
+  Future<DocumentReference> _createFirestoreDraft(JournalEntry entry) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw Exception('User not authenticated');
+
+    return await FirebaseFirestore.instance.collection('journals').add({
+      'userId': user.uid,
+      ...entry.toMap(),
+    });
+  }
+
+  Future<void> _updateFirestoreDraft(String draftId, JournalEntry entry) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw Exception('User not authenticated');
+
+    await FirebaseFirestore.instance.collection('journals').doc(draftId).update({
+      'userId': user.uid,
+      ...entry.toMap(),
+    });
+  }
 
  Future<void> _saveEntry({bool isDraft = false}) async {
   final contentText = _textController.text.trim();
+
   if (contentText.isEmpty) {
     _showErrorSnackBar('Content is required');
     return;
@@ -326,70 +308,83 @@ Future<void> _saveToFirestore(JournalEntry entry, {bool isDraft = false}) async 
   setState(() => _isSaving = true);
 
   try {
-    final newEntry = JournalEntry(
-      mood: widget.mood ?? 'Not specified',
-      tagId: widget.tagId,
-      tagName: widget.tagName ?? 'Not specified',
-      title: _titleController.text.trim(),
-      content: jsonEncode({
-        'text': contentText,
-        'isBold': _isBold,
-        'isItalic': _isItalic,
-        'isUnderline': _isUnderline,
-        'alignment': _alignment,
-        'templateResponses': _templateResponses,
-      }),
-      timestamp: DateTime.now(),
-      isFavorite: widget.initialEntry?.isFavorite ?? false,
-      isDraft: isDraft,
-      lastModified: DateTime.now(),
-      templateId: _selectedTemplate?.id,
-    );
+    final newEntry = _createDraftEntry(isDraft: isDraft);
 
-    // Save to Firestore
-    await _saveToFirestore(newEntry, isDraft: isDraft);
+    if (_currentDraftId != null) {
+      await _updateFirestoreDraft(_currentDraftId!, newEntry);
 
-    if (widget.initialEntry != null) {
-      final index = widget.entries.indexWhere((e) => e == widget.initialEntry);
+      final index = widget.entries.indexWhere((e) => e.id == _currentDraftId);
       if (index != -1) {
-        widget.updateEntry(index, newEntry);
-        logger.i('Updated journal entry at index: $index');
-      } else {
-        widget.addEntry(newEntry);
-        logger.i('Added new entry as initial entry not found');
+        widget.updateEntry(index, newEntry.copyWith(id: _currentDraftId));
       }
     } else {
-      widget.addEntry(newEntry);
-      logger.i('Added new journal entry');
+      final docRef = await _createFirestoreDraft(newEntry);
+      widget.addEntry(newEntry.copyWith(id: docRef.id));
     }
 
     setState(() {
-      _titleController.clear();
-      _textController.clear();
-      _isBold = false;
-      _isItalic = false;
-      _isUnderline = false;
-      _alignment = 'left';
       _hasUnsavedChanges = false;
-      _selectedTemplate = null;
-      _templateResponses.clear();
+      _lastAutoSave = DateTime.now();
     });
 
-    _showSuccessSnackBar(isDraft ? 'Draft saved to Firestore' : 'Entry saved to Firestore');
+    _showSuccessSnackBar(
+      isDraft ? 'Draft saved successfully' : 'Entry saved successfully'
+    );
 
-    // Small delay before navigation
     await Future.delayed(const Duration(milliseconds: 500));
 
-    if (mounted) {
+    if (mounted && !isDraft) {
       Navigator.pushNamed(context, '/journal-entries');
     }
   } catch (e) {
     logger.e('Error saving entry: $e');
-    _showErrorSnackBar('Failed to save entry: ${e.toString()}');
+    _showErrorSnackBar('Failed to save: ${e.toString()}');
   } finally {
     setState(() => _isSaving = false);
   }
 }
+
+String _getAutoSaveStatus() {
+    if (_isAutoSaving) {
+      return 'Saving...';
+    } else if (_lastAutoSave != null) {
+      final now = DateTime.now();
+      final diff = now.difference(_lastAutoSave!);
+
+      if (diff.inSeconds < 60) {
+        return 'Saved just now';
+      } else if (diff.inMinutes < 60) {
+        return 'Saved ${diff.inMinutes}m ago';
+      } else {
+        return 'Saved ${diff.inHours}h ago';
+      }
+    } else if (_hasUnsavedChanges) {
+      return 'Unsaved changes';
+    }
+    return '';
+  }
+
+  Color _getAutoSaveStatusColor() {
+    if (_isAutoSaving) {
+      return const Color(0xFF0078D4);
+    } else if (_lastAutoSave != null && !_hasUnsavedChanges) {
+      return const Color(0xFF10893E);
+    } else if (_hasUnsavedChanges) {
+      return const Color(0xFFFFC83D);
+    }
+    return const Color(0xFF8A8886);
+  }
+
+  IconData _getAutoSaveIcon() {
+    if (_isAutoSaving) {
+      return Icons.cloud_sync;
+    } else if (_lastAutoSave != null && !_hasUnsavedChanges) {
+      return Icons.cloud_done;
+    } else if (_hasUnsavedChanges) {
+      return Icons.cloud_queue;
+    }
+    return Icons.cloud_off;
+  }
   void _navigateToEntries() {
     logger.i('Navigating to JournalEntriesPage');
     Navigator.pushNamed(context, '/journal-entries');
@@ -694,7 +689,7 @@ Widget build(BuildContext context) {
           builder: (context) => AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             title: const Text('Unsaved Changes', style: TextStyle(fontWeight: FontWeight.w600)),
-            content: const Text('Would you like to save your changes as a draft?'),
+            content: const Text('Your changes will be saved as a draft.'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, 'discard'),
@@ -712,17 +707,19 @@ Widget build(BuildContext context) {
           ),
         );
 
-        if (shouldSave == 'save') {
-          await _saveAsDraft();
-        } else if (shouldSave != 'discard') {
-          return;
-        }
-      }
+       if (shouldSave == 'save') {
+  await _performAutoSave(); // Auto-save as draft
+} else if (shouldSave != 'discard') {
+  return;
+}
+          }
 
-      if (widget.initialEntry != null) {
-        Navigator.pushNamed(context, '/journal-entries');
-      } else {
-        Navigator.pushNamed(context, '/mood-selection');
+      if (mounted) {
+        if (widget.initialEntry != null) {
+          Navigator.pushNamed(context, '/journal-entries');
+        } else {
+          Navigator.pushNamed(context, '/mood-selection');
+        }
       }
     },
     child: Scaffold(
@@ -751,47 +748,39 @@ Widget build(BuildContext context) {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        StreamBuilder(
-                          stream: Stream.periodic(const Duration(seconds: 1)),
-                          builder: (context, snapshot) {
-                            final now = DateTime.now();
-                            return Text(
-                              '${now.day} ${_getMonthName(now.month)} ${now.year}',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF252423),
-                              ),
+                        const Text(
+                          'Write Entry',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF252423),
+                          ),
+                        ),
+                        Builder(
+                          builder: (context) {
+                            final statusText = _getAutoSaveStatus();
+                            if (statusText.isEmpty) return const SizedBox.shrink();
+
+                            return Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  _getAutoSaveIcon(),
+                                  size: 12,
+                                  color: _getAutoSaveStatusColor(),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  statusText,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: _getAutoSaveStatusColor(),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
                             );
                           },
-                        ),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            if (widget.mood != null || widget.tagName != null)
-                              Text(
-                                '${widget.mood ?? "None"} • ${widget.tagName ?? "None"}',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Color(0xFF605E5C),
-                                ),
-                              ),
-                            if (_lastAutoSave != null) ...[
-                              const Text(' • ', style: TextStyle(fontSize: 12, color: Color(0xFF8A8886))),
-                              const Icon(Icons.cloud_done, size: 12, color: Color(0xFF10893E)),
-                              const SizedBox(width: 4),
-                              const Text(
-                                'Saved',
-                                style: TextStyle(fontSize: 11, color: Color(0xFF10893E)),
-                              ),
-                            ] else if (_hasUnsavedChanges) ...[
-                              const Text(' • ', style: TextStyle(fontSize: 12, color: Color(0xFF8A8886))),
-                              const Text(
-                                'Unsaved',
-                                style: TextStyle(fontSize: 11, color: Color(0xFFFFC83D)),
-                              ),
-                            ],
-                          ],
                         ),
                       ],
                     ),
@@ -1043,27 +1032,6 @@ Widget build(BuildContext context) {
                           'View Entries',
                           style: TextStyle(
                             color: Color(0xFF0078D4),
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: _isSaving ? null : () => _saveEntry(isDraft: true),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          side: const BorderSide(color: Color(0xFFFFC83D)),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                        child: const Text(
-                          'Save Draft',
-                          style: TextStyle(
-                            color: Color(0xFFFFC83D),
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
                           ),

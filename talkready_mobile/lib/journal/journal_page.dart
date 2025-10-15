@@ -236,6 +236,9 @@ class _JournalPageState extends State<JournalPage> {
           content: entry.content,
           timestamp: entry.timestamp,
           isFavorite: entry.isFavorite,
+          isDraft: entry.isDraft,
+          lastModified: entry.lastModified,
+          templateId: entry.templateId,
         ));
       });
       logger.i('Added journal entry with ID: ${docRef.id}, mood: ${entry.mood}, tagId: ${entry.tagId}, tagName: ${entry.tagName}');
@@ -281,6 +284,9 @@ class _JournalPageState extends State<JournalPage> {
           content: updatedEntry.content,
           timestamp: updatedEntry.timestamp,
           isFavorite: updatedEntry.isFavorite,
+          isDraft: entry.isDraft,
+          lastModified: entry.lastModified,
+          templateId: entry.templateId,
         );
       });
       logger.i('Updated journal entry with ID: ${entry.id}');

@@ -99,17 +99,19 @@ class _MoodSelectionPageState extends State<MoodSelectionPage> {
   ];
 
   late Future<String> _userNameFuture;
+
 IconData _getIconFromCodePoint(int codePoint) {
+  // Map of all available icon codePoints to their IconData
   final iconMap = {
-    0xe87c: Icons.favorite_outline,
-    0xe83a: Icons.star_outline,
-    0xe9c5: Icons.wb_sunny_outlined,
-    0xe9c3: Icons.nightlight_outlined,
-    0xe532: Icons.fitness_center,
-    0xe40a: Icons.palette_outlined,
-    0xe405: Icons.music_note_outlined,
-    0xe3b0: Icons.camera_alt_outlined,
-    0xe892: Icons.label_outline,
+    Icons.favorite_outline.codePoint: Icons.favorite_outline,
+    Icons.star_outline.codePoint: Icons.star_outline,
+    Icons.wb_sunny_outlined.codePoint: Icons.wb_sunny_outlined,
+    Icons.nightlight_outlined.codePoint: Icons.nightlight_outlined,
+    Icons.fitness_center.codePoint: Icons.fitness_center,
+    Icons.palette_outlined.codePoint: Icons.palette_outlined,
+    Icons.music_note_outlined.codePoint: Icons.music_note_outlined,
+    Icons.camera_alt_outlined.codePoint: Icons.camera_alt_outlined,
+    Icons.label_outline.codePoint: Icons.label_outline,
   };
   return iconMap[codePoint] ?? Icons.label_outline;
 }
@@ -468,29 +470,31 @@ Future<void> _addCustomTag(String name, IconData icon) async {
                   ),
                   const SizedBox(height: 20),
                   TextField(
-                    onChanged: (value) => customTagName = value,
-                    decoration: InputDecoration(
-                      labelText: 'Tag name',
-                      labelStyle: const TextStyle(color: Color(0xFF605E5C)),
-                      filled: true,
-                      fillColor: const Color(0xFFFAF9F8),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(4),
-                        borderSide: const BorderSide(color: Color(0xFF8A8886)),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(4),
-                        borderSide: const BorderSide(
-                          color: Color(0xFF0078D4),
-                          width: 2,
-                        ),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 16,
+                  onChanged: (value) => customTagName = value,
+                  maxLength: 20,
+                  decoration: InputDecoration(
+                    labelText: 'Tag name',
+                    labelStyle: const TextStyle(color: Color(0xFF605E5C)),
+                    filled: true,
+                    fillColor: const Color(0xFFFAF9F8),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(4),
+                      borderSide: const BorderSide(color: Color(0xFF8A8886)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(4),
+                      borderSide: const BorderSide(
+                        color: Color(0xFF0078D4),
+                        width: 2,
                       ),
                     ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 16,
+                    ),
+                    counterText: '',
                   ),
+                ),
                   const SizedBox(height: 20),
                   const Text(
                     'Select icon',
@@ -505,7 +509,7 @@ Future<void> _addCustomTag(String name, IconData icon) async {
                     spacing: 8,
                     runSpacing: 8,
                     children: availableIcons.map((icon) {
-                      final isSelected = selectedIcon == icon;
+                      final isSelected = selectedIcon.codePoint == icon.codePoint;
                       return InkWell(
                         onTap: () => setDialogState(() => selectedIcon = icon),
                         borderRadius: BorderRadius.circular(4),
@@ -557,29 +561,72 @@ Future<void> _addCustomTag(String name, IconData icon) async {
                       ),
                       const SizedBox(width: 8),
                       ElevatedButton(
-                        onPressed: () {
-                          if (customTagName?.isNotEmpty == true) {
-                            _addCustomTag(customTagName!, selectedIcon);
-                            Navigator.pop(context);
-                          }
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF0078D4),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 10,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          elevation: 0,
+                      onPressed: () {
+                        final trimmedName = customTagName?.trim();
+
+                        // Validation
+                        if (trimmedName == null || trimmedName.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Row(
+                                children: [
+                                  const Icon(Icons.error_outline, color: Colors.white),
+                                  const SizedBox(width: 12),
+                                  const Expanded(child: Text('Tag name cannot be empty')),
+                                ],
+                              ),
+                              backgroundColor: const Color(0xFFE74856),
+                              duration: const Duration(seconds: 2),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                          return;
+                        }
+
+                        // Check for duplicate names
+                        final isDuplicate = tags.any(
+                          (tag) => (tag['name'] as String).toLowerCase() ==
+                                  trimmedName.toLowerCase()
+                        );
+
+                        if (isDuplicate) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Row(
+                                children: [
+                                  const Icon(Icons.error_outline, color: Colors.white),
+                                  const SizedBox(width: 12),
+                                  const Expanded(child: Text('A tag with this name already exists')),
+                                ],
+                              ),
+                              backgroundColor: const Color(0xFFE74856),
+                              duration: const Duration(seconds: 2),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                          return;
+                        }
+
+                        _addCustomTag(trimmedName, selectedIcon);
+                        Navigator.pop(context);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0078D4),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 10,
                         ),
-                        child: const Text(
-                          'Create',
-                          style: TextStyle(fontWeight: FontWeight.w600),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
                         ),
+                        elevation: 0,
                       ),
+                      child: const Text(
+                        'Create',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
                     ],
                   ),
                 ],
@@ -633,30 +680,32 @@ Future<void> _addCustomTag(String name, IconData icon) async {
                   ),
                   const SizedBox(height: 20),
                   TextField(
-                    controller: TextEditingController(text: currentName),
-                    onChanged: (value) => newTagName = value,
-                    decoration: InputDecoration(
-                      labelText: 'Tag name',
-                      labelStyle: const TextStyle(color: Color(0xFF605E5C)),
-                      filled: true,
-                      fillColor: const Color(0xFFFAF9F8),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(4),
-                        borderSide: const BorderSide(color: Color(0xFF8A8886)),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(4),
-                        borderSide: const BorderSide(
-                          color: Color(0xFF0078D4),
-                          width: 2,
-                        ),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 16,
+                  controller: TextEditingController(text: currentName),
+                  onChanged: (value) => newTagName = value,
+                  maxLength: 20,
+                  decoration: InputDecoration(
+                    labelText: 'Tag name',
+                    labelStyle: const TextStyle(color: Color(0xFF605E5C)),
+                    filled: true,
+                    fillColor: const Color(0xFFFAF9F8),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(4),
+                      borderSide: const BorderSide(color: Color(0xFF8A8886)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(4),
+                      borderSide: const BorderSide(
+                        color: Color(0xFF0078D4),
+                        width: 2,
                       ),
                     ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 16,
+                    ),
+                    counterText: '',
                   ),
+                ),
                   const SizedBox(height: 20),
                   const Text(
                     'Select icon',
@@ -671,7 +720,7 @@ Future<void> _addCustomTag(String name, IconData icon) async {
                     spacing: 8,
                     runSpacing: 8,
                     children: availableIcons.map((icon) {
-                      final isSelected = selectedIcon == icon;
+                      final isSelected = selectedIcon.codePoint == icon.codePoint;
                       return InkWell(
                         onTap: () => setDialogState(() => selectedIcon = icon),
                         borderRadius: BorderRadius.circular(4),
@@ -722,35 +771,74 @@ Future<void> _addCustomTag(String name, IconData icon) async {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      ElevatedButton(
-                        onPressed: () {
-                          if (newTagName?.isNotEmpty == true) {
-                            _editCustomTag(
-                              tagId,
-                              currentName,
-                              newTagName!,
-                              selectedIcon,
-                            );
-                            Navigator.pop(context);
-                          }
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF0078D4),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 10,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          elevation: 0,
+                     ElevatedButton(
+                      onPressed: () {
+                        final trimmedName = newTagName?.trim();
+
+                        // Validation
+                        if (trimmedName == null || trimmedName.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Row(
+                                children: [
+                                  const Icon(Icons.error_outline, color: Colors.white),
+                                  const SizedBox(width: 12),
+                                  const Expanded(child: Text('Tag name cannot be empty')),
+                                ],
+                              ),
+                              backgroundColor: const Color(0xFFE74856),
+                              duration: const Duration(seconds: 2),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                          return;
+                        }
+
+                        // Check for duplicate names (excluding current tag)
+                        final isDuplicate = tags.any(
+                          (tag) => tag['id'] != tagId &&
+                                  (tag['name'] as String).toLowerCase() ==
+                                  trimmedName.toLowerCase()
+                        );
+
+                        if (isDuplicate) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Row(
+                                children: [
+                                  const Icon(Icons.error_outline, color: Colors.white),
+                                  const SizedBox(width: 12),
+                                  const Expanded(child: Text('A tag with this name already exists')),
+                                ],
+                              ),
+                              backgroundColor: const Color(0xFFE74856),
+                              duration: const Duration(seconds: 2),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                          return;
+                        }
+
+                        _editCustomTag(tagId, currentName, trimmedName, selectedIcon);
+                        Navigator.pop(context);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0078D4),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 10,
                         ),
-                        child: const Text(
-                          'Save',
-                          style: TextStyle(fontWeight: FontWeight.w600),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
                         ),
+                        elevation: 0,
                       ),
+                      child: const Text(
+                        'Save',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
                     ],
                   ),
                 ],
