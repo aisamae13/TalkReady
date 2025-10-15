@@ -19,7 +19,7 @@ import 'onboarding_screen.dart';
 import 'all_notifications_page.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_service.dart';
-import 'package:showcaseview/showcaseview.dart';
+import '../session/session_aware_widget.dart'; // Add this import
 
 //For Courses Page
 import '../lessons/lesson_activity_log_page.dart';
@@ -188,27 +188,26 @@ class MyApp extends StatelessWidget {
 
       '/certificate': (context) => const CertificateClaimPage(),
 
-      // Add individual lesson routes
-      '/enrolled-classes': (context) =>
-          const MyEnrolledClasses(), // Add this line
-      '/progress': (context) =>
-          const ProgressTrackerPage(), // Add this if not present
+      '/enrolled-classes': (context) => const MyEnrolledClasses(),
+      '/progress': (context) => const ProgressTrackerPage(),
       '/trainer-dashboard': (context) => const TrainerDashboard(),
       '/chooseUserType': (context) => const ChooseUserTypePage(),
       '/notifications': (context) => const AllNotificationsPage(),
-      // ClassManager static routes
       '/trainer/classes': (context) => const MyClassesPage(),
       '/trainer/classes/create': (context) => const CreateClassForm(),
-      // Reports static routes
       '/trainer/reports': (context) => const TrainerReportsPage(),
-      // Announcement static routes
-      '/trainer/announcements/create': (context) =>
-          const CreateAnnouncementPage(),
-      // Content static routes
+      '/trainer/announcements/create': (context) => const CreateAnnouncementPage(),
       '/trainer/content/upload': (context) => const QuickUploadMaterialPage(),
-      '/trainer/content/select-class': (context) =>
-          const SelectClassForContentPage(),
+      '/trainer/content/select-class': (context) => const SelectClassForContentPage(),
     };
+
+    // Define public routes that don't need session management
+    final List<String> publicRoutes = [
+      '/splash',
+      '/',
+      '/login',
+      '/forgot-password',
+    ];
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
@@ -218,10 +217,27 @@ class MyApp extends StatelessWidget {
         visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
       initialRoute: '/splash',
-      routes: staticRoutes,
       onGenerateRoute: (settings) {
         final args = settings.arguments;
         final String? routeName = settings.name;
+
+        // Handle static routes with session management
+        if (routeName != null && staticRoutes.containsKey(routeName)) {
+          final WidgetBuilder? builder = staticRoutes[routeName];
+          if (builder != null) {
+            // Check if route is public or requires authentication
+            if (publicRoutes.contains(routeName)) {
+              // Public route - no session management
+              return MaterialPageRoute(builder: builder, settings: settings);
+            } else {
+              // Protected route - wrap with SessionAwareWidget
+              return MaterialPageRoute(
+                builder: (context) => SessionAwareWidget(child: builder(context)),
+                settings: settings,
+              );
+            }
+          }
+        }
 
         if (routeName != null) {
           final uri = Uri.parse(routeName);
@@ -233,7 +249,9 @@ class MyApp extends StatelessWidget {
               segments[2] == 'assessments') {
             final classId = segments[1];
             return MaterialPageRoute(
-              builder: (_) => ClassAssessmentsListPage(classId: classId),
+              builder: (_) => SessionAwareWidget(
+                child: ClassAssessmentsListPage(classId: classId),
+              ),
               settings: settings,
             );
           }
@@ -244,8 +262,9 @@ class MyApp extends StatelessWidget {
               segments[2] == 'results') {
             final assessmentId = segments[1];
             return MaterialPageRoute(
-              builder: (_) =>
-                  ViewAssessmentResultsPage(assessmentId: assessmentId),
+              builder: (_) => SessionAwareWidget(
+                child: ViewAssessmentResultsPage(assessmentId: assessmentId),
+              ),
               settings: settings,
             );
           }
@@ -257,7 +276,9 @@ class MyApp extends StatelessWidget {
               segments[3] == 'edit') {
             final assessmentId = segments[2];
             return MaterialPageRoute(
-              builder: (_) => EditAssessmentPage(assessmentId: assessmentId),
+              builder: (_) => SessionAwareWidget(
+                child: EditAssessmentPage(assessmentId: assessmentId),
+              ),
               settings: settings,
             );
           }
@@ -269,7 +290,9 @@ class MyApp extends StatelessWidget {
               segments[3] == 'edit') {
             final classId = segments[2];
             return MaterialPageRoute(
-              builder: (_) => EditClassPage(classId: classId),
+              builder: (_) => SessionAwareWidget(
+                child: EditClassPage(classId: classId),
+              ),
               settings: settings,
             );
           }
@@ -280,7 +303,9 @@ class MyApp extends StatelessWidget {
               segments[3] == 'students') {
             final classId = segments[2];
             return MaterialPageRoute(
-              builder: (_) => ManageClassStudentsPage(classId: classId),
+              builder: (_) => SessionAwareWidget(
+                child: ManageClassStudentsPage(classId: classId),
+              ),
               settings: settings,
             );
           }
@@ -291,7 +316,9 @@ class MyApp extends StatelessWidget {
               segments[3] == 'content') {
             final classId = segments[2];
             return MaterialPageRoute(
-              builder: (_) => ManageClassContentPage(classId: classId),
+              builder: (_) => SessionAwareWidget(
+                child: ManageClassContentPage(classId: classId),
+              ),
               settings: settings,
             );
           }
@@ -302,8 +329,9 @@ class MyApp extends StatelessWidget {
               segments[3] == 'review') {
             final submissionId = segments[2];
             return MaterialPageRoute(
-              builder: (_) =>
-                  ReviewSpeakingSubmissionPage(submissionId: submissionId),
+              builder: (_) => SessionAwareWidget(
+                child: ReviewSpeakingSubmissionPage(submissionId: submissionId),
+              ),
               settings: settings,
             );
           }
@@ -320,8 +348,10 @@ class MyApp extends StatelessWidget {
           case '/onboarding':
             final onboardingArgs = args as Map<String, dynamic>?;
             return MaterialPageRoute(
-              builder: (_) => OnboardingScreen(
-                userType: onboardingArgs?['userType'] as String?,
+              builder: (_) => SessionAwareWidget(
+                child: OnboardingScreen(
+                  userType: onboardingArgs?['userType'] as String?,
+                ),
               ),
               settings: settings,
             );
@@ -331,11 +361,13 @@ class MyApp extends StatelessWidget {
             final args = settings.arguments as Map<String, dynamic>?;
             if (args != null) {
               return MaterialPageRoute(
-                builder: (_) => LessonActivityLogPage(
-                  lessonId: args['lessonId'] as String,
-                  lessonData: args['lessonData'] as Map<String, dynamic>,
-                  activityLog:
-                      args['activityLog'] as List<Map<String, dynamic>>,
+                builder: (_) => SessionAwareWidget(
+                  child: LessonActivityLogPage(
+                    lessonId: args['lessonId'] as String,
+                    lessonData: args['lessonData'] as Map<String, dynamic>,
+                    activityLog:
+                        args['activityLog'] as List<Map<String, dynamic>>,
+                  ),
                 ),
               );
             }
@@ -344,14 +376,13 @@ class MyApp extends StatelessWidget {
           case '/lesson1_1_activity':
             final args = settings.arguments as Map<String, dynamic>?;
             if (args != null && args.containsKey('lessonData')) {
-              // Check for the new argument
               return MaterialPageRoute(
-                builder: (_) => Lesson1_1ActivityPage(
-                  lessonId: args['lessonId'] as String,
-                  lessonTitle: args['lessonTitle'] as String,
-                  lessonData:
-                      args['lessonData']
-                          as Map<String, dynamic>, // Pass the data
+                builder: (_) => SessionAwareWidget(
+                  child: Lesson1_1ActivityPage(
+                    lessonId: args['lessonId'] as String,
+                    lessonTitle: args['lessonTitle'] as String,
+                    lessonData: args['lessonData'] as Map<String, dynamic>,
+                  ),
                 ),
               );
             }
@@ -360,10 +391,12 @@ class MyApp extends StatelessWidget {
             final args = settings.arguments as Map<String, dynamic>?;
             if (args != null && args.containsKey('lessonData')) {
               return MaterialPageRoute(
-                builder: (_) => Lesson1_2ActivityPage(
-                  lessonId: args['lessonId'] as String,
-                  lessonTitle: args['lessonTitle'] as String,
-                  lessonData: args['lessonData'] as Map<String, dynamic>,
+                builder: (_) => SessionAwareWidget(
+                  child: Lesson1_2ActivityPage(
+                    lessonId: args['lessonId'] as String,
+                    lessonTitle: args['lessonTitle'] as String,
+                    lessonData: args['lessonData'] as Map<String, dynamic>,
+                  ),
                 ),
               );
             }
@@ -373,10 +406,12 @@ class MyApp extends StatelessWidget {
             final args = settings.arguments as Map<String, dynamic>?;
             if (args != null && args.containsKey('lessonData')) {
               return MaterialPageRoute(
-                builder: (_) => Lesson1_3ActivityPage(
-                  lessonId: args['lessonId'] as String,
-                  lessonTitle: args['lessonTitle'] as String,
-                  lessonData: args['lessonData'] as Map<String, dynamic>,
+                builder: (_) => SessionAwareWidget(
+                  child: Lesson1_3ActivityPage(
+                    lessonId: args['lessonId'] as String,
+                    lessonTitle: args['lessonTitle'] as String,
+                    lessonData: args['lessonData'] as Map<String, dynamic>,
+                  ),
                 ),
               );
             }
@@ -386,12 +421,13 @@ class MyApp extends StatelessWidget {
             final args = settings.arguments as Map<String, dynamic>?;
             if (args != null && args.containsKey('lessonData')) {
               return MaterialPageRoute(
-                builder: (_) => Lesson2_1ActivityPage(
-                  lessonId: args['lessonId'] as String,
-                  lessonTitle: args['lessonTitle'] as String,
-                  lessonData: args['lessonData'] as Map<String, dynamic>,
-                  // Receive and pass the attemptNumber
-                  attemptNumber: args['attemptNumber'] as int,
+                builder: (_) => SessionAwareWidget(
+                  child: Lesson2_1ActivityPage(
+                    lessonId: args['lessonId'] as String,
+                    lessonTitle: args['lessonTitle'] as String,
+                    lessonData: args['lessonData'] as Map<String, dynamic>,
+                    attemptNumber: args['attemptNumber'] as int,
+                  ),
                 ),
               );
             }
@@ -401,11 +437,13 @@ class MyApp extends StatelessWidget {
             final args = settings.arguments as Map<String, dynamic>?;
             if (args != null && args.containsKey('lessonData')) {
               return MaterialPageRoute(
-                builder: (_) => Lesson2_2ActivityPage(
-                  lessonId: args['lessonId'] as String,
-                  lessonTitle: args['lessonTitle'] as String,
-                  lessonData: args['lessonData'] as Map<String, dynamic>,
-                  attemptNumber: args['attemptNumber'] as int,
+                builder: (_) => SessionAwareWidget(
+                  child: Lesson2_2ActivityPage(
+                    lessonId: args['lessonId'] as String,
+                    lessonTitle: args['lessonTitle'] as String,
+                    lessonData: args['lessonData'] as Map<String, dynamic>,
+                    attemptNumber: args['attemptNumber'] as int,
+                  ),
                 ),
               );
             }
@@ -415,11 +453,13 @@ class MyApp extends StatelessWidget {
             final args = settings.arguments as Map<String, dynamic>?;
             if (args != null && args.containsKey('lessonData')) {
               return MaterialPageRoute(
-                builder: (_) => Lesson2_3ActivityPage(
-                  lessonId: args['lessonId'] as String,
-                  lessonTitle: args['lessonTitle'] as String,
-                  lessonData: args['lessonData'] as Map<String, dynamic>,
-                  attemptNumber: args['attemptNumber'] as int,
+                builder: (_) => SessionAwareWidget(
+                  child: Lesson2_3ActivityPage(
+                    lessonId: args['lessonId'] as String,
+                    lessonTitle: args['lessonTitle'] as String,
+                    lessonData: args['lessonData'] as Map<String, dynamic>,
+                    attemptNumber: args['attemptNumber'] as int,
+                  ),
                 ),
               );
             }
@@ -429,11 +469,13 @@ class MyApp extends StatelessWidget {
             final args = settings.arguments as Map<String, dynamic>?;
             if (args != null && args.containsKey('lessonData')) {
               return MaterialPageRoute(
-                builder: (_) => Lesson3_1ActivityPage(
-                  lessonId: args['lessonId'] as String,
-                  lessonTitle: args['lessonTitle'] as String,
-                  lessonData: args['lessonData'] as Map<String, dynamic>,
-                  attemptNumber: args['attemptNumber'] as int,
+                builder: (_) => SessionAwareWidget(
+                  child: Lesson3_1ActivityPage(
+                    lessonId: args['lessonId'] as String,
+                    lessonTitle: args['lessonTitle'] as String,
+                    lessonData: args['lessonData'] as Map<String, dynamic>,
+                    attemptNumber: args['attemptNumber'] as int,
+                  ),
                 ),
               );
             }
@@ -443,11 +485,13 @@ class MyApp extends StatelessWidget {
             final args = settings.arguments as Map<String, dynamic>?;
             if (args != null && args.containsKey('lessonData')) {
               return MaterialPageRoute(
-                builder: (_) => Lesson3_2ActivityPage(
-                  lessonId: args['lessonId'] as String,
-                  lessonTitle: args['lessonTitle'] as String,
-                  lessonData: args['lessonData'] as Map<String, dynamic>,
-                  attemptNumber: args['attemptNumber'] as int,
+                builder: (_) => SessionAwareWidget(
+                  child: Lesson3_2ActivityPage(
+                    lessonId: args['lessonId'] as String,
+                    lessonTitle: args['lessonTitle'] as String,
+                    lessonData: args['lessonData'] as Map<String, dynamic>,
+                    attemptNumber: args['attemptNumber'] as int,
+                  ),
                 ),
               );
             }
@@ -457,11 +501,13 @@ class MyApp extends StatelessWidget {
             final args = settings.arguments as Map<String, dynamic>?;
             if (args != null && args.containsKey('lessonData')) {
               return MaterialPageRoute(
-                builder: (_) => Lesson4_1ActivityPage(
-                  lessonId: args['lessonId'] as String,
-                  lessonTitle: args['lessonTitle'] as String,
-                  lessonData: args['lessonData'] as Map<String, dynamic>,
-                  attemptNumber: args['attemptNumber'] as int,
+                builder: (_) => SessionAwareWidget(
+                  child: Lesson4_1ActivityPage(
+                    lessonId: args['lessonId'] as String,
+                    lessonTitle: args['lessonTitle'] as String,
+                    lessonData: args['lessonData'] as Map<String, dynamic>,
+                    attemptNumber: args['attemptNumber'] as int,
+                  ),
                 ),
               );
             }
@@ -471,11 +517,13 @@ class MyApp extends StatelessWidget {
             final args = settings.arguments as Map<String, dynamic>?;
             if (args != null && args.containsKey('lessonData')) {
               return MaterialPageRoute(
-                builder: (_) => Lesson4_2ActivityPage(
-                  lessonId: args['lessonId'] as String,
-                  lessonTitle: args['lessonTitle'] as String,
-                  lessonData: args['lessonData'] as Map<String, dynamic>,
-                  attemptNumber: args['attemptNumber'] as int,
+                builder: (_) => SessionAwareWidget(
+                  child: Lesson4_2ActivityPage(
+                    lessonId: args['lessonId'] as String,
+                    lessonTitle: args['lessonTitle'] as String,
+                    lessonData: args['lessonData'] as Map<String, dynamic>,
+                    attemptNumber: args['attemptNumber'] as int,
+                  ),
                 ),
               );
             }
@@ -485,11 +533,13 @@ class MyApp extends StatelessWidget {
             final args = settings.arguments as Map<String, dynamic>?;
             if (args != null && args.containsKey('lessonData')) {
               return MaterialPageRoute(
-                builder: (_) => Lesson5_1ActivityPage(
-                  lessonId: args['lessonId'] as String,
-                  lessonTitle: args['lessonTitle'] as String,
-                  lessonData: args['lessonData'] as Map<String, dynamic>,
-                  attemptNumber: args['attemptNumber'] as int,
+                builder: (_) => SessionAwareWidget(
+                  child: Lesson5_1ActivityPage(
+                    lessonId: args['lessonId'] as String,
+                    lessonTitle: args['lessonTitle'] as String,
+                    lessonData: args['lessonData'] as Map<String, dynamic>,
+                    attemptNumber: args['attemptNumber'] as int,
+                  ),
                 ),
               );
             }
@@ -499,11 +549,13 @@ class MyApp extends StatelessWidget {
             final args = settings.arguments as Map<String, dynamic>?;
             if (args != null && args.containsKey('lessonData')) {
               return MaterialPageRoute(
-                builder: (_) => Lesson5_2ActivityPage(
-                  lessonId: args['lessonId'] as String,
-                  lessonTitle: args['lessonTitle'] as String,
-                  lessonData: args['lessonData'] as Map<String, dynamic>,
-                  attemptNumber: args['attemptNumber'] as int,
+                builder: (_) => SessionAwareWidget(
+                  child: Lesson5_2ActivityPage(
+                    lessonId: args['lessonId'] as String,
+                    lessonTitle: args['lessonTitle'] as String,
+                    lessonData: args['lessonData'] as Map<String, dynamic>,
+                    attemptNumber: args['attemptNumber'] as int,
+                  ),
                 ),
               );
             }
@@ -512,14 +564,18 @@ class MyApp extends StatelessWidget {
           case '/lesson6_simulation':
             final args = settings.arguments as Map<String, dynamic>?;
             return MaterialPageRoute(
-              builder: (_) => const Lesson6SimulationPage(),
+              builder: (_) => const SessionAwareWidget(
+                child: Lesson6SimulationPage(),
+              ),
               settings: settings,
             );
 
           case '/lesson6_activity_log':
             final args = settings.arguments as Map<String, dynamic>?;
             return MaterialPageRoute(
-              builder: (_) => const Lesson6ActivityLogPage(),
+              builder: (_) => const SessionAwareWidget(
+                child: Lesson6ActivityLogPage(),
+              ),
               settings: settings,
             );
 
@@ -527,8 +583,9 @@ class MyApp extends StatelessWidget {
             final certificateData = args as Map<String, dynamic>?;
             if (certificateData != null) {
               return MaterialPageRoute(
-                builder: (_) =>
-                    CertificateViewPage(certificateData: certificateData),
+                builder: (_) => SessionAwareWidget(
+                  child: CertificateViewPage(certificateData: certificateData),
+                ),
                 settings: settings,
               );
             }
@@ -538,8 +595,9 @@ class MyApp extends StatelessWidget {
             final assessmentId = settings.arguments as String?;
             if (assessmentId != null) {
               return MaterialPageRoute(
-                builder: (_) =>
-                    ModuleAssessmentPage(assessmentId: assessmentId),
+                builder: (_) => SessionAwareWidget(
+                  child: ModuleAssessmentPage(assessmentId: assessmentId),
+                ),
               );
             }
             break;
@@ -551,16 +609,12 @@ class MyApp extends StatelessWidget {
                     : null) ??
                 (args is String ? args : null);
             return MaterialPageRoute(
-              builder: (_) => CreateAssessmentPage(initialClassId: classId),
+              builder: (_) => SessionAwareWidget(
+                child: CreateAssessmentPage(initialClassId: classId),
+              ),
               settings: settings,
             );
           default:
-            if (routeName != null && staticRoutes.containsKey(routeName)) {
-              final WidgetBuilder? builder = staticRoutes[routeName];
-              if (builder != null) {
-                return MaterialPageRoute(builder: builder, settings: settings);
-              }
-            }
             return MaterialPageRoute(
               builder: (_) => Scaffold(
                 body: Center(
@@ -571,6 +625,7 @@ class MyApp extends StatelessWidget {
               ),
             );
         }
+        return null;
       },
     );
   }

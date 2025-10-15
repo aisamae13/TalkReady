@@ -18,6 +18,7 @@ import 'package:talkready_mobile/settings/comm_guide.dart';
 import 'package:talkready_mobile/settings/faq_support.dart';
 import 'package:talkready_mobile/settings/terms_of_service.dart';
 import 'package:animations/animations.dart';
+import '../session/device_session_manager.dart';
 
 // Helper function for creating a slide page route for bottom navigation
 Route _createSlidingPageRoute({
@@ -430,23 +431,49 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
-  Future<void> _signOut(BuildContext context) async {
-    try {
-      _logger.i('Attempting to sign out user');
-      await FirebaseAuth.instance.signOut();
-      _logger.i('User signed out successfully');
-      if (mounted) {
-        Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
-      }
-    } catch (e) {
-      _logger.e('Error signing out: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error signing out: $e')));
-      }
+ Future<void> _signOut(BuildContext context) async {
+  try {
+    _logger.i('Attempting to sign out user');
+
+    final user = FirebaseAuth.instance.currentUser;
+
+    // End device session
+    if (user != null) {
+      await DeviceSessionManager().endSession(user.uid);
+      _logger.i('Device session ended for user: ${user.uid}');
+    }
+
+    // Sign out from Firebase
+    await FirebaseAuth.instance.signOut();
+    _logger.i('User signed out successfully');
+
+    if (mounted) {
+      Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+
+      // Show logout confirmation
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white),
+              SizedBox(width: 12),
+              Text('Logged out successfully'),
+            ],
+          ),
+          backgroundColor: Color(0xFF00568D),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  } catch (e) {
+    _logger.e('Error signing out: $e');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error signing out: $e')),
+      );
     }
   }
+}
 
   Future<void> _deleteAccount(BuildContext context) async {
     try {
@@ -583,6 +610,10 @@ class _ProfilePageState extends State<ProfilePage> {
             _logger.i('Firestore data deleted for UID: ${user.uid}');
             await user.delete();
             _logger.i('User account deleted successfully');
+
+            await DeviceSessionManager().endSession(user.uid);
+            _logger.i('Device session ended after account deletion');
+
             if (mounted) {
               Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
             }

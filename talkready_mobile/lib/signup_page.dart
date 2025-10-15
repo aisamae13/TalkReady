@@ -34,6 +34,8 @@ class _SignUpPageState extends State<SignUpPage> {
   int _emailResendCooldown = 30;
   Timer? _emailResendTimer;
 
+  bool _agreedToTerms = false;
+
   final _inputDecorationTheme = InputDecorationTheme(
     border: const OutlineInputBorder(),
     focusedBorder: const OutlineInputBorder(
@@ -681,39 +683,122 @@ void _startEmailResendCooldown([StateSetter? setDialogState]) {
                         _buildPasswordRequirements(_passwordController.text),
                       const SizedBox(height: 10),
                       TextField(
-                        controller: _confirmPasswordController,
-                        obscureText: !_showPassword,
-                        decoration: InputDecoration(
-                          labelText: 'Confirm Password',
-                          suffixIcon: IconButton(
-                            icon: Icon(_showPassword ? Icons.visibility : Icons.visibility_off),
-                            onPressed: () {
-                              setState(() {
-                                _showPassword = !_showPassword;
-                              });
-                            },
-                          ),
+                      controller: _confirmPasswordController,
+                      obscureText: !_showPassword,
+                      decoration: InputDecoration(
+                        labelText: 'Confirm Password',
+                        suffixIcon: IconButton(
+                          icon: Icon(_showPassword ? Icons.visibility : Icons.visibility_off),
+                          onPressed: () {
+                            setState(() {
+                              _showPassword = !_showPassword;
+                            });
+                          },
                         ),
                       ),
-                      const SizedBox(height: 20),
-                      ElevatedButton(
-                        onPressed: () {
-                          if (_emailController.text.isEmpty ||
-                              _passwordController.text.isEmpty ||
-                              _confirmPasswordController.text.isEmpty) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Please fill in all fields')),
-                            );
-                            return;
-                          }
-                          if (!isValidEmail(_emailController.text.trim())) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Please enter a valid email')),
-                            );
-                            return;
-                          }
-                          _signUpWithEmail();
-                        },
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Privacy Policy & User Agreement Checkbox
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey[300]!),
+                        borderRadius: BorderRadius.circular(8),
+                        color: Colors.grey[50],
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Checkbox(
+                            value: _agreedToTerms,
+                            onChanged: (value) {
+                              setState(() {
+                                _agreedToTerms = value ?? false;
+                              });
+                            },
+                            activeColor: const Color(0xFF00568D),
+                          ),
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  _agreedToTerms = !_agreedToTerms;
+                                });
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.only(top: 12.0),
+                                child: RichText(
+                                  text: TextSpan(
+                                    style: TextStyle(color: Colors.grey[700], fontSize: 14),
+                                    children: [
+                                      const TextSpan(text: 'I agree to the '),
+                                      WidgetSpan(
+                                        child: GestureDetector(
+                                          onTap: () {
+                                            _showPrivacyPolicy();
+                                          },
+                                          child: const Text(
+                                            'Privacy Policy',
+                                            style: TextStyle(
+                                              color: Color(0xFF00568D),
+                                              decoration: TextDecoration.underline,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      const TextSpan(text: ' and '),
+                                      WidgetSpan(
+                                        child: GestureDetector(
+                                          onTap: () {
+                                            _showUserAgreement();
+                                          },
+                                          child: const Text(
+                                            'User Agreement',
+                                            style: TextStyle(
+                                              color: Color(0xFF00568D),
+                                              decoration: TextDecoration.underline,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    ElevatedButton(
+                    onPressed: () {
+                      if (_emailController.text.isEmpty ||
+                          _passwordController.text.isEmpty ||
+                          _confirmPasswordController.text.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Please fill in all fields')),
+                        );
+                        return;
+                      }
+                      if (!isValidEmail(_emailController.text.trim())) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Please enter a valid email')),
+                        );
+                        return;
+                      }
+                      if (!_agreedToTerms) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Please agree to the Privacy Policy and User Agreement')),
+                        );
+                        return;
+                      }
+                      _signUpWithEmail();
+                    },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF00568D),
                           foregroundColor: Colors.white,
@@ -850,4 +935,153 @@ void _startEmailResendCooldown([StateSetter? setDialogState]) {
   bool isValidEmail(String email) {
     return RegExp(r'^[\w-]+(\.[\w-]+)*@([\w-]+\.)+[a-zA-Z]{2,7}$').hasMatch(email);
   }
+  void _showPrivacyPolicy() {
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Privacy Policy', style: TextStyle(color: Color(0xFF00568D), fontWeight: FontWeight.bold)),
+      content: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Last Updated: [Date]',
+              style: TextStyle(fontStyle: FontStyle.italic, fontSize: 12),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              '1. Information We Collect',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'We collect information you provide directly to us, including your name, email address, phone number, and any other information you choose to provide.',
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              '2. How We Use Your Information',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'We use the information we collect to:\n'
+              '• Provide, maintain, and improve our services\n'
+              '• Send you technical notices and support messages\n'
+              '• Communicate with you about products, services, and events\n'
+              '• Monitor and analyze trends and usage',
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              '3. Information Sharing',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'We do not share your personal information with third parties except as described in this policy or with your consent.',
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              '4. Data Security',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'We take reasonable measures to help protect your personal information from loss, theft, misuse, and unauthorized access.',
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              '5. Your Rights',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'You have the right to access, update, or delete your personal information at any time through your account settings.',
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close', style: TextStyle(color: Color(0xFF00568D))),
+        ),
+      ],
+    ),
+  );
+}
+
+void _showUserAgreement() {
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('User Agreement', style: TextStyle(color: Color(0xFF00568D), fontWeight: FontWeight.bold)),
+      content: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Last Updated: [Date]',
+              style: TextStyle(fontStyle: FontStyle.italic, fontSize: 12),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              '1. Acceptance of Terms',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'By accessing and using this application, you accept and agree to be bound by the terms and provision of this agreement.',
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              '2. User Responsibilities',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'You agree to:\n'
+              '• Provide accurate and complete information\n'
+              '• Maintain the security of your account\n'
+              '• Not use the service for any illegal purposes\n'
+              '• Respect the intellectual property rights of others',
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              '3. Service Usage',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Our service is provided "as is" without warranties of any kind. We reserve the right to modify or discontinue the service at any time.',
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              '4. Account Termination',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'We reserve the right to terminate or suspend your account if you violate these terms or engage in fraudulent or illegal activities.',
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              '5. Limitation of Liability',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'We shall not be liable for any indirect, incidental, special, consequential, or punitive damages resulting from your use of the service.',
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close', style: TextStyle(color: Color(0xFF00568D))),
+        ),
+      ],
+    ),
+  );
+}
 }

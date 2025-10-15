@@ -12,13 +12,13 @@ import 'package:image_picker/image_picker.dart';
 import 'package:logger/logger.dart';
 import 'package:animations/animations.dart';
 import 'package:shimmer/shimmer.dart';
-
 import '../settings/about_us.dart';
 import '../settings/comm_guide.dart';
 import '../settings/faq_support.dart';
 import '../settings/terms_of_service.dart';
-import '../custom_animated_bottom_bar.dart'; // <-- Import AnimatedBottomNavBar
-import 'TrainerDashboard.dart'; // <-- Import TrainerDashboard
+import '../custom_animated_bottom_bar.dart';
+import 'TrainerDashboard.dart';
+import '../session/device_session_manager.dart';
 
 class TrainerProfile extends StatefulWidget {
   const TrainerProfile({super.key});
@@ -383,26 +383,52 @@ class _TrainerProfileState extends State<TrainerProfile> {
   }
 
   Future<void> _signOut(BuildContext context) async {
-    try {
-      _logger.i('Attempting to sign out user');
-      await FirebaseAuth.instance.signOut();
-      _logger.i('User signed out successfully');
-      if (mounted) {
-        Navigator.pushNamedAndRemoveUntil(
-          context,
-          '/',
-          (route) => false,
-        );
-      }
-    } catch (e) {
-      _logger.e('Error signing out: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error signing out: $e')),
-        );
-      }
+  try {
+    _logger.i('Attempting to sign out user');
+
+    final user = FirebaseAuth.instance.currentUser;
+
+    // End device session
+    if (user != null) {
+      await DeviceSessionManager().endSession(user.uid);
+      _logger.i('Device session ended for user: ${user.uid}');
+    }
+
+    // Sign out from Firebase
+    await FirebaseAuth.instance.signOut();
+    _logger.i('User signed out successfully');
+
+    if (mounted) {
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        '/',
+        (route) => false,
+      );
+
+      // Show logout confirmation
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white),
+              SizedBox(width: 12),
+              Text('Logged out successfully'),
+            ],
+          ),
+          backgroundColor: Color(0xFF00568D),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  } catch (e) {
+    _logger.e('Error signing out: $e');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error signing out: $e')),
+      );
     }
   }
+}
 
   Future<void> _deleteAccount(BuildContext context) async {
     // Show initial info dialog before typed confirmation
@@ -734,6 +760,9 @@ class _TrainerProfileState extends State<TrainerProfile> {
         failedOperations.add('Firebase Auth deletion (${e.toString()})');
       }
 
+      await DeviceSessionManager().endSession(user.uid);
+      _logger.i('Device session ended after account deletion');
+
       if (mounted) {
         Navigator.pop(context); // close loading
         Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
@@ -768,86 +797,6 @@ class _TrainerProfileState extends State<TrainerProfile> {
     }
   }
 
-  /// Confirm and delete the Firebase Auth account (tries email/password re-auth)
-  Future<void> _confirmAndDeleteAuthAccount(BuildContext context, User user) async {
-    // Confirm dialog
-    final shouldDeleteAuth = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Authentication Account'),
-        content: const Text(
-            'Do you also want to permanently delete your authentication account (this will remove your ability to sign in)? This is irreversible.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Delete Account'),
-          ),
-        ],
-      ),
-    );
-
-    if (shouldDeleteAuth != true) return;
-
-    // Check provider(s) and attempt re-auth with password if available
-    final providers = user.providerData.map((p) => p.providerId).toList();
-
-    if (providers.contains('password')) {
-      // prompt for password
-      final password = await _showPasswordDialog(context);
-      if (password == null || password.isEmpty) {
-        throw Exception('Password required for re-authentication.');
-      }
-
-      try {
-        final cred = EmailAuthProvider.credential(email: user.email!, password: password);
-        await user.reauthenticateWithCredential(cred);
-      } on FirebaseAuthException catch (e) {
-        if (e.code == 'wrong-password') {
-          throw Exception('Incorrect password.');
-        } else if (e.code == 'user-mismatch' || e.code == 'user-not-found' || e.code == 'invalid-credential') {
-          throw Exception('Reauthentication failed: ${e.message ?? e.code}');
-        } else if (e.code == 'requires-recent-login') {
-          throw Exception('Reauthentication required. Please sign in again and try deleting.');
-        } else {
-          throw Exception('Reauthentication error: ${e.message ?? e.code}');
-        }
-      }
-    } else {
-      // Non-password provider (Google/Facebook). Recommend user re-sign in through provider.
-      await showDialog<void>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Re-authentication Required'),
-          content: const Text(
-              'Your account uses a third-party sign-in (Google/Facebook). Please sign in again with that provider in the app to proceed with account deletion.'),
-          actions: [
-            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('OK')),
-          ],
-        ),
-      );
-      throw Exception('Third-party provider requires re-authentication via provider sign-in.');
-    }
-
-    // If we reach here, re-auth succeeded — attempt delete
-    try {
-      await user.delete();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Authentication account deleted successfully.'), backgroundColor: Colors.green),
-        );
-      }
-    } on FirebaseAuthException catch (e) {
-      if (e.code == 'requires-recent-login') {
-        throw Exception('Recent authentication required. Please re-login and try again.');
-      } else {
-        throw Exception('Failed to delete auth account: ${e.message ?? e.code}');
-      }
-    } catch (e) {
-      throw Exception('Failed to delete auth account: ${e.toString()}');
-    }
-  }
 
   Widget _buildCustomDialog({
     required BuildContext context,
@@ -1613,29 +1562,6 @@ class _TrainerProfileState extends State<TrainerProfile> {
           contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
         ),
         style: const TextStyle(fontSize: 16),
-      ),
-    );
-  }
-
-  Future<String?> _showPasswordDialog(BuildContext context) async {
-    TextEditingController passwordController = TextEditingController();
-
-    return showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Enter Password'),
-        content: TextField(
-          controller: passwordController,
-          obscureText: true,
-          decoration: const InputDecoration(
-            labelText: 'Password',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, null), child: const Text('Cancel')),
-          ElevatedButton(onPressed: () => Navigator.pop(context, passwordController.text), child: const Text('Confirm')),
-        ],
       ),
     );
   }
