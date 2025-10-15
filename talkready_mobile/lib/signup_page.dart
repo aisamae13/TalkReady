@@ -935,153 +935,261 @@ void _startEmailResendCooldown([StateSetter? setDialogState]) {
   bool isValidEmail(String email) {
     return RegExp(r'^[\w-]+(\.[\w-]+)*@([\w-]+\.)+[a-zA-Z]{2,7}$').hasMatch(email);
   }
-  void _showPrivacyPolicy() {
-  showDialog(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('Privacy Policy', style: TextStyle(color: Color(0xFF00568D), fontWeight: FontWeight.bold)),
-      content: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Last Updated: [Date]',
-              style: TextStyle(fontStyle: FontStyle.italic, fontSize: 12),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              '1. Information We Collect',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'We collect information you provide directly to us, including your name, email address, phone number, and any other information you choose to provide.',
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              '2. How We Use Your Information',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'We use the information we collect to:\n'
-              '• Provide, maintain, and improve our services\n'
-              '• Send you technical notices and support messages\n'
-              '• Communicate with you about products, services, and events\n'
-              '• Monitor and analyze trends and usage',
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              '3. Information Sharing',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'We do not share your personal information with third parties except as described in this policy or with your consent.',
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              '4. Data Security',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'We take reasonable measures to help protect your personal information from loss, theft, misuse, and unauthorized access.',
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              '5. Your Rights',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'You have the right to access, update, or delete your personal information at any time through your account settings.',
-            ),
-          ],
+void _showPrivacyPolicy() {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        elevation: 16,
+        child: Container(
+          constraints: const BoxConstraints(maxHeight: 600, maxWidth: 500),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Header with gradient background
+              Container(
+                padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Color(0xFF00568D), Color(0xFF0077B6)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(20),
+                    topRight: Radius.circular(20),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.privacy_tip_outlined, color: Colors.white, size: 28),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'Privacy Policy',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 22,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: () => Navigator.pop(context),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
+                ),
+              ),
+              // Content
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Text(
+                          'Last Updated: October 16, 2025',
+                          style: TextStyle(
+                            fontStyle: FontStyle.italic,
+                            fontSize: 12,
+                            color: Color(0xFF00568D),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      _buildPolicySection(
+                        '1. Information We Collect',
+                        'We collect information you provide directly to us, including your name, email address, phone number, and any other information you choose to provide.',
+                      ),
+                      _buildPolicySection(
+                        '2. How We Use Your Information',
+                        'We use the information we collect to:\n'
+                        '• Provide, maintain, and improve our services\n'
+                        '• Send you technical notices and support messages\n'
+                        '• Communicate with you about products, services, and events\n'
+                        '• Monitor and analyze trends and usage',
+                      ),
+                      _buildPolicySection(
+                        '3. Information Sharing',
+                        'We do not share your personal information with third parties except as described in this policy or with your consent.',
+                      ),
+                      _buildPolicySection(
+                        '4. Data Security',
+                        'We take reasonable measures to help protect your personal information from loss, theft, misuse, and unauthorized access.',
+                      ),
+                      _buildPolicySection(
+                        '5. Your Rights',
+                        'You have the right to access, update, or delete your personal information at any time through your account settings.',
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Close', style: TextStyle(color: Color(0xFF00568D))),
-        ),
-      ],
-    ),
-  );
-}
+    );
+  }
+
 
 void _showUserAgreement() {
-  showDialog(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('User Agreement', style: TextStyle(color: Color(0xFF00568D), fontWeight: FontWeight.bold)),
-      content: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Last Updated: [Date]',
-              style: TextStyle(fontStyle: FontStyle.italic, fontSize: 12),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              '1. Acceptance of Terms',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'By accessing and using this application, you accept and agree to be bound by the terms and provision of this agreement.',
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              '2. User Responsibilities',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'You agree to:\n'
-              '• Provide accurate and complete information\n'
-              '• Maintain the security of your account\n'
-              '• Not use the service for any illegal purposes\n'
-              '• Respect the intellectual property rights of others',
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              '3. Service Usage',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Our service is provided "as is" without warranties of any kind. We reserve the right to modify or discontinue the service at any time.',
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              '4. Account Termination',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'We reserve the right to terminate or suspend your account if you violate these terms or engage in fraudulent or illegal activities.',
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              '5. Limitation of Liability',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'We shall not be liable for any indirect, incidental, special, consequential, or punitive damages resulting from your use of the service.',
-            ),
-          ],
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        elevation: 16,
+        child: Container(
+          constraints: const BoxConstraints(maxHeight: 600, maxWidth: 500),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Header with gradient background
+              Container(
+                padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Color(0xFF00568D), Color(0xFF0077B6)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(20),
+                    topRight: Radius.circular(20),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.description_outlined, color: Colors.white, size: 28),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'User Agreement',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 22,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: () => Navigator.pop(context),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
+                ),
+              ),
+              // Content
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Text(
+                          'Last Updated: October 16, 2025',
+                          style: TextStyle(
+                            fontStyle: FontStyle.italic,
+                            fontSize: 12,
+                            color: Color(0xFF00568D),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      _buildPolicySection(
+                        '1. Acceptance of Terms',
+                        'By accessing and using this application, you accept and agree to be bound by the terms and provision of this agreement.',
+                      ),
+                      _buildPolicySection(
+                        '2. User Responsibilities',
+                        'You agree to:\n'
+                        '• Provide accurate and complete information\n'
+                        '• Maintain the security of your account\n'
+                        '• Not use the service for any illegal purposes\n'
+                        '• Respect the intellectual property rights of others',
+                      ),
+                      _buildPolicySection(
+                        '3. Service Usage',
+                        'Our service is provided "as is" without warranties of any kind. We reserve the right to modify or discontinue the service at any time.',
+                      ),
+                      _buildPolicySection(
+                        '4. Account Termination',
+                        'We reserve the right to terminate or suspend your account if you violate these terms or engage in fraudulent or illegal activities.',
+                      ),
+                      _buildPolicySection(
+                        '5. Limitation of Liability',
+                        'We shall not be liable for any indirect, incidental, special, consequential, or punitive damages resulting from your use of the service.',
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Close', style: TextStyle(color: Color(0xFF00568D))),
-        ),
-      ],
-    ),
-  );
-}
+    );
+  }
+   Widget _buildPolicySection(String title, String content) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+              color: Color(0xFF00568D),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: Text(
+              content,
+              style: const TextStyle(
+                fontSize: 14,
+                height: 1.6,
+                color: Color(0xFF424242),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
