@@ -8,7 +8,6 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:talkready_mobile/firebase_service.dart';
 import 'ClassListItem.dart';
 import 'CreateClassForm.dart';
-import 'ManageClassContent.dart';
 import '../TrainerClassDashboardPage.dart';
 
 // Keep your existing Firebase service functions unchanged as fallback
@@ -81,88 +80,92 @@ class _MyClassesPageState extends State<MyClassesPage>
   late Animation<Offset> _slideAnimation;
 
   @override
-  void initState() {
-    super.initState();
+void initState() {
+  super.initState();
 
-    // Initialize animations
-    _fadeController = AnimationController(
-      duration: const Duration(milliseconds: 800),
-      vsync: this,
-    );
-    _slideController = AnimationController(
-      duration: const Duration(milliseconds: 600),
-      vsync: this,
-    );
+  // Initialize animations
+  _fadeController = AnimationController(
+    duration: const Duration(milliseconds: 800),
+    vsync: this,
+  );
+  _slideController = AnimationController(
+    duration: const Duration(milliseconds: 600),
+    vsync: this,
+  );
 
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
-    );
-    _slideAnimation =
-        Tween<Offset>(begin: const Offset(0, 0.3), end: Offset.zero).animate(
-          CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
-        );
+  _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+    CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
+  );
+  _slideAnimation =
+      Tween<Offset>(begin: const Offset(0, 0.3), end: Offset.zero).animate(
+        CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
+      );
 
-    // Use realtime sync as primary source for logged-in trainers.
-    if (_currentUser != null) {
-      try {
-        // start realtime sync and subscribe to classes stream
-        _firebaseService.startRealtimeSync(trainerId: _currentUser!.uid);
-        _classesSub = _firebaseService.classesStream.listen(
-          (data) {
-            if (!mounted) return;
-            // robust client-side sort fallback (newest first)
-            data.sort((a, b) {
-              DateTime dateA = DateTime.fromMillisecondsSinceEpoch(0);
-              DateTime dateB = DateTime.fromMillisecondsSinceEpoch(0);
-              final ca = a['createdAt'];
-              final cb = b['createdAt'];
-              try {
-                if (ca is Timestamp)
-                  dateA = ca.toDate();
-                else if (ca is DateTime)
-                  dateA = ca;
-              } catch (_) {}
-              try {
-                if (cb is Timestamp)
-                  dateB = cb.toDate();
-                else if (cb is DateTime)
-                  dateB = cb;
-              } catch (_) {}
-              return dateB.compareTo(dateA);
-            });
+  // Use realtime sync as primary source for logged-in trainers.
+  if (_currentUser != null) {
+    try {
+      // start realtime sync and subscribe to classes stream
+      _firebaseService.startRealtimeSync(trainerId: _currentUser.uid);
+      _classesSub = _firebaseService.classesStream.listen(
+        (data) async {  // Make this async
+          if (!mounted) return;
 
-            setState(() {
-              _classes = List.from(data);
-              _filteredClasses = List.from(_classes);
-              _fadeController.forward();
-              _slideController.forward();
-              _error = null;
-              _loading = false;
-            });
-          },
-          onError: (e) {
-            if (mounted) setState(() => _error = "Failed to sync classes: $e");
-          },
-        );
-      } catch (e) {
-        // If realtime setup fails, fall back to one-shot fetch
-        if (mounted) {
-          setState(() {
-            _error = null;
-            _loading = true;
+          // robust client-side sort fallback (newest first)
+          data.sort((a, b) {
+            DateTime dateA = DateTime.fromMillisecondsSinceEpoch(0);
+            DateTime dateB = DateTime.fromMillisecondsSinceEpoch(0);
+            final ca = a['createdAt'];
+            final cb = b['createdAt'];
+            try {
+              if (ca is Timestamp)
+                dateA = ca.toDate();
+              else if (ca is DateTime)
+                dateA = ca;
+            } catch (_) {}
+            try {
+              if (cb is Timestamp)
+                dateB = cb.toDate();
+              else if (cb is DateTime)
+                dateB = cb;
+            } catch (_) {}
+            return dateB.compareTo(dateA);
           });
-          _fetchClasses();
-        }
-      }
-    } else {
-      setState(() {
-        _loading = false;
-        _error = "Please log in to view your classes.";
-      });
-    }
 
-    _searchController.addListener(_filterClasses);
+          // NEW: Enrich with actual student counts
+          await _enrichClassesWithStudentCount(data);
+
+          setState(() {
+            _classes = List.from(data);
+            _filteredClasses = List.from(_classes);
+            _fadeController.forward();
+            _slideController.forward();
+            _error = null;
+            _loading = false;
+          });
+        },
+        onError: (e) {
+          if (mounted) setState(() => _error = "Failed to sync classes: $e");
+        },
+      );
+    } catch (e) {
+      // If realtime setup fails, fall back to one-shot fetch
+      if (mounted) {
+        setState(() {
+          _error = null;
+          _loading = true;
+        });
+        _fetchClasses();
+      }
+    }
+  } else {
+    setState(() {
+      _loading = false;
+      _error = "Please log in to view your classes.";
+    });
   }
+
+  _searchController.addListener(_filterClasses);
+}
 
   @override
   void dispose() {
@@ -175,41 +178,63 @@ class _MyClassesPageState extends State<MyClassesPage>
     _firebaseService.stopRealtimeSync();
     super.dispose();
   }
-
-  // one-shot fetch (fallback) - still useful for refresh or when realtime fails
-  Future<void> _fetchClasses() async {
-    if (_currentUser == null) {
-      setState(() {
-        _error = "Authentication required. Please log in.";
-        _loading = false;
-      });
-      return;
-    }
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+Future<void> _enrichClassesWithStudentCount(List<Map<String, dynamic>> classes) async {
+  // Enrich each class with actual student count from enrollments
+  for (var classData in classes) {
+    final classId = classData['id'];
     try {
-      final classesData = await getTrainerClassesFromService(_currentUser.uid);
-      if (!mounted) return;
-      setState(() {
-        _classes = classesData;
-        _filteredClasses = List.from(_classes);
-        _fadeController.forward();
-        _slideController.forward();
-        _error = null;
-      });
+      final enrollmentCount = await FirebaseFirestore.instance
+          .collection('enrollments')
+          .where('classId', isEqualTo: classId)
+          .get();
+
+      // Override the studentCount with actual enrollment count
+      classData['studentCount'] = enrollmentCount.docs.length;
     } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = "Failed to load classes: ${e.toString()}";
-        _classes = [];
-        _filteredClasses = [];
-      });
-    } finally {
-      if (mounted) setState(() => _loading = false);
+      debugPrint('Error fetching enrollment count for class $classId: $e');
+      // Keep existing studentCount or set to 0
+      classData['studentCount'] = classData['studentCount'] ?? 0;
     }
   }
+}
+  // one-shot fetch (fallback) - still useful for refresh or when realtime fails
+  Future<void> _fetchClasses() async {
+  if (_currentUser == null) {
+    setState(() {
+      _error = "Authentication required. Please log in.";
+      _loading = false;
+    });
+    return;
+  }
+  setState(() {
+    _loading = true;
+    _error = null;
+  });
+  try {
+    final classesData = await getTrainerClassesFromService(_currentUser.uid);
+
+    // NEW: Enrich with actual student counts
+    await _enrichClassesWithStudentCount(classesData);
+
+    if (!mounted) return;
+    setState(() {
+      _classes = classesData;
+      _filteredClasses = List.from(_classes);
+      _fadeController.forward();
+      _slideController.forward();
+      _error = null;
+    });
+  } catch (e) {
+    if (!mounted) return;
+    setState(() {
+      _error = "Failed to load classes: ${e.toString()}";
+      _classes = [];
+      _filteredClasses = [];
+    });
+  } finally {
+    if (mounted) setState(() => _loading = false);
+  }
+}
 
   void _filterClasses() {
     final query = _searchController.text.toLowerCase();

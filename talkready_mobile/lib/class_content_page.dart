@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -239,50 +241,51 @@ static const int _itemsToShow = 4;
   }
 
   Future<void> _fetchClassMembers() async {
-    try {
-      final enrollmentSnapshot = await _firestore
-          .collection('enrollments')
-          .where('classId', isEqualTo: widget.classId)
-          .get();
+  try {
+    final enrollmentSnapshot = await _firestore
+        .collection('enrollments')
+        .where('classId', isEqualTo: widget.classId)
+        .get();
 
-      List<Map<String, dynamic>> members = [];
+    List<Map<String, dynamic>> members = [];
 
-      for (var enrollment in enrollmentSnapshot.docs) {
-        final enrollmentData = enrollment.data();
-        final studentId = enrollmentData['studentId'];
+    for (var enrollment in enrollmentSnapshot.docs) {
+      final enrollmentData = enrollment.data();
+      final studentId = enrollmentData['studentId'];
 
-        try {
-          final userDoc = await _firestore
-              .collection('users')
-              .doc(studentId)
-              .get();
+      try {
+        final userDoc = await _firestore
+            .collection('users')
+            .doc(studentId)
+            .get();
 
-          if (userDoc.exists) {
-            final userData = userDoc.data()!;
-            members.add({
+        if (userDoc.exists) {
+          final userData = userDoc.data()!;
+          members.add({
             'id': studentId,
             'displayName':
                 '${userData['firstName'] ?? ''} ${userData['lastName'] ?? ''}'.trim().isNotEmpty
                     ? '${userData['firstName'] ?? ''} ${userData['lastName'] ?? ''}'.trim()
                     : userData['displayName'] ?? 'Unnamed Member',
             'email': userData['email'] ?? '',
+            'profilePicBase64': userData['profilePicBase64'] as String?, // Add profile pic
           });
-          }
-        } catch (e) {
-          _logger.w("Error fetching user data for $studentId: $e");
         }
+      } catch (e) {
+        _logger.w("Error fetching user data for $studentId: $e");
       }
-
-      setState(() {
-        classMembers = members;
-      });
-    } catch (e) {
-      _logger.e("Error fetching class members: $e");
-      setState(() {
-        classMembers = [];
-      });
     }
+
+    setState(() {
+      classMembers = members;
+    });
+  } catch (e) {
+    _logger.e("Error fetching class members: $e");
+    setState(() {
+      classMembers = [];
+    });
   }
+}
 
   Future<void> _fetchTrainerInfo(String trainerId) async {
     try {
@@ -1198,6 +1201,9 @@ Widget _buildClassMembersSection() {
         : Column(
             children: [
               ...itemsToDisplay.map((member) {
+                final profilePicBase64 = member['profilePicBase64'] as String?;
+                final displayName = member['displayName'] ?? 'Unknown Member';
+
                 return Container(
                   margin: const EdgeInsets.only(bottom: 8),
                   padding: const EdgeInsets.all(12),
@@ -1208,15 +1214,32 @@ Widget _buildClassMembersSection() {
                   ),
                   child: Row(
                     children: [
-                      const FaIcon(
-                        FontAwesomeIcons.userCircle,
-                        color: Color(0xFF0077B3),
-                        size: 20,
-                      ),
+                      // Profile picture or default avatar
+                      profilePicBase64 != null
+                          ? CircleAvatar(
+                              radius: 20,
+                              backgroundImage: MemoryImage(
+                                base64Decode(profilePicBase64),
+                              ),
+                            )
+                          : CircleAvatar(
+                              radius: 20,
+                              backgroundColor: const Color(0xFF0077B3).withOpacity(0.1),
+                              child: Text(
+                                displayName.isNotEmpty
+                                    ? displayName[0].toUpperCase()
+                                    : '?',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF0077B3),
+                                  fontSize: 16,
+                                ),
+                              ),
+                            ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          member['displayName'] ?? 'Unknown Member',
+                          displayName,
                           style: const TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w500,

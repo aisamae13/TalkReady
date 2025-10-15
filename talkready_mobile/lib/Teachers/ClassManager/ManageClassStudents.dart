@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -31,6 +33,7 @@ class EnrolledStudent {
   final String studentName;
   final String studentEmail;
   final Timestamp enrolledAt;
+  final String? profilePicBase64;
 
   EnrolledStudent({
     required this.id,
@@ -38,6 +41,7 @@ class EnrolledStudent {
     required this.studentName,
     required this.studentEmail,
     required this.enrolledAt,
+    this.profilePicBase64,
   });
 
   factory EnrolledStudent.fromFirestore(DocumentSnapshot doc) {
@@ -48,23 +52,48 @@ class EnrolledStudent {
       studentName: data['studentName'] ?? 'N/A',
       studentEmail: data['studentEmail'] ?? 'N/A',
       enrolledAt: data['enrolledAt'] ?? Timestamp.now(),
+      profilePicBase64: data['profilePicBase64'] as String?,
     );
   }
 }
+
 
 class UserSearchResult {
   final String uid;
   final String? displayName;
   final String? email;
+  final String? profilePicBase64;
 
-  UserSearchResult({required this.uid, this.displayName, this.email});
+  UserSearchResult({
+    required this.uid,
+    this.displayName,
+    this.email,
+    this.profilePicBase64,
+  });
 
   factory UserSearchResult.fromFirestore(DocumentSnapshot doc) {
     Map data = doc.data() as Map<String, dynamic>;
+
+    // Priority: firstName + lastName, then displayName, then fallback
+    String name = '';
+    final firstName = data['firstName']?.toString().trim() ?? '';
+    final lastName = data['lastName']?.toString().trim() ?? '';
+
+    if (firstName.isNotEmpty || lastName.isNotEmpty) {
+      name = '$firstName $lastName'.trim();
+    } else {
+      name = data['displayName']?.toString().trim() ?? '';
+    }
+
+    if (name.isEmpty) {
+      name = 'Unnamed User';
+    }
+
     return UserSearchResult(
       uid: doc.id,
-      displayName: data['displayName'] ?? data['firstName'] ?? 'Unnamed User',
+      displayName: name,
       email: data['email'] ?? '',
+      profilePicBase64: data['profilePicBase64'] as String?,
     );
   }
 }
@@ -81,19 +110,69 @@ Future<List<EnrolledStudent>> fetchEnrolledStudentsFromService(String classId) a
       .collection('enrollments')
       .where('classId', isEqualTo: classId)
       .get();
-  return snapshot.docs.map((doc) => EnrolledStudent.fromFirestore(doc)).toList();
+
+  List<EnrolledStudent> students = [];
+
+  for (var doc in snapshot.docs) {
+    Map data = doc.data();
+    String studentId = data['studentId'] ?? '';
+
+    // Fetch user profile to get profile pic
+    String? profilePicBase64;
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(studentId)
+          .get();
+
+      if (userDoc.exists) {
+        profilePicBase64 = userDoc.data()?['profilePicBase64'] as String?;
+      }
+    } catch (e) {
+      debugPrint('Could not fetch profile pic for student $studentId: $e');
+    }
+
+    students.add(EnrolledStudent(
+      id: doc.id,
+      studentId: studentId,
+      studentName: data['studentName'] ?? 'N/A',
+      studentEmail: data['studentEmail'] ?? 'N/A',
+      enrolledAt: data['enrolledAt'] ?? Timestamp.now(),
+      profilePicBase64: profilePicBase64,
+    ));
+  }
+
+  return students;
 }
 
 Future<List<UserSearchResult>> searchUsersByEmailFromService(String email) async {
   final snapshot = await FirebaseFirestore.instance
       .collection('users')
-      .where('email', isEqualTo: email.trim())
+      .where('email', isEqualTo: email.trim().toLowerCase()) // Add toLowerCase for consistency
       .where('userType', isEqualTo: 'student')
+      .limit(1) // Add limit to prevent duplicates
       .get();
+
   return snapshot.docs.map((doc) => UserSearchResult.fromFirestore(doc)).toList();
 }
 
+
 Future<DocumentReference> enrollStudentInClassService(String classId, String studentId, String studentName, String studentEmail, String trainerId) async {
+  // Fetch student's profile pic
+  String? profilePicBase64;
+  try {
+    final userDoc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(studentId)
+        .get();
+
+    if (userDoc.exists) {
+      profilePicBase64 = userDoc.data()?['profilePicBase64'] as String?;
+    }
+  } catch (e) {
+    debugPrint('Could not fetch profile pic for student $studentId: $e');
+  }
+
   final enrollmentRef = await FirebaseFirestore.instance.collection('enrollments').add({
     'classId': classId,
     'studentId': studentId,
@@ -101,6 +180,7 @@ Future<DocumentReference> enrollStudentInClassService(String classId, String stu
     'studentEmail': studentEmail,
     'trainerId': trainerId,
     'enrolledAt': FieldValue.serverTimestamp(),
+    'profilePicBase64': profilePicBase64,
   });
 
   // Only update the student array - don't touch studentCount
@@ -995,17 +1075,27 @@ Future<void> _handleRemoveStudent(EnrolledStudent enrollment) async {
               child: ListTile(
                 contentPadding: const EdgeInsets.all(16),
                 leading: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF8B5CF6).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(
-                    FontAwesomeIcons.userGraduate,
-                    color: Color(0xFF8B5CF6),
-                    size: 20,
-                  ),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF8B5CF6).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
                 ),
+                child: user.profilePicBase64 != null
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.memory(
+                          base64Decode(user.profilePicBase64!),
+                          width: 40,
+                          height: 40,
+                          fit: BoxFit.cover,
+                        ),
+                      )
+                    : const Icon(
+                        FontAwesomeIcons.userGraduate,
+                        color: Color(0xFF8B5CF6),
+                        size: 20,
+                      ),
+              ),
                 title: Text(
                   user.displayName ?? "N/A",
                   style: const TextStyle(
@@ -1180,18 +1270,23 @@ Future<void> _handleRemoveStudent(EnrolledStudent enrollment) async {
                     ),
                     child: ListTile(
                       contentPadding: const EdgeInsets.all(16),
-                      leading: CircleAvatar(
-                        radius: 24,
-                        backgroundColor: const Color(0xFF8B5CF6).withOpacity(0.1),
-                        child: Text(
-                          student.studentName.isNotEmpty ? student.studentName[0].toUpperCase() : "?",
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF8B5CF6),
-                            fontSize: 18,
+                      leading: student.profilePicBase64 != null
+                      ? CircleAvatar(
+                          radius: 24,
+                          backgroundImage: MemoryImage(base64Decode(student.profilePicBase64!)),
+                        )
+                      : CircleAvatar(
+                          radius: 24,
+                          backgroundColor: const Color(0xFF8B5CF6).withOpacity(0.1),
+                          child: Text(
+                            student.studentName.isNotEmpty ? student.studentName[0].toUpperCase() : "?",
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF8B5CF6),
+                              fontSize: 18,
+                            ),
                           ),
                         ),
-                      ),
                       title: Text(
                         student.studentName,
                         style: const TextStyle(

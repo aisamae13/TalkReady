@@ -404,11 +404,21 @@ class _MyEnrolledClassesState extends State<MyEnrolledClasses>
       if (studentDoc.exists) {
         Map<String, dynamic> studentData =
             studentDoc.data() as Map<String, dynamic>;
-        studentName =
-            studentData['displayName'] ??
-            '${studentData['firstName'] ?? ''} ${studentData['lastName'] ?? ''}'
-                .trim();
-        if (studentName.isEmpty) studentName = "Student";
+
+        // Priority: firstName + lastName, then displayName, then fallback
+        final firstName = studentData['firstName']?.toString().trim() ?? '';
+        final lastName = studentData['lastName']?.toString().trim() ?? '';
+
+        if (firstName.isNotEmpty || lastName.isNotEmpty) {
+          studentName = '$firstName $lastName'.trim();
+        } else {
+          studentName = studentData['displayName']?.toString().trim() ?? '';
+        }
+
+        if (studentName.isEmpty) {
+          studentName = "Student";
+        }
+
         studentEmail = studentData['email'] ?? "N/A";
       }
 
