@@ -531,6 +531,446 @@ class FirebaseService {
     }
   }
 
+  /// Calculate overall performance for a student (for certificate authorization)
+  Future<Map<String, dynamic>> calculateOverallPerformance(
+    String userId,
+  ) async {
+    if (userId.isEmpty) {
+      throw Exception("User ID is required to calculate performance.");
+    }
+
+    try {
+      _logger.i('Calculating overall performance for user: $userId');
+
+      final userProgressRef = _firestore.collection('userProgress').doc(userId);
+      final docSnap = await userProgressRef.get();
+
+      if (!docSnap.exists) {
+        return {
+          'overallAverage': 0.0,
+          'totalLessonsCompleted': 0,
+          'totalAssessmentsCompleted': 0,
+          'certificateTier': null,
+          'meetsExcellenceThreshold': false,
+          'meetsProficiencyThreshold': false,
+        };
+      }
+
+      final progressData = docSnap.data()!;
+      final lessonAttempts =
+          progressData['lessonAttempts'] as Map<String, dynamic>? ?? {};
+      final assessmentAttempts =
+          progressData['moduleAssessmentAttempts'] as Map<String, dynamic>? ??
+          {};
+
+      double totalScore = 0;
+      int completedLessonsCount = 0;
+      int completedAssessmentsCount = 0;
+
+      // Calculate best score for each lesson
+      lessonAttempts.forEach((lessonId, attempts) {
+        if (attempts is List && attempts.isNotEmpty) {
+          final bestScore = attempts
+              .map((a) => (a['score'] ?? 0) as num)
+              .reduce((a, b) => a > b ? a : b);
+          totalScore += bestScore.toDouble();
+          completedLessonsCount++;
+        }
+      });
+
+      // Calculate best score for each assessment
+      assessmentAttempts.forEach((assessmentId, attempts) {
+        if (attempts is List && attempts.isNotEmpty) {
+          final bestAttempt = attempts.reduce((a, b) {
+            final aPercentage =
+                ((a['score'] ?? 0) / (a['maxScore'] ?? 100)) * 100;
+            final bPercentage =
+                ((b['score'] ?? 0) / (b['maxScore'] ?? 100)) * 100;
+            return aPercentage > bPercentage ? a : b;
+          });
+          final bestPercentage =
+              ((bestAttempt['score'] ?? 0) / (bestAttempt['maxScore'] ?? 100)) *
+              100;
+          totalScore += bestPercentage;
+          completedAssessmentsCount++;
+        }
+      });
+
+      final totalCompletedItems =
+          completedLessonsCount + completedAssessmentsCount;
+      final overallAverage = totalCompletedItems > 0
+          ? totalScore / totalCompletedItems
+          : 0.0;
+
+      // Determine certificate tier
+      String? certificateTier;
+      bool meetsExcellence = false;
+      bool meetsProficiency = false;
+
+      if (overallAverage >= 80) {
+        certificateTier = 'excellence';
+        meetsExcellence = true;
+        meetsProficiency = true;
+      } else if (overallAverage >= 60) {
+        certificateTier = 'proficiency';
+        meetsProficiency = true;
+      } else if (overallAverage > 0) {
+        certificateTier = 'completion';
+      }
+
+      _logger.i(
+        'Performance calculated: $overallAverage% (Tier: $certificateTier)',
+      );
+
+      return {
+        'overallAverage': double.parse(overallAverage.toStringAsFixed(1)),
+        'totalLessonsCompleted': completedLessonsCount,
+        'totalAssessmentsCompleted': completedAssessmentsCount,
+        'certificateTier': certificateTier,
+        'meetsExcellenceThreshold': meetsExcellence,
+        'meetsProficiencyThreshold': meetsProficiency,
+      };
+    } catch (e) {
+      _logger.e("Error calculating overall performance: $e");
+      rethrow;
+    }
+  }
+
+  /// Get students pending certificate authorization for a trainer
+  Future<List<Map<String, dynamic>>> getAuthorizationPendingStudents(
+    String trainerId,
+  ) async {
+    if (trainerId.isEmpty) {
+      throw Exception("Trainer ID is required.");
+    }
+
+    try {
+      _logger.i(
+        'Fetching authorization pending students for trainer: $trainerId',
+      );
+
+      // 1. Get all classes taught by this trainer
+      final trainerClasses = await getTrainerClasses(trainerId);
+      _logger.i('Found ${trainerClasses.length} classes for trainer');
+
+      if (trainerClasses.isEmpty) {
+        return [];
+      }
+
+      final List<Map<String, dynamic>> pendingStudents = [];
+
+      // 2. For each class, get enrolled students
+      for (var classData in trainerClasses) {
+        final classId = classData['id'];
+        final className = classData['className'];
+
+        _logger.i('Checking class: $className ($classId)');
+
+        // Get enrolled students
+        final enrollmentsSnapshot = await _firestore
+            .collection('enrollments')
+            .where('classId', isEqualTo: classId)
+            .get();
+
+        _logger.i(
+          'Found ${enrollmentsSnapshot.docs.length} enrolled students in class $className',
+        );
+
+        // 3. For each enrolled student, check if they have a pending certificate
+        for (var enrollment in enrollmentsSnapshot.docs) {
+          final enrollmentData = enrollment.data();
+          final studentId = enrollmentData['studentId'];
+
+          // Query certificates collection for this student
+          final certSnapshot = await _firestore
+              .collection('certificates')
+              .where('userId', isEqualTo: studentId)
+              .get();
+
+          if (certSnapshot.docs.isEmpty) {
+            continue; // Student has no certificate
+          }
+
+          // Get the certificate data
+          final certDoc = certSnapshot.docs.first;
+          final certData = certDoc.data();
+          final certificateId = certDoc.id;
+
+          final status = certData['status'] ?? 'pending_authorization';
+          final authorizedBy =
+              certData['authorizedBy'] as Map<String, dynamic>?;
+          final isUpgradeable = certData['upgradeable'] == true;
+
+          // Check if needs authorization
+          final needsAuthorization =
+              (status == 'pending_authorization' && authorizedBy == null) ||
+              (status == 'authorized' &&
+                  authorizedBy != null &&
+                  authorizedBy['type'] == 'system' &&
+                  isUpgradeable &&
+                  certData['upgradeClassId'] == classId);
+
+          if (needsAuthorization) {
+            final certificateType = isUpgradeable ? 'upgrade' : 'new';
+
+            // Get performance data
+            Map<String, dynamic>? performanceData;
+            try {
+              performanceData = await calculateOverallPerformance(studentId);
+            } catch (e) {
+              _logger.w('Could not fetch performance for $studentId: $e');
+              performanceData =
+                  certData['performanceData'] as Map<String, dynamic>?;
+            }
+
+            pendingStudents.add({
+              'studentId': studentId,
+              'studentName': enrollmentData['studentName'],
+              'studentEmail': enrollmentData['studentEmail'],
+              'certificateId': certificateId,
+              'performanceData': performanceData,
+              'courseName': certData['courseName'],
+              'completionDate': certData['completionDate'],
+              'status': status,
+              'classId': classId,
+              'className': className,
+              'certificateType': certificateType,
+              'isUpgrade': isUpgradeable,
+              'existingAuthorization': isUpgradeable ? authorizedBy : null,
+              'upgradeHistory': certData['upgradeHistory'] ?? [],
+              'spamFlagged': certData['spamFlagged'] ?? false,
+            });
+
+            _logger.i(
+              'Added $certificateType certificate for: ${enrollmentData['studentName']}',
+            );
+          }
+        }
+      }
+
+      _logger.i('Total pending students: ${pendingStudents.length}');
+      return pendingStudents;
+    } catch (e) {
+      _logger.e("Error fetching authorization pending students: $e");
+      rethrow;
+    }
+  }
+
+  /// Authorize a certificate with trainer endorsement
+  Future<void> authorizeCertificate(
+    String certificateId,
+    Map<String, dynamic> authorizationData,
+  ) async {
+    if (certificateId.isEmpty || authorizationData.isEmpty) {
+      throw Exception("Certificate ID and authorization data are required.");
+    }
+
+    // Validate required fields
+    if (authorizationData['trainerId'] == null ||
+        authorizationData['trainerName'] == null) {
+      throw Exception("Trainer ID and name are required.");
+    }
+
+    try {
+      _logger.i('Authorizing certificate: $certificateId');
+
+      final certificateRef = _firestore
+          .collection('certificates')
+          .doc(certificateId);
+      final certSnap = await certificateRef.get();
+
+      if (!certSnap.exists) {
+        throw Exception("Certificate not found.");
+      }
+
+      final certData = certSnap.data()!;
+      final existingAuthBy = certData['authorizedBy'] as Map<String, dynamic>?;
+
+      // Safeguard: Prevent trainer from overwriting another trainer's authorization
+      if (existingAuthBy != null && existingAuthBy['type'] == 'trainer') {
+        throw Exception(
+          "This certificate has already been authorized by another trainer.",
+        );
+      }
+
+      // Determine if this is an upgrade (system → trainer) or new authorization
+      final isUpgrade =
+          existingAuthBy != null && existingAuthBy['type'] == 'system';
+
+      // Create authorization record
+      final authorizationRecord = {
+        'type': 'trainer',
+        'trainerId': authorizationData['trainerId'],
+        'trainerName': authorizationData['trainerName'],
+        'trainerEmail': authorizationData['trainerEmail'] ?? '',
+        'trainerSignature': authorizationData['trainerSignature'],
+        'classId': authorizationData['classId'],
+        'className': authorizationData['className'] ?? '',
+        'authorizedAt': DateTime.now().toIso8601String(),
+        'comment': authorizationData['comment'] ?? '',
+        'isRevoked': false,
+      };
+
+      // Prepare update data
+      final Map<String, dynamic> updateData = {
+        'authorizedBy': authorizationRecord,
+        'status': 'authorized',
+        'lastUpdated': FieldValue.serverTimestamp(),
+      };
+
+      if (isUpgrade) {
+        // Store original system authorization in history
+        updateData['authorizationHistory'] = {
+          'originalAuthorization': existingAuthBy,
+          'upgradedAt': DateTime.now().toIso8601String(),
+          'upgradedBy': authorizationData['trainerId'],
+        };
+
+        // Remove upgrade flags
+        updateData['upgradeable'] = false;
+        updateData['upgradeClassId'] = FieldValue.delete();
+        updateData['upgradeTrainerId'] = FieldValue.delete();
+        updateData['upgradeEnrolledAt'] = FieldValue.delete();
+
+        _logger.i(
+          'Upgrading system-authorized certificate to trainer authorization',
+        );
+      }
+
+      // Update certificate document
+      await certificateRef.update(updateData);
+
+      _logger.i('Successfully authorized certificate $certificateId');
+
+      // Create notification for student
+      try {
+        final studentId = certData['userId'];
+        if (studentId != null) {
+          final notificationMessage = isUpgrade
+              ? 'Your certificate for "${certData['courseName']}" has been endorsed by ${authorizationData['trainerName']}!'
+              : 'Your certificate for "${certData['courseName']}" has been authorized by ${authorizationData['trainerName']}!';
+
+          await _firestore.collection('notifications').add({
+            'userId': studentId,
+            'message': notificationMessage,
+            'link': '/certificate/$certificateId',
+            'type': isUpgrade
+                ? 'certificate_upgraded'
+                : 'certificate_authorized',
+            'classId': authorizationData['classId'],
+            'className': authorizationData['className'] ?? '',
+            'relatedDocId': certificateId,
+            'isRead': false,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+
+          _logger.i('Notification created for student $studentId');
+        }
+      } catch (notificationError) {
+        _logger.e('Failed to create notification: $notificationError');
+        // Don't throw - authorization succeeded even if notification failed
+      }
+    } catch (e) {
+      _logger.e("Error authorizing certificate: $e");
+      rethrow;
+    }
+  }
+
+  /// Upload trainer signature to Firebase Storage
+  Future<Map<String, String>> uploadTrainerSignature(
+    String trainerId,
+    File signatureFile,
+    Function(double)? onProgress,
+  ) async {
+    if (trainerId.isEmpty) {
+      throw Exception("Trainer ID is required for signature upload.");
+    }
+
+    try {
+      _logger.i("Uploading trainer signature for: $trainerId");
+
+      final fileName = signatureFile.path.split('/').last;
+      final timestamp = DateTime.now().millisecondsSinceEpoch.toString();
+      final storagePath =
+          'trainer_signatures/$trainerId/signature_$timestamp.$fileName';
+
+      final storageRef = FirebaseStorage.instance.ref().child(storagePath);
+      final uploadTask = storageRef.putFile(signatureFile);
+
+      // Listen to upload progress
+      uploadTask.snapshotEvents.listen((TaskSnapshot snapshot) {
+        final progress = snapshot.bytesTransferred / snapshot.totalBytes * 100;
+        if (onProgress != null) {
+          onProgress(progress);
+        }
+        _logger.d('Upload progress: ${progress.toStringAsFixed(1)}%');
+      });
+
+      final snapshot = await uploadTask.whenComplete(() => null);
+      final downloadURL = await snapshot.ref.getDownloadURL();
+
+      _logger.i("Signature uploaded successfully: $downloadURL");
+
+      return {
+        'downloadURL': downloadURL,
+        'filePath': storagePath,
+        'fileName': fileName,
+      };
+    } catch (e) {
+      _logger.e("Error uploading trainer signature: $e");
+      rethrow;
+    }
+  }
+
+  /// Update trainer profile with signature URL
+  Future<void> updateTrainerSignature(
+    String trainerId,
+    String? signatureUrl,
+    String? signaturePath,
+  ) async {
+    if (trainerId.isEmpty) {
+      throw Exception("Trainer ID is required.");
+    }
+
+    try {
+      final trainerRef = _firestore.collection('users').doc(trainerId);
+
+      await trainerRef.update({
+        'trainerSignature': signatureUrl,
+        'trainerSignaturePath': signaturePath,
+        'signatureUpdatedAt': FieldValue.serverTimestamp(),
+      });
+
+      _logger.i("Trainer signature updated for $trainerId");
+    } catch (e) {
+      _logger.e("Error updating trainer signature: $e");
+      rethrow;
+    }
+  }
+
+  /// Delete trainer signature from Storage
+  Future<void> deleteTrainerSignature(String filePath) async {
+    if (filePath.isEmpty) {
+      _logger.w("File path is empty, cannot delete signature.");
+      return;
+    }
+
+    try {
+      final storageRef = FirebaseStorage.instance.ref().child(filePath);
+      await storageRef.delete();
+      _logger.i("Deleted signature from storage: $filePath");
+    } catch (e) {
+      if (e.toString().contains('object-not-found')) {
+        _logger.w(
+          "Signature file not found (may have been already deleted): $filePath",
+        );
+      } else {
+        _logger.e("Error deleting signature: $e");
+        rethrow;
+      }
+    }
+  }
+
   Future<Map<String, dynamic>?> getClassDetails(String classId) async {
     if (classId.isEmpty) {
       _logger.w("Class ID is missing for getClassDetails");
@@ -576,30 +1016,33 @@ class FirebaseService {
       return null;
     }
   }
-Future<void> deleteAssessmentWithCleanup(String assessmentId) async {
-  try {
-    // Delete the assessment
-    await _firestore
-        .collection('trainerAssessments')
-        .doc(assessmentId)
-        .delete();
 
-    // Delete all related submissions
-    final submissionsSnapshot = await _firestore
-        .collection('studentSubmissions')
-        .where('assessmentId', isEqualTo: assessmentId)
-        .get();
+  Future<void> deleteAssessmentWithCleanup(String assessmentId) async {
+    try {
+      // Delete the assessment
+      await _firestore
+          .collection('trainerAssessments')
+          .doc(assessmentId)
+          .delete();
 
-    for (var doc in submissionsSnapshot.docs) {
-      await doc.reference.delete();
+      // Delete all related submissions
+      final submissionsSnapshot = await _firestore
+          .collection('studentSubmissions')
+          .where('assessmentId', isEqualTo: assessmentId)
+          .get();
+
+      for (var doc in submissionsSnapshot.docs) {
+        await doc.reference.delete();
+      }
+
+      _logger.i(
+        'Deleted assessment $assessmentId and ${submissionsSnapshot.docs.length} related submissions',
+      );
+    } catch (e) {
+      _logger.e('Error deleting assessment with cleanup: $e');
+      rethrow;
     }
-
-    _logger.i('Deleted assessment $assessmentId and ${submissionsSnapshot.docs.length} related submissions');
-  } catch (e) {
-    _logger.e('Error deleting assessment with cleanup: $e');
-    rethrow;
   }
-}
 
   Future<Map<String, String>> uploadSpeakingAssessmentAudio(
     File audioFile,
@@ -625,149 +1068,153 @@ Future<void> deleteAssessmentWithCleanup(String assessmentId) async {
       throw Exception('Failed to upload audio: $e');
     }
   }
-Future<Map<String, dynamic>?> getStudentSubmissionDetails(
-  String submissionId,
-) async {
-  if (submissionId.isEmpty) {
-    _logger.w("Submission ID is missing for getStudentSubmissionDetails.");
-    return null;
-  }
 
-  _logger.i("Fetching submission details for submissionId: $submissionId");
-
-  try {
-    final submissionDoc = await _firestore
-        .collection('studentSubmissions')
-        .doc(submissionId)
-        .get();
-
-    if (!submissionDoc.exists) {
-      _logger.w("Submission with ID $submissionId not found.");
+  Future<Map<String, dynamic>?> getStudentSubmissionDetails(
+    String submissionId,
+  ) async {
+    if (submissionId.isEmpty) {
+      _logger.w("Submission ID is missing for getStudentSubmissionDetails.");
       return null;
     }
 
-    Map<String, dynamic> submissionData = {
-      'id': submissionDoc.id,
-      ...submissionDoc.data()!,
-    };
+    _logger.i("Fetching submission details for submissionId: $submissionId");
 
-    // Convert Timestamp to DateTime if needed
-    if (submissionData['submittedAt'] is Timestamp) {
-      submissionData['submittedAt'] =
-          (submissionData['submittedAt'] as Timestamp).toDate();
-    }
+    try {
+      final submissionDoc = await _firestore
+          .collection('studentSubmissions')
+          .doc(submissionId)
+          .get();
 
-    return submissionData;
-  } catch (e) {
-    _logger.e("Error fetching submission details for $submissionId: $e");
-    return null;
-  }
-}
-Future<List<Map<String, dynamic>>> getStudentSubmissionsWithDetails(
-  String studentId,
-) async {
-  if (studentId.isEmpty) {
-    _logger.w("Student ID is missing for getStudentSubmissionsWithDetails.");
-    return [];
-  }
-  _logger.i("Fetching submissions with details for studentId: $studentId");
-  final submissionsRef = _firestore.collection("studentSubmissions");
-  final submissionsQuery = submissionsRef
-      .where("studentId", isEqualTo: studentId)
-      .orderBy("submittedAt", descending: true);
+      if (!submissionDoc.exists) {
+        _logger.w("Submission with ID $submissionId not found.");
+        return null;
+      }
 
-  try {
-    final querySnapshot = await submissionsQuery.get();
-    if (querySnapshot.docs.isEmpty) {
-      _logger.i("No submissions found for student $studentId.");
-      return [];
-    }
-
-    List<Map<String, dynamic>> submissionsWithDetails = [];
-
-    for (var submissionDoc in querySnapshot.docs) {
       Map<String, dynamic> submissionData = {
         'id': submissionDoc.id,
-        ...(submissionDoc.data()),
+        ...submissionDoc.data()!,
       };
 
+      // Convert Timestamp to DateTime if needed
       if (submissionData['submittedAt'] is Timestamp) {
         submissionData['submittedAt'] =
             (submissionData['submittedAt'] as Timestamp).toDate();
       }
 
-      // CRITICAL: Check assessmentId exists
-      if (submissionData['assessmentId'] == null) {
-        _logger.w(
-          "Submission ${submissionDoc.id} has no assessmentId. Skipping.",
-        );
-        continue;
+      return submissionData;
+    } catch (e) {
+      _logger.e("Error fetching submission details for $submissionId: $e");
+      return null;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getStudentSubmissionsWithDetails(
+    String studentId,
+  ) async {
+    if (studentId.isEmpty) {
+      _logger.w("Student ID is missing for getStudentSubmissionsWithDetails.");
+      return [];
+    }
+    _logger.i("Fetching submissions with details for studentId: $studentId");
+    final submissionsRef = _firestore.collection("studentSubmissions");
+    final submissionsQuery = submissionsRef
+        .where("studentId", isEqualTo: studentId)
+        .orderBy("submittedAt", descending: true);
+
+    try {
+      final querySnapshot = await submissionsQuery.get();
+      if (querySnapshot.docs.isEmpty) {
+        _logger.i("No submissions found for student $studentId.");
+        return [];
       }
 
-      // Check if assessment still exists - MOVED EARLIER
-      final assessmentDoc = await _firestore
-          .collection('trainerAssessments')
-          .doc(submissionData['assessmentId'])
-          .get();
+      List<Map<String, dynamic>> submissionsWithDetails = [];
 
-      if (!assessmentDoc.exists) {
-        _logger.w(
-          "Assessment ${submissionData['assessmentId']} for submission ${submissionDoc.id} no longer exists. Skipping.",
-        );
-        continue; // Skip - don't add to results
-      }
+      for (var submissionDoc in querySnapshot.docs) {
+        Map<String, dynamic> submissionData = {
+          'id': submissionDoc.id,
+          ...(submissionDoc.data()),
+        };
 
-      // Only proceed if assessment exists
-      String assessmentTitle = "Assessment Title Not Found";
-      String className = "Class Name Not Found";
-      String trainerName = "Trainer Name Not Found";
+        if (submissionData['submittedAt'] is Timestamp) {
+          submissionData['submittedAt'] =
+              (submissionData['submittedAt'] as Timestamp).toDate();
+        }
 
-      // Now fetch details - we know assessment exists
-      final assessmentData = assessmentDoc.data();
-      if (assessmentData != null) {
-        assessmentTitle = assessmentData['title'] ?? "Untitled Assessment";
+        // CRITICAL: Check assessmentId exists
+        if (submissionData['assessmentId'] == null) {
+          _logger.w(
+            "Submission ${submissionDoc.id} has no assessmentId. Skipping.",
+          );
+          continue;
+        }
 
-        if (assessmentData['classId'] != null) {
-          try {
-            final classDetails = await getClassDetails(assessmentData['classId']);
-            if (classDetails != null) {
-              className = classDetails['className'] ?? "Unnamed Class";
-              if (classDetails['trainerId'] != null) {
-                final trainerProfile = await getUserProfileById(
-                  classDetails['trainerId'],
-                );
-                if (trainerProfile != null) {
-                  trainerName =
-                      trainerProfile['displayName'] ??
-                      "${trainerProfile['firstName'] ?? ''} ${trainerProfile['lastName'] ?? ''}"
-                          .trim();
-                  if (trainerName.isEmpty) trainerName = "Unknown Trainer";
+        // Check if assessment still exists - MOVED EARLIER
+        final assessmentDoc = await _firestore
+            .collection('trainerAssessments')
+            .doc(submissionData['assessmentId'])
+            .get();
+
+        if (!assessmentDoc.exists) {
+          _logger.w(
+            "Assessment ${submissionData['assessmentId']} for submission ${submissionDoc.id} no longer exists. Skipping.",
+          );
+          continue; // Skip - don't add to results
+        }
+
+        // Only proceed if assessment exists
+        String assessmentTitle = "Assessment Title Not Found";
+        String className = "Class Name Not Found";
+        String trainerName = "Trainer Name Not Found";
+
+        // Now fetch details - we know assessment exists
+        final assessmentData = assessmentDoc.data();
+        if (assessmentData != null) {
+          assessmentTitle = assessmentData['title'] ?? "Untitled Assessment";
+
+          if (assessmentData['classId'] != null) {
+            try {
+              final classDetails = await getClassDetails(
+                assessmentData['classId'],
+              );
+              if (classDetails != null) {
+                className = classDetails['className'] ?? "Unnamed Class";
+                if (classDetails['trainerId'] != null) {
+                  final trainerProfile = await getUserProfileById(
+                    classDetails['trainerId'],
+                  );
+                  if (trainerProfile != null) {
+                    trainerName =
+                        trainerProfile['displayName'] ??
+                        "${trainerProfile['firstName'] ?? ''} ${trainerProfile['lastName'] ?? ''}"
+                            .trim();
+                    if (trainerName.isEmpty) trainerName = "Unknown Trainer";
+                  }
                 }
               }
+            } catch (e) {
+              _logger.w("Error fetching class/trainer details: $e");
             }
-          } catch (e) {
-            _logger.w("Error fetching class/trainer details: $e");
           }
         }
+
+        submissionsWithDetails.add({
+          ...submissionData,
+          'assessmentTitle': assessmentTitle,
+          'className': className,
+          'trainerName': trainerName,
+        });
       }
 
-      submissionsWithDetails.add({
-        ...submissionData,
-        'assessmentTitle': assessmentTitle,
-        'className': className,
-        'trainerName': trainerName,
-      });
+      _logger.i(
+        "Fetched ${submissionsWithDetails.length} valid submissions for student $studentId.",
+      );
+      return submissionsWithDetails;
+    } catch (e) {
+      _logger.e("Error fetching student submissions with details: $e");
+      return [];
     }
-
-    _logger.i(
-      "Fetched ${submissionsWithDetails.length} valid submissions for student $studentId.",
-    );
-    return submissionsWithDetails;
-  } catch (e) {
-    _logger.e("Error fetching student submissions with details: $e");
-    return [];
   }
-}
 
   Future<void> sendTrainerNotification(
     String trainerId,

@@ -95,7 +95,10 @@ import '../Teachers/Announcement/CreateAnnouncementPage.dart';
 // Content Page Imports
 import '../Teachers/Contents/QuickUploadMaterialPage.dart';
 import '../Teachers/Contents/SelectClassForContentPage.dart';
-
+// Settings Page Import
+import '../Teachers/Settings/TrainerSettingsPage.dart';
+// Authorization Page Import
+import '../Teachers/Authorization/CertificateAuthorizationPage.dart';
 // Add this import if not already present
 import '../progress_page.dart';
 import 'profile.dart';
@@ -196,9 +199,13 @@ class MyApp extends StatelessWidget {
       '/trainer/classes': (context) => const MyClassesPage(),
       '/trainer/classes/create': (context) => const CreateClassForm(),
       '/trainer/reports': (context) => const TrainerReportsPage(),
-      '/trainer/announcements/create': (context) => const CreateAnnouncementPage(),
+      '/trainer/announcements/create': (context) =>
+          const CreateAnnouncementPage(),
       '/trainer/content/upload': (context) => const QuickUploadMaterialPage(),
-      '/trainer/content/select-class': (context) => const SelectClassForContentPage(),
+      '/trainer/content/select-class': (context) =>
+          const SelectClassForContentPage(),
+      '/trainer/settings': (context) => const TrainerSettingsPage(),
+      '/trainer/authorize': (context) => const CertificateAuthorizationPage(),
     };
 
     // Define public routes that don't need session management
@@ -232,7 +239,8 @@ class MyApp extends StatelessWidget {
             } else {
               // Protected route - wrap with SessionAwareWidget
               return MaterialPageRoute(
-                builder: (context) => SessionAwareWidget(child: builder(context)),
+                builder: (context) =>
+                    SessionAwareWidget(child: builder(context)),
                 settings: settings,
               );
             }
@@ -290,9 +298,8 @@ class MyApp extends StatelessWidget {
               segments[3] == 'edit') {
             final classId = segments[2];
             return MaterialPageRoute(
-              builder: (_) => SessionAwareWidget(
-                child: EditClassPage(classId: classId),
-              ),
+              builder: (_) =>
+                  SessionAwareWidget(child: EditClassPage(classId: classId)),
               settings: settings,
             );
           }
@@ -564,18 +571,16 @@ class MyApp extends StatelessWidget {
           case '/lesson6_simulation':
             final args = settings.arguments as Map<String, dynamic>?;
             return MaterialPageRoute(
-              builder: (_) => const SessionAwareWidget(
-                child: Lesson6SimulationPage(),
-              ),
+              builder: (_) =>
+                  const SessionAwareWidget(child: Lesson6SimulationPage()),
               settings: settings,
             );
 
           case '/lesson6_activity_log':
             final args = settings.arguments as Map<String, dynamic>?;
             return MaterialPageRoute(
-              builder: (_) => const SessionAwareWidget(
-                child: Lesson6ActivityLogPage(),
-              ),
+              builder: (_) =>
+                  const SessionAwareWidget(child: Lesson6ActivityLogPage()),
               settings: settings,
             );
 

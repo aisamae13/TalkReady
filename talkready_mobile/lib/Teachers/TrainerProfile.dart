@@ -19,6 +19,7 @@ import '../settings/terms_of_service.dart';
 import '../custom_animated_bottom_bar.dart';
 import 'TrainerDashboard.dart';
 import '../session/device_session_manager.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 class TrainerProfile extends StatefulWidget {
   const TrainerProfile({super.key});
@@ -31,7 +32,8 @@ class _TrainerProfileState extends State<TrainerProfile> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final ImagePicker _picker = ImagePicker();
-  late StreamSubscription<DocumentSnapshot<Map<String, dynamic>>> _userStreamSubscription;
+  late StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>
+  _userStreamSubscription;
   bool _isLoading = true;
 
   final Logger _logger = Logger();
@@ -104,51 +106,53 @@ class _TrainerProfileState extends State<TrainerProfile> {
           .doc(user.uid)
           .snapshots()
           .listen(
-        (snapshot) {
-          _logger.i('Received Firestore snapshot: ${snapshot.data}');
-          if (snapshot.exists) {
-            final data = snapshot.data() ?? {};
-            setState(() {
-              _firstName = data['firstName'];
-              _lastName = data['lastName'];
-              _profilePicBase64 = data['profilePicBase64'] as String?;
-              _profilePicSkipped = data['profilePicSkipped'] as bool?;
-              _age = data['age']?.toString();
-              _gender = data['gender'];
-              _birthdate = _formatBirthdate(data['birthdate']);
-              _province = data['province'];
-              _municipality = data['municipality'];
-              _barangay = data['barangay'];
-              _isLoading = false;
-            });
-          } else {
-            _logger.w('No Firestore document exists for UID: ${user.uid}');
-            setState(() {
-              _isLoading = false;
-            });
-          }
-        },
-        onError: (error) {
-          _logger.e('Error in Firestore stream: $error');
-          setState(() {
-            _isLoading = false;
-          });
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Error listening to user data: $error')),
-            );
-          }
-        },
-      );
+            (snapshot) {
+              _logger.i('Received Firestore snapshot: ${snapshot.data}');
+              if (snapshot.exists) {
+                final data = snapshot.data() ?? {};
+                setState(() {
+                  _firstName = data['firstName'];
+                  _lastName = data['lastName'];
+                  _profilePicBase64 = data['profilePicBase64'] as String?;
+                  _profilePicSkipped = data['profilePicSkipped'] as bool?;
+                  _age = data['age']?.toString();
+                  _gender = data['gender'];
+                  _birthdate = _formatBirthdate(data['birthdate']);
+                  _province = data['province'];
+                  _municipality = data['municipality'];
+                  _barangay = data['barangay'];
+                  _isLoading = false;
+                });
+              } else {
+                _logger.w('No Firestore document exists for UID: ${user.uid}');
+                setState(() {
+                  _isLoading = false;
+                });
+              }
+            },
+            onError: (error) {
+              _logger.e('Error in Firestore stream: $error');
+              setState(() {
+                _isLoading = false;
+              });
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Error listening to user data: $error'),
+                  ),
+                );
+              }
+            },
+          );
     } else {
       _logger.w('No authenticated user found');
       setState(() {
         _isLoading = false;
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No user logged in')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('No user logged in')));
       }
     }
   }
@@ -164,8 +168,12 @@ class _TrainerProfileState extends State<TrainerProfile> {
   }
 
   void _showEditNameDialog() {
-    TextEditingController firstNameController = TextEditingController(text: _firstName ?? '');
-    TextEditingController lastNameController = TextEditingController(text: _lastName ?? '');
+    TextEditingController firstNameController = TextEditingController(
+      text: _firstName ?? '',
+    );
+    TextEditingController lastNameController = TextEditingController(
+      text: _lastName ?? '',
+    );
     showDialog(
       context: context,
       builder: (context) {
@@ -205,7 +213,10 @@ class _TrainerProfileState extends State<TrainerProfile> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFF00568D), width: 2),
+                      borderSide: const BorderSide(
+                        color: Color(0xFF00568D),
+                        width: 2,
+                      ),
                     ),
                     hintStyle: TextStyle(color: Colors.grey[600]),
                   ),
@@ -221,7 +232,10 @@ class _TrainerProfileState extends State<TrainerProfile> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFF00568D), width: 2),
+                      borderSide: const BorderSide(
+                        color: Color(0xFF00568D),
+                        width: 2,
+                      ),
                     ),
                     hintStyle: TextStyle(color: Colors.grey[600]),
                   ),
@@ -234,7 +248,10 @@ class _TrainerProfileState extends State<TrainerProfile> {
                       height: 40,
                       width: 100,
                       decoration: BoxDecoration(
-                        border: Border.all(color: const Color(0xFF00568D), width: 1),
+                        border: Border.all(
+                          color: const Color(0xFF00568D),
+                          width: 1,
+                        ),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: TextButton(
@@ -257,21 +274,30 @@ class _TrainerProfileState extends State<TrainerProfile> {
                       height: 40,
                       width: 100,
                       decoration: BoxDecoration(
-                        border: Border.all(color: const Color(0xFF00568D), width: 1),
+                        border: Border.all(
+                          color: const Color(0xFF00568D),
+                          width: 1,
+                        ),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: TextButton(
                         onPressed: () {
-                          if (firstNameController.text.isNotEmpty && lastNameController.text.isNotEmpty) {
+                          if (firstNameController.text.isNotEmpty &&
+                              lastNameController.text.isNotEmpty) {
                             setState(() {
                               _firstName = firstNameController.text;
                               _lastName = lastNameController.text;
                             });
-                            _saveNameToFirestore(firstNameController.text, lastNameController.text);
+                            _saveNameToFirestore(
+                              firstNameController.text,
+                              lastNameController.text,
+                            );
                             Navigator.pop(context);
                           } else {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Both fields are required')),
+                              const SnackBar(
+                                content: Text('Both fields are required'),
+                              ),
                             );
                           }
                         },
@@ -296,7 +322,10 @@ class _TrainerProfileState extends State<TrainerProfile> {
     );
   }
 
-  Future<void> _saveNameToFirestore(String newFirstName, String newLastName) async {
+  Future<void> _saveNameToFirestore(
+    String newFirstName,
+    String newLastName,
+  ) async {
     try {
       final user = _auth.currentUser;
       if (user != null) {
@@ -318,9 +347,9 @@ class _TrainerProfileState extends State<TrainerProfile> {
     } catch (e) {
       _logger.e('Error saving name: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error saving name: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error saving name: $e')));
       }
     }
   }
@@ -342,10 +371,16 @@ class _TrainerProfileState extends State<TrainerProfile> {
           final base64Image = img.encodePng(resizedImage);
 
           if (base64Image.length > 1000000) {
-            _logger.e('Profile picture too large for Firestore (exceeds 1 MB after encoding)');
+            _logger.e(
+              'Profile picture too large for Firestore (exceeds 1 MB after encoding)',
+            );
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Image is too large. Please choose a smaller one.')),
+                const SnackBar(
+                  content: Text(
+                    'Image is too large. Please choose a smaller one.',
+                  ),
+                ),
               );
             }
             setState(() => _isLoading = false);
@@ -383,52 +418,48 @@ class _TrainerProfileState extends State<TrainerProfile> {
   }
 
   Future<void> _signOut(BuildContext context) async {
-  try {
-    _logger.i('Attempting to sign out user');
+    try {
+      _logger.i('Attempting to sign out user');
 
-    final user = FirebaseAuth.instance.currentUser;
+      final user = FirebaseAuth.instance.currentUser;
 
-    // End device session
-    if (user != null) {
-      await DeviceSessionManager().endSession(user.uid);
-      _logger.i('Device session ended for user: ${user.uid}');
-    }
+      // End device session
+      if (user != null) {
+        await DeviceSessionManager().endSession(user.uid);
+        _logger.i('Device session ended for user: ${user.uid}');
+      }
 
-    // Sign out from Firebase
-    await FirebaseAuth.instance.signOut();
-    _logger.i('User signed out successfully');
+      // Sign out from Firebase
+      await FirebaseAuth.instance.signOut();
+      _logger.i('User signed out successfully');
 
-    if (mounted) {
-      Navigator.pushNamedAndRemoveUntil(
-        context,
-        '/',
-        (route) => false,
-      );
+      if (mounted) {
+        Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
 
-      // Show logout confirmation
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Row(
-            children: [
-              Icon(Icons.check_circle, color: Colors.white),
-              SizedBox(width: 12),
-              Text('Logged out successfully'),
-            ],
+        // Show logout confirmation
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                SizedBox(width: 12),
+                Text('Logged out successfully'),
+              ],
+            ),
+            backgroundColor: Color(0xFF00568D),
+            duration: Duration(seconds: 2),
           ),
-          backgroundColor: Color(0xFF00568D),
-          duration: Duration(seconds: 2),
-        ),
-      );
-    }
-  } catch (e) {
-    _logger.e('Error signing out: $e');
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error signing out: $e')),
-      );
+        );
+      }
+    } catch (e) {
+      _logger.e('Error signing out: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error signing out: $e')));
+      }
     }
   }
-}
 
   Future<void> _deleteAccount(BuildContext context) async {
     // Show initial info dialog before typed confirmation
@@ -455,55 +486,57 @@ class _TrainerProfileState extends State<TrainerProfile> {
       context: context,
       barrierDismissible: false,
       builder: (context) {
-        return StatefulBuilder(builder: (context, setState) {
-          return AlertDialog(
-            title: const Text('Final Confirmation'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Type "confirm" (without quotes) below to permanently proceed with account deletion.',
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  autofocus: true,
-                  onChanged: (v) {
-                    setState(() {
-                      inputText = v;
-                    });
-                  },
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
-                    hintText: 'Type confirm to enable Delete',
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Final Confirmation'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Type "confirm" (without quotes) below to permanently proceed with account deletion.',
                   ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    autofocus: true,
+                    onChanged: (v) {
+                      setState(() {
+                        inputText = v;
+                      });
+                    },
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      hintText: 'Type confirm to enable Delete',
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: inputText.trim().toLowerCase() == 'confirm'
+                      ? () {
+                          confirmed = true;
+                          Navigator.of(context).pop();
+                        }
+                      : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: inputText.trim().toLowerCase() == 'confirm'
+                        ? Colors.red.shade700
+                        : Colors.grey,
+                  ),
+                  child: const Text('Delete'),
                 ),
               ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                },
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: inputText.trim().toLowerCase() == 'confirm'
-                    ? () {
-                        confirmed = true;
-                        Navigator.of(context).pop();
-                      }
-                    : null,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: inputText.trim().toLowerCase() == 'confirm'
-                      ? Colors.red.shade700
-                      : Colors.grey,
-                ),
-                child: const Text('Delete'),
-              ),
-            ],
-          );
-        });
+            );
+          },
+        );
       },
     );
 
@@ -564,13 +597,17 @@ class _TrainerProfileState extends State<TrainerProfile> {
       // 2) For assessments and materials that are strictly owned by trainer and small in count we can delete.
       try {
         await _deleteQueryInBatches(
-          firestore.collection('trainerAssessments').where('trainerId', isEqualTo: uid),
+          firestore
+              .collection('trainerAssessments')
+              .where('trainerId', isEqualTo: uid),
           batchSize: 300,
           maxDocsBeforeFallback: 1500, // safety threshold
           onTooLargeFallback: (count) async {
             // If too many docs, mark them as 'ownerDeleted' instead of deleting
             await _archiveOrDissociateQueryInBatches(
-              firestore.collection('trainerAssessments').where('trainerId', isEqualTo: uid),
+              firestore
+                  .collection('trainerAssessments')
+                  .where('trainerId', isEqualTo: uid),
               updateData: {
                 'ownerDeleted': true,
                 'archivedBy': uid,
@@ -588,12 +625,16 @@ class _TrainerProfileState extends State<TrainerProfile> {
       // 3) Class materials and uploadedFiles: delete small sets, otherwise mark as archived
       try {
         await _deleteQueryInBatches(
-          firestore.collection('classMaterials').where('uploadedBy', isEqualTo: uid),
+          firestore
+              .collection('classMaterials')
+              .where('uploadedBy', isEqualTo: uid),
           batchSize: 300,
           maxDocsBeforeFallback: 1200,
           onTooLargeFallback: (count) async {
             await _archiveOrDissociateQueryInBatches(
-              firestore.collection('classMaterials').where('uploadedBy', isEqualTo: uid),
+              firestore
+                  .collection('classMaterials')
+                  .where('uploadedBy', isEqualTo: uid),
               updateData: {
                 'archived': true,
                 'archivedBy': uid,
@@ -610,12 +651,16 @@ class _TrainerProfileState extends State<TrainerProfile> {
 
       try {
         await _deleteQueryInBatches(
-          firestore.collection('uploadedFiles').where('uploadedBy', isEqualTo: uid),
+          firestore
+              .collection('uploadedFiles')
+              .where('uploadedBy', isEqualTo: uid),
           batchSize: 300,
           maxDocsBeforeFallback: 1000,
           onTooLargeFallback: (count) async {
             await _archiveOrDissociateQueryInBatches(
-              firestore.collection('uploadedFiles').where('uploadedBy', isEqualTo: uid),
+              firestore
+                  .collection('uploadedFiles')
+                  .where('uploadedBy', isEqualTo: uid),
               updateData: {
                 'archived': true,
                 'archivedBy': uid,
@@ -633,7 +678,9 @@ class _TrainerProfileState extends State<TrainerProfile> {
       // 4) For student submissions, notifications, progress — dissociate trainer references to avoid data loss
       try {
         await _archiveOrDissociateQueryInBatches(
-          firestore.collection('studentSubmissions').where('trainerId', isEqualTo: uid),
+          firestore
+              .collection('studentSubmissions')
+              .where('trainerId', isEqualTo: uid),
           updateData: {
             'trainerId': null,
             'trainerRemovedAt': FieldValue.serverTimestamp(),
@@ -648,14 +695,18 @@ class _TrainerProfileState extends State<TrainerProfile> {
 
       try {
         await _archiveOrDissociateQueryInBatches(
-          firestore.collection('notifications').where('senderId', isEqualTo: uid),
+          firestore
+              .collection('notifications')
+              .where('senderId', isEqualTo: uid),
           updateData: {
             'senderId': null,
             'senderRemovedAt': FieldValue.serverTimestamp(),
           },
         );
         await _archiveOrDissociateQueryInBatches(
-          firestore.collection('notifications').where('receiverId', isEqualTo: uid),
+          firestore
+              .collection('notifications')
+              .where('receiverId', isEqualTo: uid),
           updateData: {
             'receiverId': null,
             'receiverRemovedAt': FieldValue.serverTimestamp(),
@@ -698,7 +749,9 @@ class _TrainerProfileState extends State<TrainerProfile> {
 
       try {
         await _archiveOrDissociateQueryInBatches(
-          firestore.collection('enrollments').where('trainerId', isEqualTo: uid),
+          firestore
+              .collection('enrollments')
+              .where('trainerId', isEqualTo: uid),
           updateData: {
             'trainerId': null,
             'trainerRemovedAt': FieldValue.serverTimestamp(),
@@ -713,13 +766,20 @@ class _TrainerProfileState extends State<TrainerProfile> {
       // 6) Optionally remove user-specific small collections (lessonAttempts, trainerData, userProgress)
       try {
         await _deleteQueryInBatches(
-          firestore.collection('lessonAttempts').where('userId', isEqualTo: uid),
+          firestore
+              .collection('lessonAttempts')
+              .where('userId', isEqualTo: uid),
           batchSize: 300,
           maxDocsBeforeFallback: 800,
           onTooLargeFallback: (count) async {
             await _archiveOrDissociateQueryInBatches(
-              firestore.collection('lessonAttempts').where('userId', isEqualTo: uid),
-              updateData: {'archived': true, 'archivedAt': FieldValue.serverTimestamp()},
+              firestore
+                  .collection('lessonAttempts')
+                  .where('userId', isEqualTo: uid),
+              updateData: {
+                'archived': true,
+                'archivedAt': FieldValue.serverTimestamp(),
+              },
             );
           },
         );
@@ -731,7 +791,9 @@ class _TrainerProfileState extends State<TrainerProfile> {
 
       try {
         await _deleteQueryInBatches(
-          firestore.collection('trainerData').where('trainerId', isEqualTo: uid),
+          firestore
+              .collection('trainerData')
+              .where('trainerId', isEqualTo: uid),
           batchSize: 300,
         );
         successfulOperations.add('Trainer data removed');
@@ -769,16 +831,20 @@ class _TrainerProfileState extends State<TrainerProfile> {
         // Show summary message
         String message = 'Account deletion completed.\n\n';
         if (successfulOperations.isNotEmpty) {
-          message += 'Successful operations:\n${successfulOperations.map((op) => '• $op').join('\n')}\n\n';
+          message +=
+              'Successful operations:\n${successfulOperations.map((op) => '• $op').join('\n')}\n\n';
         }
         if (failedOperations.isNotEmpty) {
-          message += 'Some operations had permission issues:\n${failedOperations.map((op) => '• $op').join('\n')}';
+          message +=
+              'Some operations had permission issues:\n${failedOperations.map((op) => '• $op').join('\n')}';
         }
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(message),
-            backgroundColor: failedOperations.isEmpty ? Colors.green : Colors.orange,
+            backgroundColor: failedOperations.isEmpty
+                ? Colors.green
+                : Colors.orange,
             duration: const Duration(seconds: 8),
           ),
         );
@@ -797,7 +863,6 @@ class _TrainerProfileState extends State<TrainerProfile> {
     }
   }
 
-
   Widget _buildCustomDialog({
     required BuildContext context,
     required String title,
@@ -807,9 +872,7 @@ class _TrainerProfileState extends State<TrainerProfile> {
     required VoidCallback onConfirm,
   }) {
     return Dialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(15),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
       elevation: 5,
       backgroundColor: Colors.white,
       child: Padding(
@@ -829,10 +892,7 @@ class _TrainerProfileState extends State<TrainerProfile> {
             const SizedBox(height: 10),
             Text(
               content,
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey[800],
-              ),
+              style: TextStyle(fontSize: 16, color: Colors.grey[800]),
             ),
             const SizedBox(height: 20),
             Row(
@@ -846,7 +906,10 @@ class _TrainerProfileState extends State<TrainerProfile> {
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 10,
+                    ),
                   ),
                   child: Text(
                     cancelText,
@@ -860,12 +923,17 @@ class _TrainerProfileState extends State<TrainerProfile> {
                 ElevatedButton(
                   onPressed: onConfirm,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: title == 'Sign Out' ? const Color(0xFF00568D) : Colors.red.shade700,
+                    backgroundColor: title == 'Sign Out'
+                        ? const Color(0xFF00568D)
+                        : Colors.red.shade700,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 10,
+                    ),
                   ),
                   child: Text(
                     confirmText,
@@ -1039,18 +1107,34 @@ class _TrainerProfileState extends State<TrainerProfile> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Trainer Profile', style: TextStyle(color: Colors.white)),
+        title: const Text(
+          'Trainer Profile',
+          style: TextStyle(color: Colors.white),
+        ),
         backgroundColor: const Color(0xFF2973B2),
         iconTheme: const IconThemeData(color: Colors.white),
         elevation: 0,
         automaticallyImplyLeading: false,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings, color: Colors.white),
+            onPressed: () {
+              Navigator.pushNamed(context, '/trainer/settings');
+            },
+            tooltip: 'Settings',
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: _isLoading
           ? _buildProfileShimmer() // Use shimmer instead of CircularProgressIndicator
           : ScrollConfiguration(
               behavior: const ScrollBehavior().copyWith(overscroll: false),
               child: ListView(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 0,
+                ),
                 children: [
                   // Profile header
                   Container(
@@ -1072,18 +1156,32 @@ class _TrainerProfileState extends State<TrainerProfile> {
                               Container(
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
-                                  border: Border.all(color: const Color(0xFF9CA8C7), width: 2.0),
+                                  border: Border.all(
+                                    color: const Color(0xFF9CA8C7),
+                                    width: 2.0,
+                                  ),
                                 ),
                                 child: CircleAvatar(
                                   radius: 70,
                                   backgroundImage: _profilePicBase64 != null
-                                      ? MemoryImage(base64Decode(_profilePicBase64!)) as ImageProvider
+                                      ? MemoryImage(
+                                              base64Decode(_profilePicBase64!),
+                                            )
+                                            as ImageProvider
                                       : null,
-                                  backgroundColor: _profilePicBase64 == null && _profilePicSkipped == true
+                                  backgroundColor:
+                                      _profilePicBase64 == null &&
+                                          _profilePicSkipped == true
                                       ? null
                                       : Colors.grey[300],
-                                  child: _profilePicBase64 == null && _profilePicSkipped == true
-                                      ? Icon(Icons.person, size: 70, color: Colors.grey[600])
+                                  child:
+                                      _profilePicBase64 == null &&
+                                          _profilePicSkipped == true
+                                      ? Icon(
+                                          Icons.person,
+                                          size: 70,
+                                          color: Colors.grey[600],
+                                        )
                                       : null,
                                 ),
                               ),
@@ -1094,7 +1192,10 @@ class _TrainerProfileState extends State<TrainerProfile> {
                                   radius: 18,
                                   backgroundColor: Colors.blue.shade100,
                                   child: IconButton(
-                                    icon: const Icon(Icons.add, color: Colors.blue),
+                                    icon: const Icon(
+                                      Icons.add,
+                                      color: Colors.blue,
+                                    ),
                                     onPressed: _pickAndUploadProfilePic,
                                     padding: EdgeInsets.zero,
                                     iconSize: 24,
@@ -1118,7 +1219,11 @@ class _TrainerProfileState extends State<TrainerProfile> {
                                 ),
                               ),
                               IconButton(
-                                icon: const Icon(Icons.edit, color: Colors.white, size: 20),
+                                icon: const Icon(
+                                  Icons.edit,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
                                 onPressed: _showEditNameDialog,
                               ),
                             ],
@@ -1126,7 +1231,10 @@ class _TrainerProfileState extends State<TrainerProfile> {
                           if (_email != null)
                             Text(
                               _email!,
-                              style: const TextStyle(fontSize: 14, color: Colors.white70),
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: Colors.white70,
+                              ),
                             ),
                           const SizedBox(height: 20),
                         ],
@@ -1155,7 +1263,9 @@ class _TrainerProfileState extends State<TrainerProfile> {
                               appBar: PreferredSize(
                                 preferredSize: const Size.fromHeight(60),
                                 child: AppBar(
-                                  backgroundColor: Colors.white.withOpacity(0.95),
+                                  backgroundColor: Colors.white.withOpacity(
+                                    0.95,
+                                  ),
                                   elevation: 4,
                                   centerTitle: true,
                                   title: const Text(
@@ -1168,31 +1278,63 @@ class _TrainerProfileState extends State<TrainerProfile> {
                                     ),
                                   ),
                                   leading: IconButton(
-                                    icon: const Icon(Icons.arrow_back, color: Color(0xFF00568D)),
+                                    icon: const Icon(
+                                      Icons.arrow_back,
+                                      color: Color(0xFF00568D),
+                                    ),
                                     onPressed: () => Navigator.pop(context),
                                   ),
                                   actions: [
                                     IconButton(
-                                      icon: const Icon(Icons.edit, color: Color(0xFF00568D)),
+                                      icon: const Icon(
+                                        Icons.edit,
+                                        color: Color(0xFF00568D),
+                                      ),
                                       tooltip: 'Edit',
                                       onPressed: () {
                                         showGeneralDialog(
                                           context: context,
                                           barrierDismissible: true,
                                           barrierLabel: "Edit Info",
-                                          transitionDuration: const Duration(milliseconds: 400),
+                                          transitionDuration: const Duration(
+                                            milliseconds: 400,
+                                          ),
                                           pageBuilder: (context, anim1, anim2) {
                                             return const SizedBox.shrink();
                                           },
                                           transitionBuilder: (context, anim1, anim2, child) {
-                                            final firstNameController = TextEditingController(text: _firstName ?? '');
-                                            final lastNameController = TextEditingController(text: _lastName ?? '');
-                                            final ageController = TextEditingController(text: _age ?? '');
-                                            final genderController = TextEditingController(text: _gender ?? '');
-                                            final birthdateController = TextEditingController(text: _birthdate ?? '');
-                                            final provinceController = TextEditingController(text: _province ?? '');
-                                            final municipalityController = TextEditingController(text: _municipality ?? '');
-                                            final barangayController = TextEditingController(text: _barangay ?? '');
+                                            final firstNameController =
+                                                TextEditingController(
+                                                  text: _firstName ?? '',
+                                                );
+                                            final lastNameController =
+                                                TextEditingController(
+                                                  text: _lastName ?? '',
+                                                );
+                                            final ageController =
+                                                TextEditingController(
+                                                  text: _age ?? '',
+                                                );
+                                            final genderController =
+                                                TextEditingController(
+                                                  text: _gender ?? '',
+                                                );
+                                            final birthdateController =
+                                                TextEditingController(
+                                                  text: _birthdate ?? '',
+                                                );
+                                            final provinceController =
+                                                TextEditingController(
+                                                  text: _province ?? '',
+                                                );
+                                            final municipalityController =
+                                                TextEditingController(
+                                                  text: _municipality ?? '',
+                                                );
+                                            final barangayController =
+                                                TextEditingController(
+                                                  text: _barangay ?? '',
+                                                );
 
                                             return Transform.scale(
                                               scale: anim1.value,
@@ -1200,120 +1342,245 @@ class _TrainerProfileState extends State<TrainerProfile> {
                                                 opacity: anim1.value,
                                                 child: Center(
                                                   child: ClipRRect(
-                                                    borderRadius: BorderRadius.circular(28),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          28,
+                                                        ),
                                                     child: BackdropFilter(
-                                                      filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                                                      filter: ImageFilter.blur(
+                                                        sigmaX: 8,
+                                                        sigmaY: 8,
+                                                      ),
                                                       child: Container(
-                                                        width: MediaQuery.of(context).size.width * 0.92,
-                                                        padding: const EdgeInsets.all(24),
+                                                        width:
+                                                            MediaQuery.of(
+                                                              context,
+                                                            ).size.width *
+                                                            0.92,
+                                                        padding:
+                                                            const EdgeInsets.all(
+                                                              24,
+                                                            ),
                                                         decoration: BoxDecoration(
-                                                          color: Colors.white.withOpacity(0.92),
-                                                          borderRadius: BorderRadius.circular(28),
+                                                          color: Colors.white
+                                                              .withOpacity(
+                                                                0.92,
+                                                              ),
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                28,
+                                                              ),
                                                           boxShadow: [
                                                             BoxShadow(
-                                                              color: Colors.black.withOpacity(0.08),
+                                                              color: Colors
+                                                                  .black
+                                                                  .withOpacity(
+                                                                    0.08,
+                                                                  ),
                                                               blurRadius: 24,
-                                                              offset: const Offset(0, 8),
+                                                              offset:
+                                                                  const Offset(
+                                                                    0,
+                                                                    8,
+                                                                  ),
                                                             ),
                                                           ],
                                                         ),
                                                         child: Material(
-                                                          color: Colors.transparent,
+                                                          color: Colors
+                                                              .transparent,
                                                           child: SingleChildScrollView(
                                                             child: Column(
-                                                              mainAxisSize: MainAxisSize.min,
-                                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                                              mainAxisSize:
+                                                                  MainAxisSize
+                                                                      .min,
+                                                              crossAxisAlignment:
+                                                                  CrossAxisAlignment
+                                                                      .start,
                                                               children: [
                                                                 const Text(
                                                                   'Edit My Information',
                                                                   style: TextStyle(
-                                                                    fontSize: 22,
-                                                                    fontWeight: FontWeight.bold,
-                                                                    color: Color(0xFF00568D),
+                                                                    fontSize:
+                                                                        22,
+                                                                    fontWeight:
+                                                                        FontWeight
+                                                                            .bold,
+                                                                    color: Color(
+                                                                      0xFF00568D,
+                                                                    ),
                                                                   ),
                                                                 ),
-                                                                const SizedBox(height: 18),
-                                                                _modernTextField('First Name', firstNameController),
-                                                                _modernTextField('Last Name', lastNameController),
-                                                                _modernTextField('Age', ageController, keyboardType: TextInputType.number),
-                                                                _modernTextField('Gender', genderController),
-                                                                _modernTextField('Birthdate (YYYY-MM-DD)', birthdateController),
-                                                                _modernTextField('Province', provinceController),
-                                                                _modernTextField('Municipality', municipalityController),
-                                                                _modernTextField('Barangay', barangayController),
-                                                                const SizedBox(height: 18),
+                                                                const SizedBox(
+                                                                  height: 18,
+                                                                ),
+                                                                _modernTextField(
+                                                                  'First Name',
+                                                                  firstNameController,
+                                                                ),
+                                                                _modernTextField(
+                                                                  'Last Name',
+                                                                  lastNameController,
+                                                                ),
+                                                                _modernTextField(
+                                                                  'Age',
+                                                                  ageController,
+                                                                  keyboardType:
+                                                                      TextInputType
+                                                                          .number,
+                                                                ),
+                                                                _modernTextField(
+                                                                  'Gender',
+                                                                  genderController,
+                                                                ),
+                                                                _modernTextField(
+                                                                  'Birthdate (YYYY-MM-DD)',
+                                                                  birthdateController,
+                                                                ),
+                                                                _modernTextField(
+                                                                  'Province',
+                                                                  provinceController,
+                                                                ),
+                                                                _modernTextField(
+                                                                  'Municipality',
+                                                                  municipalityController,
+                                                                ),
+                                                                _modernTextField(
+                                                                  'Barangay',
+                                                                  barangayController,
+                                                                ),
+                                                                const SizedBox(
+                                                                  height: 18,
+                                                                ),
                                                                 Row(
-                                                                  mainAxisAlignment: MainAxisAlignment.end,
+                                                                  mainAxisAlignment:
+                                                                      MainAxisAlignment
+                                                                          .end,
                                                                   children: [
                                                                     TextButton(
-                                                                      onPressed: () => Navigator.pop(context),
+                                                                      onPressed: () =>
+                                                                          Navigator.pop(
+                                                                            context,
+                                                                          ),
                                                                       style: TextButton.styleFrom(
-                                                                        foregroundColor: const Color(0xFF00568D),
+                                                                        foregroundColor:
+                                                                            const Color(
+                                                                              0xFF00568D,
+                                                                            ),
                                                                       ),
-                                                                      child: const Text('Cancel'),
+                                                                      child: const Text(
+                                                                        'Cancel',
+                                                                      ),
                                                                     ),
-                                                                    const SizedBox(width: 8),
+                                                                    const SizedBox(
+                                                                      width: 8,
+                                                                    ),
                                                                     ElevatedButton(
                                                                       style: ElevatedButton.styleFrom(
-                                                                        backgroundColor: const Color(0xFF00568D),
-                                                                        foregroundColor: Colors.white,
+                                                                        backgroundColor:
+                                                                            const Color(
+                                                                              0xFF00568D,
+                                                                            ),
+                                                                        foregroundColor:
+                                                                            Colors.white,
                                                                         shape: RoundedRectangleBorder(
-                                                                          borderRadius: BorderRadius.circular(12),
+                                                                          borderRadius: BorderRadius.circular(
+                                                                            12,
+                                                                          ),
                                                                         ),
-                                                                        elevation: 0,
+                                                                        elevation:
+                                                                            0,
                                                                       ),
                                                                       onPressed: () async {
                                                                         // Show loading indicator
                                                                         showDialog(
-                                                                          context: context,
-                                                                          barrierDismissible: false,
-                                                                          builder: (context) => const Center(
-                                                                            child: CircularProgressIndicator(),
-                                                                          ),
+                                                                          context:
+                                                                              context,
+                                                                          barrierDismissible:
+                                                                              false,
+                                                                          builder:
+                                                                              (
+                                                                                context,
+                                                                              ) => const Center(
+                                                                                child: CircularProgressIndicator(),
+                                                                              ),
                                                                         );
 
                                                                         try {
-                                                                          final user = FirebaseAuth.instance.currentUser;
-                                                                          if (user != null) {
+                                                                          final user = FirebaseAuth
+                                                                              .instance
+                                                                              .currentUser;
+                                                                          if (user !=
+                                                                              null) {
                                                                             // Update Firestore with proper error handling
-                                                                            await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
-                                                                              'firstName': firstNameController.text.trim(),
-                                                                              'lastName': lastNameController.text.trim(),
-                                                                              'age': int.tryParse(ageController.text.trim()),
-                                                                              'gender': genderController.text.trim(),
-                                                                              'birthdate': birthdateController.text.trim(),
-                                                                              'province': provinceController.text.trim(),
-                                                                              'municipality': municipalityController.text.trim(),
-                                                                              'barangay': barangayController.text.trim(),
-                                                                              'updatedAt': FieldValue.serverTimestamp(), // Add timestamp
-                                                                            });
+                                                                            await FirebaseFirestore.instance
+                                                                                .collection(
+                                                                                  'users',
+                                                                                )
+                                                                                .doc(
+                                                                                  user.uid,
+                                                                                )
+                                                                                .update({
+                                                                                  'firstName': firstNameController.text.trim(),
+                                                                                  'lastName': lastNameController.text.trim(),
+                                                                                  'age': int.tryParse(
+                                                                                    ageController.text.trim(),
+                                                                                  ),
+                                                                                  'gender': genderController.text.trim(),
+                                                                                  'birthdate': birthdateController.text.trim(),
+                                                                                  'province': provinceController.text.trim(),
+                                                                                  'municipality': municipalityController.text.trim(),
+                                                                                  'barangay': barangayController.text.trim(),
+                                                                                  'updatedAt': FieldValue.serverTimestamp(), // Add timestamp
+                                                                                });
 
                                                                             // Show success message
                                                                             if (context.mounted) {
-                                                                              Navigator.pop(context); // Close loading dialog
-                                                                              Navigator.pop(context); // Close edit dialog
-                                                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                                              Navigator.pop(
+                                                                                context,
+                                                                              ); // Close loading dialog
+                                                                              Navigator.pop(
+                                                                                context,
+                                                                              ); // Close edit dialog
+                                                                              ScaffoldMessenger.of(
+                                                                                context,
+                                                                              ).showSnackBar(
                                                                                 const SnackBar(
-                                                                                  content: Text('Information updated successfully!'),
-                                                                                  backgroundColor: Color(0xFF00568D),
+                                                                                  content: Text(
+                                                                                    'Information updated successfully!',
+                                                                                  ),
+                                                                                  backgroundColor: Color(
+                                                                                    0xFF00568D,
+                                                                                  ),
                                                                                 ),
                                                                               );
                                                                             }
                                                                           }
-                                                                        } catch (e) {
+                                                                        } catch (
+                                                                          e
+                                                                        ) {
                                                                           // Handle errors
-                                                                          if (context.mounted) {
-                                                                            Navigator.pop(context); // Close loading dialog
-                                                                            ScaffoldMessenger.of(context).showSnackBar(
+                                                                          if (context
+                                                                              .mounted) {
+                                                                            Navigator.pop(
+                                                                              context,
+                                                                            ); // Close loading dialog
+                                                                            ScaffoldMessenger.of(
+                                                                              context,
+                                                                            ).showSnackBar(
                                                                               SnackBar(
-                                                                                content: Text('Error updating information: $e'),
+                                                                                content: Text(
+                                                                                  'Error updating information: $e',
+                                                                                ),
                                                                                 backgroundColor: Colors.red,
                                                                               ),
                                                                             );
                                                                           }
                                                                         }
                                                                       },
-                                                                      child: const Text('Save'),
+                                                                      child: const Text(
+                                                                        'Save',
+                                                                      ),
                                                                     ),
                                                                   ],
                                                                 ),
@@ -1325,17 +1592,20 @@ class _TrainerProfileState extends State<TrainerProfile> {
                                                     ),
                                                   ),
                                                 ),
-                                              )
+                                              ),
                                             );
-                                            },
-                                          );
-                                        },
+                                          },
+                                        );
+                                      },
                                     ),
                                   ],
                                 ),
                               ),
                               body: ListView(
-                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 20,
+                                ),
                                 children: [
                                   _buildInfoTile('First Name', _firstName),
                                   _buildInfoTile('Last Name', _lastName),
@@ -1360,7 +1630,8 @@ class _TrainerProfileState extends State<TrainerProfile> {
                         _buildOpenContainerSettingsItem(
                           title: 'Community Guidelines',
                           icon: Icons.group_outlined,
-                          openPageBuilder: (context) => const CommunityGuidelines(),
+                          openPageBuilder: (context) =>
+                              const CommunityGuidelines(),
                         ),
                         const SizedBox(height: 10),
                         _buildOpenContainerSettingsItem(
@@ -1424,12 +1695,16 @@ class _TrainerProfileState extends State<TrainerProfile> {
         currentIndex: _selectedIndex,
         onTap: _onItemTapped,
         items: [
-          CustomBottomNavItem(icon: Icons.dashboard_rounded, label: 'Dashboard'),
+          CustomBottomNavItem(
+            icon: Icons.dashboard_rounded,
+            label: 'Dashboard',
+          ),
           CustomBottomNavItem(icon: Icons.person_rounded, label: 'Profile'),
         ],
         activeColor: Colors.white, // Icon color on the notch
         inactiveColor: Colors.grey[600]!,
-        notchColor: Colors.blue[700]!, // Color of the notch (active item background) - same as dashboard's appbar
+        notchColor: Colors
+            .blue[700]!, // Color of the notch (active item background) - same as dashboard's appbar
         backgroundColor: Colors.white,
         selectedIconSize: 28.0,
         iconSize: 25.0,
@@ -1447,8 +1722,12 @@ class _TrainerProfileState extends State<TrainerProfile> {
     required VoidCallback onTap,
   }) {
     final bool isDeleteAccount = title == 'Delete Account';
-    final Color tileColor = isDeleteAccount ? Colors.red.shade700 : const Color(0xFF00568D);
-    final Color iconColor = isDeleteAccount ? Colors.red.shade700 : const Color(0xFF00568D);
+    final Color tileColor = isDeleteAccount
+        ? Colors.red.shade700
+        : const Color(0xFF00568D);
+    final Color iconColor = isDeleteAccount
+        ? Colors.red.shade700
+        : const Color(0xFF00568D);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10.0),
@@ -1530,7 +1809,11 @@ class _TrainerProfileState extends State<TrainerProfile> {
                       ),
                     ),
                   ),
-                  const Icon(Icons.arrow_forward_ios, color: Color(0xFF00568D), size: 16),
+                  const Icon(
+                    Icons.arrow_forward_ios,
+                    color: Color(0xFF00568D),
+                    size: 16,
+                  ),
                 ],
               ),
             ),
@@ -1540,7 +1823,11 @@ class _TrainerProfileState extends State<TrainerProfile> {
     );
   }
 
-  Widget _modernTextField(String label, TextEditingController controller, {TextInputType? keyboardType}) {
+  Widget _modernTextField(
+    String label,
+    TextEditingController controller, {
+    TextInputType? keyboardType,
+  }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: TextField(
@@ -1548,7 +1835,10 @@ class _TrainerProfileState extends State<TrainerProfile> {
         keyboardType: keyboardType,
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: const TextStyle(color: Color(0xFF00568D), fontWeight: FontWeight.w500),
+          labelStyle: const TextStyle(
+            color: Color(0xFF00568D),
+            fontWeight: FontWeight.w500,
+          ),
           filled: true,
           fillColor: const Color(0xFFF4F8FE),
           border: OutlineInputBorder(
@@ -1559,7 +1849,10 @@ class _TrainerProfileState extends State<TrainerProfile> {
             borderRadius: BorderRadius.circular(14),
             borderSide: const BorderSide(color: Color(0xFF00568D), width: 2),
           ),
-          contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+          contentPadding: const EdgeInsets.symmetric(
+            vertical: 12,
+            horizontal: 16,
+          ),
         ),
         style: const TextStyle(fontSize: 16),
       ),
@@ -1567,7 +1860,11 @@ class _TrainerProfileState extends State<TrainerProfile> {
   }
 
   /// Helper to update documents in batches (archive/dissociate)
-  Future<void> _archiveOrDissociateQueryInBatches(Query query, {required Map<String, dynamic> updateData, int batchSize = 300}) async {
+  Future<void> _archiveOrDissociateQueryInBatches(
+    Query query, {
+    required Map<String, dynamic> updateData,
+    int batchSize = 300,
+  }) async {
     final snapshots = await query.get();
     final docs = snapshots.docs;
     for (var i = 0; i < docs.length; i += batchSize) {

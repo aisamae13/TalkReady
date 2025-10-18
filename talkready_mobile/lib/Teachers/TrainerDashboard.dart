@@ -20,6 +20,7 @@ import '../all_notifications_page.dart';
 import 'package:flutter/services.dart';
 import '../notification_badge.dart';
 import 'Announcement/AnnouncementListPage.dart';
+import 'Authorization/CertificateAuthorizationPage.dart';
 
 class TrainerDashboard extends StatefulWidget {
   const TrainerDashboard({super.key});
@@ -40,7 +41,8 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
   String? firstName;
   int _unreadNotificationsCount = 0;
   StreamSubscription<QuerySnapshot>? _notificationSubscription;
-  StreamSubscription<QuerySnapshot>? _dashboardSubscription; // NEW: Store dashboard subscription
+  StreamSubscription<QuerySnapshot>?
+  _dashboardSubscription; // NEW: Store dashboard subscription
 
   @override
   void initState() {
@@ -58,87 +60,88 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
   }
 
   void _setupRealtimeDashboardListener() {
-  if (currentUser == null) return;
+    if (currentUser == null) return;
 
-  _dashboardSubscription?.cancel();
+    _dashboardSubscription?.cancel();
 
-  _dashboardSubscription = FirebaseFirestore.instance
-      .collection('trainerClass')
-      .where('trainerId', isEqualTo: currentUser!.uid)
-      .orderBy('createdAt', descending: true)
-      .snapshots()
-      .listen(
-        (snapshot) async {
-          if (!mounted) return;
+    _dashboardSubscription = FirebaseFirestore.instance
+        .collection('trainerClass')
+        .where('trainerId', isEqualTo: currentUser!.uid)
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .listen(
+          (snapshot) async {
+            if (!mounted) return;
 
-          int classCount = snapshot.docs.length;
-          int studentSum = 0;
-          Map<String, dynamic>? recentClass;
+            int classCount = snapshot.docs.length;
+            int studentSum = 0;
+            Map<String, dynamic>? recentClass;
 
-          // Calculate actual student count from enrollments
-          for (var doc in snapshot.docs) {
-            final classId = doc.id;
-            final enrollmentCount = await FirebaseFirestore.instance
-                .collection('enrollments')
-                .where('classId', isEqualTo: classId)
-                .get();
-            studentSum += enrollmentCount.docs.length;
-          }
+            // Calculate actual student count from enrollments
+            for (var doc in snapshot.docs) {
+              final classId = doc.id;
+              final enrollmentCount = await FirebaseFirestore.instance
+                  .collection('enrollments')
+                  .where('classId', isEqualTo: classId)
+                  .get();
+              studentSum += enrollmentCount.docs.length;
+            }
 
-          if (snapshot.docs.isNotEmpty) {
-            final doc = snapshot.docs.first;
-            final classId = doc.id;
+            if (snapshot.docs.isNotEmpty) {
+              final doc = snapshot.docs.first;
+              final classId = doc.id;
 
-            // Get actual student count for recent class
-            final enrollmentCount = await FirebaseFirestore.instance
-                .collection('enrollments')
-                .where('classId', isEqualTo: classId)
-                .get();
+              // Get actual student count for recent class
+              final enrollmentCount = await FirebaseFirestore.instance
+                  .collection('enrollments')
+                  .where('classId', isEqualTo: classId)
+                  .get();
 
-            recentClass = {
-              'id': doc.id,
-              ...doc.data(),
-              'studentCount': enrollmentCount.docs.length, // Override with actual count
-            };
-          }
+              recentClass = {
+                'id': doc.id,
+                ...doc.data(),
+                'studentCount':
+                    enrollmentCount.docs.length, // Override with actual count
+              };
+            }
 
-          // Calculate pending submissions
-          int pendingSum = 0;
-          try {
-            final submissionsQuery = await FirebaseFirestore.instance
-                .collection('studentSubmissions')
-                .where('trainerId', isEqualTo: currentUser!.uid)
-                .where('assessmentType', isEqualTo: 'speaking_assessment')
-                .where('isReviewed', isEqualTo: false)
-                .get();
+            // Calculate pending submissions
+            int pendingSum = 0;
+            try {
+              final submissionsQuery = await FirebaseFirestore.instance
+                  .collection('studentSubmissions')
+                  .where('trainerId', isEqualTo: currentUser!.uid)
+                  .where('assessmentType', isEqualTo: 'speaking_assessment')
+                  .where('isReviewed', isEqualTo: false)
+                  .get();
 
-            pendingSum = submissionsQuery.docs.length;
-          } catch (e) {
-            print('Error fetching pending submissions: $e');
-          }
+              pendingSum = submissionsQuery.docs.length;
+            } catch (e) {
+              print('Error fetching pending submissions: $e');
+            }
 
-          setState(() {
-            activeClassesCount = classCount;
-            totalStudents = studentSum;
-            pendingSubmissions = pendingSum;
-            mostRecentClass = recentClass;
-            loading = false;
-            error = null;
-          });
-        },
-        onError: (e) {
-          if (!mounted) return;
+            setState(() {
+              activeClassesCount = classCount;
+              totalStudents = studentSum;
+              pendingSubmissions = pendingSum;
+              mostRecentClass = recentClass;
+              loading = false;
+              error = null;
+            });
+          },
+          onError: (e) {
+            if (!mounted) return;
 
-          setState(() {
-            error = "Could not load dashboard data. ${e.toString()}";
-            activeClassesCount = 0;
-            totalStudents = 0;
-            pendingSubmissions = 0;
-            loading = false;
-          });
-        },
-      );
-}
+            setState(() {
+              error = "Could not load dashboard data. ${e.toString()}";
+              activeClassesCount = 0;
+              totalStudents = 0;
+              pendingSubmissions = 0;
+              loading = false;
+            });
+          },
+        );
+  }
 
   void _setupNotificationListener() {
     if (currentUser == null) {
@@ -326,7 +329,8 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
       color: Colors.blue[700],
       backgroundColor: Colors.white,
       child: SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(), // NEW: Always allow scrolling for pull-to-refresh
+        physics:
+            const AlwaysScrollableScrollPhysics(), // NEW: Always allow scrolling for pull-to-refresh
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -428,6 +432,14 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
                   FontAwesomeIcons.bullhorn,
                   "/trainer/announcements/create",
                   Colors.orange,
+                ),
+                // ✅ ADD THIS NEW ITEM BELOW
+                _quickAction(
+                  context,
+                  "Authorize",
+                  FontAwesomeIcons.certificate,
+                  "/trainer/authorize",
+                  Colors.deepPurple,
                 ),
               ],
             ),
@@ -838,266 +850,262 @@ class _TrainerDashboardState extends State<TrainerDashboard> {
     );
   }
 
- Widget _quickAction(
-  BuildContext context,
-  String label,
-  IconData icon,
-  String route,
-  Color color,
-) {
-  // Special handling for Announce
-  if (route == "/trainer/announcements/create") {
-    return InkWell(
-      onTap: () => _showAnnouncementDialog(context),
-      borderRadius: BorderRadius.circular(22),
-      child: _QuickActionButton(
+  Widget _quickAction(
+    BuildContext context,
+    String label,
+    IconData icon,
+    String route,
+    Color color,
+  ) {
+    // Special handling for Announce
+    if (route == "/trainer/announcements/create") {
+      return InkWell(
+        onTap: () => _showAnnouncementDialog(context),
+        borderRadius: BorderRadius.circular(22),
+        child: _QuickActionButton(
+          label: label,
+          icon: icon,
+          color: color,
+          onTap: () => _showAnnouncementDialog(context),
+        ),
+      );
+    }
+
+    // Original OpenContainer for other routes
+    return OpenContainer(
+      transitionType: ContainerTransitionType.fadeThrough,
+      openColor: Colors.white,
+      closedElevation: 0,
+      closedShape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(22),
+      ),
+      closedBuilder: (context, action) => _QuickActionButton(
         label: label,
         icon: icon,
         color: color,
-        onTap: () => _showAnnouncementDialog(context),
+        onTap: action,
       ),
+      openBuilder: (context, action) {
+        switch (route) {
+          case "/trainer/classes":
+            return const MyClassesPage();
+          case "/trainer/classes/create":
+            return const CreateClassForm();
+          case "/trainer/content/upload":
+            return const QuickUploadMaterialPage();
+          case "/create-assessment":
+            return const CreateAssessmentPage(
+              classId: null,
+              initialClassId: null,
+            );
+          case "/trainer/reports":
+            return const TrainerReportsPage();
+          // ✅ ADD THIS NEW CASE BELOW
+          case "/trainer/authorize":
+            return const CertificateAuthorizationPage();
+          default:
+            return const SizedBox.shrink();
+        }
+      },
+      tappable: true,
+      transitionDuration: const Duration(milliseconds: 400),
     );
   }
 
-  // Original OpenContainer for other routes
-  return OpenContainer(
-    transitionType: ContainerTransitionType.fadeThrough,
-    openColor: Colors.white,
-    closedElevation: 0,
-    closedShape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(22),
-    ),
-    closedBuilder: (context, action) => _QuickActionButton(
-      label: label,
-      icon: icon,
-      color: color,
-      onTap: action,
-    ),
-    openBuilder: (context, action) {
-      switch (route) {
-        case "/trainer/classes":
-          return const MyClassesPage();
-        case "/trainer/classes/create":
-          return const CreateClassForm();
-        case "/trainer/content/upload":
-          return const QuickUploadMaterialPage();
-        case "/create-assessment":
-          return const CreateAssessmentPage(
-            classId: null,
-            initialClassId: null,
-          );
-        case "/trainer/reports":
-          return const TrainerReportsPage();
-        default:
-          return const SizedBox.shrink();
-      }
-    },
-    tappable: true,
-    transitionDuration: const Duration(milliseconds: 400),
-  );
-}
-
-void _showAnnouncementDialog(BuildContext context) {
-  showDialog(
-    context: context,
-    builder: (BuildContext context) {
-      return Dialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
-        ),
-        elevation: 0,
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 20), // Add this line
-        child: Container(
-          // Remove the constraints line completely
-          decoration: BoxDecoration(
-            color: Colors.white,
+  void _showAnnouncementDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.15),
-                blurRadius: 30,
-                offset: const Offset(0, 10),
-              ),
-            ],
           ),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Header
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Colors.orange.withOpacity(0.1),
-                        Colors.deepOrange.withOpacity(0.05),
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+          elevation: 0,
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 20,
+          ), // Add this line
+          child: Container(
+            // Remove the constraints line completely
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.15),
+                  blurRadius: 30,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Header
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.orange.withOpacity(0.1),
+                          Colors.deepOrange.withOpacity(0.05),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(16),
                     ),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: const Icon(
-                    FontAwesomeIcons.bullhorn,
-                    color: Colors.orange,
-                    size: 32,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                const Text(
-                  'Announcements',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF1E293B),
-                    letterSpacing: -0.5,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Choose an action',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[600],
-                  ),
-                ),
-                const SizedBox(height: 24),
-
-                // Create Announcement Button
-                _buildDialogButton(
-                  context: context,
-                  label: 'Create Announcement',
-                  icon: FontAwesomeIcons.plus,
-                  color: Colors.orange,
-                  onTap: () {
-                    Navigator.of(context).pop();
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const CreateAnnouncementPage(),
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(height: 12),
-
-                // Manage Announcements Button
-                _buildDialogButton(
-                  context: context,
-                  label: 'Manage Announcements',
-                  icon: FontAwesomeIcons.listCheck,
-                  color: Colors.deepOrange,
-                  onTap: () {
-                    Navigator.of(context).pop();
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const AnnouncementsListPage(),
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(height: 16),
-
-                // Cancel Button
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 12,
-                      horizontal: 24,
+                    child: const Icon(
+                      FontAwesomeIcons.bullhorn,
+                      color: Colors.orange,
+                      size: 32,
                     ),
                   ),
-                  child: Text(
-                    'Cancel',
+                  const SizedBox(height: 20),
+                  const Text(
+                    'Announcements',
                     style: TextStyle(
-                      color: Colors.grey[600],
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1E293B),
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Choose an action',
+                    style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Create Announcement Button
+                  _buildDialogButton(
+                    context: context,
+                    label: 'Create Announcement',
+                    icon: FontAwesomeIcons.plus,
+                    color: Colors.orange,
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const CreateAnnouncementPage(),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Manage Announcements Button
+                  _buildDialogButton(
+                    context: context,
+                    label: 'Manage Announcements',
+                    icon: FontAwesomeIcons.listCheck,
+                    color: Colors.deepOrange,
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const AnnouncementsListPage(),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Cancel Button
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 12,
+                        horizontal: 24,
+                      ),
+                    ),
+                    child: Text(
+                      'Cancel',
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDialogButton({
+    required BuildContext context,
+    required String label,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: LinearGradient(
+          colors: [color, color.withOpacity(0.8)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(0.3),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min, // Changed from max to min
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(icon, color: Colors.white, size: 16),
+                ),
+                const SizedBox(width: 12),
+                Flexible(
+                  // Wrapped Text with Flexible
+                  child: Text(
+                    label,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
                       fontWeight: FontWeight.w600,
                     ),
+                    overflow: TextOverflow.ellipsis, // Added overflow handling
+                    maxLines: 1, // Limit to 1 line
                   ),
                 ),
               ],
             ),
           ),
         ),
-      );
-    },
-  );
-}
-
-Widget _buildDialogButton({
-  required BuildContext context,
-  required String label,
-  required IconData icon,
-  required Color color,
-  required VoidCallback onTap,
-}) {
-  return Container(
-    width: double.infinity,
-    decoration: BoxDecoration(
-      borderRadius: BorderRadius.circular(16),
-      gradient: LinearGradient(
-        colors: [color, color.withOpacity(0.8)],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
       ),
-      boxShadow: [
-        BoxShadow(
-          color: color.withOpacity(0.3),
-          blurRadius: 12,
-          offset: const Offset(0, 6),
-        ),
-      ],
-    ),
-    child: Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            vertical: 16,
-            horizontal: 20,
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min, // Changed from max to min
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  icon,
-                  color: Colors.white,
-                  size: 16,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Flexible( // Wrapped Text with Flexible
-                child: Text(
-                  label,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  overflow: TextOverflow.ellipsis, // Added overflow handling
-                  maxLines: 1, // Limit to 1 line
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    ),
-  );
-}
+    );
+  }
 
   Widget _recentClassCard(BuildContext context, Map<String, dynamic> cls) {
     final className = cls['className'] ?? 'Untitled Class';

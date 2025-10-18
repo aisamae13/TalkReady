@@ -10,7 +10,7 @@ class CertificateService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final Logger _logger = Logger();
 
-  // ✅ SIMPLIFIED: Just check eligibility, then redirect to web
+  // ✅ Check if user completed all required lessons
   Future<bool> hasCompletedAllModules(String userId) async {
     try {
       final userProgressDoc = await _firestore
@@ -58,7 +58,7 @@ class CertificateService {
     }
   }
 
-  // ✅ NEW: Open web browser to claim certificate
+  // ✅ Open web browser to claim certificate
   Future<void> claimCertificateOnWeb() async {
     try {
       final user = _auth.currentUser;
@@ -66,25 +66,27 @@ class CertificateService {
         throw Exception('User not authenticated');
       }
 
-      // ✅ Redirect to web certificate page
-      final url = Uri.parse('https://talkreadyweb.onrender.com/certificate');
+      // ✅ IMPORTANT: Update this URL to match your deployed web app
+      final url = Uri.parse(
+        'https://talkreadyweb.onrender.com/mobile-certificate',
+      );
 
       if (await canLaunchUrl(url)) {
         await launchUrl(
           url,
           mode: LaunchMode.externalApplication, // Opens in browser
         );
-        _logger.i('Opened certificate page in browser');
+        _logger.i('✅ Opened mobile certificate page in browser');
       } else {
         throw Exception('Could not launch browser');
       }
     } catch (e) {
-      _logger.e('Error opening certificate page: $e');
+      _logger.e('❌ Error opening certificate page: $e');
       rethrow;
     }
   }
 
-  // ✅ OPTIONAL: Check if certificate already exists (for status display)
+  // ✅ Check if certificate already exists
   Future<Map<String, dynamic>?> getExistingCertificate(String userId) async {
     try {
       final certificatesQuery = await _firestore
@@ -95,13 +97,34 @@ class CertificateService {
 
       if (certificatesQuery.docs.isNotEmpty) {
         final doc = certificatesQuery.docs.first;
+        _logger.i('✅ Found existing certificate for user $userId');
         return {'id': doc.id, ...doc.data()};
       }
 
+      _logger.i('ℹ️ No certificate found for user $userId');
       return null;
     } catch (e) {
-      _logger.e('Error checking existing certificate: $e');
+      _logger.e('❌ Error checking existing certificate: $e');
       return null;
+    }
+  }
+
+  // ✅ Open existing certificate in browser
+  Future<void> viewCertificateOnWeb(String certificateId) async {
+    try {
+      final url = Uri.parse(
+        'https://talkreadyweb.onrender.com/certificate/$certificateId',
+      );
+
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+        _logger.i('✅ Opened certificate $certificateId in browser');
+      } else {
+        throw Exception('Could not launch browser');
+      }
+    } catch (e) {
+      _logger.e('❌ Error opening certificate: $e');
+      rethrow;
     }
   }
 }
