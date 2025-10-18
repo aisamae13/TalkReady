@@ -447,66 +447,67 @@ class _CertificateAuthorizationPageState
       ),
       child: Column(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          // Row 1: Overall Average (centered)
+          Column(
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Overall Average',
-                    style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${average.toStringAsFixed(1)}%',
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: tierColor,
-                    ),
-                  ),
-                ],
+              Text(
+                'Overall Average',
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
+              const SizedBox(height: 4),
+              Text(
+                '${average.toStringAsFixed(1)}%',
+                style: TextStyle(
+                  fontSize: 32,
+                  fontWeight: FontWeight.bold,
                   color: tierColor,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  children: [
-                    FaIcon(tierIcon, color: Colors.white, size: 16),
-                    const SizedBox(width: 8),
-                    Text(
-                      tierLabel,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
                 ),
               ),
             ],
           ),
           const SizedBox(height: 12),
+          // Row 2: Tier Badge (centered)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: tierColor,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FaIcon(tierIcon, color: Colors.white, size: 16),
+                const SizedBox(width: 8),
+                Text(
+                  tierLabel,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Row 3: Stats (Lessons & Assessments)
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildStatChip(
-                'Lessons',
-                performance['totalLessonsCompleted']?.toString() ?? '0',
-                Icons.book,
+              Expanded(
+                child: _buildStatChip(
+                  'Lessons',
+                  performance['totalLessonsCompleted']?.toString() ?? '0',
+                  Icons.book,
+                ),
               ),
-              _buildStatChip(
-                'Assessments',
-                performance['totalAssessmentsCompleted']?.toString() ?? '0',
-                Icons.assignment,
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildStatChip(
+                  'Assessments',
+                  performance['totalAssessmentsCompleted']?.toString() ?? '0',
+                  Icons.assignment,
+                ),
               ),
             ],
           ),
@@ -517,32 +518,32 @@ class _CertificateAuthorizationPageState
 
   Widget _buildStatChip(String label, String value, IconData icon) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: Colors.grey.shade200),
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 16, color: const Color(0xFF64748B)),
-          const SizedBox(width: 6),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                value,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                  color: Color(0xFF1E293B),
-                ),
-              ),
-              Text(
-                label,
-                style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-              ),
-            ],
+          Icon(icon, size: 18, color: const Color(0xFF64748B)),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+              color: Color(0xFF1E293B),
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
           ),
         ],
       ),
