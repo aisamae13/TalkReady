@@ -12,6 +12,7 @@ import 'homepage.dart';
 import 'welcome_page.dart';
 import '../Teachers/TrainerDashboard.dart';
 import 'chooseUserType.dart';
+import '../session/device_session_manager.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -235,197 +236,384 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  Future<void> _signInWithGoogle() async {
-    try {
-      await _googleSignIn.signOut();
-      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-      if (googleUser == null) return;
+ Future<void> _signInWithGoogle() async {
+  try {
+    await _googleSignIn.signOut();
+    final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+    if (googleUser == null) return;
+
+    if (!mounted) return;
+
+    final GoogleSignInAuthentication googleAuth =
+        await googleUser.authentication;
+    final OAuthCredential credential = GoogleAuthProvider.credential(
+      accessToken: googleAuth.accessToken,
+      idToken: googleAuth.idToken,
+    );
+
+    final UserCredential userCredential = await _auth.signInWithCredential(
+      credential,
+    );
+    final user = userCredential.user;
+
+    if (!mounted) return;
+
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Google sign-in failed. Please try again.'),
+        ),
+      );
+      return;
+    }
+
+    // ✅ NEW: Check if user can login (no active session on another device)
+    final loginCheck = await DeviceSessionManager().canLogin(user.uid);
+
+    if (loginCheck['canLogin'] == false) {
+      // Another device is active - sign out and show dialog
+      await FirebaseAuth.instance.signOut();
 
       if (!mounted) return;
 
-      // Get Firebase credentials
-      final GoogleSignInAuthentication googleAuth =
-          await googleUser.authentication;
-      final OAuthCredential credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
-
-      final UserCredential userCredential = await _auth.signInWithCredential(
-        credential,
-      );
-      final user = userCredential.user;
-
-      if (!mounted) return;
-
-      if (user == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Google sign-in failed. Please try again.'),
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
           ),
-        );
-        return;
-      }
-
-      final userDocRef = _firestore.collection('users').doc(user.uid);
-      final docSnapshot = await userDocRef.get();
-      final existingData = docSnapshot.data() as Map<String, dynamic>? ?? {};
-
-      final Map<String, dynamic> dataToMerge = {
-        'uid': user.uid,
-        'email': user.email,
-        'displayName': user.displayName ?? googleUser.email.split('@').first,
-        'photoURL': user.photoURL ?? googleUser.photoUrl,
-        'emailVerified': user.emailVerified,
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
-
-      if (!existingData.containsKey('userType')) {
-        dataToMerge['userType'] = null;
-      }
-      if (!existingData.containsKey('onboardingCompleted')) {
-        dataToMerge['onboardingCompleted'] = false;
-      }
-      if (!existingData.containsKey('createdAt')) {
-        dataToMerge['createdAt'] = FieldValue.serverTimestamp();
-      }
-
-      await userDocRef.set(dataToMerge, SetOptions(merge: true));
-
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Login successful!')));
-
-      // Navigate without showing an extra loading screen
-      _navigateAfterLogin(user);
-    } catch (e, stackTrace) {
-      logger.e('Google Sign-In error: $e', error: e, stackTrace: stackTrace);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Google Sign-In error: An error occurred during authentication.',
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.devices_other,
+                  color: Colors.red.shade700,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Already Logged In',
+                  style: TextStyle(fontSize: 18),
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Your account is currently active on another device:',
+                style: TextStyle(fontSize: 15),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.phone_android, color: Colors.grey.shade700),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        loginCheck['activeDevice'] ?? 'Unknown Device',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Please logout from the other device first, or wait 10 minutes for the session to expire automatically.',
+                style: TextStyle(fontSize: 13, height: 1.4),
+              ),
+            ],
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF00568D),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('OK'),
             ),
+          ],
+        ),
+      );
+      return; // Stop login process
+    }
+
+    // ✅ NEW: Create session for this device
+    await DeviceSessionManager().createSession(user.uid, context);
+
+    final userDocRef = _firestore.collection('users').doc(user.uid);
+    final docSnapshot = await userDocRef.get();
+    final existingData = docSnapshot.data() as Map<String, dynamic>? ?? {};
+
+    final Map<String, dynamic> dataToMerge = {
+      'uid': user.uid,
+      'email': user.email,
+      'displayName': user.displayName ?? googleUser.email.split('@').first,
+      'photoURL': user.photoURL ?? googleUser.photoUrl,
+      'emailVerified': user.emailVerified,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+
+    if (!existingData.containsKey('userType')) {
+      dataToMerge['userType'] = null;
+    }
+    if (!existingData.containsKey('onboardingCompleted')) {
+      dataToMerge['onboardingCompleted'] = false;
+    }
+    if (!existingData.containsKey('createdAt')) {
+      dataToMerge['createdAt'] = FieldValue.serverTimestamp();
+    }
+
+    await userDocRef.set(dataToMerge, SetOptions(merge: true));
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Login successful!')),
+    );
+
+    _navigateAfterLogin(user);
+  } catch (e, stackTrace) {
+    logger.e('Google Sign-In error: $e', error: e, stackTrace: stackTrace);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Google Sign-In error: An error occurred during authentication.',
           ),
-        );
-      }
+        ),
+      );
     }
   }
+}
 
-  Future<void> _signInWithEmailPassword() async {
-    try {
-      final email = _emailController.text.trim();
-      final password = _passwordController.text;
-      if (email.isEmpty || password.isEmpty) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please fill in all fields')),
-        );
-        return;
-      }
-
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => const LoadingScreen()),
+ Future<void> _signInWithEmailPassword() async {
+  try {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+    if (email.isEmpty || password.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please fill in all fields')),
       );
+      return;
+    }
 
-      // If the email is associated only with a non-password provider, show suggestion
-      final providers = await _auth.fetchSignInMethodsForEmail(email);
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const LoadingScreen()),
+    );
 
-      // Check if providers exist BUT 'password' is not one of them (e.g., only 'google.com')
-      if (providers.isNotEmpty && !providers.contains('password')) {
-        Navigator.pop(context); // Dismiss the LoadingScreen
-        if (!mounted) return;
+    // If the email is associated only with a non-password provider, show suggestion
+    final providers = await _auth.fetchSignInMethodsForEmail(email);
 
-        String message;
-        if (providers.contains('google.com')) {
-          // Specific message for Google account
-          message =
-              'It looks like you signed up with Google. Please use the "Continue with Google" button below.';
-        } else {
-          // Generic message for other non-password providers
-          final suggestion = providers.join(', ');
-          message =
-              'This email is linked to a non-password account (e.g., $suggestion). Please use the appropriate sign-in method.';
-        }
+    // Check if providers exist BUT 'password' is not one of them (e.g., only 'google.com')
+    if (providers.isNotEmpty && !providers.contains('password')) {
+      Navigator.pop(context); // Dismiss the LoadingScreen
+      if (!mounted) return;
 
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(message)));
-        return;
+      String message;
+      if (providers.contains('google.com')) {
+        message =
+            'It looks like you signed up with Google. Please use the "Continue with Google" button below.';
+      } else {
+        final suggestion = providers.join(', ');
+        message =
+            'This email is linked to a non-password account (e.g., $suggestion). Please use the appropriate sign-in method.';
       }
 
-      final UserCredential userCredential = await _auth
-          .signInWithEmailAndPassword(email: email, password: password);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+      return;
+    }
+
+    final UserCredential userCredential = await _auth
+        .signInWithEmailAndPassword(email: email, password: password);
+
+    final user = userCredential.user;
+
+    if (user != null) {
+      // ✅ NEW: Check if user can login (no active session on another device)
+      final loginCheck = await DeviceSessionManager().canLogin(user.uid);
+
+      if (loginCheck['canLogin'] == false) {
+        // Another device is active - sign out and show dialog
+        await FirebaseAuth.instance.signOut();
+
+        if (!mounted) return;
+        Navigator.pop(context); // Close loading screen
+
+        await showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    Icons.devices_other,
+                    color: Colors.red.shade700,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Already Logged In',
+                    style: TextStyle(fontSize: 18),
+                  ),
+                ),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Your account is currently active on another device:',
+                  style: TextStyle(fontSize: 15),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.phone_android, color: Colors.grey.shade700),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          loginCheck['activeDevice'] ?? 'Unknown Device',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Please logout from the other device first, or wait 10 minutes for the session to expire automatically.',
+                  style: TextStyle(fontSize: 13, height: 1.4),
+                ),
+              ],
+            ),
+            actions: [
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF00568D),
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+        return; // Stop login process
+      }
+
       if (!mounted) return;
       Navigator.pop(context);
 
-      final user = userCredential.user;
-      if (user != null) {
-        // Ensure a users/{uid} doc exists but don't overwrite role/onboarding flags.
-        final userDocRef = _firestore.collection('users').doc(user.uid);
-        final doc = await userDocRef.get();
-        if (!doc.exists) {
-          await userDocRef.set({
-            'uid': user.uid,
-            'email': user.email,
-            'displayName': user.email?.split('@').first ?? '',
-            'emailVerified': user.emailVerified,
-            'createdAt': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
-        }
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Login successful!')));
-        _navigateAfterLogin(user);
-      }
-    } on FirebaseAuthException catch (e) {
-      try {
-        Navigator.pop(context);
-      } catch (_) {}
-      if (!mounted) return;
-      String message;
-      switch (e.code) {
-        case 'user-not-found':
-          message = 'No user found for that email.';
-          break;
-        case 'wrong-password':
-          message = 'Incorrect password.';
-          break;
-        case 'invalid-credential':
-          // This is often thrown when a Google-only account tries to use email/password.
-          // We check if the email has 'google.com' as a provider to give the best instruction.
-          final email = _emailController.text.trim();
-          final providers = await _auth.fetchSignInMethodsForEmail(email);
+      // ✅ NEW: Create session for this device
+      await DeviceSessionManager().createSession(user.uid, context);
 
-          if (providers.contains('google.com')) {
-            message =
-                'It looks like you signed up with Google. Please use the "Continue with Google" button below.';
-          } else {
-            message =
-                'The credential is invalid, or the account is linked to a different sign-in method.';
-          }
-          break;
-        default:
-          message = e.message ?? 'Login failed.';
+      // Ensure a users/{uid} doc exists but don't overwrite role/onboarding flags.
+      final userDocRef = _firestore.collection('users').doc(user.uid);
+      final doc = await userDocRef.get();
+      if (!doc.exists) {
+        await userDocRef.set({
+          'uid': user.uid,
+          'email': user.email,
+          'displayName': user.email?.split('@').first ?? '',
+          'emailVerified': user.emailVerified,
+          'createdAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
-      logger.e('FirebaseAuthException: ${e.code} - ${e.message}');
-    } catch (e) {
-      try {
-        Navigator.pop(context);
-      } catch (_) {}
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('An error occurred: $e')));
-      logger.e('Unexpected error during email/password sign-in: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Login successful!')),
+      );
+      _navigateAfterLogin(user);
     }
+  } on FirebaseAuthException catch (e) {
+    try {
+      Navigator.pop(context);
+    } catch (_) {}
+    if (!mounted) return;
+    String message;
+    switch (e.code) {
+      case 'user-not-found':
+        message = 'No user found for that email.';
+        break;
+      case 'wrong-password':
+        message = 'Incorrect password.';
+        break;
+      case 'invalid-credential':
+        final email = _emailController.text.trim();
+        final providers = await _auth.fetchSignInMethodsForEmail(email);
+
+        if (providers.contains('google.com')) {
+          message =
+              'It looks like you signed up with Google. Please use the "Continue with Google" button below.';
+        } else {
+          message =
+              'The credential is invalid, or the account is linked to a different sign-in method.';
+        }
+        break;
+      default:
+        message = e.message ?? 'Login failed.';
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+    logger.e('FirebaseAuthException: ${e.code} - ${e.message}');
+  } catch (e) {
+    try {
+      Navigator.pop(context);
+    } catch (_) {}
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('An error occurred: $e')),
+    );
+    logger.e('Unexpected error during email/password sign-in: $e');
   }
+}
 
   void _showTermsOfServiceDialog() {
     showDialog(
