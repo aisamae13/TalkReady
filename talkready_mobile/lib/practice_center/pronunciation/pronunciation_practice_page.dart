@@ -499,8 +499,9 @@ class _PronunciationPracticePageState extends State<PronunciationPracticePage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('🎤 Pronunciation Practice'),
+        title: const Text('Pronunciation Practice'),
         backgroundColor: Colors.blue,
+        foregroundColor: Colors.white,
         actions: [
           Center(
             child: Padding(
@@ -779,7 +780,7 @@ class _PronunciationPracticePageState extends State<PronunciationPracticePage> {
                     icon: const Icon(Icons.mic, size: 28),
                     label: const Text(
                       'Start Recording',
-                      style: TextStyle(fontSize: 18),
+                      style: TextStyle(fontSize: 18, color: Colors.white),
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.blue,

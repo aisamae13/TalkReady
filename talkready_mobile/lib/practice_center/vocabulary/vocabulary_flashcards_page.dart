@@ -151,6 +151,7 @@ class _VocabularyFlashcardsPageState extends State<VocabularyFlashcardsPage>
             label: const Text('Start Learning'),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.purple,
+              foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             ),
           ),
@@ -366,8 +367,9 @@ class _VocabularyFlashcardsPageState extends State<VocabularyFlashcardsPage>
     if (_isLoading || _isLoadingWords) {
       return Scaffold(
         appBar: AppBar(
-          title: const Text('🎴 Flashcards'),
+          title: const Text('Flashcards'),
           backgroundColor: Colors.purple,
+          foregroundColor: Colors.white,
         ),
         body: const Center(
           child: Column(
@@ -498,6 +500,7 @@ class _VocabularyFlashcardsPageState extends State<VocabularyFlashcardsPage>
                       label: const Text('Need Review'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.orange,
+                        foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -513,6 +516,7 @@ class _VocabularyFlashcardsPageState extends State<VocabularyFlashcardsPage>
                       label: const Text('I Know This'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),

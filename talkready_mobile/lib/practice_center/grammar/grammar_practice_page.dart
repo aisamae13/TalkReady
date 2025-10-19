@@ -392,7 +392,7 @@ class _GrammarPracticePageState extends State<GrammarPracticePage> {
                     icon: const Icon(Icons.play_arrow, size: 28),
                     label: const Text(
                       'Start Practice',
-                      style: TextStyle(fontSize: 18),
+                      style: TextStyle(fontSize: 18, color: Colors.white),
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.orange,
@@ -517,8 +517,9 @@ class _GrammarPracticePageState extends State<GrammarPracticePage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('✍️ Grammar Practice'),
+        title: const Text('Grammar Practice'),
         backgroundColor: Colors.orange,
+        foregroundColor: Colors.white,
         actions: [
           Center(
             child: Padding(

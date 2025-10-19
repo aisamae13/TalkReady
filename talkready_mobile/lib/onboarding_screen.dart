@@ -149,77 +149,98 @@ class OnboardingScreenState extends State<OnboardingScreen> {
     }
   }
 
-  Future<void> _saveToFirestoreAndNavigate() async {
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) {
-        throw Exception('User not authenticated');
-      }
+ Future<void> _saveToFirestoreAndNavigate() async {
+  try {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw Exception('User not authenticated');
+    }
 
-      final Map<String, dynamic> userInfo = {
-        'firstName': _firstNameController.text.trim(),
-        'lastName': _lastNameController.text.trim(),
-        'age': _ageController.text.trim(),
-        'birthdate': _birthdate != null ? Timestamp.fromDate(_birthdate!) : null,
-        'gender': _selectedGender,
-        'province': _provinceController.text.trim(),
-        'municipality': _municipalityController.text.trim(),
-        'barangay': _barangayController.text.trim(),
-        'timestamp': FieldValue.serverTimestamp(),
-        'onboardingCompleted': true,
-      };
+    final Map<String, dynamic> userInfo = {
+      'firstName': _firstNameController.text.trim(),
+      'lastName': _lastNameController.text.trim(),
+      'age': _ageController.text.trim(),
+      'birthdate': _birthdate != null ? Timestamp.fromDate(_birthdate!) : null,
+      'gender': _selectedGender,
+      'province': _provinceController.text.trim(),
+      'municipality': _municipalityController.text.trim(),
+      'barangay': _barangayController.text.trim(),
+      'timestamp': FieldValue.serverTimestamp(),
+      'onboardingCompleted': true,
+    };
 
-      if (_profilePic != null) {
-        _logger.i('Encoding profile picture to base64: ${_profilePic!.path}');
-        final imageBytes = await _profilePic!.readAsBytes();
-        final image = img.decodeImage(imageBytes)!;
-        final resizedImage = img.copyResize(image, width: 200);
-        final base64Image = img.encodePng(resizedImage);
-        if (base64Image.length > 1000000) {
-          _logger.e('Profile picture too large for Firestore (exceeds 1 MB)');
-          throw Exception('Profile picture is too large to store in Firestore');
-        }
-        userInfo['profilePicBase64'] = base64Encode(base64Image);
-        userInfo['profilePicSkipped'] = false;
-        _logger.i('Profile picture encoded successfully as base64');
-      } else {
-        _logger.w('No profile picture selected, skipping upload');
-        userInfo['profilePicBase64'] = null;
-        userInfo['profilePicSkipped'] = true;
+    if (_profilePic != null) {
+      _logger.i('Encoding profile picture to base64: ${_profilePic!.path}');
+      final imageBytes = await _profilePic!.readAsBytes();
+      final image = img.decodeImage(imageBytes)!;
+      final resizedImage = img.copyResize(image, width: 200);
+      final base64Image = img.encodePng(resizedImage);
+      if (base64Image.length > 1000000) {
+        _logger.e('Profile picture too large for Firestore (exceeds 1 MB)');
+        throw Exception('Profile picture is too large to store in Firestore');
       }
+      userInfo['profilePicBase64'] = base64Encode(base64Image);
+      userInfo['profilePicSkipped'] = false;
+      _logger.i('Profile picture encoded successfully as base64');
+    } else {
+      _logger.w('No profile picture selected, skipping upload');
+      userInfo['profilePicBase64'] = null;
+      userInfo['profilePicSkipped'] = true;
+    }
+
+    // Save user info to 'users' collection
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .set(userInfo, SetOptions(merge: true));
+
+    // 🆕 NEW: Initialize userProgress with streak freezes for students
+    if (widget.userType?.trim().toLowerCase() == 'student') {
+      _logger.i('Initializing userProgress with streak freezes for new student');
 
       await FirebaseFirestore.instance
-          .collection('users')
+          .collection('userProgress')
           .doc(user.uid)
-          .set(userInfo, SetOptions(merge: true));
+          .set({
+            'streakFreezes': 3,              // Start with 3 freezes
+            'currentStreak': 0,              // No streak yet
+            'longestStreak': 0,              // No longest streak yet
+            'lastActiveDate': null,          // No activity yet
+            'lessonAttempts': {},            // Empty lesson attempts
+            'moduleAssessmentAttempts': {},  // Empty assessment attempts
+            'preAssessmentsCompleted': {},   // Empty pre-assessments
+            'createdAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
 
-      if (!mounted) return;
-
-      print('DEBUG: userType is "${widget.userType}"');
-      if (widget.userType?.trim().toLowerCase() == 'trainer') {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => TrainerDashboard()),
-        );
-        return;
-      }
-      if (widget.userType?.trim().toLowerCase() == 'student') {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => NextScreen(responses: userInfo)),
-        );
-        return;
-      }
-      // Optionally handle other user types or fallback here
-
-    } catch (e) {
-      _logger.e('Error saving user information: $e');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error saving user information: $e')),
-      );
+      _logger.i('Successfully initialized userProgress with 3 streak freezes');
     }
+
+    if (!mounted) return;
+
+    print('DEBUG: userType is "${widget.userType}"');
+    if (widget.userType?.trim().toLowerCase() == 'trainer') {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => TrainerDashboard()),
+      );
+      return;
+    }
+    if (widget.userType?.trim().toLowerCase() == 'student') {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => NextScreen(responses: userInfo)),
+      );
+      return;
+    }
+
+  } catch (e) {
+    _logger.e('Error saving user information: $e');
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Error saving user information: $e')),
+    );
   }
+}
 
   // 2. VALIDATION: Check for age consistency
   bool _isStage1Valid() {

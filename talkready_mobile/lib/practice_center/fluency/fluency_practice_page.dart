@@ -774,7 +774,7 @@ class _FluencyPracticePageState extends State<FluencyPracticePage> {
                     icon: const Icon(Icons.mic, size: 28),
                     label: const Text(
                       'Start Recording',
-                      style: TextStyle(fontSize: 18),
+                      style: TextStyle(fontSize: 18, color: Colors.white),
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.green,

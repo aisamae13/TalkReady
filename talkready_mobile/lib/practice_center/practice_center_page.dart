@@ -181,8 +181,9 @@ class _PracticeCenterPageState extends State<PracticeCenterPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('🎯 Practice Center'),
+        title: const Text('Practice Center'),
         backgroundColor: Colors.deepPurple,
+        foregroundColor: Colors.white,
         elevation: 0,
       ),
       body: _isLoading

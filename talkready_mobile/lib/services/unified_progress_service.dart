@@ -7,6 +7,8 @@ import 'package:http/http.dart' as http;
 import 'dart:typed_data';
 import '../config/api_config.dart';
 import '../config/environment.dart';
+import 'practice_activity_service.dart';
+
 
 class UnifiedProgressService {
   final Logger _logger = Logger();
@@ -438,49 +440,67 @@ class UnifiedProgressService {
   }
 
   Future<void> saveLessonAttempt({
-    required String lessonId,
-    required int score,
-    required int maxScore,
-    required int timeSpent,
-    required Map<String, dynamic> detailedResponses,
-  }) async {
-    final uId = userId;
-    if (uId == null) {
-      _logger.e('User not authenticated. Cannot save lesson attempt.');
-      throw Exception('User not authenticated');
-    }
-
-    final userProgressRef = _firestore.collection('userProgress').doc(uId);
-
-    try {
-      final existingAttempts = await getLessonAttempts(lessonId);
-      final newAttemptNumber = existingAttempts.length + 1;
-
-      final newAttemptData = {
-        'score': score,
-        'totalPossiblePoints': maxScore,
-        'attemptNumber': newAttemptNumber,
-        'lessonId': lessonId,
-        'timeSpent': timeSpent,
-        'attemptTimestamp': Timestamp.now(),
-        'detailedResponses': detailedResponses,
-      };
-
-      await userProgressRef.set({
-        'lessonAttempts': {
-          lessonId: FieldValue.arrayUnion([newAttemptData]),
-        },
-        'lastActivityTimestamp': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-
-      _logger.i(
-        'Successfully saved attempt #$newAttemptNumber for lesson $lessonId for user $uId.',
-      );
-    } catch (e) {
-      _logger.e('Error saving lesson attempt for "$lessonId": $e');
-      rethrow;
-    }
+  required String lessonId,
+  required int score,
+  required int maxScore,
+  required int timeSpent,
+  required Map<String, dynamic> detailedResponses,
+}) async {
+  final uId = userId;
+  if (uId == null) {
+    _logger.e('User not authenticated. Cannot save lesson attempt.');
+    throw Exception('User not authenticated');
   }
+
+  final userProgressRef = _firestore.collection('userProgress').doc(uId);
+
+  try {
+    final existingAttempts = await getLessonAttempts(lessonId);
+    final newAttemptNumber = existingAttempts.length + 1;
+
+    final newAttemptData = {
+      'score': score,
+      'totalPossiblePoints': maxScore,
+      'attemptNumber': newAttemptNumber,
+      'lessonId': lessonId,
+      'timeSpent': timeSpent,
+      'attemptTimestamp': Timestamp.now(),
+      'detailedResponses': detailedResponses,
+    };
+
+    await userProgressRef.set({
+      'lessonAttempts': {
+        lessonId: FieldValue.arrayUnion([newAttemptData]),
+      },
+      'lastActivityTimestamp': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    _logger.i(
+      'Successfully saved attempt #$newAttemptNumber for lesson $lessonId for user $uId.',
+    );
+
+    // 🆕 NEW: Call Cloud Function to update streak
+    try {
+      final streakResult = await PracticeActivityService.recordPracticeActivity();
+
+      if (streakResult != null && streakResult['success'] == true) {
+        _logger.i('Streak updated: ${streakResult['message']}');
+
+        // Log if streak freeze was used
+        if (streakResult['message'].toString().contains('Streak Freeze')) {
+          _logger.i('Streak Freeze used! Remaining: ${streakResult['streakFreezes']}');
+        }
+      }
+    } catch (streakError) {
+      // Don't fail the lesson save if streak update fails
+      _logger.e('Failed to update streak, but lesson was saved: $streakError');
+    }
+
+  } catch (e) {
+    _logger.e('Error saving lesson attempt for "$lessonId": $e');
+    rethrow;
+  }
+}
 
   Future<Map<String, dynamic>> getModuleProgress(String moduleId) async {
     final progress = await getUserProgress();

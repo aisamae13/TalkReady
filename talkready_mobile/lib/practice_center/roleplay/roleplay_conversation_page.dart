@@ -356,7 +356,7 @@ class _RolePlayConversationPageState extends State<RolePlayConversationPage> {
               Navigator.pop(context);
               Navigator.pop(context);
             },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.teal, foregroundColor: Colors.white),
             child: const Text('Try Another'),
           ),
         ],
@@ -443,8 +443,9 @@ class _RolePlayConversationPageState extends State<RolePlayConversationPage> {
     if (_isLoading) {
       return Scaffold(
         appBar: AppBar(
-          title: const Text('🎭 Role-Play'),
+          title: const Text('Role-Play'),
           backgroundColor: Colors.teal,
+          foregroundColor: Colors.white,
         ),
         body: const Center(
           child: Column(
@@ -463,6 +464,7 @@ class _RolePlayConversationPageState extends State<RolePlayConversationPage> {
       appBar: AppBar(
         title: Text(_scenario!['title']),
         backgroundColor: Colors.teal,
+        foregroundColor: Colors.white,
         actions: [
           IconButton(
             icon: const Icon(Icons.lightbulb_outline),
@@ -692,6 +694,7 @@ class _RolePlayConversationPageState extends State<RolePlayConversationPage> {
                 ? null
                 : _sendMessage,
             backgroundColor: Colors.teal,
+            foregroundColor: Colors.white,
             mini: true,
             child: _isSending
                 ? const SizedBox(

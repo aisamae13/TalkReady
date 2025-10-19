@@ -94,8 +94,9 @@ class _RolePlayScenariosPageState extends State<RolePlayScenariosPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('🎭 Role-Play Scenarios'),
+        title: const Text('Role-Play Scenarios'),
         backgroundColor: Colors.teal,
+        foregroundColor: Colors.white,
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())

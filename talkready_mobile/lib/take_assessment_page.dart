@@ -1,9 +1,15 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:logger/logger.dart';
 import 'firebase_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../Teachers/Assessment/ReviewSubmissionPage.dart';
+import '../services/answer_matcher.dart'; // Adjust path as needed
 
 class TakeAssessmentPage extends StatefulWidget {
   final String assessmentId;
@@ -42,12 +48,62 @@ class _TakeAssessmentPageState extends State<TakeAssessmentPage>
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
 
-  @override
-  void initState() {
-    super.initState();
-    _initializeAnimations();
-    _fetchAssessmentAndCheckSubmission();
+  Timer? _autoSaveTimer;
+DateTime? _lastSaveTime;
+bool _isDraftSaved = false;
+Timer? _debounceSaveTimer;
+
+Map<String, TextEditingController> _textControllers = {};
+
+@override
+void initState() {
+  super.initState();
+  _initializeAnimations();
+  _checkForDraftAndFetch();
+}
+
+Future<void> _checkForDraftAndFetch() async {
+  // First, fetch assessment and check submission status
+  await _fetchAssessmentAndCheckSubmission();
+
+  // Only check for draft if NOT already submitted and deadline hasn't passed
+  if (!hasAlreadySubmitted && !isDeadlinePassed) {
+    final draft = await _loadDraft();
+
+    if (draft != null) {
+      final savedTime = DateTime.parse(draft['timestamp']);
+
+      // Show restore dialog
+      final shouldRestore = await _showRestoreDraftDialog(savedTime);
+
+      if (shouldRestore) {
+        if (mounted) {
+          setState(() {
+            answers = Map<String, dynamic>.from(draft['answers']);
+
+            for (var entry in answers.entries) {
+              if (_textControllers.containsKey(entry.key)) {
+                _textControllers[entry.key]?.text = entry.value?.toString() ?? '';
+              }
+            }
+          });
+          _logger.i('Draft restored successfully');
+        }
+      } else {
+        // Clear old draft if user chose to start fresh
+        await _clearDraft();
+      }
+    }
+  } else {
+    // Clear any existing draft since assessment is already submitted or deadline passed
+    await _clearDraft();
   }
+
+  // Start auto-save only if can still submit
+  if (!hasAlreadySubmitted && !isDeadlinePassed) {
+    _startAutoSave();
+  }
+}
 
   void _initializeAnimations() {
     _fadeController = AnimationController(
@@ -67,13 +123,292 @@ class _TakeAssessmentPageState extends State<TakeAssessmentPage>
           CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
         );
   }
+  // Generate unique draft key
+String _getDraftKey() {
+  final user = FirebaseAuth.instance.currentUser;
+  return 'assessment_draft_${user?.uid}_${widget.assessmentId}';
+}
+
+// Save draft to local storage
+Future<void> _saveDraft() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final draftKey = _getDraftKey();
+
+    final draftData = {
+      'answers': answers,
+      'timestamp': DateTime.now().toIso8601String(),
+      'assessmentId': widget.assessmentId,
+    };
+
+    await prefs.setString(draftKey, jsonEncode(draftData));
+
+    setState(() {
+      _lastSaveTime = DateTime.now();
+      _isDraftSaved = true;
+    });
+
+    _logger.i('Draft saved successfully at ${_lastSaveTime}');
+
+    // Hide "saved" indicator after 2 seconds
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) {
+        setState(() {
+          _isDraftSaved = false;
+        });
+      }
+    });
+  } catch (e) {
+    _logger.e('Error saving draft: $e');
+  }
+}
+
+// Load draft from local storage
+Future<Map<String, dynamic>?> _loadDraft() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final draftKey = _getDraftKey();
+    final draftString = prefs.getString(draftKey);
+
+    if (draftString != null) {
+      final draftData = jsonDecode(draftString) as Map<String, dynamic>;
+      _logger.i('Draft found: ${draftData['timestamp']}');
+      return draftData;
+    }
+  } catch (e) {
+    _logger.e('Error loading draft: $e');
+  }
+  return null;
+}
+
+// Clear draft after submission
+Future<void> _clearDraft() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final draftKey = _getDraftKey();
+    await prefs.remove(draftKey);
+    _logger.i('Draft cleared');
+  } catch (e) {
+    _logger.e('Error clearing draft: $e');
+  }
+}
+
+// Start auto-save timer
+void _startAutoSave() {
+  _autoSaveTimer?.cancel();
+  _autoSaveTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+    if (mounted && !hasAlreadySubmitted && !isDeadlinePassed) {
+      _saveDraft();
+    }
+  });
+}
+
+// Show restore draft dialog
+// Show restore draft dialog
+Future<bool> _showRestoreDraftDialog(DateTime savedTime) async {
+  final shouldRestore = await showDialog<bool>(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => AlertDialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: const BorderSide(color: Color(0xFF0077B3), width: 2),
+      ),
+      backgroundColor: Colors.white,
+      contentPadding: EdgeInsets.zero,
+      content: Container(
+        width: MediaQuery.of(context).size.width * 0.85,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          color: Colors.white,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Header with blue background
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: const BoxDecoration(
+                color: Color(0xFF0077B3),
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(18),
+                  topRight: Radius.circular(18),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const FaIcon(
+                      FontAwesomeIcons.clockRotateLeft,
+                      color: Colors.white,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'Continue Previous Attempt?',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Content
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'We found a saved draft of your assessment from:',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE3F2FD),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: const Color(0xFF0077B3).withOpacity(0.3),
+                        width: 1.5,
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        const FaIcon(
+                          FontAwesomeIcons.clock,
+                          size: 20,
+                          color: Color(0xFF0077B3),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _formatDateTime(savedTime),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF0077B3),
+                            fontSize: 15,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Would you like to continue from where you left off?',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Action buttons
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: const BorderRadius.only(
+                  bottomLeft: Radius.circular(18),
+                  bottomRight: Radius.circular(18),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(context).pop(false),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF0077B3),
+                        side: const BorderSide(
+                          color: Color(0xFF0077B3),
+                          width: 2,
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: const Text(
+                        'Start Fresh',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () => Navigator.of(context).pop(true),
+                      icon: const FaIcon(
+                        FontAwesomeIcons.arrowRotateLeft,
+                        size: 16,
+                      ),
+                      label: const Text(
+                        'Continue',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0077B3),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        elevation: 0,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  return shouldRestore ?? false;
+}
 
   @override
-  void dispose() {
-    _fadeController.dispose();
-    _slideController.dispose();
-    super.dispose();
+void dispose() {
+  _fadeController.dispose();
+  _slideController.dispose();
+  _autoSaveTimer?.cancel();
+  _debounceSaveTimer?.cancel();
+
+  // Dispose all text controllers
+  for (var controller in _textControllers.values) {
+    controller.dispose();
   }
+  _textControllers.clear();
+
+  super.dispose();
+}
 
   Future<void> _fetchAssessmentAndCheckSubmission() async {
     final user = FirebaseAuth.instance.currentUser;
@@ -210,35 +545,43 @@ class _TakeAssessmentPageState extends State<TakeAssessmentPage>
     });
   }
 
-  void _handleMCQAnswer(
-    String questionId,
-    String optionId,
-    bool isMultiSelect,
-  ) {
-    if (isDeadlinePassed || hasAlreadySubmitted) return;
+ void _handleMCQAnswer(
+  String questionId,
+  String optionId,
+  bool isMultiSelect,
+) {
+  if (isDeadlinePassed || hasAlreadySubmitted) return;
 
-    setState(() {
-      if (isMultiSelect) {
-        final currentList = List<String>.from(answers[questionId] ?? []);
-        if (currentList.contains(optionId)) {
-          currentList.remove(optionId);
-        } else {
-          currentList.add(optionId);
-        }
-        answers[questionId] = currentList;
+  setState(() {
+    if (isMultiSelect) {
+      final currentList = List<String>.from(answers[questionId] ?? []);
+      if (currentList.contains(optionId)) {
+        currentList.remove(optionId);
       } else {
-        answers[questionId] = optionId;
+        currentList.add(optionId);
       }
-    });
-  }
+      answers[questionId] = currentList;
+    } else {
+      answers[questionId] = optionId;
+    }
+  });
 
-  void _handleFITBAnswer(String questionId, String value) {
-    if (isDeadlinePassed || hasAlreadySubmitted) return;
+  // Save draft immediately on answer change
+  _saveDraft();
+}
 
-    setState(() {
-      answers[questionId] = value;
-    });
-  }
+void _handleFITBAnswer(String questionId, String value) {
+  if (isDeadlinePassed || hasAlreadySubmitted) return;
+
+  setState(() {
+    answers[questionId] = value;
+  });
+ // Debounce the save - only save after user stops typing for 1 second
+  _debounceSaveTimer?.cancel();
+  _debounceSaveTimer = Timer(const Duration(seconds: 1), () {
+    _saveDraft();
+  });
+}
 
   Future<void> _submitAssessment() async {
     if (hasAlreadySubmitted) {
@@ -325,146 +668,164 @@ class _TakeAssessmentPageState extends State<TakeAssessmentPage>
     });
 
     try {
-      final result = await _submitToFirebase(user.uid);
-      setState(() {
-        submissionResult = result;
-        isSubmitting = false;
-      });
-    } catch (e) {
-      _logger.e("Error submitting assessment: $e");
-      setState(() {
-        error = "Failed to submit assessment. Please try again.";
-        isSubmitting = false;
-      });
-    }
+  final result = await _submitToFirebase(user.uid);
+
+  // Clear draft on successful submission
+  await _clearDraft();
+
+  setState(() {
+    submissionResult = result;
+    isSubmitting = false;
+  });
+} catch (e) {
+  _logger.e("Error submitting assessment: $e");
+  setState(() {
+    error = "Failed to submit assessment. Please try again.";
+    isSubmitting = false;
+  });
+}
   }
-  Future<Map<String, dynamic>> _submitToFirebase(String studentId) async {
-    // Get student details
-    String studentName = "Unknown Student";
-    String studentEmail = "No email";
+Future<Map<String, dynamic>> _submitToFirebase(String studentId) async {
+  // Get student details
+  String studentName = "Unknown Student";
+  String studentEmail = "No email";
 
-    try {
-      final userDoc = await _firestore.collection('users').doc(studentId).get();
-      if (userDoc.exists) {
-        final userData = userDoc.data()!;
-        studentName =
-            '${userData['firstName'] ?? ''} ${userData['lastName'] ?? ''}'.trim();
-        if (studentName.isEmpty) {
-          studentName = userData['displayName'] ?? "Unknown Student";
-        }
-        studentEmail = userData['email'] ?? "No email";
+  try {
+    final userDoc = await _firestore.collection('users').doc(studentId).get();
+    if (userDoc.exists) {
+      final userData = userDoc.data()!;
+      studentName =
+          '${userData['firstName'] ?? ''} ${userData['lastName'] ?? ''}'.trim();
+      if (studentName.isEmpty) {
+        studentName = userData['displayName'] ?? "Unknown Student";
       }
-    } catch (e) {
-      _logger.w("Could not fetch student details: $e");
+      studentEmail = userData['email'] ?? "No email";
     }
+  } catch (e) {
+    _logger.w("Could not fetch student details: $e");
+  }
 
-    // Calculate score
-    int totalScore = 0;
-    int totalPossiblePoints = 0;
-    List<Map<String, dynamic>> processedAnswers = [];
+  // Calculate score
+  int totalScore = 0;
+  int totalPossiblePoints = 0;
+  List<Map<String, dynamic>> processedAnswers = [];
 
-    final questions = assessment!['questions'] as List;
+  final questions = assessment!['questions'] as List;
 
-    for (var question in questions) {
-      final questionPoints = (question['points'] ?? 0) as int;
-      totalPossiblePoints += questionPoints;
+  for (var question in questions) {
+    final questionPoints = (question['points'] ?? 0) as int;
+    totalPossiblePoints += questionPoints;
 
-      final questionId = question['questionId'];
-      final studentAnswer = answers[questionId];
-      bool isCorrect = false;
-      int pointsEarned = 0;
+    final questionId = question['questionId'];
+    final studentAnswer = answers[questionId];
+    bool isCorrect = false;
+    int pointsEarned = 0;
 
-      Map<String, dynamic> answerDetail = {
-        'questionId': questionId,
-        'type': question['type'],
-        'pointsEarned': 0,
-        'isCorrect': false,
-      };
+    Map<String, dynamic> answerDetail = {
+      'questionId': questionId,
+      'type': question['type'],
+      'pointsEarned': 0,
+      'isCorrect': false,
+    };
 
-      if (question['type'] == 'multiple-choice') {
-        final correctIds = List<String>.from(
-          question['correctOptionIds'] ?? [],
+    if (question['type'] == 'multiple-choice') {
+      final correctIds = List<String>.from(
+        question['correctOptionIds'] ?? [],
+      );
+      final isMultiSelect = correctIds.length > 1;
+
+      if (isMultiSelect) {
+        final selectedIds = List<String>.from(studentAnswer ?? []);
+        answerDetail['selectedOptionIds'] = selectedIds;
+
+        if (selectedIds.length == correctIds.length &&
+            selectedIds.every((id) => correctIds.contains(id))) {
+          isCorrect = true;
+        }
+      } else {
+        answerDetail['selectedOptionId'] = studentAnswer;
+        if (studentAnswer != null && correctIds.contains(studentAnswer)) {
+          isCorrect = true;
+        }
+      }
+    } else if (question['type'] == 'fill-in-the-blank') {
+      answerDetail['answerInputMode'] = question['answerInputMode'];
+
+      if (question['answerInputMode'] == 'multipleChoice') {
+        answerDetail['selectedOptionId'] = studentAnswer;
+        if (studentAnswer != null &&
+            studentAnswer == question['correctOptionIdForFITB']) {
+          isCorrect = true;
+        }
+      } else {
+        // TYPING MODE - Use improved answer matcher
+        final studentTypedAnswer = (studentAnswer ?? '').toString();
+        answerDetail['studentAnswer'] = studentAnswer ?? '';
+
+        final correctAnswers = List<String>.from(
+          question['correctAnswers'] ?? [],
         );
-        final isMultiSelect = correctIds.length > 1;
 
-        if (isMultiSelect) {
-          final selectedIds = List<String>.from(studentAnswer ?? []);
-          answerDetail['selectedOptionIds'] = selectedIds;
+        // NEW: Use improved answer matcher
+        isCorrect = AnswerMatcher.isAnswerCorrect(
+          studentTypedAnswer,
+          correctAnswers,
+          strictMode: false, // Set to true if you want exact matching only
+        );
 
-          if (selectedIds.length == correctIds.length &&
-              selectedIds.every((id) => correctIds.contains(id))) {
-            isCorrect = true;
-          }
-        } else {
-          answerDetail['selectedOptionId'] = studentAnswer;
-          if (studentAnswer != null && correctIds.contains(studentAnswer)) {
-            isCorrect = true;
-          }
-        }
-      } else if (question['type'] == 'fill-in-the-blank') {
-        answerDetail['answerInputMode'] = question['answerInputMode'];
-
-        if (question['answerInputMode'] == 'multipleChoice') {
-          answerDetail['selectedOptionId'] = studentAnswer;
-          if (studentAnswer != null &&
-              studentAnswer == question['correctOptionIdForFITB']) {
-            isCorrect = true;
-          }
-        } else {
-          final studentTypedAnswer = (studentAnswer ?? '')
-              .toString()
-              .trim()
-              .toLowerCase();
-          answerDetail['studentAnswer'] = studentAnswer ?? '';
-
-          final correctAnswers = List<String>.from(
-            question['correctAnswers'] ?? [],
+        // Store similarity score for review (even if correct)
+        if (correctAnswers.isNotEmpty) {
+          final bestMatch = AnswerMatcher.getBestMatch(
+            studentTypedAnswer,
+            correctAnswers,
           );
-          if (correctAnswers.any(
-            (ans) => ans.trim().toLowerCase() == studentTypedAnswer,
-          )) {
-            isCorrect = true;
-          }
+          final similarity = AnswerMatcher.calculateSimilarity(
+            studentTypedAnswer,
+            bestMatch,
+          );
+          answerDetail['similarityScore'] = similarity.round();
+          answerDetail['closestCorrectAnswer'] = bestMatch;
         }
       }
-
-      if (isCorrect) {
-        pointsEarned = questionPoints;
-        totalScore += pointsEarned;
-      }
-
-      answerDetail['isCorrect'] = isCorrect;
-      answerDetail['pointsEarned'] = pointsEarned;
-      processedAnswers.add(answerDetail);
     }
 
-    // Submit to Firestore
-    final submissionData = {
-      'studentId': studentId,
-      'studentName': studentName,
-      'studentEmail': studentEmail,
-      'assessmentId': widget.assessmentId,
-      'classId': assessment!['classId'],
-      'trainerId': assessment!['trainerId'],
-      'assessmentType': assessment!['assessmentType'] ?? 'standard_quiz',
-      'submittedAt': FieldValue.serverTimestamp(),
-      'answers': processedAnswers,
-      'score': totalScore,
-      'totalPossiblePoints': totalPossiblePoints,
-      'isReviewed': true,
-    };
+    if (isCorrect) {
+      pointsEarned = questionPoints;
+      totalScore += pointsEarned;
+    }
 
-    final submissionRef = await _firestore
-        .collection('studentSubmissions')
-        .add(submissionData);
-
-    return {
-      'submissionId': submissionRef.id,
-      'score': totalScore,
-      'totalPossiblePoints': totalPossiblePoints,
-      'message': 'Assessment submitted successfully!',
-    };
+    answerDetail['isCorrect'] = isCorrect;
+    answerDetail['pointsEarned'] = pointsEarned;
+    processedAnswers.add(answerDetail);
   }
+
+  // Submit to Firestore
+  final submissionData = {
+    'studentId': studentId,
+    'studentName': studentName,
+    'studentEmail': studentEmail,
+    'assessmentId': widget.assessmentId,
+    'classId': assessment!['classId'],
+    'trainerId': assessment!['trainerId'],
+    'assessmentType': assessment!['assessmentType'] ?? 'standard_quiz',
+    'submittedAt': FieldValue.serverTimestamp(),
+    'answers': processedAnswers,
+    'score': totalScore,
+    'totalPossiblePoints': totalPossiblePoints,
+    'isReviewed': true,
+  };
+
+  final submissionRef = await _firestore
+      .collection('studentSubmissions')
+      .add(submissionData);
+
+  return {
+    'submissionId': submissionRef.id,
+    'score': totalScore,
+    'totalPossiblePoints': totalPossiblePoints,
+    'message': 'Assessment submitted successfully!',
+  };
+}
 
   String _formatDateTime(DateTime dateTime) {
     return '${dateTime.day}/${dateTime.month}/${dateTime.year} at ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
@@ -555,70 +916,59 @@ class _TakeAssessmentPageState extends State<TakeAssessmentPage>
     );
   }
 
-  Widget _buildAlreadySubmittedScreen() {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Assessment Already Taken'),
-        backgroundColor: const Color(0xFF0077B3),
-        foregroundColor: Colors.white,
-      ),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const FaIcon(
-                FontAwesomeIcons.checkCircle,
-                size: 80,
-                color: Colors.green,
+ Widget _buildAlreadySubmittedScreen() {
+  return Scaffold(
+    appBar: AppBar(
+      title: const Text('Assessment Already Taken'),
+      backgroundColor: const Color(0xFF0077B3),
+      foregroundColor: Colors.white,
+    ),
+    body: Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const FaIcon(
+              FontAwesomeIcons.checkCircle,
+              size: 80,
+              color: Colors.green,
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'Assessment Already Taken',
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF0077B3),
               ),
-              const SizedBox(height: 24),
-              const Text(
-                'Assessment Already Taken',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF0077B3),
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'You have already submitted this assessment${assessment?['title'] != null ? ' ("${assessment!['title']}")' : ''}. You can review your previous submission.',
-                style: const TextStyle(fontSize: 16),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 32),
-              if (existingSubmissionId != null) ...[
-                ElevatedButton.icon(
-                  onPressed: () {
-                    // Navigate to review submission (implement this later)
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Submission review coming soon!'),
-                      ),
-                    );
-                  },
-                  icon: const FaIcon(FontAwesomeIcons.eye),
-                  label: const Text('Review Your Submission'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF0077B3),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 12,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-              ],
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'You have already submitted this assessment${assessment?['title'] != null ? ' ("${assessment!['title']}")' : ''}. You can review your previous submission.',
+              style: const TextStyle(fontSize: 16),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 32),
+            if (existingSubmissionId != null) ...[
               ElevatedButton.icon(
-                onPressed: () => Navigator.pop(context),
-                icon: const FaIcon(FontAwesomeIcons.arrowLeft),
-                label: const Text('Back to Class'),
+                onPressed: () {
+                  // FIXED: Navigate to actual review page instead of placeholder
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ReviewSubmissionPage(
+                        submissionId: existingSubmissionId!,
+                        assessmentId: widget.assessmentId,
+                      ),
+                    ),
+                  );
+                },
+                icon: const FaIcon(FontAwesomeIcons.eye),
+                label: const Text('Review Your Submission'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.grey[600],
+                  backgroundColor: const Color(0xFF0077B3),
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 24,
@@ -626,12 +976,27 @@ class _TakeAssessmentPageState extends State<TakeAssessmentPage>
                   ),
                 ),
               ),
+              const SizedBox(height: 16),
             ],
-          ),
+            ElevatedButton.icon(
+              onPressed: () => Navigator.pop(context),
+              icon: const FaIcon(FontAwesomeIcons.arrowLeft),
+              label: const Text('Back to Class'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.grey[600],
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildDeadlinePassedScreen() {
     return Scaffold(
@@ -750,16 +1115,19 @@ class _TakeAssessmentPageState extends State<TakeAssessmentPage>
               Column(
                 children: [
                   ElevatedButton.icon(
-                    onPressed: () {
-                      // Navigate to review submission (implement this later)
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Review feature coming soon!'),
-                        ),
-                      );
-                    },
-                    icon: const FaIcon(FontAwesomeIcons.eye),
-                    label: const Text('Review Your Answers'),
+  onPressed: () {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ReviewSubmissionPage(
+          submissionId: existingSubmissionId ?? submissionResult!['submissionId'],
+          assessmentId: widget.assessmentId,
+        ),
+      ),
+    );
+  },
+  icon: const FaIcon(FontAwesomeIcons.eye),
+  label: const Text('Review Your Answers'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF0077B3),
                       foregroundColor: Colors.white,
@@ -792,39 +1160,74 @@ class _TakeAssessmentPageState extends State<TakeAssessmentPage>
     );
   }
 
-  Widget _buildAssessmentContent() {
-    if (assessment == null) return Container();
+Widget _buildAssessmentContent() {
+  if (assessment == null) return Container();
 
-    return FadeTransition(
-      opacity: _fadeAnimation,
-      child: SlideTransition(
-        position: _slideAnimation,
-        child: RefreshIndicator(
-          onRefresh: _fetchAssessmentAndCheckSubmission,
-          child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Assessment Header
-                _buildAssessmentHeader(),
-                const SizedBox(height: 24),
+  return FadeTransition(
+    opacity: _fadeAnimation,
+    child: SlideTransition(
+      position: _slideAnimation,
+      child: RefreshIndicator(
+        onRefresh: _fetchAssessmentAndCheckSubmission,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Assessment Header
+              _buildAssessmentHeader(),
+              const SizedBox(height: 16),
 
-                // Questions
-                _buildQuestions(),
+              // 🆕 ADD THIS: Draft Save Indicator
+              _buildDraftSaveIndicator(),
+              const SizedBox(height: 8),
 
-                const SizedBox(height: 32),
+              // Questions
+              _buildQuestions(),
 
-                // Submit Button
-                _buildSubmitButton(),
-              ],
-            ),
+              const SizedBox(height: 32),
+
+              // Submit Button
+              _buildSubmitButton(),
+            ],
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
+
+// 🆕 ADD THIS METHOD:
+Widget _buildDraftSaveIndicator() {
+  return AnimatedOpacity(
+    opacity: _isDraftSaved ? 1.0 : 0.0,
+    duration: const Duration(milliseconds: 300),
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.green.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.green.shade200),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.check_circle, color: Colors.green.shade700, size: 16),
+          const SizedBox(width: 8),
+          Text(
+            'Draft saved ${_lastSaveTime != null ? 'at ${_formatDateTime(_lastSaveTime!)}' : ''}',
+            style: TextStyle(
+              color: Colors.green.shade700,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
 
   Widget _buildAssessmentHeader() {
     return Container(
@@ -1128,7 +1531,6 @@ class _TakeAssessmentPageState extends State<TakeAssessmentPage>
   }
 
   Widget _buildFillInTheBlankQuestion(Map<String, dynamic> question) {
-    final questionId = question['questionId'];
     final answerMode = question['answerInputMode'];
 
     return Column(
@@ -1301,23 +1703,32 @@ class _TakeAssessmentPageState extends State<TakeAssessmentPage>
     );
   }
 
-  Widget _buildFITBTextInput(Map<String, dynamic> question) {
-    final questionId = question['questionId'];
+ Widget _buildFITBTextInput(Map<String, dynamic> question) {
+  final questionId = question['questionId'];
 
-    return TextField(
-      onChanged: (value) => _handleFITBAnswer(questionId, value),
-      decoration: InputDecoration(
-        hintText: 'Type your answer for the blank...',
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFF0077B3), width: 2),
-        ),
-        filled: true,
-        fillColor: Colors.grey.shade50,
-      ),
+  // Create or get existing controller
+  if (!_textControllers.containsKey(questionId)) {
+    final currentAnswer = answers[questionId];
+    _textControllers[questionId] = TextEditingController(
+      text: currentAnswer?.toString() ?? '',
     );
   }
+
+  return TextField(
+    controller: _textControllers[questionId],
+    onChanged: (value) => _handleFITBAnswer(questionId, value),
+    decoration: InputDecoration(
+      hintText: 'Type your answer for the blank...',
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: Color(0xFF0077B3), width: 2),
+      ),
+      filled: true,
+      fillColor: Colors.grey.shade50,
+    ),
+  );
+}
 
   Widget _buildSubmitButton() {
     return Container(

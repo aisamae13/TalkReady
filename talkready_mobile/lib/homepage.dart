@@ -22,6 +22,8 @@ import 'notification_badge.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'practice_center/practice_center_page.dart';
+import 'package:confetti/confetti.dart';
+
 
 // Helper function for creating a slide page route
 Route _createSlidingPageRoute({
@@ -74,6 +76,24 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   int _currentStreak = 0;
   int _lessonsCompleted = 0;
   double _averageScore = 0.0;
+
+  //  Streak Freeze and Longest Streak
+  int _streakFreezes = 0;
+  int _longestStreak = 0;
+
+  DateTime? _lastProgressUpdate;
+  double _lastWeekComparison = 0.0;
+
+  int _currentTipIndex = 0;
+Timer? _tipRotationTimer;
+
+final List<String> _streakTips = [
+  'Keep your streak active with one lesson per day!',
+  'Streak Freezes protect your streak when you miss a day',
+  'Earn 1 freeze every 30-day streak milestone (Max: 5)',
+  'Freezes are used automatically when needed',
+];
+  late ConfettiController _confettiController;
 
   // Enhanced skill tracking with detailed analysis
   final Map<String, Map<String, dynamic>> skillAnalysis = {
@@ -164,11 +184,20 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     _setupAnimations();
     _initializeData();
     _setupRealTimeListener();
-    _setupNotificationListener(); // Add this line
-
+    _setupNotificationListener();
+     _confettiController = ConfettiController(duration: const Duration(seconds: 3));
+     _startTipRotation();
     _initializeDataOptimized();
   }
-
+  void _startTipRotation() {
+  _tipRotationTimer = Timer.periodic(const Duration(seconds: 4), (timer) {
+    if (mounted) {
+      setState(() {
+        _currentTipIndex = (_currentTipIndex + 1) % _streakTips.length;
+      });
+    }
+  });
+}
   Future<void> _initializeDataOptimized() async {
     // Show UI immediately with placeholder data
     _fadeController.forward();
@@ -236,6 +265,204 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     ).animate(CurvedAnimation(parent: _slideController, curve: Curves.easeOut));
   }
 
+void _showStreakFreezeRewardDialog(int currentFreezes, int streakDays) {
+  _confettiController.play(); // Trigger confetti
+
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => Stack(
+      alignment: Alignment.topCenter,
+      children: [
+        // Confetti overlay
+        Align(
+          alignment: Alignment.topCenter,
+          child: ConfettiWidget(
+            confettiController: _confettiController,
+            blastDirectionality: BlastDirectionality.explosive,
+            colors: const [
+              Colors.cyan,
+              Colors.blue,
+              Colors.purple,
+              Colors.pink,
+              Colors.amber,
+              Colors.orange,
+            ],
+            numberOfParticles: 30,
+            gravity: 0.3,
+            emissionFrequency: 0.05,
+            maxBlastForce: 20,
+            minBlastForce: 10,
+          ),
+        ),
+
+        // Your existing dialog
+        Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Colors.cyan.shade50, Colors.blue.shade50],
+              ),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Animated Icon
+                TweenAnimationBuilder(
+                  duration: const Duration(milliseconds: 600),
+                  tween: Tween<double>(begin: 0, end: 1),
+                  builder: (context, double value, child) {
+                    return Transform.scale(
+                      scale: value,
+                      child: Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: Colors.cyan.shade100,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.ac_unit,
+                          size: 60,
+                          color: Colors.cyan.shade700,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 20),
+
+                // Title with icons instead of emojis
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.celebration, color: Colors.amber[700], size: 28),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Congratulations!',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF0077B3),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Icon(Icons.celebration, color: Colors.amber[700], size: 28),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // Message
+                Text(
+                  'You\'ve reached a $streakDays-day streak milestone!',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+
+                // Reward Info
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.cyan.shade200, width: 2),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.ac_unit, color: Colors.cyan.shade700, size: 24),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Earned +1 Streak Freeze!',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Total Freezes: $currentFreezes',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[700],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Info Text with icon
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.info_outline, size: 16, color: Colors.grey[600]),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        'Streak Freezes protect your streak when you miss a day!',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                          fontStyle: FontStyle.italic,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+
+                // Close Button with icon
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      _confettiController.stop(); // Stop confetti when closing
+                      Navigator.of(context).pop();
+                    },
+                    icon: const Icon(Icons.check_circle, color: Colors.white),
+                    label: const Text(
+                      'Awesome!',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF0077B3),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
   Future<void> _initializeData() async {
     try {
       await Future.wait([
@@ -243,7 +470,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         _calculateEnhancedUserStats(),
         _loadFeaturedCourses(),
         _fetchDailyContent(),
-        _fetchPracticeStats(), // NEW LINE - Add this
+        _fetchPracticeStats(),
       ]);
 
       if (mounted) {
@@ -341,12 +568,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
         // Do all calculations once in setState
         if (mounted) {
-          setState(() {
-            _calculateEnhancedSkillAnalysisOptimized(lessonAttempts);
-            _calculateModuleProgress(userData);
-            _calculateEnhancedUserStats();
-            _lessonsCompleted = lessonAttempts.keys.length;
-          });
+    setState(() {
+      _calculateEnhancedSkillAnalysisOptimized(lessonAttempts);
+      _calculateModuleProgress(userData);
+      _lessonsCompleted = lessonAttempts.keys.length;
+
+      // Get streak data directly from Firestore (updated by Cloud Function)
+      _currentStreak = userData['currentStreak'] as int? ?? 0;
+      _streakFreezes = userData['streakFreezes'] as int? ?? 0;
+      _longestStreak = userData['longestStreak'] as int? ?? 0;
+    });
         }
 
         logger.i('Enhanced progress fetched successfully');
@@ -488,6 +719,46 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     });
   }
 
+// NEW: Helper to calculate score comparison from the last 7 days
+double _calculateLastWeekComparison(
+    Map<String, dynamic> lessonAttempts,
+    ) {
+  final now = DateTime.now();
+  final sevenDaysAgo = now.subtract(const Duration(days: 7));
+  final fourteenDaysAgo = now.subtract(const Duration(days: 14));
+
+  List<double> scoresLast7Days = [];
+  List<double> scoresPrevious7Days = [];
+
+  for (String lessonId in lessonAttempts.keys) {
+    final attempts = lessonAttempts[lessonId] as List<dynamic>? ?? [];
+    for (var attempt in attempts) {
+      if (attempt is Map<String, dynamic> && attempt['score'] != null) {
+        final score = (attempt['score'] as num).toDouble();
+        final timestamp = _parseTimestamp(attempt['attemptTimestamp']);
+
+        if (timestamp.isAfter(sevenDaysAgo)) {
+          scoresLast7Days.add(score);
+        } else if (timestamp.isAfter(fourteenDaysAgo) &&
+            timestamp.isBefore(sevenDaysAgo)) {
+          scoresPrevious7Days.add(score);
+        }
+      }
+    }
+  }
+
+  if (scoresLast7Days.isEmpty || scoresPrevious7Days.isEmpty) {
+    return 0.0;
+  }
+
+  final avgLast7 =
+      scoresLast7Days.reduce((a, b) => a + b) / scoresLast7Days.length;
+  final avgPrevious7 = scoresPrevious7Days.reduce((a, b) => a + b) /
+      scoresPrevious7Days.length;
+
+  // Comparison is percentage difference
+  return ((avgLast7 - avgPrevious7) / avgPrevious7) * 100;
+}
   double _extractScoreForSkill(Map<String, dynamic> attempt, String skillName) {
     if (skillName == 'Speaking Fluency') {
       // Extract Azure fluency scores for speaking lessons
@@ -1145,54 +1416,182 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       ),
     );
   }
+// NEW: Dialog for Progress Info/Tooltip
+  void _showProgressInfoDialog() {
+    String comparisonText;
+    Color comparisonColor;
+    String comparisonIcon;
 
+    if (_lastWeekComparison > 5) {
+      comparisonText =
+          'You\'re ${(_lastWeekComparison).abs().toStringAsFixed(1)}% better than the previous 7 days! Keep up the great work.';
+      comparisonColor = Colors.green.shade600;
+      comparisonIcon = '🚀';
+    } else if (_lastWeekComparison < -5) {
+      comparisonText =
+          'Your scores dropped ${(_lastWeekComparison).abs().toStringAsFixed(1)}% compared to the previous 7 days. Time to review some lessons!';
+      comparisonColor = Colors.red.shade600;
+      comparisonIcon = '⚠️';
+    } else {
+      comparisonText =
+          'Your performance is stable compared to the previous week.';
+      comparisonColor = Colors.blueGrey.shade600;
+      comparisonIcon = '👍';
+    }
+
+    final String lastUpdateString = _lastProgressUpdate != null
+        ? 'Last updated: ${DateTime.now().difference(_lastProgressUpdate!).inMinutes} minutes ago'
+        : 'Data loading...';
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.analytics, color: Color(0xFF0077B3)),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Progress Analytics Explained',
+                style: TextStyle(fontSize: 18),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Last Updated Time
+            Text(
+              lastUpdateString,
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[600],
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+            const Divider(height: 20),
+
+            // Progress Comparison
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: comparisonColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(comparisonIcon, style: const TextStyle(fontSize: 24)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      comparisonText,
+                      style: TextStyle(fontSize: 14, color: comparisonColor),
+                      textAlign: TextAlign.justify,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 20),
+
+            // Pentagon Graph Explanation
+            const Text(
+              'What is the Pentagon Graph?',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'It visually represents your scores across core skills. The further the colored shape extends towards a corner, the stronger your score is in that corresponding skill.',
+              style: TextStyle(fontSize: 13, height: 1.4),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Got It',
+                style: TextStyle(color: Color(0xFF0077B3))),
+          ),
+        ],
+      ),
+    );
+  }
   StreamSubscription<DocumentSnapshot>? _userDataSubscription;
   DateTime? _lastUpdate;
   static const int DEBOUNCE_SECONDS = 2;
 
-  void _setupRealTimeListener() {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      logger.e('No current user for real-time listener');
-      return;
-    }
+ void _setupRealTimeListener() {
+  final user = FirebaseAuth.instance.currentUser;
+  if (user == null) {
+    logger.e('No current user for real-time listener');
+    return;
+  }
 
-    _userDataSubscription = FirebaseFirestore.instance
-        .collection('userProgress')
-        .doc(user.uid)
-        .snapshots()
-        .listen(
-          (snapshot) {
-            // Debounce: only update if DEBOUNCE_SECONDS have passed
-            final now = DateTime.now();
-            if (_lastUpdate != null &&
-                now.difference(_lastUpdate!).inSeconds < DEBOUNCE_SECONDS) {
-              logger.d('Debounced real-time update');
-              return;
-            }
-            _lastUpdate = now;
+  _userDataSubscription = FirebaseFirestore.instance
+      .collection('userProgress')
+      .doc(user.uid)
+      .snapshots()
+      .listen(
+        (snapshot) {
+          // Debounce: only update if DEBOUNCE_SECONDS have passed
+          final now = DateTime.now();
+          if (_lastUpdate != null &&
+              now.difference(_lastUpdate!).inSeconds < DEBOUNCE_SECONDS) {
+            logger.d('Debounced real-time update');
+            return;
+          }
+          _lastUpdate = now;
 
-            if (snapshot.exists && mounted) {
-              final userData = snapshot.data();
-              if (userData != null) {
-                final lessonAttempts =
-                    userData['lessonAttempts'] as Map<String, dynamic>? ?? {};
+          if (snapshot.exists && mounted) {
+            final userData = snapshot.data();
+            if (userData != null) {
+              final lessonAttempts =
+                  userData['lessonAttempts'] as Map<String, dynamic>? ?? {};
 
-                logger.i('Real-time update received, recalculating skills');
+              logger.i('Real-time update received, recalculating skills');
 
-                setState(() {
-                  _calculateEnhancedSkillAnalysisOptimized(lessonAttempts);
-                  _calculateModuleProgress(userData);
-                  _lessonsCompleted = lessonAttempts.keys.length;
+              // Check if streak freeze was just earned
+              final newStreakFreezes = userData['streakFreezes'] as int? ?? 0;
+              final newCurrentStreak = userData['currentStreak'] as int? ?? 0;
+
+              // If freezes increased and streak is at a 30-day milestone
+              if (newStreakFreezes > _streakFreezes &&
+                  newCurrentStreak > 0 &&
+                  newCurrentStreak % 30 == 0) {
+                logger.i('Streak freeze reward detected! Showing celebration dialog');
+
+                // Show celebration dialog after a short delay
+                Future.delayed(const Duration(milliseconds: 500), () {
+                  if (mounted) {
+                    _showStreakFreezeRewardDialog(newStreakFreezes, newCurrentStreak);
+                  }
                 });
               }
+
+              setState(() {
+                _calculateEnhancedSkillAnalysisOptimized(lessonAttempts);
+                _calculateModuleProgress(userData);
+                _lessonsCompleted = lessonAttempts.keys.length;
+                _lastProgressUpdate = DateTime.now();
+                _lastWeekComparison = _calculateLastWeekComparison(lessonAttempts);
+
+                // Update streak data
+                _streakFreezes = newStreakFreezes;
+                _currentStreak = newCurrentStreak;
+                _longestStreak = userData['longestStreak'] as int? ?? 0;
+              });
             }
-          },
-          onError: (error) {
-            logger.e('Error listening to user data: $error');
-          },
-        );
-  }
+          }
+        },
+        onError: (error) {
+          logger.e('Error listening to user data: $error');
+        },
+      );
+}
 
   void _setupNotificationListener() {
     final user = FirebaseAuth.instance.currentUser;
@@ -1241,6 +1640,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     _slideController.dispose();
     _userDataSubscription?.cancel();
     _notificationSubscription?.cancel();
+    _confettiController.dispose();
+    _tipRotationTimer?.cancel();
     super.dispose();
   }
 
@@ -1340,47 +1741,131 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildLoadingState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Shimmer.fromColors(
-            baseColor: Colors.grey[300]!,
-            highlightColor: Colors.grey[100]!,
-            child: const CircularProgressIndicator(),
-          ),
-          const SizedBox(height: 16),
-          const Text('Loading your learning progress...'),
-        ],
-      ),
-    );
-  }
+ Widget _buildLoadingState() {
+  return Center(
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        // Animated TalkReady Logo with Pulsing Effect
+        TweenAnimationBuilder(
+          duration: const Duration(milliseconds: 1500),
+          tween: Tween<double>(begin: 0.85, end: 1.0),
+          curve: Curves.easeInOut,
+          builder: (context, double value, child) {
+            return Transform.scale(
+              scale: value,
+              child: Container(
+                width: 100,
+                height: 100,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      const Color(0xFF0077B3),
+                      const Color(0xFF00A6CB),
+                    ],
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF0077B3).withOpacity(0.3 * value),
+                      blurRadius: 20 * value,
+                      spreadRadius: 5 * value,
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: Image.asset(
+                    'images/TR Logo.png',
+                    width: 60,
+                    height: 60,
+                  ),
+                ),
+              ),
+            );
+          },
+          onEnd: () {
+            // Loop the animation
+            if (mounted && _isLoading) {
+              setState(() {});
+            }
+          },
+        ),
 
-  Widget _buildErrorState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.error_outline, size: 64, color: Colors.red[400]),
-          const SizedBox(height: 16),
-          Text(_errorMessage ?? 'Something went wrong'),
-          const SizedBox(height: 16),
-          ElevatedButton(
-            onPressed: () {
-              setState(() {
-                _isLoading = true;
-                _hasError = false;
-              });
-              _initializeData();
-            },
-            child: const Text('Try Again'),
-          ),
-        ],
-      ),
-    );
-  }
+        const SizedBox(height: 40),
 
+        // Animated Speech Bubbles (Continuous Loop)
+        _AnimatedDots(),
+
+        const SizedBox(height: 30),
+
+        // Animated Loading Text
+        Shimmer.fromColors(
+          period: const Duration(milliseconds: 1500),
+          baseColor: const Color(0xFF0077B3),
+          highlightColor: const Color(0xFF00A6CB),
+          child: const Text(
+            'Loading your learning journey...',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 20),
+
+        // Continuous Progress Bar Animation
+        _ContinuousProgressBar(),
+
+        const SizedBox(height: 16),
+
+        // Rotating Loading Messages
+        _RotatingMessages(),
+      ],
+    ),
+  );
+}
+Widget _buildErrorState() {
+  return Center(
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(Icons.error_outline, size: 64, color: Colors.red[400]),
+        const SizedBox(height: 16),
+        Text(
+          _errorMessage ?? 'Something went wrong',
+          style: const TextStyle(fontSize: 16),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 16),
+        ElevatedButton(
+          onPressed: () {
+            setState(() {
+              _isLoading = true;
+              _hasError = false;
+            });
+            _initializeData();
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF0077B3),
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+          child: const Text(
+            'Try Again',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+        ),
+      ],
+    ),
+  );
+}
   Widget _buildMainContent(String firstName) {
     return RefreshIndicator(
       onRefresh: () async {
@@ -1512,7 +1997,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildEnhancedSkillProgressSection() {
+ Widget _buildEnhancedSkillProgressSection() {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1527,55 +2012,73 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         ],
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header with View Toggle
+          // NEW HEADER ROW - Full width text and Info Button
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Enhanced Progress Analytics',
-                      style: TextStyle(
-                        fontSize: 18,
-                        color: Color(0xFF0077B3),
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      'Comprehensive tracking of your English communication skills',
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
-                    ),
-                  ],
+              const Text(
+                'Enhanced Progress Analytics',
+                style: TextStyle(
+                  fontSize: 18,
+                  color: Color(0xFF0077B3),
+                  fontWeight: FontWeight.bold,
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.all(2),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
+              // NEW: Info button/Tooltip - Moved here to be next to the main title
+              IconButton(
+                icon: const Icon(
+                  Icons.info_outline,
+                  size: 20,
+                  color: Color(0xFF0077B3),
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildViewToggleButton(
-                      'overview',
-                      'Overview',
-                      Icons.bar_chart,
-                    ),
-                    _buildViewToggleButton('modules', 'Modules', Icons.book),
-                    _buildViewToggleButton(
-                      'trends',
-                      'Trends',
-                      Icons.trending_up,
-                    ),
-                  ],
-                ),
+                onPressed: _showProgressInfoDialog,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
               ),
             ],
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Comprehensive tracking of your English communication skills',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+
+          const SizedBox(height: 16),
+
+          // View Toggle Buttons (Centered)
+          Center(
+            child: Container(
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 5,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min, // Essential for centering
+                children: [
+                  _buildViewToggleButton(
+                    'overview',
+                    'Overview',
+                    Icons.bar_chart,
+                  ),
+                  _buildViewToggleButton('modules', 'Modules', Icons.book),
+                  _buildViewToggleButton(
+                    'trends',
+                    'Trends',
+                    Icons.trending_up,
+                  ),
+                ],
+              ),
+            ),
           ),
 
           const SizedBox(height: 16),
@@ -2349,7 +2852,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildEnhancedUserStatsSection() {
+ Widget _buildEnhancedUserStatsSection() {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -2380,8 +2883,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 child: _buildStatCard(
                   icon: Icons.local_fire_department,
                   title: 'Current Streak',
-                  value:
-                      '$_currentStreak ${_currentStreak == 1 ? "day" : "days"}',
+                  value: '$_currentStreak ${_currentStreak == 1 ? "day" : "days"}',
                   color: Colors.orange,
                 ),
               ),
@@ -2401,19 +2903,99 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               const SizedBox(width: 8),
               Expanded(
                 child: _buildStatCard(
-                  icon: Icons.bar_chart,
-                  title: 'Avg Score',
-                  value: '${_averageScore.round()}%',
-                  color: Colors.purple,
+                  icon: Icons.ac_unit,
+                  title: 'Streak Freezes',
+                  value: '$_streakFreezes',
+                  color: _streakFreezes > 0 ? Colors.cyan : Colors.grey,
                 ),
               ),
             ],
           ),
+          const SizedBox(height: 12),
+          // Streak information row
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.emoji_events, size: 16, color: Colors.amber[700]),
+              const SizedBox(width: 6),
+              Text(
+                'Longest Streak: $_longestStreak days',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey[700],
+                ),
+              ),
+            ],
+          ),
+        GestureDetector(
+          onTap: () {
+            setState(() {
+              _currentTipIndex = (_currentTipIndex + 1) % _streakTips.length;
+            });
+          },
+          onHorizontalDragEnd: (details) {
+            if (details.primaryVelocity! > 0) {
+              // Swipe right - previous tip
+              setState(() {
+                _currentTipIndex = (_currentTipIndex - 1 + _streakTips.length) % _streakTips.length;
+              });
+            } else if (details.primaryVelocity! < 0) {
+              // Swipe left - next tip
+              setState(() {
+                _currentTipIndex = (_currentTipIndex + 1) % _streakTips.length;
+              });
+            }
+          },
+          child: Container(
+            height: 50,
+            alignment: Alignment.center,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 500),
+              transitionBuilder: (child, animation) {
+                return FadeTransition(
+                  opacity: animation,
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0, 0.3),
+                      end: Offset.zero,
+                    ).animate(animation),
+                    child: child,
+                  ),
+                );
+              },
+              child: Row(
+                key: ValueKey<int>(_currentTipIndex),
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.lightbulb_outline,
+                    size: 16,
+                    color: Colors.amber[700],
+                  ),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      _streakTips[_currentTipIndex],
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey[700],
+                        fontStyle: FontStyle.italic,
+                      ),
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
         ],
       ),
     );
   }
-
   Widget _buildPracticeCenterCard() {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -3112,7 +3694,190 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 }
+// Animated Dots Widget
+class _AnimatedDots extends StatefulWidget {
+  @override
+  State<_AnimatedDots> createState() => _AnimatedDotsState();
+}
 
+class _AnimatedDotsState extends State<_AnimatedDots> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 1500),
+      vsync: this,
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 60,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: List.generate(3, (index) {
+          return AnimatedBuilder(
+            animation: _controller,
+            builder: (context, child) {
+              final delay = index * 0.2;
+              final value = math.sin((_controller.value + delay) * 2 * math.pi);
+
+              return Container(
+                margin: const EdgeInsets.symmetric(horizontal: 6),
+                child: Transform.translate(
+                  offset: Offset(0, -15 * value),
+                  child: Container(
+                    width: 16,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      color: Color.lerp(
+                        const Color(0xFF0077B3).withOpacity(0.5),
+                        const Color(0xFF0077B3),
+                        (value + 1) / 2,
+                      ),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+              );
+            },
+          );
+        }),
+      ),
+    );
+  }
+}
+
+// Continuous Progress Bar Widget
+class _ContinuousProgressBar extends StatefulWidget {
+  @override
+  State<_ContinuousProgressBar> createState() => _ContinuousProgressBarState();
+}
+
+class _ContinuousProgressBarState extends State<_ContinuousProgressBar>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 2000),
+      vsync: this,
+    )..repeat();
+
+    _animation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 200,
+      height: 4,
+      decoration: BoxDecoration(
+        color: Colors.grey[200],
+        borderRadius: BorderRadius.circular(2),
+      ),
+      child: AnimatedBuilder(
+        animation: _animation,
+        builder: (context, child) {
+          return FractionallySizedBox(
+            alignment: Alignment.centerLeft,
+            widthFactor: _animation.value,
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF0077B3), Color(0xFF00A6CB)],
+                ),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+// Rotating Messages Widget
+class _RotatingMessages extends StatefulWidget {
+  @override
+  State<_RotatingMessages> createState() => _RotatingMessagesState();
+}
+
+class _RotatingMessagesState extends State<_RotatingMessages> {
+  int _currentIndex = 0;
+  final List<String> _messages = [
+    '🎯 Preparing your dashboard...',
+    '📊 Calculating your progress...',
+    '🔥 Loading your streak data...',
+    '📚 Fetching your lessons...',
+    '✨ Almost there...',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _startRotation();
+  }
+
+  void _startRotation() {
+    Future.delayed(const Duration(milliseconds: 2000), () {
+      if (mounted) {
+        setState(() {
+          _currentIndex = (_currentIndex + 1) % _messages.length;
+        });
+        _startRotation();
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 500),
+      transitionBuilder: (child, animation) {
+        return FadeTransition(
+          opacity: animation,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, 0.3),
+              end: Offset.zero,
+            ).animate(animation),
+            child: child,
+          ),
+        );
+      },
+      child: Text(
+        _messages[_currentIndex],
+        key: ValueKey<int>(_currentIndex),
+        style: TextStyle(
+          fontSize: 13,
+          color: Colors.grey[600],
+          fontStyle: FontStyle.italic,
+        ),
+      ),
+    );
+  }
+}
 // Keep your existing PentagonGraph and PentagonPainter classes unchanged
 class PentagonGraph extends StatelessWidget {
   final double size;
@@ -3223,3 +3988,5 @@ class PentagonPainter extends CustomPainter {
       oldDelegate.selectedSkill != selectedSkill ||
       oldDelegate.skillColor != skillColor;
 }
+
+

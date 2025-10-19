@@ -70,8 +70,9 @@ class _VocabularyBuilderPageState extends State<VocabularyBuilderPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('📚 Vocabulary Builder'),
+        title: const Text('Vocabulary Builder'),
         backgroundColor: Colors.purple,
+        foregroundColor: Colors.white,
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -322,17 +323,22 @@ class _VocabularyBuilderPageState extends State<VocabularyBuilderPage> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(emoji, style: const TextStyle(fontSize: 32)),
-              const SizedBox(height: 8),
-              Text(
-                name,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.purple,
+              const SizedBox(height: 4),
+             Expanded( // <--- NEW: Use Expanded to make the name take available space
+                child: FittedBox( // <--- NEW: Use FittedBox to allow text to scale if needed
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    name,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.purple,
+                    ),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),

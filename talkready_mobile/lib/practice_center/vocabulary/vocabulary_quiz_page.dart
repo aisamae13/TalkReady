@@ -54,7 +54,7 @@ class _VocabularyQuizPageState extends State<VocabularyQuizPage> {
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        title: const Text('🎯 Quiz Settings'),
+        title: const Text('Quiz Settings'),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -163,6 +163,7 @@ class _VocabularyQuizPageState extends State<VocabularyQuizPage> {
             label: const Text('Start Quiz'),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.purple,
+              foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             ),
           ),
@@ -438,8 +439,9 @@ class _VocabularyQuizPageState extends State<VocabularyQuizPage> {
     if (_isLoading || _isLoadingQuiz) {
       return Scaffold(
         appBar: AppBar(
-          title: const Text('🎯 Vocabulary Quiz'),
+          title: const Text('Vocabulary Quiz'),
           backgroundColor: Colors.purple,
+          foregroundColor: Colors.white,
         ),
         body: Center(
           child: Column(

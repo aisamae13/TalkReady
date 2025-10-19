@@ -74,6 +74,7 @@ dependencies:
   flutter_spinkit: ^5.2.0
   dio: ^5.9.0
   file_saver: ^0.3.1
+  image_cropper: ^11.0.0
   # Optional: For advanced audio processing (if needed for Azure Speech API)
   # Note: Azure Speech API may require a custom package or platform-specific integration
 
@@ -91,6 +92,7 @@ dependencies:
   drag_and_drop_lists: ^0.4.2
   just_audio: ^0.10.5
   device_info_plus: ^12.1.0
+  confetti: ^0.8.0
 
 dev_dependencies:
   flutter_test:

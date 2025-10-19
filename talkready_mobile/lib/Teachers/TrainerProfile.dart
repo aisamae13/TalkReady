@@ -19,7 +19,8 @@ import '../settings/terms_of_service.dart';
 import '../custom_animated_bottom_bar.dart';
 import 'TrainerDashboard.dart';
 import '../session/device_session_manager.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:image_cropper/image_cropper.dart';
+import 'package:file_picker/file_picker.dart';
 
 class TrainerProfile extends StatefulWidget {
   const TrainerProfile({super.key});
@@ -87,7 +88,42 @@ class _TrainerProfileState extends State<TrainerProfile> {
     _setupUserStream();
     _fetchEmail();
   }
-
+void _showErrorDialog(String title, String message) {
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(15),
+      ),
+      title: Row(
+        children: [
+          Icon(Icons.error_outline, color: Colors.red.shade700),
+          const SizedBox(width: 8),
+          Text(
+            title,
+            style: TextStyle(
+              color: Colors.red.shade700,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+      content: Text(message),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text(
+            'OK',
+            style: TextStyle(
+              color: Color(0xFF00568D),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
   void _fetchEmail() {
     final user = _auth.currentUser;
     if (user != null) {
@@ -354,96 +390,124 @@ class _TrainerProfileState extends State<TrainerProfile> {
     }
   }
 
-  Future<void> _pickAndUploadProfilePic() async {
-    try {
-      final pickedFile = await _picker.pickImage(source: ImageSource.gallery);
-      if (pickedFile != null) {
-        setState(() {
-          _isLoading = true;
-        });
+ Future<void> _pickAndUploadProfilePic() async {
+  try {
+    // Show upload guidelines dialog first
+    final shouldProceed = await _showUploadGuidelinesDialog();
+    if (!shouldProceed) return;
 
-        final user = _auth.currentUser;
-        if (user != null) {
-          final file = File(pickedFile.path);
-          final imageBytes = await file.readAsBytes();
-          final image = img.decodeImage(imageBytes)!;
-          final resizedImage = img.copyResize(image, width: 200);
-          final base64Image = img.encodePng(resizedImage);
+    // Pick image with file size validation
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['jpg', 'jpeg', 'png'],
+      allowMultiple: false,
+      withData: false,
+      withReadStream: false,
+    );
 
-          if (base64Image.length > 1000000) {
-            _logger.e(
-              'Profile picture too large for Firestore (exceeds 1 MB after encoding)',
-            );
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text(
-                    'Image is too large. Please choose a smaller one.',
-                  ),
-                ),
-              );
-            }
-            setState(() => _isLoading = false);
-            return;
-          }
-          final profilePicBase64 = base64Encode(base64Image);
+    if (result == null || result.files.isEmpty) return;
 
-          await _firestore.collection('users').doc(user.uid).update({
-            'profilePicBase64': profilePicBase64,
-            'profilePicSkipped': false,
-          });
+    final pickedFile = result.files.first;
 
-          setState(() {
-            _profilePicBase64 = profilePicBase64;
-            _profilePicSkipped = false;
-            _isLoading = false;
-          });
-
-          _logger.i('Profile picture saved as base64 for UID: ${user.uid}');
-        } else {
-          setState(() => _isLoading = false);
-        }
-      }
-    } catch (e) {
-      _logger.e('Error picking or uploading profile picture: $e');
-      setState(() {
-        _isLoading = false;
-      });
+    // Validate file size (5MB limit)
+    const maxSizeInBytes = 5 * 1024 * 1024; // 5MB
+    if (pickedFile.size > maxSizeInBytes) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error uploading profile picture: $e')),
+        _showErrorDialog(
+          'File Too Large',
+          'Please select an image smaller than 5MB. Current size: ${(pickedFile.size / (1024 * 1024)).toStringAsFixed(2)}MB',
         );
       }
+      return;
     }
-  }
 
-  Future<void> _signOut(BuildContext context) async {
-    try {
-      _logger.i('Attempting to sign out user');
+    // Validate file format
+    final extension = pickedFile.extension?.toLowerCase();
+    if (extension == null || !['jpg', 'jpeg', 'png'].contains(extension)) {
+      if (mounted) {
+        _showErrorDialog(
+          'Invalid Format',
+          'Please select a JPG or PNG image.',
+        );
+      }
+      return;
+    }
 
-      final user = FirebaseAuth.instance.currentUser;
+    // Show preview and crop dialog
+    final file = File(pickedFile.path!);
+    final croppedFile = await _cropImage(file);
 
-      // End device session
-      if (user != null) {
-        await DeviceSessionManager().endSession(user.uid);
-        _logger.i('Device session ended for user: ${user.uid}');
+    if (croppedFile == null) return; // User cancelled cropping
+
+    // Show loading
+    setState(() {
+      _isLoading = true;
+    });
+
+    final user = _auth.currentUser;
+    if (user != null) {
+      // Read and process the cropped image
+      final imageBytes = await croppedFile.readAsBytes();
+      final image = img.decodeImage(imageBytes);
+
+      if (image == null) {
+        throw Exception('Failed to decode image');
       }
 
-      // Sign out from Firebase
-      await FirebaseAuth.instance.signOut();
-      _logger.i('User signed out successfully');
+      // Resize to recommended size (500x500)
+      final resizedImage = img.copyResize(
+        image,
+        width: 500,
+        height: 500,
+        interpolation: img.Interpolation.average,
+      );
+
+      // Encode as PNG for better quality
+      final encodedImage = img.encodePng(resizedImage, level: 6);
+
+      // Final size check after processing
+      if (encodedImage.length > 1000000) {
+        _logger.e('Profile picture too large after encoding');
+        if (mounted) {
+          _showErrorDialog(
+            'Processing Error',
+            'The processed image is still too large. Please try a different image.',
+          );
+        }
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      final profilePicBase64 = base64Encode(encodedImage);
+
+      // Clean base64 string (remove data URI prefix if present)
+      final cleanBase64 = profilePicBase64.contains(',')
+          ? profilePicBase64.split(',').last
+          : profilePicBase64;
+
+      // Upload to Firestore
+      await _firestore.collection('users').doc(user.uid).update({
+        'profilePicBase64': cleanBase64,
+        'profilePicSkipped': false,
+        'profilePicUpdatedAt': FieldValue.serverTimestamp(),
+      });
+
+      setState(() {
+        _profilePicBase64 = cleanBase64;
+        _profilePicSkipped = false;
+        _isLoading = false;
+      });
+
+      _logger.i('Profile picture saved successfully for UID: ${user.uid}');
 
       if (mounted) {
-        Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
-
-        // Show logout confirmation
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Row(
               children: [
                 Icon(Icons.check_circle, color: Colors.white),
                 SizedBox(width: 12),
-                Text('Logged out successfully'),
+                Text('Profile picture updated successfully!'),
               ],
             ),
             backgroundColor: Color(0xFF00568D),
@@ -451,16 +515,240 @@ class _TrainerProfileState extends State<TrainerProfile> {
           ),
         );
       }
-    } catch (e) {
-      _logger.e('Error signing out: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error signing out: $e')));
-      }
+    } else {
+      setState(() => _isLoading = false);
+    }
+  } catch (e) {
+    _logger.e('Error uploading profile picture: $e');
+    setState(() {
+      _isLoading = false;
+    });
+    if (mounted) {
+      _showErrorDialog(
+        'Upload Failed',
+        'An error occurred while uploading your profile picture. Please try again.',
+      );
     }
   }
+}
 
+Future<File?> _cropImage(File imageFile) async {
+  try {
+    final croppedFile = await ImageCropper().cropImage(
+      sourcePath: imageFile.path,
+      aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+      uiSettings: [
+        AndroidUiSettings(
+          toolbarTitle: 'Crop Profile Picture',
+          toolbarColor: const Color(0xFF2973B2),
+          toolbarWidgetColor: Colors.white,
+          initAspectRatio: CropAspectRatioPreset.square,
+          lockAspectRatio: true,
+          aspectRatioPresets: [
+            CropAspectRatioPreset.square,
+          ],
+          hideBottomControls: false,
+          showCropGrid: true,
+        ),
+        IOSUiSettings(
+          title: 'Crop Profile Picture',
+          aspectRatioLockEnabled: true,
+          resetAspectRatioEnabled: false,
+          aspectRatioPresets: [
+            CropAspectRatioPreset.square,
+          ],
+        ),
+      ],
+      compressQuality: 90,
+      maxWidth: 1000,
+      maxHeight: 1000,
+    );
+
+    return croppedFile != null ? File(croppedFile.path) : null;
+  } catch (e) {
+    _logger.e('Error cropping image: $e');
+    return null;
+  }
+}
+Future<bool> _showUploadGuidelinesDialog() async {
+  return await showDialog<bool>(
+    context: context,
+    builder: (context) => Dialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2973B2).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.info_outline,
+                    color: Color(0xFF2973B2),
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Profile Picture Guidelines',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF00568D),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _buildGuidelineItem(
+              Icons.photo_size_select_actual,
+              'Recommended Size',
+              '500x500 pixels (square)',
+            ),
+            const SizedBox(height: 12),
+            _buildGuidelineItem(
+              Icons.file_present,
+              'Maximum File Size',
+              '5 MB',
+            ),
+            const SizedBox(height: 12),
+            _buildGuidelineItem(
+              Icons.image,
+              'Supported Formats',
+              'JPG, JPEG, PNG',
+            ),
+            const SizedBox(height: 12),
+            _buildGuidelineItem(
+              Icons.crop,
+              'Cropping',
+              'You can crop your image after selection',
+            ),
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.lightbulb_outline,
+                    color: Colors.blue.shade700,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Tip: Use a clear, well-lit photo for best results',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF00568D),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(
+                      color: Color(0xFF00568D),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2973B2),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 12,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text(
+                    'Choose Photo',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ),
+  ) ?? false;
+}
+Future<void> _signOut(BuildContext context) async {
+  try {
+    _logger.i('Attempting to sign out user');
+
+    final user = FirebaseAuth.instance.currentUser;
+
+    // End device session
+    if (user != null) {
+      await DeviceSessionManager().endSession(user.uid);
+      _logger.i('Device session ended for user: ${user.uid}');
+    }
+
+    // Sign out from Firebase
+    await FirebaseAuth.instance.signOut();
+    _logger.i('User signed out successfully');
+
+    if (mounted) {
+      Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+
+      // Show logout confirmation
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white),
+              SizedBox(width: 12),
+              Text('Logged out successfully'),
+            ],
+          ),
+          backgroundColor: Color(0xFF00568D),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  } catch (e) {
+    _logger.e('Error signing out: $e');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error signing out: $e')),
+      );
+    }
+  }
+}
   Future<void> _deleteAccount(BuildContext context) async {
     // Show initial info dialog before typed confirmation
     final proceed = await showDialog<bool>(
@@ -862,6 +1150,42 @@ class _TrainerProfileState extends State<TrainerProfile> {
       }
     }
   }
+Widget _buildGuidelineItem(IconData icon, String title, String description) {
+  return Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Icon(
+        icon,
+        color: const Color(0xFF2973B2),
+        size: 20,
+      ),
+      const SizedBox(width: 12),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+                color: Color(0xFF00568D),
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              description,
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey[700],
+              ),
+            ),
+          ],
+        ),
+      ),
+    ],
+  );
+}
 
   Widget _buildCustomDialog({
     required BuildContext context,
@@ -1185,23 +1509,38 @@ class _TrainerProfileState extends State<TrainerProfile> {
                                       : null,
                                 ),
                               ),
-                              Positioned(
-                                bottom: 12,
-                                right: 10,
-                                child: CircleAvatar(
-                                  radius: 18,
-                                  backgroundColor: Colors.blue.shade100,
-                                  child: IconButton(
-                                    icon: const Icon(
-                                      Icons.add,
-                                      color: Colors.blue,
+                             Positioned(
+                              bottom: 0,
+                              right: 0,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF2973B2),
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.2),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 2),
                                     ),
-                                    onPressed: _pickAndUploadProfilePic,
-                                    padding: EdgeInsets.zero,
-                                    iconSize: 24,
+                                  ],
+                                ),
+                                child: Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    onTap: _pickAndUploadProfilePic,
+                                    borderRadius: BorderRadius.circular(50),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(12),
+                                      child: const Icon(
+                                        Icons.camera_alt,
+                                        color: Colors.white,
+                                        size: 20,
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),
+                            )
                             ],
                           ),
                           const SizedBox(height: 12),

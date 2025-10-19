@@ -756,101 +756,310 @@ Widget _buildSpeakingAssessmentReview() {
     ],
   );
 }
-  Widget _buildStandardAssessmentReview() {
-    final questions = _assessmentDetails?['questions'] as List? ?? [];
-    final answers = _submissionDetails?['answers'] as List? ?? [];
+Widget _buildStandardAssessmentReview() {
+  final questions = _assessmentDetails?['questions'] as List? ?? [];
+  final answers = _submissionDetails?['answers'] as List? ?? [];
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Question Review',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 16),
-        ...questions.asMap().entries.map((entry) {
-          final index = entry.key;
-          final question = entry.value;
-          final answer = answers.isNotEmpty && index < answers.length
-              ? answers[index]
-              : null;
-          return _buildQuestionCard(question, answer, index + 1);
-        }).toList(),
-      ],
-    );
+  // Calculate statistics
+  int correctCount = 0;
+  int incorrectCount = 0;
+  for (var answer in answers) {
+    if (answer['isCorrect'] == true) {
+      correctCount++;
+    } else {
+      incorrectCount++;
+    }
   }
 
-  Widget _buildQuestionCard(
-    Map<String, dynamic> question,
-    Map<String, dynamic>? answer,
-    int questionNumber,
-  ) {
-    final isCorrect = answer?['isCorrect'] ?? false;
-    final pointsEarned = answer?['pointsEarned'] ?? 0;
-    final totalPoints = question['points'] ?? 0;
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Question header
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Question $questionNumber',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: isCorrect
-                        ? Colors.green.shade100
-                        : Colors.red.shade100,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    '$pointsEarned / $totalPoints pts',
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      // Summary Statistics Card
+      Card(
+        elevation: 0,
+        color: Colors.blue.shade50,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: Colors.blue.shade200, width: 1),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.quiz, color: Colors.blue.shade700, size: 20),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Quiz Summary',
                     style: TextStyle(
-                      color: isCorrect
-                          ? Colors.green.shade700
-                          : Colors.red.shade700,
+                      fontSize: 16,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 12),
-
-            // Question text
-            Text(
-              question['text'] ?? 'Question text not available',
-              style: const TextStyle(fontSize: 14),
-            ),
-
-            const SizedBox(height: 16),
-
-            // Answer section
-            if (question['type'] == 'multiple-choice')
-              _buildMultipleChoiceReview(question, answer)
-            else if (question['type'] == 'fill-in-the-blank')
-              _buildFillInBlankReview(question, answer),
-          ],
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _buildSummaryItem(
+                    'Total Questions',
+                    '${questions.length}',
+                    Icons.format_list_numbered,
+                    Colors.blue,
+                  ),
+                  _buildSummaryItem(
+                    'Correct',
+                    '$correctCount',
+                    Icons.check_circle,
+                    Colors.green,
+                  ),
+                  _buildSummaryItem(
+                    'Incorrect',
+                    '$incorrectCount',
+                    Icons.cancel,
+                    Colors.red,
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
-    );
-  }
+
+      const SizedBox(height: 20),
+
+      const Text(
+        'Detailed Question Review',
+        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+      ),
+      const SizedBox(height: 16),
+
+      ...questions.asMap().entries.map((entry) {
+        final index = entry.key;
+        final question = entry.value;
+        final answer = answers.isNotEmpty && index < answers.length
+            ? answers[index]
+            : null;
+        return _buildQuestionCard(question, answer, index + 1);
+      }).toList(),
+    ],
+  );
+}
+
+Widget _buildSummaryItem(String label, String value, IconData icon, Color color) {
+  return Column(
+    children: [
+      Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, color: color, size: 24),
+      ),
+      const SizedBox(height: 8),
+      Text(
+        value,
+        style: TextStyle(
+          fontSize: 24,
+          fontWeight: FontWeight.bold,
+          color: color,
+        ),
+      ),
+      Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          color: Colors.grey.shade600,
+        ),
+      ),
+    ],
+  );
+}
+
+Widget _buildQuestionCard(
+  Map<String, dynamic> question,
+  Map<String, dynamic>? answer,
+  int questionNumber,
+) {
+  final isCorrect = answer?['isCorrect'] ?? false;
+  final pointsEarned = answer?['pointsEarned'] ?? 0;
+  final totalPoints = question['points'] ?? 0;
+
+  return Card(
+    margin: const EdgeInsets.only(bottom: 16),
+    elevation: 2,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(12),
+      side: BorderSide(
+        color: isCorrect ? Colors.green.shade200 : Colors.red.shade200,
+        width: 1.5,
+      ),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Question header with result indicator
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: isCorrect
+                            ? Colors.green.shade100
+                            : Colors.red.shade100,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        isCorrect ? Icons.check : Icons.close,
+                        color: isCorrect
+                            ? Colors.green.shade700
+                            : Colors.red.shade700,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Question $questionNumber',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: isCorrect
+                      ? Colors.green.shade100
+                      : Colors.red.shade100,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  '$pointsEarned / $totalPoints pts',
+                  style: TextStyle(
+                    color: isCorrect
+                        ? Colors.green.shade700
+                        : Colors.red.shade700,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 16),
+
+          // Question type indicator
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              question['type'] == 'multiple-choice'
+                  ? 'Multiple Choice'
+                  : 'Fill in the Blank',
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.blue.shade700,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          // Question text
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              question['text'] ?? 'Question text not available',
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Answer section
+          if (question['type'] == 'multiple-choice')
+            _buildMultipleChoiceReview(question, answer)
+          else if (question['type'] == 'fill-in-the-blank')
+            _buildFillInBlankReview(question, answer),
+
+          // Explanation if available
+          if (question['explanation'] != null && question['explanation'].toString().isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.amber.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.amber.shade200),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.lightbulb_outline,
+                    color: Colors.amber.shade700,
+                    size: 20
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Explanation:',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.amber.shade900,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          question['explanation'],
+                          style: TextStyle(
+                            color: Colors.amber.shade900,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    ),
+  );
+}
 
   Widget _buildMultipleChoiceReview(
     Map<String, dynamic> question,

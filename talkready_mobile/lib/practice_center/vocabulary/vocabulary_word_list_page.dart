@@ -22,6 +22,7 @@ class _VocabularyWordListPageState extends State<VocabularyWordListPage> {
   List<Map<String, dynamic>> _words = [];
   String _selectedDifficulty = 'beginner';
   String _selectedCategory = 'general';
+  final Map<String, bool> _isMarkedForReview = {};
 
   static const String _backendUrl = 'https://talkready-backend.onrender.com';
 
@@ -65,6 +66,7 @@ class _VocabularyWordListPageState extends State<VocabularyWordListPage> {
           setState(() {
             _words = List<Map<String, dynamic>>.from(data['words']);
             _isLoading = false;
+            _isMarkedForReview.clear();
           });
           _logger.i('Loaded ${_words.length} words');
         }
@@ -80,11 +82,11 @@ class _VocabularyWordListPageState extends State<VocabularyWordListPage> {
     }
   }
 
-  Future<void> _saveWordProgress(
+ Future<void> _saveWordProgress(
     Map<String, dynamic> word,
     bool isLearned,
   ) async {
-    try {
+    try { // <--- START of try block
       await http.post(
         Uri.parse('$_backendUrl/save-vocabulary-progress'),
         headers: {'Content-Type': 'application/json'},
@@ -120,9 +122,14 @@ class _VocabularyWordListPageState extends State<VocabularyWordListPage> {
           ),
         );
       }
-    } catch (e) {
+     if (!isLearned && word['word'] != null && mounted) {
+        setState(() {
+          // Use the word string as the key to match the Map<String, bool> definition
+          _isMarkedForReview[word['word'] as String] = true;
+        });
+      }
+    } catch (e) { // <--- ADDED CATCH CLAUSE to fix both errors
       _logger.e('Error saving progress: $e');
-      // No setState here, so no need to check mounted
     }
   }
 
@@ -136,8 +143,9 @@ class _VocabularyWordListPageState extends State<VocabularyWordListPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('📖 Word List'),
+        title: const Text('Word List'),
         backgroundColor: Colors.purple,
+        foregroundColor: Colors.white,
         actions: [
           IconButton(
             icon: const Icon(Icons.filter_list),
@@ -195,6 +203,8 @@ class _VocabularyWordListPageState extends State<VocabularyWordListPage> {
   }
 
   Widget _buildWordCard(Map<String, dynamic> word) {
+    final wordString = word['word'] as String? ?? '';
+    final isBookmarked = _isMarkedForReview[wordString] ?? false;
     return Card(
       elevation: 2,
       margin: const EdgeInsets.only(bottom: 16),
@@ -221,7 +231,7 @@ class _VocabularyWordListPageState extends State<VocabularyWordListPage> {
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                word['word'],
+                 wordString,
                 style: const TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
@@ -325,7 +335,7 @@ class _VocabularyWordListPageState extends State<VocabularyWordListPage> {
                 const SizedBox(height: 16),
 
                 // Action buttons
-                Row(
+              Row(
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
@@ -338,12 +348,15 @@ class _VocabularyWordListPageState extends State<VocabularyWordListPage> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    IconButton(
-                      onPressed: () => _saveWordProgress(word, false),
-                      icon: const Icon(Icons.bookmark_border),
-                      color: Colors.purple,
-                      tooltip: 'Save for review',
-                    ),
+                    // NEW: Dynamic Bookmark Icon
+                  IconButton(
+                onPressed: () => _saveWordProgress(word, false),
+                icon: Icon(
+                  isBookmarked ? Icons.bookmark : Icons.bookmark_border,
+                ),
+                color: isBookmarked ? Colors.purple : Colors.grey,
+                tooltip: 'Save for review',
+              ),
                   ],
                 ),
               ],
@@ -466,7 +479,7 @@ class _VocabularyWordListPageState extends State<VocabularyWordListPage> {
               Navigator.pop(context);
               _loadWords();
             },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.purple),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.purple, foregroundColor: Colors.white),
             child: const Text('Apply'),
           ),
         ],
