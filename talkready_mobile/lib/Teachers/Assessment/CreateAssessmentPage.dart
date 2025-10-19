@@ -1,4 +1,6 @@
 // src/components/TrainerSection/assessments/CreateAssessmentPage.dart
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -14,6 +16,11 @@ import 'package:firebase_storage/firebase_storage.dart' as firebase_storage;
 // Add the new imports
 import '../../Teachers/Assessment/ClassAssessmentsListPage.dart';
 import '../../notification_service.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
+import 'package:logger/logger.dart';
 
 class Question {
   String id;
@@ -38,6 +45,8 @@ class Question {
   String? promptText;
   String? referenceText;
 
+  String? referenceAudioUrl;
+  String? referenceAudioPath;
   Question({
     required this.id,
     required this.text,
@@ -56,6 +65,8 @@ class Question {
     this.title,
     this.promptText,
     this.referenceText,
+    this.referenceAudioUrl,
+    this.referenceAudioPath,
   });
 
   Map<String, dynamic> toMap() {
@@ -75,6 +86,8 @@ class Question {
         'title': title,
         'promptText': promptText,
         'referenceText': referenceText,
+        'referenceAudioUrl': referenceAudioUrl,
+        'referenceAudioPath': referenceAudioPath,
       });
     } else {
       // Your existing logic for other question types
@@ -212,6 +225,18 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage>
   // Assessment type
   String _assessmentType = 'standard_quiz';
 
+  File? _referenceAudioFile;
+    String? _referenceAudioUrl;
+    String? _referenceAudioPath;
+    bool _isUploadingReferenceAudio = false;
+    String? _referenceAudioError;
+    final AudioRecorder _audioRecorder = AudioRecorder();
+    bool _isRecording = false;
+    String? _recordingPath;
+    int _recordingDuration = 0;
+    Timer? _recordingTimer;
+    // Add logger
+    final Logger _logger = Logger();
   // Deadline
   DateTime? _deadline;
   final _deadlineFmt = DateFormat('yyyy-MM-dd HH:mm');
@@ -238,7 +263,6 @@ class _CreateAssessmentPageState extends State<CreateAssessmentPage>
   late Animation<Offset> _slideAnimation;
 
   @override
-@override
 void initState() {
   super.initState();
   _selectedClassId = widget.classId ?? widget.initialClassId;
@@ -274,17 +298,20 @@ void initState() {
   _fadeController.forward();
   _slideController.forward();
 }
-  @override
-  void dispose() {
-    _fadeController.dispose();
-    _slideController.dispose();
-    _titleController.dispose();
-    _descriptionController.dispose();
-    _promptTitleController.dispose();
-    _promptTextController.dispose();
-    _referenceTextController.dispose();
-    super.dispose();
-  }
+
+ @override
+void dispose() {
+  _fadeController.dispose();
+  _slideController.dispose();
+  _titleController.dispose();
+  _descriptionController.dispose();
+  _promptTitleController.dispose();
+  _promptTextController.dispose();
+  _referenceTextController.dispose();
+  _recordingTimer?.cancel();
+  _audioRecorder.dispose();
+  super.dispose();
+}
 
   Future<void> _fetchTrainerClasses() async {
     if (currentUser == null) return;
@@ -309,6 +336,125 @@ void initState() {
       });
     }
   }
+
+  Future<void> _startRecording() async {
+  try {
+    if (await _audioRecorder.hasPermission()) {
+      final directory = await getTemporaryDirectory();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final path = '${directory.path}/recording_$timestamp.m4a';
+
+      setState(() {
+        _recordingPath = path;
+        _isRecording = true;
+        _recordingDuration = 0;
+      });
+
+      await _audioRecorder.start(
+        const RecordConfig(
+          encoder: AudioEncoder.aacLc,
+          bitRate: 128000,
+          sampleRate: 44100,
+        ),
+        path: path,
+      );
+
+      // Start timer
+      _recordingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        setState(() {
+          _recordingDuration++;
+        });
+      });
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Microphone permission is required to record audio'),
+        ),
+      );
+    }
+  } catch (e) {
+    _logger.e("Error starting recording: $e");
+    setState(() {
+      _referenceAudioError = "Failed to start recording.";
+      _isRecording = false;
+    });
+  }
+}
+
+Future<void> _stopRecording() async {
+  try {
+    _recordingTimer?.cancel();
+    final path = await _audioRecorder.stop();
+
+    if (path != null && path.isNotEmpty) {
+      setState(() {
+        _isRecording = false;
+        _isUploadingReferenceAudio = true;
+      });
+
+      // Upload the recorded file
+      final file = File(path);
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final audioPath = 'assessments/temp_${currentUser!.uid}/reference_audio/$timestamp.m4a';
+
+      final storageRef = firebase_storage.FirebaseStorage.instance.ref(audioPath);
+      await storageRef.putFile(file);
+      final downloadUrl = await storageRef.getDownloadURL();
+
+      setState(() {
+        _referenceAudioUrl = downloadUrl;
+        _referenceAudioPath = audioPath;
+        _referenceAudioFile = file;
+        _isUploadingReferenceAudio = false;
+        _recordingDuration = 0;
+      });
+
+      // Clean up temporary file
+      try {
+        await file.delete();
+      } catch (e) {
+        _logger.w("Could not delete temp recording file: $e");
+      }
+    }
+  } catch (e) {
+    _logger.e("Error stopping recording: $e");
+    setState(() {
+      _referenceAudioError = "Failed to save recording.";
+      _isRecording = false;
+      _isUploadingReferenceAudio = false;
+    });
+  }
+}
+
+void _cancelRecording() async {
+  try {
+    _recordingTimer?.cancel();
+    await _audioRecorder.stop();
+
+    if (_recordingPath != null) {
+      try {
+        await File(_recordingPath!).delete();
+      } catch (e) {
+        _logger.w("Could not delete recording: $e");
+      }
+    }
+
+    setState(() {
+      _isRecording = false;
+      _recordingDuration = 0;
+      _recordingPath = null;
+    });
+  } catch (e) {
+    _logger.e("Error canceling recording: $e");
+  }
+}
+
+String _formatDuration(int seconds) {
+  final minutes = seconds ~/ 60;
+  final remainingSeconds = seconds % 60;
+  return '${minutes.toString().padLeft(2, '0')}:${remainingSeconds.toString().padLeft(2, '0')}';
+}
+
 void _loadClonedData() {
   final data = widget.clonedData!;
 
@@ -750,6 +896,73 @@ void _loadClonedData() {
     }
   }
 
+Future<void> _pickReferenceAudio() async {
+  try {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.audio,
+      allowMultiple: false,
+    );
+
+    if (result == null || result.files.isEmpty) return;
+
+    final file = File(result.files.single.path!);
+    final size = await file.length();
+
+    // 10MB limit for audio
+    if (size > 10 * 1024 * 1024) {
+      setState(() {
+        _referenceAudioError = 'File is too large. Maximum size is 10MB.';
+      });
+      return;
+    }
+
+    setState(() {
+      _referenceAudioFile = file;
+      _isUploadingReferenceAudio = true;
+      _referenceAudioError = null;
+    });
+
+    // Delete previous audio if exists
+    if (_referenceAudioPath != null && _referenceAudioPath!.isNotEmpty) {
+      await _deleteStorageFileIfAny(_referenceAudioPath);
+    }
+
+    final directory = await getTemporaryDirectory();
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final audioPath = 'assessments/temp_${currentUser!.uid}/reference_audio/$timestamp.${path.extension(file.path)}';
+
+    final storageRef = firebase_storage.FirebaseStorage.instance.ref(audioPath);
+    await storageRef.putFile(file);
+    final downloadUrl = await storageRef.getDownloadURL();
+
+    setState(() {
+      _referenceAudioUrl = downloadUrl;
+      _referenceAudioPath = audioPath;
+      _isUploadingReferenceAudio = false;
+    });
+  } catch (e) {
+    _logger.e("Error picking reference audio: $e");
+    setState(() {
+      _referenceAudioError = "Failed to upload audio file.";
+      _referenceAudioFile = null;
+      _isUploadingReferenceAudio = false;
+    });
+  }
+}
+
+Future<void> _removeReferenceAudio() async {
+  setState(() => _isUploadingReferenceAudio = true);
+  await _deleteStorageFileIfAny(_referenceAudioPath);
+  if (mounted) {
+    setState(() {
+      _isUploadingReferenceAudio = false;
+      _referenceAudioFile = null;
+      _referenceAudioUrl = null;
+      _referenceAudioPath = null;
+      _referenceAudioError = null;
+    });
+  }
+}
   // --- Build payload (call inside your save flow) ---
   Map<String, dynamic> _buildAssessmentPayload() {
     final basePayload = {
@@ -796,43 +1009,52 @@ void _loadClonedData() {
       return;
     }
 
-    if (_assessmentType == 'speaking_assessment') {
-      if (_promptTitleController.text.trim().isEmpty) {
-        setState(() => _error = 'Please add a title for the speaking prompt.');
-        return;
-      }
-      if (_promptTextController.text.trim().isEmpty) {
-        setState(
-          () => _error =
-              'Please add the prompt text for the speaking assessment.',
-        );
-        return;
-      }
-      // NOTE: No deadline validation here - it's optional!
+   if (_assessmentType == 'speaking_assessment') {
+  if (_promptTitleController.text.trim().isEmpty) {
+    setState(() => _error = 'Please add a title for the speaking prompt.');
+    return;
+  }
+  if (_promptTextController.text.trim().isEmpty) {
+    setState(() => _error = 'Please add the prompt text for the speaking assessment.');
+    return;
+  }
+  // NEW: Validate that at least one reference is provided and show a Snackbar
+  if (_referenceTextController.text.trim().isEmpty &&
+      (_referenceAudioUrl == null || _referenceAudioUrl!.isEmpty)) {
+    // Show Snackbar instead of setting _error state
+    _showSnackBar(
+      'Please provide either a reference text or reference audio for AI evaluation.',
+      Colors.orange,
+    );
+    // Setting _error to null here prevents the old error message from showing
+    setState(() => _error = null);
+    return;
+  }
 
-      // Create the speaking prompt
-      final speakingPrompt = SpeakingPrompt(
-        id: const Uuid().v4(),
-        title: _promptTitleController.text.trim(),
-        promptText: _promptTextController.text.trim(),
-        referenceText: _referenceTextController.text.trim(),
-      );
+  final speakingPrompt = SpeakingPrompt(
+    id: const Uuid().v4(),
+    title: _promptTitleController.text.trim(),
+    promptText: _promptTextController.text.trim(),
+    referenceText: _referenceTextController.text.trim(),
+  );
 
-      // Clear any existing questions and add the speaking prompt
-      _questions.clear();
-      _questions.add(
-        Question(
-          id: speakingPrompt.id,
-          text: speakingPrompt.promptText,
-          type: 'speaking_prompt',
-          points: speakingPrompt.points,
-          requiresReview: true,
-          title: speakingPrompt.title,
-          promptText: speakingPrompt.promptText,
-          referenceText: speakingPrompt.referenceText,
-        ),
-      );
-    }
+  _questions.clear();
+  _questions.add(
+    Question(
+      id: speakingPrompt.id,
+      text: speakingPrompt.promptText,
+      type: 'speaking_prompt',
+      points: speakingPrompt.points,
+      requiresReview: true,
+      title: speakingPrompt.title,
+      promptText: speakingPrompt.promptText,
+      referenceText: speakingPrompt.referenceText,
+      // ADD THESE LINES:
+      referenceAudioUrl: _referenceAudioUrl,
+      referenceAudioPath: _referenceAudioPath,
+    ),
+  );
+}
 
     setState(() {
       _isLoading = true;
@@ -1104,7 +1326,7 @@ if (_deadline != null) {
     return const BoxDecoration(color: Colors.white);
   }
 
-  Widget _buildProgressIndicator() {
+ Widget _buildProgressIndicator() {
     bool titleComplete = _titleController.text.trim().isNotEmpty;
     bool classComplete = _selectedClassId != null || widget.classId != null;
 
@@ -1113,11 +1335,17 @@ if (_deadline != null) {
       questionsComplete = _questions.isNotEmpty;
     } else {
       // For speaking assessments, check if the form fields are filled
-      // NOTE: Deadline is NOT required for completion
+      // NEW: Also check for at least one reference (Text or Audio)
       questionsComplete =
           _promptTitleController.text.trim().isNotEmpty &&
-          _promptTextController.text.trim().isNotEmpty;
+          _promptTextController.text.trim().isNotEmpty &&
+          (_referenceTextController.text.trim().isNotEmpty ||
+              (_referenceAudioUrl != null && _referenceAudioUrl!.isNotEmpty));
     }
+
+    // Determine if the next step is enabled based on previous step
+    bool deadlineEnabled = classComplete;
+    bool questionsEnabled = classComplete && titleComplete; // Keeping original logic for questions step enablement
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1143,12 +1371,13 @@ if (_deadline != null) {
               _buildProgressConnector(titleComplete),
               _buildProgressStep('Class', classComplete, titleComplete),
               _buildProgressConnector(classComplete),
+              // Moved Questions/Prompt to the last step
               _buildProgressStep(
                 _assessmentType == 'speaking_assessment'
                     ? 'Prompt'
                     : 'Questions',
                 questionsComplete,
-                classComplete,
+                questionsEnabled,
               ),
             ],
           ),
@@ -1428,7 +1657,65 @@ if (_deadline != null) {
       ),
     );
   }
+Widget _buildSaveButton() {
+  bool canSave =
+      _titleController.text.trim().isNotEmpty &&
+      (_selectedClassId != null || widget.classId != null);
 
+  // Different validation for different assessment types
+  if (_assessmentType == 'standard_quiz') {
+    canSave = canSave && _questions.isNotEmpty;
+  } else if (_assessmentType == 'speaking_assessment') {
+    // For speaking assessments, check the required fields directly
+    bool promptFieldsComplete =
+        _promptTitleController.text.trim().isNotEmpty &&
+        _promptTextController.text.trim().isNotEmpty;
+
+    // Check if at least one reference (Text or Audio URL) is provided
+    bool referenceProvided =
+        _referenceTextController.text.trim().isNotEmpty ||
+        (_referenceAudioUrl != null && _referenceAudioUrl!.isNotEmpty);
+
+    canSave = canSave && promptFieldsComplete && referenceProvided;
+  }
+
+  return SizedBox(
+    width: double.infinity,
+    height: 48,
+    child: ElevatedButton.icon(
+      icon: _isLoading
+          ? const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+            )
+          : Icon(
+              canSave ? FontAwesomeIcons.floppyDisk : FontAwesomeIcons.lock,
+              size: 14,
+            ),
+      label: Text(
+        _isLoading
+            ? 'Saving...'
+            : canSave
+            ? 'Save Assessment'
+            : 'Complete Required Fields',
+        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+      ),
+      onPressed: _isLoading ? null : (canSave ? _saveAssessment : null),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: canSave ? const Color(0xFF8B5CF6) : Colors.grey[400],
+        foregroundColor: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        elevation: canSave ? 2 : 0,
+      ),
+    ),
+  );
+}
   // NEW: Build the Standard Quiz section
   Widget _buildStandardQuizSection() {
     return Column(
@@ -1478,158 +1765,523 @@ if (_deadline != null) {
     );
   }
 
-  // NEW: Build the Speaking Assessment section
-  Widget _buildSpeakingAssessmentSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+Widget _buildSpeakingAssessmentSection() {
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      _buildAssessmentHeaderImagePicker(),
+      const SizedBox(height: 20),
+      _buildSubmissionDeadlinePicker(),
+      const SizedBox(height: 24),
+      Text(
+        'Speaking Prompt',
+        style: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+          color: Color(0xFF1E293B),
+        ),
+      ),
+      const SizedBox(height: 12),
+      TextFormField(
+        controller: _promptTitleController,
+        onChanged: (value) {
+          setState(() {
+            _error = null;
+          });
+        },
+        decoration: InputDecoration(
+          labelText: 'Prompt Title *',
+          hintText: 'e.g., Handling an Angry Customer',
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          filled: true,
+          fillColor: Colors.grey[50],
+          prefixIcon: const Icon(Icons.title),
+        ),
+        validator: (value) {
+          if (value == null || value.isEmpty) {
+            return 'Please enter a title for the prompt.';
+          }
+          return null;
+        },
+      ),
+      const SizedBox(height: 16),
+      TextFormField(
+        controller: _promptTextController,
+        maxLines: 4,
+        onChanged: (value) {
+          setState(() {
+            _error = null;
+          });
+        },
+        decoration: InputDecoration(
+          labelText: 'Prompt Text *',
+          hintText: 'Describe the situation the student needs to respond to.',
+          alignLabelWithHint: true,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          filled: true,
+          fillColor: Colors.grey[50],
+          prefixIcon: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 0, 0),
+            child: Icon(Icons.chat_bubble_outline),
+          ),
+        ),
+        validator: (value) {
+          if (value == null || value.isEmpty) {
+            return 'Please enter the prompt text.';
+          }
+          return null;
+        },
+      ),
+      const SizedBox(height: 24),
+
+      // Reference for AI Evaluation Section
+      Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.blue[50],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.blue[200]!),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.info_outline, color: Colors.blue[700], size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Reference for AI Evaluation *',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1E293B),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Provide either a text response or an audio file (or both) as the ideal reference for AI scoring.',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.blue[700],
+              ),
+            ),
+          ],
+        ),
+      ),
+
+      const SizedBox(height: 16),
+
+      // Option 1: Reference Text
+      Text(
+        'Option 1: Reference Text',
+        style: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          color: Color(0xFF1E293B),
+        ),
+      ),
+      const SizedBox(height: 12),
+      TextFormField(
+        controller: _referenceTextController,
+        maxLines: 4,
+        onChanged: (value) {
+          setState(() {});
+        },
+        decoration: InputDecoration(
+          labelText: 'Reference Text',
+          hintText: 'Provide an ideal or correct text response for the AI to compare against.',
+          alignLabelWithHint: true,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          filled: true,
+          fillColor: Colors.grey[50],
+          prefixIcon: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 0, 0),
+            child: Icon(Icons.text_fields),
+          ),
+        ),
+      ),
+
+      const SizedBox(height: 24),
+
+      // Option 2: Reference Audio
+      Text(
+        'Option 2: Reference Audio',
+        style: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          color: Color(0xFF1E293B),
+        ),
+      ),
+      const SizedBox(height: 12),
+
+      // Show uploaded audio or recording interface
+      if (_referenceAudioUrl != null && _referenceAudioUrl!.isNotEmpty) ...[
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey[300]!),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.audio_file, color: Colors.blue[600], size: 24),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Uploaded Reference Audio',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1E293B),
+                        ),
+                      ),
+                    ],
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.delete, color: Colors.red[600]),
+                    onPressed: _isUploadingReferenceAudio ? null : _removeReferenceAudio,
+                    tooltip: 'Remove audio',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: Icon(
+                        Icons.play_circle_filled,
+                        color: Colors.blue[600],
+                        size: 32,
+                      ),
+                      onPressed: () async {
+                        try {
+                          final player = AudioPlayer();
+                          await player.play(UrlSource(_referenceAudioUrl!));
+                        } catch (e) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Error playing audio: $e')),
+                          );
+                        }
+                      },
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Reference Audio',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey[800],
+                            ),
+                          ),
+                          Text(
+                            'Tap play to listen',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ] else if (_isRecording) ...[
+  // Recording in progress
+  Container(
+    padding: const EdgeInsets.all(20),
+    decoration: BoxDecoration(
+      color: Colors.red[50],
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: Colors.red[300]!, width: 2),
+    ),
+    child: Column(
       children: [
-        _buildAssessmentHeaderImagePicker(),
-        const SizedBox(height: 20),
-        _buildSubmissionDeadlinePicker(),
-        const SizedBox(height: 24),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(
+                color: Colors.red,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                'Recording...',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.red[700],
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
         Text(
-          'Speaking Prompt',
+          _formatDuration(_recordingDuration),
           style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF1E293B),
+            fontSize: 32,
+            fontWeight: FontWeight.bold,
+            color: Colors.grey[800],
+            fontFamily: 'monospace',
           ),
         ),
-        const SizedBox(height: 12),
-        TextFormField(
-          controller: _promptTitleController,
-          onChanged: (value) {
-            // ADD THIS: Trigger rebuild when text changes
-            setState(() {
-              _error = null;
-            });
-          },
-          decoration: InputDecoration(
-            labelText: 'Prompt Title *',
-            hintText: 'Describe the situation the student needs to respond to.',
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-            filled: true,
-            fillColor: Colors.grey[50],
-            prefixIcon: const Icon(Icons.title),
-          ),
-          validator: (value) {
-            if (value == null || value.isEmpty) {
-              return 'Please enter a title for the prompt.';
-            }
-            return null;
-          },
-        ),
-        const SizedBox(height: 16),
-        TextFormField(
-          controller: _promptTextController,
-          maxLines: 4,
-          onChanged: (value) {
-            // ADD THIS: Trigger rebuild when text changes
-            setState(() {
-              _error = null;
-            });
-          },
-          decoration: InputDecoration(
-            labelText: 'Prompt Text *',
-            hintText: 'e.g., "Handling an Angry customer"',
-            alignLabelWithHint: true,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-            filled: true,
-            fillColor: Colors.grey[50],
-            prefixIcon: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 0, 0),
-              child: Icon(Icons.chat_bubble_outline),
+        const SizedBox(height: 20),
+        // FIXED: Responsive button row
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _cancelRecording,
+                icon: Icon(Icons.close, color: Colors.grey[700], size: 18),
+                label: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    'Cancel',
+                    style: TextStyle(color: Colors.grey[700]),
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  side: BorderSide(color: Colors.grey[400]!),
+                ),
+              ),
             ),
-          ),
-          validator: (value) {
-            if (value == null || value.isEmpty) {
-              return 'Please enter the prompt text.';
-            }
-            return null;
-          },
-        ),
-        const SizedBox(height: 16),
-        TextFormField(
-          controller: _referenceTextController,
-          maxLines: 4,
-          onChanged: (value) {
-            // ADD THIS: Even for optional fields, trigger rebuild
-            setState(() {});
-          },
-          decoration: InputDecoration(
-            labelText: 'Reference Text for AI Review',
-            hintText:
-                'Provide an ideal or correct text response for the AI to compare against.',
-            alignLabelWithHint: true,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-            filled: true,
-            fillColor: Colors.grey[50],
-            prefixIcon: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 0, 0),
-              child: Icon(Icons.mic),
+            const SizedBox(width: 8),
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: _stopRecording,
+                icon: const Icon(Icons.stop, color: Colors.white, size: 18),
+                label: const FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text('Stop & Save'),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red[600],
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                ),
+              ),
             ),
+          ],
+        ),
+      ],
+    ),
+  ),
+] else ...[
+        // No audio uploaded yet - show upload and record options
+        Column(
+          children: [
+            // Upload button
+            InkWell(
+              onTap: _isUploadingReferenceAudio ? null : _pickReferenceAudio,
+              child: Container(
+                height: 100,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: _referenceAudioError != null
+                        ? Colors.red[300]!
+                        : Colors.grey[300]!,
+                    width: _referenceAudioError != null ? 2 : 1,
+                  ),
+                ),
+                child: Center(
+                  child: _isUploadingReferenceAudio
+                      ? Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            CircularProgressIndicator(
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                const Color(0xFF8B5CF6),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'Uploading audio...',
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        )
+                      : Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.cloud_upload_outlined,
+                              size: 32,
+                              color: Colors.grey[400],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Upload Audio File',
+                              style: TextStyle(
+                                color: Colors.grey[700],
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            Row(
+              children: [
+                Expanded(child: Divider(color: Colors.grey[300])),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Text(
+                    'OR',
+                    style: TextStyle(
+                      color: Colors.grey[600],
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                Expanded(child: Divider(color: Colors.grey[300])),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            // Record button
+            InkWell(
+              onTap: _isUploadingReferenceAudio ? null : _startRecording,
+              child: Container(
+                height: 100,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: Colors.blue[50],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.blue[200]!),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.mic,
+                      size: 32,
+                      color: Colors.blue[700],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Record Your Voice',
+                      style: TextStyle(
+                        color: Colors.blue[700],
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            if (_referenceAudioError != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red[300]!),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.error_outline, color: Colors.red[700], size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _referenceAudioError!,
+                        style: TextStyle(
+                          color: Colors.red[700],
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Upload: Max 10MB. Formats: MP3, WAV, AAC, M4A',
+          style: TextStyle(
+            fontSize: 11,
+            color: Colors.grey[600],
           ),
         ),
       ],
-    );
-  }
 
-  // Simplified save button
-  Widget _buildSaveButton() {
-    bool canSave =
-        _titleController.text.trim().isNotEmpty &&
-        (_selectedClassId != null || widget.classId != null);
+      const SizedBox(height: 20),
 
-    // Different validation for different assessment types
-    if (_assessmentType == 'standard_quiz') {
-      canSave = canSave && _questions.isNotEmpty;
-    } else if (_assessmentType == 'speaking_assessment') {
-      // For speaking assessments, check the form fields directly
-      // NOTE: Deadline is NOT required for speaking assessments
-      canSave =
-          canSave &&
-          _promptTitleController.text.trim().isNotEmpty &&
-          _promptTextController.text.trim().isNotEmpty;
-      // Removed any deadline requirement here
-    }
-
-    return SizedBox(
-      width: double.infinity,
-      height: 48,
-      child: ElevatedButton.icon(
-        icon: _isLoading
-            ? const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              )
-            : Icon(
-                canSave ? FontAwesomeIcons.floppyDisk : FontAwesomeIcons.lock,
-                size: 14,
-              ),
-        label: Text(
-          _isLoading
-              ? 'Saving...'
-              : canSave
-              ? 'Save Assessment'
-              : 'Complete Required Fields',
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+      // Info box at the bottom
+      Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.blue[50],
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.blue[200]!),
         ),
-        onPressed: _isLoading ? null : (canSave ? _saveAssessment : null),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: canSave ? const Color(0xFF8B5CF6) : Colors.grey[400],
-          foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          elevation: canSave ? 2 : 0,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.lightbulb_outline, color: Colors.blue[700], size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Note: You can provide either text or audio, or both. The AI will use whichever reference is available for scoring.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.blue[700],
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
-    );
-  }
+    ],
+  );
+}
 
   Widget _buildAssessmentHeaderImagePicker() {
     return Column(

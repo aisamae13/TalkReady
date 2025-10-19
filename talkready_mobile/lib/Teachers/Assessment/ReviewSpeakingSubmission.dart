@@ -155,91 +155,99 @@ class _ReviewSpeakingSubmissionPageState
     }
   }
 
-  Future<void> _getAiEvaluation() async {
-    if (_submission?['audioUrl'] == null || _assessment?['questions'] == null) {
-      _showErrorSnackBar('Missing audio URL or assessment questions');
-      return;
+Future<void> _getAiEvaluation() async {
+  if (_submission?['audioUrl'] == null || _assessment?['questions'] == null) {
+    _showErrorSnackBar('Missing audio URL or assessment questions');
+    return;
+  }
+
+  final questions = _assessment!['questions'] as List;
+  if (questions.isEmpty) {
+    _showErrorSnackBar('No questions found in assessment');
+    return;
+  }
+
+  final firstQuestion = questions.first;
+  final promptText = firstQuestion['promptText'] ?? firstQuestion['text'] ?? '';
+
+  if (promptText.isEmpty) {
+    _showErrorSnackBar('No prompt text found for evaluation');
+    return;
+  }
+
+  setState(() {
+    _isLoadingAiFeedback = true;
+    _error = '';
+  });
+
+  try {
+    _logger.i('Starting AI evaluation for submission ${widget.submissionId}');
+
+    final baseUrl = await _progressService.getApiBaseUrl();
+
+    // UPDATED: Build request body with reference audio if available
+    final requestBody = {
+      'audioUrl': _submission!['audioUrl'],
+      'promptText': promptText,
+      'evaluationContext': firstQuestion['title'] ?? 'Customer service scenario',
+      // NEW: Include reference text if available
+      if (firstQuestion['referenceText'] != null &&
+          firstQuestion['referenceText'].toString().isNotEmpty)
+        'referenceText': firstQuestion['referenceText'],
+      // NEW: Include reference audio if available
+      if (firstQuestion['referenceAudioUrl'] != null &&
+          firstQuestion['referenceAudioUrl'].toString().isNotEmpty)
+        'referenceAudioUrl': firstQuestion['referenceAudioUrl'],
+    };
+
+    final response = await http.post(
+      Uri.parse('$baseUrl/evaluate-speaking-contextual'),
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'TalkReady-Mobile/1.0',
+      },
+      body: json.encode(requestBody),
+    );
+
+    _logger.i('AI evaluation response status: ${response.statusCode}');
+
+    if (!mounted) return;
+
+    if (response.statusCode == 200) {
+      final feedbackResult = json.decode(response.body);
+
+      // Save to Firestore immediately so students can see it
+      await _firestore
+          .collection('studentSubmissions')
+          .doc(widget.submissionId)
+          .update({
+            'aiFeedback': feedbackResult,
+            'aiFeedbackGeneratedAt': FieldValue.serverTimestamp(),
+            'hasAiFeedback': true,
+          });
+
+      setState(() {
+        _aiFeedback = feedbackResult;
+        _isLoadingAiFeedback = false;
+      });
+
+      _logger.i('AI evaluation completed and saved to database');
+      _showSuccessSnackBar('AI evaluation completed and saved!');
+    } else {
+      final errorData = json.decode(response.body);
+      throw Exception(errorData['error'] ?? 'AI evaluation failed');
     }
-
-    final questions = _assessment!['questions'] as List;
-    if (questions.isEmpty) {
-      _showErrorSnackBar('No questions found in assessment');
-      return;
-    }
-
-    final firstQuestion = questions.first;
-    final promptText =
-        firstQuestion['promptText'] ?? firstQuestion['text'] ?? '';
-
-    if (promptText.isEmpty) {
-      _showErrorSnackBar('No prompt text found for evaluation');
-      return;
-    }
-
-    setState(() {
-      _isLoadingAiFeedback = true;
-      _error = '';
-    });
-
-    try {
-      _logger.i('Starting AI evaluation for submission ${widget.submissionId}');
-
-      final baseUrl = await _progressService.getApiBaseUrl();
-      final response = await http.post(
-        Uri.parse('$baseUrl/evaluate-speaking-contextual'),
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': 'TalkReady-Mobile/1.0',
-        },
-        body: json.encode({
-          'audioUrl': _submission!['audioUrl'],
-          'promptText': promptText,
-          'evaluationContext':
-              firstQuestion['title'] ?? 'Customer service scenario',
-        }),
-      );
-
-      _logger.i('AI evaluation response status: ${response.statusCode}');
-
-      if (!mounted) return;
-
-      if (response.statusCode == 200) {
-        final feedbackResult = json.decode(response.body);
-
-        // Save to Firestore immediately so students can see it
-        await _firestore
-            .collection('studentSubmissions')
-            .doc(widget.submissionId)
-            .update({
-              'aiFeedback': feedbackResult,
-              'aiFeedbackGeneratedAt': FieldValue.serverTimestamp(),
-              'hasAiFeedback':
-                  true, // Flag to easily check if AI feedback exists
-            });
-
-        setState(() {
-          _aiFeedback = feedbackResult;
-          _isLoadingAiFeedback = false;
-        });
-
-        _logger.i('AI evaluation completed and saved to database');
-
-        _showSuccessSnackBar('AI evaluation completed and saved!');
-      } else {
-        final errorData = json.decode(response.body);
-        throw Exception(errorData['error'] ?? 'AI evaluation failed');
-      }
-    } catch (e) {
-      _logger.e('AI evaluation error: $e');
-      if (mounted) {
-        setState(() {
-          _error = 'AI Evaluation Error: ${e.toString()}';
-          _isLoadingAiFeedback = false;
-        });
-        _showErrorSnackBar('AI evaluation failed: ${e.toString()}');
-      }
+  } catch (e) {
+    _logger.e('AI evaluation error: $e');
+    if (mounted) {
+      setState(() {
+        _error = 'AI Evaluation Error: ${e.toString()}';
+        _isLoadingAiFeedback = false;
+      });
+      _showErrorSnackBar('AI evaluation failed: ${e.toString()}');
     }
   }
+}
 
   Future<void> _publishFeedback() async {
     if (_assessment == null) return;
@@ -1251,7 +1259,11 @@ class _ReviewSpeakingSubmissionPageState
                     ),
                     const SizedBox(height: 24),
                   ],
-
+                   if (prompt?['referenceAudioUrl'] != null &&
+                      prompt!['referenceAudioUrl'].toString().isNotEmpty) ...[
+                    _buildReferenceAudioPlayer(prompt['referenceAudioUrl']),
+                    const SizedBox(height: 24),
+                  ],
                   // Student's Recording
                   Row(
                     children: [
@@ -1413,7 +1425,98 @@ class _ReviewSpeakingSubmissionPageState
       ),
     );
   }
-
+Widget _buildReferenceAudioPlayer(String audioUrl) {
+  return Container(
+    margin: const EdgeInsets.only(top: 16),
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      gradient: LinearGradient(
+        colors: [
+          Colors.purple.withOpacity(0.1),
+          Colors.purple.withOpacity(0.05),
+        ],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ),
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(
+        color: Colors.purple.withOpacity(0.3),
+        width: 1.5,
+      ),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.headphones, color: Colors.purple.shade700, size: 20),
+            const SizedBox(width: 8),
+            const Text(
+              "Reference Audio:",
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                color: Colors.purple,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          "Listen to the ideal response",
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.black54,
+            fontStyle: FontStyle.italic,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.purple.shade600, Colors.purple.shade800],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(50),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.purple.withOpacity(0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: IconButton(
+                icon: const Icon(Icons.play_arrow, color: Colors.white, size: 24),
+                onPressed: () async {
+                  try {
+                    final player = AudioPlayer();
+                    await player.play(UrlSource(audioUrl));
+                  } catch (e) {
+                    _showErrorSnackBar('Error playing reference audio: $e');
+                  }
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Tap to play reference audio',
+                style: TextStyle(
+                  color: Colors.black87,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+}
   Widget _buildFeedbackCard() {
     return Container(
       decoration: BoxDecoration(

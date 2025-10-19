@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -51,11 +53,19 @@ class _TakeSpeakingAssessmentPageState extends State<TakeSpeakingAssessmentPage>
   Duration recordingDuration = Duration.zero;
   Duration playbackPosition = Duration.zero;
 
-  // Animation controllers
+    // NEW: Enhanced recording features
+    Timer? _durationTimer;
+    Timer? _fileSizeTimer;
+    int _fileSize = 0;
+    double _audioLevel = 0.0;
+    String _audioQuality = 'Good';
+    StreamSubscription? _recorderSubscription;
+
+ // Animation controllers
   late AnimationController _fadeController;
   late AnimationController _pulseController;
+  late AnimationController _waveController; // ADD THIS LINE
   late Animation<double> _fadeAnimation;
-  late Animation<double> _pulseAnimation;
 
   @override
   void initState() {
@@ -65,42 +75,72 @@ class _TakeSpeakingAssessmentPageState extends State<TakeSpeakingAssessmentPage>
     _fetchAssessmentAndCheckSubmission();
   }
 
-  void _initializeAnimations() {
-    _fadeController = AnimationController(
-      duration: const Duration(milliseconds: 600),
-      vsync: this,
-    );
-    _pulseController = AnimationController(
-      duration: const Duration(milliseconds: 1500),
-      vsync: this,
-    );
+void _initializeAnimations() {
+  _fadeController = AnimationController(
+    duration: const Duration(milliseconds: 600),
+    vsync: this,
+  );
+  _pulseController = AnimationController(
+    duration: const Duration(milliseconds: 1500),
+    vsync: this,
+  );
+  // ADD THIS:
+  _waveController = AnimationController(
+    duration: const Duration(milliseconds: 800),
+    vsync: this,
+  );
 
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
-    );
-    _pulseAnimation = Tween<double>(begin: 0.8, end: 1.2).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
-    );
+  _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+    CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
+  );
+}
+
+ Future<void> _initializeAudio() async {
+  try {
+    await _recorder.openRecorder();
+    await _player.openPlayer();
+
+    // ADD THIS: Subscribe to audio level updates
+    _recorderSubscription = _recorder.onProgress?.listen((event) {
+      if (mounted && recordingStatus == RecordingStatus.recording) {
+        setState(() {
+          _audioLevel = event.decibels ?? 0.0;
+          _updateAudioQuality(event.decibels ?? 0.0);
+        });
+      }
+    });
+  } catch (e) {
+    _logger.e("Error initializing audio: $e");
   }
+}
 
-  Future<void> _initializeAudio() async {
-    try {
-      await _recorder.openRecorder();
-      await _player.openPlayer();
-    } catch (e) {
-      _logger.e("Error initializing audio: $e");
-    }
+void _updateAudioQuality(double decibels) {
+  // Typical speaking range is -60 to -20 dB
+  if (decibels > -30) {
+    _audioQuality = 'Excellent';
+  } else if (decibels > -45) {
+    _audioQuality = 'Good';
+  } else if (decibels > -60) {
+    _audioQuality = 'Fair';
+  } else {
+    _audioQuality = 'Low';
   }
+}
 
-  @override
-  void dispose() {
-    _recorder.closeRecorder();
-    _player.closePlayer();
-    _fadeController.dispose();
-    _pulseController.dispose();
-    super.dispose();
-  }
+ @override
+void dispose() {
+  // ADD THESE:
+  _durationTimer?.cancel();
+  _fileSizeTimer?.cancel();
+  _recorderSubscription?.cancel();
 
+  _recorder.closeRecorder();
+  _player.closePlayer();
+  _fadeController.dispose();
+  _pulseController.dispose();
+  _waveController.dispose(); // ADD THIS
+  super.dispose();
+}
   Future<void> _fetchAssessmentAndCheckSubmission() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
@@ -198,76 +238,119 @@ class _TakeSpeakingAssessmentPageState extends State<TakeSpeakingAssessmentPage>
     }
   }
 
-  Future<void> _startRecording() async {
-    try {
-      // Check permissions
-      final status = await Permission.microphone.status;
-      if (!status.isGranted) {
-        await _requestMicrophonePermission();
-        return;
-      }
-
-      // Reset previous recording
-      setState(() {
-        audioFilePath = null;
-        audioUrl = null;
-        error = '';
-        recordingDuration = Duration.zero;
-      });
-
-      // Get temporary directory for recording
-      final directory = await getTemporaryDirectory();
-      final filePath =
-          '${directory.path}/speaking_assessment_${DateTime.now().millisecondsSinceEpoch}.aac';
-
-      await _recorder.startRecorder(toFile: filePath, codec: Codec.aacADTS);
-
-      setState(() {
-        recordingStatus = RecordingStatus.recording;
-        audioFilePath = filePath;
-      });
-
-      // Start pulse animation
-      _pulseController.repeat(reverse: true);
-
-      // Start duration tracking
-      _startDurationTracking();
-    } catch (e) {
-      _logger.e("Error starting recording: $e");
-      setState(() {
-        error =
-            "Could not start recording. Please check microphone permissions.";
-      });
+Future<void> _startRecording() async {
+  try {
+    final status = await Permission.microphone.status;
+    if (!status.isGranted) {
+      await _requestMicrophonePermission();
+      return;
     }
-  }
 
-  void _startDurationTracking() {
-    Stream.periodic(const Duration(seconds: 1)).listen((duration) {
-      if (recordingStatus == RecordingStatus.recording) {
-        setState(() {
-          recordingDuration = Duration(
-            seconds: recordingDuration.inSeconds + 1,
-          );
-        });
-      }
+    setState(() {
+      audioFilePath = null;
+      audioUrl = null;
+      error = '';
+      recordingDuration = Duration.zero;
+      _fileSize = 0;
+    });
+
+    final directory = await getTemporaryDirectory();
+    final filePath =
+        '${directory.path}/speaking_assessment_${DateTime.now().millisecondsSinceEpoch}.aac';
+
+    await _recorder.startRecorder(toFile: filePath, codec: Codec.aacADTS);
+
+    setState(() {
+      recordingStatus = RecordingStatus.recording;
+      audioFilePath = filePath;
+    });
+
+    _waveController.repeat(reverse: true);
+    _startDurationTracking();
+    _startFileSizeTracking();
+  } catch (e) {
+    _logger.e("Error starting recording: $e");
+    setState(() {
+      error = "Could not start recording. Please check microphone permissions.";
     });
   }
+}
 
-  Future<void> _stopRecording() async {
-    try {
-      await _recorder.stopRecorder();
-      _pulseController.stop();
-
+void _startDurationTracking() {
+  _durationTimer?.cancel();
+  _durationTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+    if (recordingStatus == RecordingStatus.recording) {
       setState(() {
-        recordingStatus = RecordingStatus.stopped;
-      });
-    } catch (e) {
-      _logger.e("Error stopping recording: $e");
-      setState(() {
-        error = "Error stopping recording.";
+        recordingDuration = Duration(seconds: recordingDuration.inSeconds + 1);
       });
     }
+  });
+}
+
+void _startFileSizeTracking() {
+  _fileSizeTimer?.cancel();
+  _fileSizeTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) {
+    if (audioFilePath != null &&
+        recordingStatus == RecordingStatus.recording) {
+      final file = File(audioFilePath!);
+      if (file.existsSync()) {
+        setState(() {
+          _fileSize = file.lengthSync();
+        });
+      }
+    }
+  });
+}
+
+Future<void> _pauseRecording() async {
+  try {
+    await _recorder.pauseRecorder();
+    _waveController.stop();
+    _durationTimer?.cancel();
+    _fileSizeTimer?.cancel();
+
+    setState(() {
+      recordingStatus = RecordingStatus.paused;
+    });
+  } catch (e) {
+    _logger.e("Error pausing recording: $e");
   }
+}
+
+Future<void> _resumeRecording() async {
+  try {
+    await _recorder.resumeRecorder();
+    _waveController.repeat(reverse: true);
+    _startDurationTracking();
+    _startFileSizeTracking();
+
+    setState(() {
+      recordingStatus = RecordingStatus.recording;
+    });
+  } catch (e) {
+    _logger.e("Error resuming recording: $e");
+  }
+}
+
+ Future<void> _stopRecording() async {
+  try {
+    await _recorder.stopRecorder();
+    _waveController.stop();
+    _durationTimer?.cancel();
+    _fileSizeTimer?.cancel();
+
+    setState(() {
+      recordingStatus = RecordingStatus.stopped;
+    });
+  } catch (e) {
+    _logger.e("Error stopping recording: $e");
+    setState(() {
+      error = "Error stopping recording.";
+    });
+  }
+}
+
+
 
   Future<void> _playRecording() async {
     if (audioFilePath == null) return;
@@ -424,6 +507,12 @@ class _TakeSpeakingAssessmentPageState extends State<TakeSpeakingAssessmentPage>
     return "$twoDigitMinutes:$twoDigitSeconds";
   }
 
+  String _formatFileSize(int bytes) {
+  if (bytes < 1024) return '$bytes B';
+  if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+  return '${(bytes / (1024 * 1024)).toStringAsFixed(2)} MB';
+}
+
   @override
   Widget build(BuildContext context) {
     // Show already submitted screen
@@ -502,6 +591,33 @@ class _TakeSpeakingAssessmentPageState extends State<TakeSpeakingAssessmentPage>
       ),
     );
   }
+
+  Widget _buildWaveformAnimation() {
+  return AnimatedBuilder(
+    animation: _waveController,
+    builder: (context, child) {
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: List.generate(5, (index) {
+          final delay = index * 0.2;
+          final animValue = (_waveController.value + delay) % 1.0;
+          final height = 20 + (30 * (1 - (animValue - 0.5).abs() * 2)) *
+                         (_audioLevel / 60).clamp(0.3, 1.0);
+
+          return Container(
+            margin: const EdgeInsets.symmetric(horizontal: 2),
+            width: 4,
+            height: height,
+            decoration: BoxDecoration(
+              color: Colors.red,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          );
+        }),
+      );
+    },
+  );
+}
 
   Widget _buildAlreadySubmittedScreen() {
     return Scaffold(
@@ -727,36 +843,198 @@ class _TakeSpeakingAssessmentPageState extends State<TakeSpeakingAssessmentPage>
     );
   }
 
-  Widget _buildRecordingControls() {
-    return Center(
-      child: Column(
-        children: [
-          // Recording button
-          if (recordingStatus == RecordingStatus.inactive)
-            _buildStartRecordingButton()
-          else if (recordingStatus == RecordingStatus.recording)
-            _buildStopRecordingButton()
-          else
-            _buildPlaybackControls(),
+Widget _buildRecordingControls() {
+  return Center(
+    child: Column(
+      children: [
+        // Recording button
+        if (recordingStatus == RecordingStatus.inactive)
+          _buildStartRecordingButton()
+        else if (recordingStatus == RecordingStatus.recording)
+          _buildRecordingActiveUI()
+        else if (recordingStatus == RecordingStatus.paused)
+          _buildPausedUI()
+        else
+          _buildPlaybackControls(),
 
-          const SizedBox(height: 16),
+        const SizedBox(height: 16),
 
-          // Duration display
-          if (recordingStatus != RecordingStatus.inactive)
-            Text(
-              recordingStatus == RecordingStatus.recording
-                  ? 'Recording: ${_formatDuration(recordingDuration)}'
-                  : 'Duration: ${_formatDuration(recordingDuration)}',
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                color: Color(0xFF0077B3),
-              ),
+        // Status indicators
+        if (recordingStatus == RecordingStatus.recording ||
+            recordingStatus == RecordingStatus.paused) ...[
+          _buildRecordingStats(),
+        ] else if (recordingStatus == RecordingStatus.stopped) ...[
+          Text(
+            'Duration: ${_formatDuration(recordingDuration)} • ${_formatFileSize(_fileSize)}',
+            style: const TextStyle(
+              fontSize: 14,
+              color: Colors.grey,
             ),
+          ),
+        ],
+      ],
+    ),
+  );
+}
+Widget _buildRecordingActiveUI() {
+  return Column(
+    children: [
+      _buildWaveformAnimation(),
+      const SizedBox(height: 16),
+      Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          ElevatedButton.icon(
+            onPressed: _pauseRecording,
+            icon: const FaIcon(FontAwesomeIcons.pause, size: 16),
+            label: const Text('Pause'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
+          ),
+          const SizedBox(width: 12),
+          ElevatedButton.icon(
+            onPressed: _stopRecording,
+            icon: const FaIcon(FontAwesomeIcons.stopCircle, size: 16),
+            label: const Text('Stop'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.grey[700],
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
+          ),
         ],
       ),
-    );
+      const SizedBox(height: 8),
+      Text(
+        'Tap pause to take a break',
+        style: TextStyle(
+          fontSize: 12,
+          color: Colors.grey[600],
+          fontStyle: FontStyle.italic,
+        ),
+      ),
+    ],
+  );
+}
+
+Widget _buildPausedUI() {
+  return Column(
+    children: [
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.orange.shade50,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.orange.shade200),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.pause_circle, color: Colors.orange[700], size: 20),
+            const SizedBox(width: 8),
+            Text(
+              'Recording Paused',
+              style: TextStyle(
+                color: Colors.orange[700],
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 16),
+      Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          ElevatedButton.icon(
+            onPressed: _resumeRecording,
+            icon: const FaIcon(FontAwesomeIcons.play, size: 16),
+            label: const Text('Resume'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
+          ),
+          const SizedBox(width: 12),
+          ElevatedButton.icon(
+            onPressed: _stopRecording,
+            icon: const FaIcon(FontAwesomeIcons.stopCircle, size: 16),
+            label: const Text('Stop'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.grey[700],
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
+          ),
+        ],
+      ),
+    ],
+  );
+}
+
+Widget _buildRecordingStats() {
+  Color qualityColor;
+  IconData qualityIcon;
+
+  switch (_audioQuality) {
+    case 'Excellent':
+      qualityColor = Colors.green;
+      qualityIcon = Icons.check_circle;
+      break;
+    case 'Good':
+      qualityColor = Colors.blue;
+      qualityIcon = Icons.check_circle;
+      break;
+    case 'Fair':
+      qualityColor = Colors.orange;
+      qualityIcon = Icons.warning;
+      break;
+    default:
+      qualityColor = Colors.red;
+      qualityIcon = Icons.error;
   }
+
+  return Column(
+    children: [
+      Text(
+        'Recording: ${_formatDuration(recordingDuration)}',
+        style: const TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+          color: Color(0xFF0077B3),
+        ),
+      ),
+      const SizedBox(height: 8),
+      Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(qualityIcon, color: qualityColor, size: 16),
+          const SizedBox(width: 4),
+          Text(
+            'Microphone level: $_audioQuality',
+            style: TextStyle(
+              fontSize: 14,
+              color: qualityColor,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 4),
+      Text(
+        'File size: ${_formatFileSize(_fileSize)}',
+        style: TextStyle(
+          fontSize: 12,
+          color: Colors.grey[600],
+        ),
+      ),
+    ],
+  );
+}
 
   Widget _buildStartRecordingButton() {
     return ElevatedButton.icon(
@@ -773,25 +1051,6 @@ class _TakeSpeakingAssessmentPageState extends State<TakeSpeakingAssessmentPage>
     );
   }
 
-  Widget _buildStopRecordingButton() {
-    return ScaleTransition(
-      scale: _pulseAnimation,
-      child: ElevatedButton.icon(
-        onPressed: _stopRecording,
-        icon: const FaIcon(FontAwesomeIcons.stopCircle),
-        label: const Text('Stop Recording'),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.grey[700],
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-          textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(25),
-          ),
-        ),
-      ),
-    );
-  }
 
   Widget _buildPlaybackControls() {
     return Column(
@@ -867,4 +1126,4 @@ class _TakeSpeakingAssessmentPageState extends State<TakeSpeakingAssessmentPage>
   }
 }
 
-enum RecordingStatus { inactive, recording, stopped }
+enum RecordingStatus { inactive, recording, paused, stopped }
