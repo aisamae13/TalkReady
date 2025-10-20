@@ -70,6 +70,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   int _totalPracticeMinutes = 0;
   bool _practiceStatsLoading = true;
 
+  String? _firstName;
+
   StreamSubscription<QuerySnapshot>? _notificationSubscription;
   // Enhanced user stats
   Duration _totalSpeakingTime = Duration.zero;
@@ -556,33 +558,50 @@ void _showStreakFreezeRewardDialog(int currentFreezes, int streakDays) {
 
     try {
       logger.i('Fetching enhanced progress for user: ${user.uid}');
+
+      DocumentSnapshot userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+
       DocumentSnapshot doc = await FirebaseFirestore.instance
           .collection('userProgress')
           .doc(user.uid)
           .get();
 
+      // Extract first name regardless of progress document existence
+      final Map<String, dynamic>? userDocData = userDoc.exists ? userDoc.data() as Map<String, dynamic>? : null;
+      final String? extractedFirstName = userDocData?['firstName'] as String?;
       if (doc.exists && doc.data() != null) {
         final userData = doc.data() as Map<String, dynamic>;
         final lessonAttempts =
             userData['lessonAttempts'] as Map<String, dynamic>? ?? {};
 
-        // Do all calculations once in setState
-        if (mounted) {
-    setState(() {
-      _calculateEnhancedSkillAnalysisOptimized(lessonAttempts);
-      _calculateModuleProgress(userData);
-      _lessonsCompleted = lessonAttempts.keys.length;
+       if (mounted) {
+          setState(() {
+            // 🆕 Set First Name from main user document
+            _firstName = extractedFirstName;
 
-      // Get streak data directly from Firestore (updated by Cloud Function)
-      _currentStreak = userData['currentStreak'] as int? ?? 0;
-      _streakFreezes = userData['streakFreezes'] as int? ?? 0;
-      _longestStreak = userData['longestStreak'] as int? ?? 0;
-    });
+            _calculateEnhancedSkillAnalysisOptimized(lessonAttempts);
+            _calculateModuleProgress(userData);
+            _lessonsCompleted = lessonAttempts.keys.length;
+
+            // Get streak data directly from Firestore (updated by Cloud Function)
+            _currentStreak = userData['currentStreak'] as int? ?? 0;
+            _streakFreezes = userData['streakFreezes'] as int? ?? 0;
+            _longestStreak = userData['longestStreak'] as int? ?? 0;
+          });
         }
 
         logger.i('Enhanced progress fetched successfully');
       } else {
         logger.i('No progress data found for user: ${user.uid}');
+        // Still set the first name even if progress is missing
+        if (mounted) {
+           setState(() {
+             _firstName = extractedFirstName;
+           });
+        }
       }
     } catch (e, stackTrace) {
       logger.e('Error fetching enhanced progress: $e\nStackTrace: $stackTrace');
@@ -1687,7 +1706,7 @@ double _calculateLastWeekComparison(
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
-    final firstName = user?.displayName?.split(' ').first ?? 'User';
+   final firstName = _firstName ?? user?.displayName?.split(' ').first ?? 'User';
 
     return PopScope(
       canPop: false, // Prevent default back navigation

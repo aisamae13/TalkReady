@@ -106,9 +106,7 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  // Replace your _navigateAfterLogin method with this fixed version
-
-  void _navigateAfterLogin(User user) async {
+ void _navigateAfterLogin(User user, {bool isInitialLogin = false}) async {
     try {
       // Fetch user data FIRST before showing any loading screen
       final docSnapshot = await _firestore
@@ -165,15 +163,33 @@ class _LoginPageState extends State<LoginPage> {
 
       final role = userData['userType'];
       final onboardingCompleted = userData['onboardingCompleted'] ?? false;
+      final onboardingStarted = userData['onboardingStarted'] ?? false;
 
-      // 2. Check if the user type is set but onboarding isn't complete
-      if (role != null && onboardingCompleted == false) {
+      // 2. Check if user started but didn't complete onboarding
+      if (role != null && onboardingStarted && !onboardingCompleted) {
         // Remove loading screen
         if (mounted && Navigator.of(context).canPop()) {
           Navigator.pop(context);
         }
 
-        // Action: Has user type, but needs to start/complete onboarding
+        // Action: Resume partial onboarding progress
+        logger.i(
+          'User ${user.uid} has partial onboarding progress. Resuming onboarding.',
+        );
+        if (mounted) {
+          Navigator.pushReplacementNamed(context, '/welcome');
+        }
+        return;
+      }
+
+      // 3. Check if the user type is set but onboarding never started
+      if (role != null && !onboardingStarted && !onboardingCompleted) {
+        // Remove loading screen
+        if (mounted && Navigator.of(context).canPop()) {
+          Navigator.pop(context);
+        }
+
+        // Action: Has user type, but needs to start onboarding
         logger.i(
           'User ${user.uid} has user type ($role) but needs onboarding. Navigating to WelcomePage.',
         );
@@ -183,11 +199,22 @@ class _LoginPageState extends State<LoginPage> {
         return;
       }
 
-      // 3. Check for existing, fully onboarded user (Role-based navigation)
+      // 4. Check for existing, fully onboarded user (Role-based navigation)
       if (onboardingCompleted == true && role != null) {
         // Remove loading screen
         if (mounted && Navigator.of(context).canPop()) {
           Navigator.pop(context);
+        }
+
+        // SHOW SUCCESS SNACK BAR ONLY HERE, after all setup is complete
+        if (mounted) {
+          final String successMessage = isInitialLogin
+              ? 'Setup complete! Welcome to TalkReady.'
+              : 'Login successful! Welcome back.';
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(successMessage)),
+          );
         }
 
         logger.i(
@@ -236,7 +263,7 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
- Future<void> _signInWithGoogle() async {
+Future<void> _signInWithGoogle() async {
   try {
     await _googleSignIn.signOut();
     final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
@@ -267,7 +294,15 @@ class _LoginPageState extends State<LoginPage> {
       return;
     }
 
-    // ✅ NEW: Check if user can login (no active session on another device)
+    // ✅ FIX 2: Read user document FIRST (while still authenticated)
+    final userDocRef = _firestore.collection('users').doc(user.uid);
+    final docSnapshot = await userDocRef.get();
+    final existingData = docSnapshot.data() as Map<String, dynamic>? ?? {};
+
+    // Store whether the document existed before the set operation
+    final bool isExistingUser = docSnapshot.exists;
+
+    // ✅ Check if user can login (no active session on another device)
     final loginCheck = await DeviceSessionManager().canLogin(user.uid);
 
     if (loginCheck['canLogin'] == false) {
@@ -359,12 +394,7 @@ class _LoginPageState extends State<LoginPage> {
       return; // Stop login process
     }
 
-    // ✅ NEW: Create session for this device
     await DeviceSessionManager().createSession(user.uid, context);
-
-    final userDocRef = _firestore.collection('users').doc(user.uid);
-    final docSnapshot = await userDocRef.get();
-    final existingData = docSnapshot.data() as Map<String, dynamic>? ?? {};
 
     final Map<String, dynamic> dataToMerge = {
       'uid': user.uid,
@@ -389,11 +419,7 @@ class _LoginPageState extends State<LoginPage> {
 
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Login successful!')),
-    );
-
-    _navigateAfterLogin(user);
+    _navigateAfterLogin(user, isInitialLogin: !isExistingUser);
   } catch (e, stackTrace) {
     logger.e('Google Sign-In error: $e', error: e, stackTrace: stackTrace);
     if (mounted) {
@@ -455,7 +481,16 @@ class _LoginPageState extends State<LoginPage> {
     final user = userCredential.user;
 
     if (user != null) {
-      // ✅ NEW: Check if user can login (no active session on another device)
+      // ✅ FIX 2: Read user document FIRST (while still authenticated)
+      final userDocRef = _firestore.collection('users').doc(user.uid);
+      final doc = await userDocRef.get();
+      // No existingData is needed here, just the doc existence check later.
+
+      // Store whether the document existed before the set operation
+      final bool isExistingUser = doc.exists;
+
+
+      // ✅ Check if user can login (no active session on another device)
       final loginCheck = await DeviceSessionManager().canLogin(user.uid);
 
       if (loginCheck['canLogin'] == false) {
@@ -555,8 +590,7 @@ class _LoginPageState extends State<LoginPage> {
       await DeviceSessionManager().createSession(user.uid, context);
 
       // Ensure a users/{uid} doc exists but don't overwrite role/onboarding flags.
-      final userDocRef = _firestore.collection('users').doc(user.uid);
-      final doc = await userDocRef.get();
+      // Used the 'doc' from the earlier read.
       if (!doc.exists) {
         await userDocRef.set({
           'uid': user.uid,
@@ -566,10 +600,7 @@ class _LoginPageState extends State<LoginPage> {
           'createdAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Login successful!')),
-      );
-      _navigateAfterLogin(user);
+      _navigateAfterLogin(user, isInitialLogin: !isExistingUser);
     }
   } on FirebaseAuthException catch (e) {
     try {

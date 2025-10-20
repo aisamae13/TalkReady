@@ -834,25 +834,30 @@ Future<void> _signOut(BuildContext context) async {
     await _deleteAccountSafely(context);
   }
 
-  Future<void> _deleteAccountSafely(BuildContext context) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+ Future<void> _deleteAccountSafely(BuildContext context) async {
+  final user = FirebaseAuth.instance.currentUser;
+  if (user == null) return;
 
-    final uid = user.uid;
-    final firestore = FirebaseFirestore.instance;
+  // 🛑 FIX: Cancel the active Firestore stream subscription immediately
+  // before starting any deletion/archiving process that might invalidate the user context.
+  _userStreamSubscription.cancel();
+  _logger.i('Profile stream subscription cancelled before deletion flow.');
 
-    // Show loading dialog
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(child: CircularProgressIndicator()),
-    );
+  final uid = user.uid;
+  final firestore = FirebaseFirestore.instance;
 
-    List<String> successfulOperations = [];
-    List<String> failedOperations = [];
+  // Show loading dialog
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => const Center(child: CircularProgressIndicator()),
+  );
 
-    try {
-      // 0) Soft-delete the user profile document
+  List<String> successfulOperations = [];
+  List<String> failedOperations = [];
+
+  try {
+    // 0) Soft-delete the user profile document
       try {
         await firestore.collection('users').doc(uid).set({
           'deletedAt': FieldValue.serverTimestamp(),

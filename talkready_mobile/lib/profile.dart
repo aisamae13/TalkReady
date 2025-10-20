@@ -132,65 +132,72 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
-  void _setupUserStream() {
-    final user = _auth.currentUser;
-    if (user != null) {
-      _logger.i('Setting up stream for user UID: ${user.uid}');
-      _userStreamSubscription = _firestore
-          .collection('users')
-          .doc(user.uid)
-          .snapshots()
-          .listen(
-            (snapshot) {
-              _logger.i('Received Firestore snapshot: ${snapshot.data}');
-              if (snapshot.exists) {
-                final data = snapshot.data() ?? {};
-                setState(() {
-                  _firstName = data['firstName'];
-                  _lastName = data['lastName'];
-                  _profilePicBase64 = data['profilePicBase64'] as String?;
-                  _profilePicSkipped = data['profilePicSkipped'] as bool?;
-                  _age = data['age']?.toString();
-                  _gender = data['gender'];
-                  _birthdate = _formatBirthdate(data['birthdate']);
-                  _province = data['province'];
-                  _municipality = data['municipality'];
-                  _barangay = data['barangay'];
-                  _isLoading = false;
-                });
-              } else {
-                _logger.w('No Firestore document exists for UID: ${user.uid}');
-                setState(() {
-                  _isLoading = false;
-                });
-              }
-            },
-            onError: (error) {
-              _logger.e('Error in Firestore stream: $error');
+void _setupUserStream() {
+  final user = _auth.currentUser;
+  if (user != null) {
+    _logger.i('Setting up stream for user UID: ${user.uid}');
+    _userStreamSubscription = _firestore
+        .collection('users')
+        .doc(user.uid)
+        .snapshots()
+        .listen(
+          (snapshot) {
+            _logger.i('Received Firestore snapshot: ${snapshot.data}');
+            if (snapshot.exists) {
+              final data = snapshot.data() ?? {};
+              setState(() {
+                _firstName = data['firstName'];
+                _lastName = data['lastName'];
+                _profilePicBase64 = data['profilePicBase64'] as String?;
+                _profilePicSkipped = data['profilePicSkipped'] as bool?;
+                _age = data['age']?.toString();
+                _gender = data['gender'];
+                _birthdate = _formatBirthdate(data['birthdate']);
+                _province = data['province'];
+                _municipality = data['municipality'];
+                _barangay = data['barangay'];
+                _isLoading = false;
+              });
+            } else {
+              _logger.w('No Firestore document exists for UID: ${user.uid}');
               setState(() {
                 _isLoading = false;
               });
+            }
+          },
+          onError: (error) {
+            _logger.e('Error in Firestore stream: $error');
+            setState(() {
+              _isLoading = false;
+            });
+            // ✅ FIX: Schedule SnackBar for next frame
+            WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('Error listening to user data: $error'),
+                    content: Text('Error loading profile data. Please try again.'),
+                    backgroundColor: Colors.red.shade700,
                   ),
                 );
               }
-            },
-          );
-    } else {
-      _logger.w('No authenticated user found');
-      setState(() {
-        _isLoading = false;
-      });
+            });
+          },
+        );
+  } else {
+    _logger.w('No authenticated user found');
+    setState(() {
+      _isLoading = false;
+    });
+    // ✅ FIX: Schedule SnackBar for next frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('No user logged in')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No user logged in')),
+        );
       }
-    }
+    });
   }
+}
 
   String? _formatBirthdate(dynamic birthdate) {
     if (birthdate == null) return null;
@@ -763,160 +770,183 @@ Future<bool> _showUploadGuidelinesDialog() async {
   }
 }
 
-  Future<void> _deleteAccount(BuildContext context) async {
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null) {
-        final initialConfirmation = await showDialog<bool>(
+Future<void> _deleteAccount(BuildContext context) async {
+  try {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      final initialConfirmation = await showDialog<bool>(
+        context: context,
+        builder: (context) => _buildCustomDialog(
           context: context,
-          builder: (context) => _buildCustomDialog(
-            context: context,
-            title: 'Delete Account',
-            content:
-                'Are you sure you want to permanently delete your account? This action cannot be undone.',
-            cancelText: 'Cancel',
-            confirmText: 'Continue',
-            onConfirm: () => Navigator.pop(context, true),
-          ),
+          title: 'Delete Account',
+          content:
+              'Are you sure you want to permanently delete your account? This action cannot be undone.',
+          cancelText: 'Cancel',
+          confirmText: 'Continue',
+          onConfirm: () => Navigator.pop(context, true),
+        ),
+      );
+
+      if (initialConfirmation == true) {
+        final finalConfirmation = await showDialog<bool>(
+          context: context,
+          builder: (context) {
+            String inputText = '';
+            return StatefulBuilder(
+              builder: (context, setStateDialog) {
+                return Dialog(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  elevation: 5,
+                  backgroundColor: Colors.white,
+                  child: Padding(
+                    padding: const EdgeInsets.all(20.0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Final Confirmation',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF00568D),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        const Text(
+                          'To confirm account deletion, please type "confirm" below. This action cannot be undone.',
+                          style: TextStyle(fontSize: 16, color: Colors.grey),
+                        ),
+                        const SizedBox(height: 20),
+                        TextField(
+                          onChanged: (value) {
+                            setStateDialog(() {
+                              inputText = value;
+                            });
+                          },
+                          decoration: const InputDecoration(
+                            border: OutlineInputBorder(),
+                            labelText: 'Type "confirm"',
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            ElevatedButton(
+                              onPressed: () => Navigator.pop(context, false),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.grey[300],
+                                foregroundColor: Colors.grey[800],
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 10,
+                                ),
+                              ),
+                              child: const Text(
+                                'Cancel',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            ElevatedButton(
+                              onPressed: inputText.toLowerCase() == 'confirm'
+                                  ? () => Navigator.pop(context, true)
+                                  : null,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor:
+                                    inputText.toLowerCase() == 'confirm'
+                                    ? Colors
+                                          .red
+                                          .shade700
+                                    : Colors.grey,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 10,
+                                ),
+                              ),
+                              child: const Text(
+                                'Delete',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            );
+          },
         );
 
-        if (initialConfirmation == true) {
-          final finalConfirmation = await showDialog<bool>(
-            context: context,
-            builder: (context) {
-              String inputText = '';
-              return StatefulBuilder(
-                builder: (context, setStateDialog) {
-                  return Dialog(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(15),
-                    ),
-                    elevation: 5,
-                    backgroundColor: Colors.white,
-                    child: Padding(
-                      padding: const EdgeInsets.all(20.0),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Final Confirmation',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF00568D),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          const Text(
-                            'To confirm account deletion, please type "confirm" below. This action cannot be undone.',
-                            style: TextStyle(fontSize: 16, color: Colors.grey),
-                          ),
-                          const SizedBox(height: 20),
-                          TextField(
-                            onChanged: (value) {
-                              setStateDialog(() {
-                                inputText = value;
-                              });
-                            },
-                            decoration: const InputDecoration(
-                              border: OutlineInputBorder(),
-                              labelText: 'Type "confirm"',
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              ElevatedButton(
-                                onPressed: () => Navigator.pop(context, false),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.grey[300],
-                                  foregroundColor: Colors.grey[800],
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 20,
-                                    vertical: 10,
-                                  ),
-                                ),
-                                child: const Text(
-                                  'Cancel',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              ElevatedButton(
-                                onPressed: inputText.toLowerCase() == 'confirm'
-                                    ? () => Navigator.pop(context, true)
-                                    : null,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor:
-                                      inputText.toLowerCase() == 'confirm'
-                                      ? Colors
-                                            .red
-                                            .shade700 // Changed to Colors.red.shade700
-                                      : Colors.grey,
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 20,
-                                    vertical: 10,
-                                  ),
-                                ),
-                                child: const Text(
-                                  'Delete',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              );
-            },
-          );
+        if (finalConfirmation == true) {
+          // FIX: Cancel the active Firestore stream subscription
+          _userStreamSubscription.cancel();
+          _logger.i('Profile stream subscription cancelled before deletion.');
 
-          if (finalConfirmation == true) {
-            _logger.i('Attempting to delete account for UID: ${user.uid}');
-            await FirebaseFirestore.instance
-                .collection('users')
-                .doc(user.uid)
-                .delete();
-            _logger.i('Firestore data deleted for UID: ${user.uid}');
-            await user.delete();
-            _logger.i('User account deleted successfully');
+          _logger.i('Attempting to delete account for UID: ${user.uid}');
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .delete();
+          _logger.i('Firestore data deleted for UID: ${user.uid}');
 
-            await DeviceSessionManager().endSession(user.uid);
-            _logger.i('Device session ended after account deletion');
+          // Original logic to end the session
+          await DeviceSessionManager().endSession(user.uid);
+          _logger.i('Device session ended after account deletion');
 
-            if (mounted) {
-              Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
-            }
+          // Delete the Firebase Auth user
+          await user.delete();
+          _logger.i('User account deleted successfully');
+
+          if (mounted) {
+            // Navigate to the root/login screen
+            Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+
+            // 🌟 ADDED SNACKBAR CONFIRMATION 🌟
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Row(
+                  children: [
+                    Icon(Icons.check_circle, color: Colors.white),
+                    SizedBox(width: 12),
+                    Text('Account successfully deleted.'),
+                  ],
+                ),
+                backgroundColor: Color(0xFF00568D), // Use a success color
+                duration: Duration(seconds: 3),
+              ),
+            );
           }
         }
       }
-    } catch (e) {
-      _logger.e('Error deleting account: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error deleting account: $e')));
-      }
+    }
+  } catch (e) {
+    _logger.e('Error deleting account: $e');
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error deleting account: $e')));
     }
   }
+}
 
   Widget _buildCustomDialog({
     required BuildContext context,
