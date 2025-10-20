@@ -21,6 +21,7 @@ import 'package:animations/animations.dart';
 import '../session/device_session_manager.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:file_picker/file_picker.dart';
+import 'MyEnrolledClasses.dart';
 
 // Helper function for creating a slide page route for bottom navigation
 Route _createSlidingPageRoute({
@@ -78,7 +79,7 @@ class _ProfilePageState extends State<ProfilePage> {
   String? _municipality;
   String? _barangay;
 
-  int _selectedIndex = 4; // Profile is index 4
+  int _selectedIndex = 5;
 
   @override
   void initState() {
@@ -417,7 +418,7 @@ class _ProfilePageState extends State<ProfilePage> {
     if (result == null || result.files.isEmpty) return;
 
     final pickedFile = result.files.first;
-    
+
     // Validate file size (5MB limit)
     const maxSizeInBytes = 5 * 1024 * 1024; // 5MB
     if (pickedFile.size > maxSizeInBytes) {
@@ -445,7 +446,7 @@ class _ProfilePageState extends State<ProfilePage> {
     // Show preview and crop dialog
     final file = File(pickedFile.path!);
     final croppedFile = await _cropImage(file);
-    
+
     if (croppedFile == null) return; // User cancelled cropping
 
     // Show loading
@@ -458,7 +459,7 @@ class _ProfilePageState extends State<ProfilePage> {
       // Read and process the cropped image
       final imageBytes = await croppedFile.readAsBytes();
       final image = img.decodeImage(imageBytes);
-      
+
       if (image == null) {
         throw Exception('Failed to decode image');
       }
@@ -470,7 +471,7 @@ class _ProfilePageState extends State<ProfilePage> {
         height: 500,
         interpolation: img.Interpolation.average,
       );
-      
+
       // Encode as PNG for better quality
       final encodedImage = img.encodePng(resizedImage, level: 6);
 
@@ -508,7 +509,7 @@ class _ProfilePageState extends State<ProfilePage> {
       });
 
       _logger.i('Profile picture saved successfully for UID: ${user.uid}');
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -660,7 +661,7 @@ Future<bool> _showUploadGuidelinesDialog() async {
               ),
               child: Row(
                 children: [
-                  Icon(Icons.lightbulb_outline, 
+                  Icon(Icons.lightbulb_outline,
                     color: Colors.blue.shade700,
                     size: 20,
                   ),
@@ -1011,47 +1012,50 @@ Future<bool> _showUploadGuidelinesDialog() async {
     super.dispose();
   }
 
-  void _onItemTapped(int index) {
-    if (_selectedIndex == index) return;
+ void _onItemTapped(int index) {
+  if (_selectedIndex == index) return;
 
-    final int oldNavIndex = _selectedIndex;
-    setState(() {
-      _selectedIndex = index;
-    });
+  final int oldNavIndex = _selectedIndex;
+  setState(() {
+    _selectedIndex = index;
+  });
 
-    Widget nextPage;
-    switch (index) {
-      case 0:
-        nextPage = const HomePage();
-        break;
-      case 1:
-        nextPage = const CoursesPage();
-        break;
-      case 2:
-        nextPage = const JournalPage();
-        break;
-      case 3:
-        nextPage = const ProgressTrackerPage();
-        break;
-      case 4:
-        // Already on ProfilePage
-        return;
-      default:
-        return;
-    }
-
-    Navigator.pushReplacement(
-      context,
-      _createSlidingPageRoute(
-        page: nextPage,
-        newIndex: index,
-        oldIndex: oldNavIndex,
-        duration: const Duration(
-          milliseconds: 300,
-        ), // This duration is now ignored
-      ),
-    );
+  Widget nextPage;
+  switch (index) {
+    case 0:
+      nextPage = const HomePage();
+      break;
+    case 1:
+      nextPage = const CoursesPage();
+      break;
+    case 2:
+      nextPage = const MyEnrolledClasses(); // ADD THIS
+      break;
+    case 3:
+      nextPage = const JournalPage();
+      break;
+    case 4:
+      nextPage = const ProgressTrackerPage(); // This was case 3, now case 4
+      break;
+    case 5:
+      // Already on ProfilePage
+      return;
+    default:
+      return;
   }
+
+  Navigator.pushReplacement(
+    context,
+    _createSlidingPageRoute(
+      page: nextPage,
+      newIndex: index,
+      oldIndex: oldNavIndex,
+      duration: const Duration(
+        milliseconds: 300,
+      ),
+    ),
+  );
+}
 Widget _buildGuidelineItem(IconData icon, String title, String description) {
   return Row(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1784,27 +1788,28 @@ Widget _buildGuidelineItem(IconData icon, String title, String description) {
                 ],
               ),
             ),
-      bottomNavigationBar: AnimatedBottomNavBar(
-        currentIndex: _selectedIndex,
-        onTap: _onItemTapped,
-        items: [
-          CustomBottomNavItem(icon: Icons.home, label: 'Home'),
-          CustomBottomNavItem(icon: Icons.book, label: 'Courses'),
-          CustomBottomNavItem(icon: Icons.library_books, label: 'Journal'),
-          CustomBottomNavItem(icon: Icons.trending_up, label: 'Progress'),
-          CustomBottomNavItem(icon: Icons.person, label: 'Profile'),
-        ],
-        activeColor: Colors.white,
-        inactiveColor: Colors.grey[600]!,
-        notchColor: Colors.blue,
-        backgroundColor: Colors.white,
-        selectedIconSize: 28.0,
-        iconSize: 25.0,
-        barHeight: 55,
-        selectedIconPadding: 10,
-        animationDuration: const Duration(milliseconds: 300),
-        customNotchWidthFactor: 1.8, // <-- Added this line
-      ),
+          bottomNavigationBar: AnimatedBottomNavBar(
+            currentIndex: _selectedIndex,
+            onTap: _onItemTapped,
+            items: [
+              CustomBottomNavItem(icon: Icons.home, label: 'Home'),
+              CustomBottomNavItem(icon: Icons.book, label: 'Courses'),
+              CustomBottomNavItem(icon: Icons.school, label: 'My Classes'), // ADD THIS LINE
+              CustomBottomNavItem(icon: Icons.library_books, label: 'Journal'),
+              CustomBottomNavItem(icon: Icons.trending_up, label: 'Progress'),
+              CustomBottomNavItem(icon: Icons.person, label: 'Profile'),
+            ],
+            activeColor: Colors.white,
+            inactiveColor: Colors.grey[600]!,
+            notchColor: Colors.blue,
+            backgroundColor: Colors.white,
+            selectedIconSize: 28.0,
+            iconSize: 25.0,
+            barHeight: 55,
+            selectedIconPadding: 10,
+            animationDuration: const Duration(milliseconds: 300),
+            customNotchWidthFactor: 1.8,
+          ),
     );
   }
 
