@@ -1,100 +1,83 @@
-# TalkReady
-
-> **TalkReady** is a specialized capstone project designed to train and empower aspiring call center professionals in the Philippines. 
-
-The system leverages a mobile application alongside a serverless backend infrastructure to deliver interactive training, modules, and performance evaluations.
-
+TalkReady — Mobile Setup Guide
+ 
+TalkReady is an AI-powered English proficiency and communication training app built for aspiring call center professionals. It combines a cross-platform Flutter client with a Firebase backend and external machine learning/speech APIs to help users practice and improve their spoken English.
+ 
+> **Note:** This mobile client is currently built and tested for the **Android** platform only.
+ 
 ---
-
-## 📁 Repository Structure
-
-*   `talkready_mobile/` – The core mobile application frontend.
-*   `functions/` – Serverless backend logic (Firebase Cloud Functions).
-*   `firebase.json` / `.firebaserc` – Firebase platform configuration files.
-
+ 
+## Prerequisites
+ 
+Make sure the following are installed and available on your system `PATH`:
+ 
+| Tool | Purpose |
+|---|---|
+| **Git** | Clone and manage the repository |
+| **Flutter SDK** (Stable channel) | Build and run the mobile client |
+| **Node.js & npm** (LTS) | Install and run Firebase Functions |
+| **Java Development Kit (JDK)** | Required for Android Gradle builds and emulators |
+| **Firebase CLI** | Deploy and manage Firebase services |
+ 
+> Install the Firebase CLI globally: `npm install -g firebase-tools`
+ 
 ---
-
-## Getting Started
-
-To get a local copy of this project up and running, follow these step-by-step instructions for both the backend and frontend components.
-
-### Prerequisites
-
-Before setting up the project, make sure you have the following installed:
-*   [Flutter SDK](https://docs.flutter.dev/get-started/install) (Stable channel)
-*   [Node.js](https://nodejs.org/) (v18 or higher recommended for Firebase Functions)
-*   [Firebase CLI](https://firebase.google.com/docs/cli) (`npm install -g firebase-tools`)
-*   An IDE like Visual Studio Code or Android Studio
-
----
-
-## 🛠️ Backend Setup (Firebase)
-
-The backend relies on Firebase Services and Cloud Functions. Follow these steps to configure your environment.
-
-### 1. Initialize and Authenticate CLI
-Open your terminal at the root directory of the repository and log into your Firebase account:
-```bash
-firebase login
+ 
+## 📂 Project Structure
+ 
 ```
-
-### 2. Select Your Active Project
-Link your local environment to your Firebase project instance:
-```bash
-firebase use --add
+TalkReady/
+├── talkready_mobile/   # Flutter/Dart client (core app logic)
+├── functions/          # Firebase Cloud Functions (speech + AI processing)
+├── firebase.json       # Deployment config + emulator port mappings
+└── .vscode/            # Shared VS Code settings
 ```
-
-### 3. Install Dependencies
-Navigate into the `functions` folder and install the required Node.js packages:
+ 
+---
+ 
+## Setup Guide
+ 
+### 1. Clone the repository
+ 
+```bash
+git clone https://github.com/aisamae13/TalkReady.git
+cd TalkReady
+```
+ 
+### 2. Set up the Firebase backend
+ 
 ```bash
 cd functions
 npm install
+cd ..
+firebase login
+firebase use your-firebase-project-id
 ```
-
-### 4. Local Emulation (Optional)
-To test your cloud functions locally without deploying them to production:
-```bash
-firebase emulators:start
-```
-
-### 5. Deployment
-When you are ready to publish changes to the live backend:
-```bash
-firebase deploy --only functions
-```
-
----
-
-## Mobile App Setup (Flutter)
-
-Follow these steps to configure, build, and run the `talkready_mobile` application.
-
-### 1. Navigate to the Mobile Directory
+ 
+### 3. Install Flutter dependencies
+ 
 ```bash
 cd talkready_mobile
-```
-
-### 2. Fetch Package Dependencies
-Download all required Flutter and Dart plugins specified in the `pubspec.yaml` file:
-```bash
 flutter pub get
 ```
-
-### 3. Configure Platforms (Android/iOS)
-Ensure your target device or emulator is active. You can list available devices using:
+ 
+### 4. Add your Firebase config file
+ 
+- Download `google-services.json` from your Firebase console.
+- Place it in `talkready_mobile/android/app/google-services.json`.
+This connects the app to your Firebase project (Firestore, Auth, etc.).
+ 
+### 5. Run the app
+ 
+Make sure an Android emulator is running, or a physical device is connected via ADB, then:
+ 
 ```bash
 flutter devices
-```
-
-### 4. Run the Application
-Launch the app in debug mode on your connected device:
-```bash
 flutter run
 ```
-
+ 
 ---
-
-## Security & Environment Variables
-
-*   **Production Keys:** Never commit sensitive production credentials, API keys, or Firebase configuration objects directly to this repository. Refer to `SECURITY.md` for our vulnerability disclosure policies.
-*   **Gitignore:** Local IDE settings (`.vscode/`), dependencies (`node_modules/`, `.dart_tool/`), and generated build files are ignored automatically via the root `.gitignore`.
+ 
+## ⚙️ Configuration Notes
+ 
+- **Hardware acceleration:** In `talkready_mobile/android/app/src/main/AndroidManifest.xml`, make sure the `<application>` tag has `android:hardwareAccelerated="true"` — this keeps in-app WebViews running smoothly.
+- **Firestore security rules:** Review and adjust the rules referenced in `firebase.json` before deploying to production.
